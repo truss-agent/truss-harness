@@ -1,0 +1,39 @@
+# Development
+
+This section is for maintainers working from the Truss repository. It is not required to install or use the published CLI, TUI, or VS Code extension.
+
+## Requirements
+
+- Node.js 20 or newer
+- npm 10 or newer
+- Git
+- A local model server when testing end-to-end client workflows
+
+## Build and test
+
+From a repository checkout:
+
+```powershell
+npm.cmd install
+npm.cmd run build
+npm.cmd test
+```
+
+The runtime tests do not require a running model server.
+
+## Run the documentation site
+
+```powershell
+npm.cmd run docs:dev
+```
+
+Open `http://localhost:3000`. Use `npm.cmd run docs:build` to create a production documentation build.
+
+## Run the VS Code extension locally
+
+1. Build the repository with `npm.cmd run build`.
+2. Open the checkout in VS Code.
+3. In **Run and Debug**, select **Run Truss Extension** and press `F5`.
+4. In the Extension Development Host, select the **Truss** Activity Bar icon.
+
+The development host launches the compiled workspace CLI. A published extension launches the globally installed `truss-cli` command instead.

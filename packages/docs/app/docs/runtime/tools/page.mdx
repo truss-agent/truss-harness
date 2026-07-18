@@ -1,0 +1,30 @@
+# Tools and Safety
+
+Tools are registered with provider-neutral schemas and executed by the runtime. Tools do not call each other directly.
+
+## Built-in tools
+
+| Tool | Behavior |
+| --- | --- |
+| `read_file` | Reads a UTF-8 file inside the workspace root |
+| `write_file` | Creates parent directories and writes a UTF-8 file |
+| `replace_in_file` | Replaces one exact unique string in an existing UTF-8 file |
+| `update_plan` | Updates an active implementation-plan step |
+| `list_directory` | Lists directory entries |
+| `search_files` | Finds paths by substring |
+| `grep` | Searches UTF-8 text files |
+| `run_terminal` | Runs a command from the workspace root with a timeout |
+
+Filesystem paths are resolved against the workspace root and cannot escape it.
+
+## Modes and tool availability
+
+- Chat mode exposes no tools.
+- Plan mode exposes `read_file`, `list_directory`, `search_files`, and `grep`.
+- Edit mode exposes every built-in tool. When an active plan exists, it also receives the plan as context and uses `update_plan` to keep progress accurate.
+
+## Approval behavior
+
+The runtime emits a tool request before execution. The service layer enforces the selected permission policy. A client must explicitly answer the request when the policy requires it.
+
+Use `auto-all` only in a workspace where commands and file writes are acceptable without review.

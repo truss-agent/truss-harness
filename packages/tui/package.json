@@ -1,0 +1,52 @@
+{
+  "name": "@truss-harness/tui",
+  "version": "0.1.0",
+  "description": "Interactive terminal client for Truss.",
+  "type": "module",
+  "bin": {
+    "truss-tui": "./dist/bin.js"
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "prepublishOnly": "npm run build"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "logo.png"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/truss-harness/truss-harness.git"
+  },
+  "bugs": {
+    "url": "https://github.com/truss-harness/truss-harness/issues"
+  },
+  "homepage": "https://github.com/truss-harness/truss-harness#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "ai",
+    "coding-agent",
+    "tui",
+    "terminal",
+    "ollama",
+    "local-first"
+  ],
+  "dependencies": {
+    "ink": "^6.8.0",
+    "react": "^19.2.0",
+    "@truss-harness/branding": "0.1.0",
+    "@truss-harness/cli": "0.1.0",
+    "@truss-harness/provider-openai-compatible": "0.1.0",
+    "@truss-harness/runtime": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0"
+  }
+}

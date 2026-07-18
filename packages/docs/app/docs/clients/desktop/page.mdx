@@ -1,0 +1,25 @@
+# <Brand /> Desktop App
+
+The desktop app is a standalone local-first workspace for Ollama, LM Studio, llama.cpp server, and compatible local endpoints. It runs the same runtime, tools, sessions, approvals, and provider configuration as the other Truss clients.
+
+## Install
+
+Download and run the Windows installer from the project release. Open the app, choose a workspace, then select a detected local server and model in **Settings**. A custom compatible endpoint can be entered manually.
+
+## Workspace
+
+The desktop workspace has three panes:
+
+- **Files**: a directory-first, collapsible tree for browsing workspace files.
+- **Editor**: read a selected file or switch to its Git working-tree diff. The terminal at the bottom runs commands in the selected workspace.
+- **Agent**: chat, model selection, mode selection, context estimate, tool approvals, and persisted conversations.
+
+## Git workflow
+
+The collapsible **Git** panel sits above the file tree. It shows the current branch, ahead/behind state, and changed files. Use `+` and `-` to stage or unstage an individual file, **Stage all** to stage every displayed change, then enter a message and select **Commit**. **Pull** and **Push** use the repository's configured remote. Git output is written to the terminal pane for inspection.
+
+Agent messages render safe Markdown with headings, lists, links, inline code, and fenced code blocks. Type `/` in the chat input to fuzzy-search workspace files. Select a result with arrow keys and Enter or Tab; the selected `/path/to/file` is attached as bounded context for the next request. At most eight files and 80,000 total characters are attached.
+
+## Permissions
+
+Choose **Ask every time**, **Auto-allow read-only**, or **Auto-allow all tools** in Settings. File reads, searches, and directory listing are read-only; writes and terminal commands require approval unless the selected policy allows them.

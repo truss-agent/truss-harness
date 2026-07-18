@@ -1,0 +1,35 @@
+# Local Models
+
+<Brand /> is designed for local model servers. It uses native Ollama chat when Ollama is selected and the OpenAI-compatible chat protocol for LM Studio, llama.cpp, and compatible local servers.
+
+## Automatic detection
+
+The runtime checks these endpoints when no explicit model is selected:
+
+| Server | Endpoint |
+| --- | --- |
+| Ollama | `http://127.0.0.1:11434` |
+| LM Studio | `http://127.0.0.1:1234/v1` |
+| llama.cpp | `http://127.0.0.1:8080/v1` |
+
+For Ollama, `/api/ps` is checked first so a currently running model is selected before installed but inactive models. Explicit CLI flags, profiles, environment variables, and saved VS Code settings override detection.
+
+## Ollama
+
+```powershell
+$env:TRUSS_HARNESS_PROVIDER = "ollama"
+$env:TRUSS_HARNESS_BASE_URL = "http://127.0.0.1:11434"
+$env:TRUSS_HARNESS_MODEL = "qwen3:8b"
+```
+
+Ollama uses its native `/api/chat` API, including tool-call events.
+
+## Compatible local servers
+
+```powershell
+$env:TRUSS_HARNESS_PROVIDER = "openai-compatible"
+$env:TRUSS_HARNESS_BASE_URL = "http://127.0.0.1:1234/v1"
+$env:TRUSS_HARNESS_MODEL = "local-model-id"
+```
+
+Use the model ID returned by the server's `/models` endpoint.

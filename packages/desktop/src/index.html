@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Truss</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-lockup"><img class="brand-mark" src="./assets/brand-logo.png" alt="Truss"><strong>Truss</strong><span class="status-dot" id="statusDot"></span><span id="runtimeStatus">No model selected</span></div>
+    <div class="top-actions"><button id="chooseWorkspace">Open workspace</button><button id="refreshModels">Refresh models</button><button id="settingsButton">Settings</button></div>
+  </header>
+  <main class="workbench">
+    <aside class="sidebar">
+      <section id="gitPanel" class="git-panel">
+        <div class="section-heading"><span>Git</span><div><button id="refreshGit" title="Refresh Git status">Refresh</button><button id="toggleGit" title="Collapse Git panel" aria-expanded="true">Hide</button></div></div>
+        <div id="gitBody" class="git-body">
+          <div class="git-summary"><span id="gitBranch">Checking repository...</span><span id="gitCounts"></span></div>
+          <div class="git-actions"><button id="stageAll" title="Stage all changed files">Stage all</button><button id="pullGit" title="Pull from the configured remote">Pull</button><button id="pushGit" title="Push to the configured remote">Push</button></div>
+          <div id="gitFiles" class="git-files"></div>
+          <form id="commitForm" class="commit-form"><input id="commitMessage" autocomplete="off" placeholder="Commit message"><button id="generateCommitMessage" type="button" title="Generate a commit message from your changes">Generate</button><button class="primary" type="submit">Commit</button></form>
+        </div>
+      </section>
+      <div id="gitSplitter" class="pane-splitter horizontal" role="separator" aria-label="Resize Git panel"></div>
+      <section class="side-section files-section"><div class="section-heading"><span>Files</span><button id="refreshFiles" title="Refresh files">Refresh</button></div><div id="fileTree" class="file-tree"></div></section>
+      <div id="historySplitter" class="pane-splitter horizontal" role="separator" aria-label="Resize chat history"></div>
+      <section class="side-section history-section"><div class="section-heading"><span>Chats</span><button id="newChat" title="New chat">New</button></div><div id="conversationList" class="conversation-list"></div></section>
+    </aside>
+    <div id="sidebarSplitter" class="pane-splitter vertical" role="separator" aria-label="Resize sidebar"></div>
+    <section class="editor-area">
+      <div class="editor-toolbar"><span id="editorTitle">Workspace</span><div><button id="fileButton">Open file</button><button id="diffButton">Diff</button></div></div>
+      <pre id="editor" class="editor-content">Open a workspace to browse its files.</pre>
+      <div id="terminalSplitter" class="pane-splitter horizontal" role="separator" aria-label="Resize terminal"></div>
+      <section class="terminal"><div class="terminal-heading">Terminal</div><pre id="terminalOutput" class="terminal-output">Terminal ready.</pre><form id="terminalForm" class="terminal-form"><span>&gt;</span><input id="terminalInput" autocomplete="off" placeholder="Run a command in the workspace"><button type="submit">Run</button></form></section>
+    </section>
+    <div id="chatSplitter" class="pane-splitter vertical" role="separator" aria-label="Resize agent panel"></div>
+    <section class="chat-area">
+      <div class="chat-heading"><div><strong>Agent</strong><span id="chatStatus">Ready</span></div><button id="stopChat" disabled>Stop</button></div>
+      <section id="planPanel" class="plan-panel" hidden></section>
+      <div id="chatMessages" class="chat-messages"></div>
+      <form id="chatForm" class="composer"><div id="slashMenu" class="slash-menu" role="listbox" hidden></div><textarea id="chatInput" rows="3" placeholder="Ask about this workspace. Type / to attach a file."></textarea><button id="sendChat" class="primary" type="submit">Send</button><button id="cancelChat" type="button" hidden>Cancel</button></form>
+      <div class="agent-controls"><div class="runtime-metrics"><span id="contextMeter">Context 0 / 8k est.</span><span id="rateMeter" title="Estimated from streamed response text">Speed -- tok/s</span></div><div class="agent-control-row"><div class="mode-control" aria-label="Agent mode"><button data-mode="chat">Chat</button><button data-mode="plan">Plan</button><button data-mode="edit">Agent</button></div><label class="model-control"><span>Model</span><select id="quickModel"></select></label></div></div>
+    </section>
+  </main>
+  <dialog id="settingsDialog">
+    <form method="dialog" class="settings-form">
+      <div class="dialog-heading"><div><strong>Local model settings</strong><span>Connect to a local server or compatible endpoint.</span></div><button value="cancel" aria-label="Close settings">x</button></div>
+      <label>Detected server<select id="endpointSelect"><option value="">Custom endpoint</option></select></label>
+      <label>Provider<select id="providerSelect"><option value="ollama">Ollama</option><option value="openai-compatible">Compatible API</option></select></label>
+      <label>Endpoint<input id="baseUrlInput" placeholder="http://127.0.0.1:11434"></label>
+      <label>Model<input id="modelInput" list="modelOptions" placeholder="Refresh to discover models"><datalist id="modelOptions"></datalist></label>
+      <label>Context window<input id="contextInput" type="number" min="512" max="1000000" step="512"></label>
+      <label>Tool permissions<select id="permissionSelect"><option value="ask">Ask every time</option><option value="auto-read">Auto-allow read-only</option><option value="auto-all">Auto-allow all tools</option></select></label>
+      <div class="dialog-actions"><button id="dialogRefresh" type="button">Refresh</button><button id="applySettings" class="primary" value="default">Apply</button></div>
+    </form>
+  </dialog>
+  <div id="toast" class="toast" role="status"></div>
+  <script type="module" src="./renderer.js"></script>
+</body>
+</html>

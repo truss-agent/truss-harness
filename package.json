@@ -1,0 +1,29 @@
+{
+  "name": "truss-harness",
+  "private": false,
+  "packageManager": "npm@10.8.2",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run brand:sync && tsc -b && npm --workspace truss-harness-vscode run bundle",
+    "build:fresh": "tsc -b --clean && npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cli:local": "node packages/cli/dist/bin.js",
+    "tui:local": "node packages/tui/dist/bin.js",
+    "desktop:dev": "npm --workspace @truss-harness/desktop run dev",
+    "desktop:package": "npm --workspace @truss-harness/desktop run package",
+    "docs:dev": "npm run brand:sync && npm --workspace @truss-harness/branding run build && npm --workspace @truss-harness/docs run dev",
+    "docs:build": "npm run brand:sync && npm --workspace @truss-harness/branding run build && npm --workspace @truss-harness/docs run build",
+    "brand:sync": "node scripts/sync-brand-assets.mjs",
+    "package:npm": "npm pack --workspace @truss-harness/branding --workspace @truss-harness/runtime --workspace @truss-harness/provider-openai-compatible --workspace @truss-harness/cli --workspace @truss-harness/tui",
+    "package:vscode": "npm --workspace truss-harness-vscode run package",
+    "release:check": "npm run build:fresh && npm test && npm run docs:build && npm run package:npm && npm run package:vscode"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,57 @@
+# <Brand /> VS Code Extension
+
+The extension is a client of the runtime service. It contains the side-panel UI, local model settings, approval prompts, chat history, inline completion, and commit-message action. Runtime execution remains outside VS Code.
+
+## Install
+
+Install the companion runtime service first:
+
+```sh
+npm install -g @truss-harness/cli
+```
+
+Install **Truss** from the VS Code Marketplace, then open its Activity Bar icon to start the side panel. When you use a non-default CLI location, set `trussHarness.command` to the `truss-cli` executable path.
+
+Repository-only Extension Development Host instructions are available in [Development](/docs/development).
+
+## Panel workflow
+
+1. Open **Settings**.
+2. Select a detected server or enter a custom endpoint.
+3. Refresh model discovery and choose a model.
+4. Select Chat, Plan, or Edit mode.
+5. Choose a tool permission policy.
+6. Select **Apply** and start chatting.
+
+The panel remembers endpoint, model, mode, permission selections, and bounded conversation transcripts in VS Code workspace state. When no model is saved, it auto-detects a local model. A restored conversation creates a fresh runtime session from its saved user/assistant transcript when you send the next prompt.
+
+## Chat and file context
+
+Agent replies render Markdown, including headings, lists, links, inline code, and fenced code blocks with readable syntax color. Model output is rendered as safe DOM content; it is not injected as HTML.
+
+Type `/` in the chat composer to fuzzy-search workspace files. Use the arrow keys followed by Enter or Tab to select a file. The selected `/path/to/file` remains visible in the prompt, and Truss sends a bounded copy of that file with the next model request. Up to eight files can be attached, with an 80,000-character total limit.
+
+## Agent modes
+
+| Mode | Tool access |
+| --- | --- |
+| Chat | No tools |
+| Plan | Read-only file inspection tools |
+| Edit | Full filesystem and terminal tools |
+
+## Permissions
+
+| Policy | Behavior |
+| --- | --- |
+| Ask every time | Allow or deny every tool call from the panel |
+| Auto-allow read-only | Auto-runs reads, lists, grep, and search; prompts for writes and terminal commands |
+| Auto-allow all | Runs all registered tools without prompting |
+
+## Editor actions
+
+- **Commit message** reads staged changes, then unstaged changes, and asks the selected local model for a conventional commit message. It never creates a commit.
+- Inline completions use the selected local model. Accept a completion with VS Code's normal inline-completion binding, commonly Tab.
+
+## Workspace commands
+
+The chat composer accepts `/init`, `/update [note]`, `/status`, `/clear-memory`, and `/help`. These run locally, so they work without a configured model. Use the **Help** button in the side panel to display them, or run the matching **<Brand />** actions from the Command Palette.

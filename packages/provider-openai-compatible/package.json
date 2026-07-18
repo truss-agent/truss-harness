@@ -1,0 +1,47 @@
+{
+  "name": "@truss-harness/provider-openai-compatible",
+  "version": "0.1.0",
+  "description": "OpenAI-compatible streaming model provider for Truss.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "logo.png"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "prepack": "node ../../scripts/clean-publish-tests.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/truss-harness/truss-harness.git"
+  },
+  "bugs": {
+    "url": "https://github.com/truss-harness/truss-harness/issues"
+  },
+  "homepage": "https://github.com/truss-harness/truss-harness#readme",
+  "keywords": [
+    "ai",
+    "coding-agent",
+    "ollama",
+    "lm-studio",
+    "openai-compatible"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@truss-harness/runtime": "0.1.0"
+  }
+}

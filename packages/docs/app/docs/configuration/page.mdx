@@ -1,0 +1,61 @@
+# Configuration
+
+The CLI and terminal UI share one JSON configuration system. Use named profiles for different local servers and models instead of repeating environment variables.
+
+## Find or create configuration
+
+<CliUsage command="config path" />
+
+<CliUsage command="config init" />
+
+On Windows, the user configuration file is <UserConfigPath />. Each workspace can also define <WorkspaceConfigPath />.
+
+`config init` creates a workspace template and refuses to overwrite an existing file.
+
+## Profile example
+
+```json
+{
+  "defaultProfile": "ollama-coder",
+  "profiles": {
+    "ollama-coder": {
+      "provider": "ollama",
+      "baseUrl": "http://127.0.0.1:11434",
+      "model": "qwen3:8b",
+      "mode": "edit",
+      "permission": "ask"
+    },
+    "lm-studio-fast": {
+      "provider": "openai-compatible",
+      "baseUrl": "http://127.0.0.1:1234/v1",
+      "model": "local-model-id",
+      "mode": "plan",
+      "permission": "auto-read"
+    }
+  }
+}
+```
+
+## Fields
+
+| Field | Purpose |
+| --- | --- |
+| `provider` | `ollama` or `openai-compatible` |
+| `baseUrl` | Local server base URL |
+| `model` | Server model ID |
+| `mode` | `chat`, `plan`, or `edit` |
+| `permission` | `ask`, `auto-read`, or `auto-all` |
+| `systemPrompt` | Optional system instruction |
+| `apiKeyEnv` | Name of an environment variable that contains a token |
+
+Keep tokens out of JSON files. Use `apiKeyEnv` to reference an environment variable instead.
+
+## Precedence
+
+1. CLI flags
+2. Selected workspace profile and workspace fields
+3. Selected user profile and user fields
+4. `TRUSS_HARNESS_*` environment variables
+5. Detected local model and defaults
+
+CLI flags include `--profile`, `--provider`, `--base-url`, `--model`, `--mode`, and `--permission`.

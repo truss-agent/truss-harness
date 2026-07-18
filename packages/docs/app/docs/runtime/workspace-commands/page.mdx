@@ -1,0 +1,39 @@
+# Workspace Commands
+
+Workspace commands are deterministic local actions. They do not call your model, consume provider context, or request model-tool approval. Use them to establish repository instructions and keep durable state accurate between conversations.
+
+## Commands
+
+| Slash command | CLI equivalent | Purpose |
+| --- | --- | --- |
+| `/init` | <CliUsage command="init" /> | Crawl a bounded view of the repository and create or refresh <Brand />'s generated context block in `AGENTS.md`. |
+| `/update [note]` | <CliUsage command="update [note]" /> | Capture branch, changed files, diff summary, and an optional progress note in durable workspace memory. |
+| `/status` | <CliUsage command="status" /> | Report repository state and recent stored task records. |
+| `/clear-memory` | <CliUsage command="clear-memory" /> | Delete <WorkspaceMemoryPath />. |
+| `/help` | <CliUsage command="commands" /> | List every workspace command. |
+
+## Initialize a repository
+
+<CliUsage command="init" />
+
+`/init` ignores heavy generated directories such as `.git`, `node_modules`, `dist`, coverage output, and <WorkspaceDirectory />. It detects source languages, source directories, package names, and useful package scripts.
+
+When `AGENTS.md` already exists, existing instructions remain unchanged. <Brand /> adds or refreshes only the block delimited by these markers:
+
+<WorkspaceMarker boundary="start" />
+
+<WorkspaceMarker boundary="end" />
+
+Keep human-authored project rules outside that generated block.
+
+## Update durable progress
+
+<CliUsage command={'update "Implemented provider autodetection"'} />
+
+An update records the current Git branch, up to 80 changed file paths, the Git diff stat, and your optional note. New agent sessions receive a bounded copy of that state through the runtime context manager, alongside recent agent task records. Run it after a meaningful task, before changing conversations, or whenever you want a concise handoff for the next agent.
+
+## Use in clients
+
+Type slash commands directly into the TUI or VS Code chat composer. The clients render the local result in chat without sending the command to the model. The TUI exposes the list with `?`; the VS Code side panel has a **Help** button and matching Command Palette commands.
+
+Direct CLI commands work before you configure a model. This makes `/init`, `/update`, and `/status` useful in a fresh checkout.

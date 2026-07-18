@@ -1,0 +1,18 @@
+# Implementation Plans
+
+Plan mode is more than a read-only chat setting. After inspecting the workspace, the agent returns a short Markdown checklist. Truss saves that checklist as the active implementation plan at:
+
+```text
+.truss-harness/plans/active.json
+```
+
+The `.truss-harness/` directory is Git-ignored by the default project configuration, so plans remain local workspace state.
+
+## Workflow
+
+1. Select **Plan** in the desktop or VS Code client, or run the CLI with `--mode plan`.
+2. Ask for an implementation plan. The agent can inspect files but cannot write or run commands.
+3. Truss stores the generated checklist and displays it at the top of chat in the desktop app, VS Code extension, and terminal UI. The CLI prints the same plan to standard error.
+4. Switch to **Agent/Edit** mode to implement it. The active plan is included in the model context and the agent updates each step through the `update_plan` tool.
+
+Plans are intentionally local and only the active plan is retained. Create a new plan when the task changes materially.

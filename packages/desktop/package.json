@@ -1,0 +1,52 @@
+{
+  "name": "@truss-harness/desktop",
+  "version": "0.1.0",
+  "description": "Standalone desktop client for the Truss runtime.",
+  "author": "Truss Contributors",
+  "type": "module",
+  "main": "./dist/main.cjs",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && esbuild ./dist/main.js --bundle --platform=node --format=cjs --external:electron --outfile=./dist/main.cjs && esbuild ./dist/preload.js --bundle --platform=node --format=cjs --external:electron --outfile=./dist/preload.cjs && node ./scripts/copy-static.mjs",
+    "dev": "npm run build && node ./scripts/start-electron.mjs",
+    "start": "node ./scripts/start-electron.mjs",
+    "package": "npm run build && electron-builder"
+  },
+  "build": {
+    "appId": "com.truss-harness.desktop",
+    "productName": "Truss",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "win": {
+      "icon": "./assets/brand-logo.ico",
+      "target": [
+        "nsis"
+      ]
+    }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/truss-harness/truss-harness.git"
+  },
+  "dependencies": {
+    "@truss-harness/branding": "0.1.0",
+    "@truss-harness/cli": "0.1.0",
+    "@truss-harness/provider-openai-compatible": "0.1.0",
+    "@truss-harness/runtime": "0.1.0"
+  },
+  "devDependencies": {
+    "electron": "37.10.3",
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.25.0"
+  },
+  "bugs": {
+    "url": "https://github.com/truss-harness/truss-harness/issues"
+  },
+  "homepage": "https://github.com/truss-harness/truss-harness#readme"
+}

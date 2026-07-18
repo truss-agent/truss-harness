@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/branding" },
+    { "path": "./packages/runtime" },
+    { "path": "./packages/provider-openai-compatible" },
+    { "path": "./packages/cli" },
+    { "path": "./packages/tui" },
+    { "path": "./packages/vscode" },
+    { "path": "./packages/desktop" }
+  ]
+}

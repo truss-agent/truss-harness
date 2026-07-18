@@ -1,0 +1,43 @@
+# <Brand /> Terminal UI
+
+The terminal UI is a full-screen local workspace client. It uses the same configuration profiles, provider adapters, workspace memory, and tool policies as the CLI.
+
+## Install
+
+```sh
+npm install -g @truss-harness/tui
+```
+
+## Start it
+
+<TuiCommand />
+
+If a profile or local server can supply a model, the workspace starts with it. Otherwise, open the configuration view and select a detected server and model.
+
+## Workspace panes
+
+| Pane | Purpose |
+| --- | --- |
+| Files | Browse workspace files and open a preview. |
+| Editor | Read a selected file and toggle its Git diff. |
+| Agent | Stream chat and approve or deny tool calls. |
+| Terminal | View tool activity and run workspace shell commands. |
+
+## Keyboard controls
+
+| Key | Action |
+| --- | --- |
+| `Tab` | Move focus between panes |
+| `m` | Open local model configuration outside chat input |
+| `Enter` | Send chat input or open the selected file |
+| `d` | Toggle Git diff in the editor pane |
+| `!` | Open a shell command prompt from the terminal pane |
+| `?` | Open local workspace-command help |
+| `Esc` | Stop active generation |
+| `Ctrl+C` | Stop generation, or exit when idle |
+
+Tool approvals use `Y` or Enter to allow and `N` or Escape to deny. An embedded PTY and editable file buffers are not implemented; the terminal pane runs commands from the workspace root and displays their output.
+
+## Workspace commands
+
+Enter `/init`, `/update [note]`, `/status`, `/clear-memory`, or `/help` in the Agent pane. They run locally rather than through the model. This is useful for creating `AGENTS.md` context and recording a handoff before a new conversation.

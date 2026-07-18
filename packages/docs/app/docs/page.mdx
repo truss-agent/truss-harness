@@ -1,0 +1,36 @@
+# <Brand />
+
+<Brand /> is a local-first runtime for coding agents. It separates agent execution from clients, so the same runtime can power a CLI, a full-screen terminal workspace, and a VS Code side panel without coupling agent behavior to any one interface.
+
+## What works today
+
+- Native Ollama and OpenAI-compatible local servers
+- Automatic local provider and model detection
+- Streaming chat, native tool calling, approvals, and interruption
+- Filesystem search, file reads and writes, grep, and terminal execution
+- CLI, full-screen terminal UI, and VS Code side-panel client
+- Workspace configuration profiles and persistent project memory
+
+## Choose a starting point
+
+| Goal | Start here |
+| --- | --- |
+| Install and run a local model immediately | [Get Started](/docs/getting-started) |
+| Configure Ollama, LM Studio, or llama.cpp | [Local Models](/docs/local-models) |
+| Use commands or service mode | [CLI](/docs/clients/cli) |
+| Use the terminal workspace | [Terminal UI](/docs/clients/tui) |
+| Use the VS Code side panel | [VS Code Extension](/docs/clients/vscode) |
+
+## Install clients
+
+Install the command-line and terminal clients from npm:
+
+```sh
+npm install -g @truss-harness/cli @truss-harness/tui
+```
+
+Then use `truss-cli` from the folder you want the agent to work in, or launch `truss-tui` for the full-screen terminal workspace. Repository maintainers can find build, test, and extension-development instructions in [Development](/docs/development).
+
+## Architecture
+
+The runtime owns sessions, context, streaming, tools, approvals, and workspace memory. Clients only provide interaction surfaces. This keeps the local agent implementation usable outside VS Code and makes clients independently replaceable.

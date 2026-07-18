@@ -1,0 +1,17 @@
+# Branding
+
+<Brand /> has one source of truth for product-facing configuration: `packages/branding/src/index.ts`.
+
+## Change the brand
+
+Edit the `brand` object, then run:
+
+```bash
+npm run brand:sync
+```
+
+The configured product name is used by the documentation shell, CLI and terminal UI headings, runtime messages, and VS Code labels. `productSlug` becomes the npm scope, VS Code extension publisher/name, command and setting namespace, and workspace configuration directory. `cliCommand` and `tuiCommand` become the executable names published by the CLI and terminal UI packages. `workspaceDirectory` controls the repository-local configuration and memory directory. `assetDirectory` supplies the SVG copied into the packaged VS Code extension. `repositoryUrl` supplies package metadata and documentation links.
+
+## Release boundary
+
+Changing `productSlug` is a new public package and VS Code extension identity. Run a full build, update authored import specifiers if the package scope changes, and publish it as a new release. Package folders stay stable because they are internal repository layout, not public branding.

@@ -1,0 +1,29 @@
+# Workspace Memory
+
+<Brand /> keeps a durable, bounded record of repository progress at:
+
+```text
+<WorkspaceMemoryPath />
+```
+
+## What is recorded
+
+- Task objective and session ID
+- Running, completed, or failed status
+- Start and completion timestamps
+- Tools used and success state
+- Files changed through `write_file`
+- Bounded assistant-result summary
+- Recent modified-file metadata
+
+A record is written at task start and updated at completion or failure. The next conversation receives a compact workspace-memory context block, so it can account for recent work without replaying full chat transcripts.
+
+## Privacy and source control
+
+Workspace memory can contain task prompts and summaries. Review it before committing. To keep it local, add this to `.gitignore`:
+
+```text
+<WorkspaceMemoryPath />
+```
+
+Delete the file to reset project memory. A malformed or unwritable memory file never prevents an agent run; the runtime simply proceeds without durable memory for that run.

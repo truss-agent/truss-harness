@@ -1,0 +1,446 @@
+import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from "electron";
+import { spawn } from "node:child_process";
+import { execFile as execFileCallback } from "node:child_process";
+import { readFile, readdir, writeFile } from "node:fs/promises";
+import { dirname, join, relative, resolve, sep } from "node:path";
+import { promisify } from "node:util";
+import { brand } from "@truss-harness/branding";
+import { createClientRuntime, type ClientConfiguration } from "@truss-harness/cli/runtime";
+import { detectLocalContextWindow, detectLocalEndpoints, generateLocalText, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
+import { FileWorkspacePlanStore, type ToolApproval, type ToolCall } from "@truss-harness/runtime";
+import type { DesktopConfiguration, DesktopConversation, DesktopEndpoint, DesktopEvent, DesktopFile, DesktopGitStatus, DesktopMessage, DesktopState } from "./shared.js";
+
+const execFile = promisify(execFileCallback);
+const ignoredDirectories = new Set([".git", "node_modules", "dist", "coverage", ".next"]);
+const maxFiles = 600;
+
+interface PersistedState extends DesktopState {}
+
+let mainWindow: BrowserWindow | undefined;
+let persisted: PersistedState = { workspaceRoot: process.cwd(), conversations: [] };
+let runtimeClient: ReturnType<typeof createClientRuntime> | undefined;
+let unsubscribeEvents: (() => void) | undefined;
+let activeSessionId: string | undefined;
+let activeConversationId: string | undefined;
+let activeAbort: AbortController | undefined;
+let activeRun: Promise<void> | undefined;
+const approvalResolvers = new Map<string, (approved: boolean) => void>();
+const sessionConversationIds = new Map<string, string>();
+
+function send(event: DesktopEvent): void {
+  mainWindow?.webContents.send("truss:event", event);
+}
+
+function distDirectory(): string {
+  return join(app.getAppPath(), "dist");
+}
+
+function statePath(): string {
+  return join(app.getPath("userData"), "desktop-state.json");
+}
+
+async function loadPersistedState(): Promise<void> {
+  try {
+    const parsed = JSON.parse(await readFile(statePath(), "utf8")) as Partial<PersistedState>;
+    persisted = {
+      workspaceRoot: typeof parsed.workspaceRoot === "string" ? parsed.workspaceRoot : process.cwd(),
+      configuration: isConfiguration(parsed.configuration) ? parsed.configuration : undefined,
+      conversations: Array.isArray(parsed.conversations) ? parsed.conversations.slice(0, 30) : [],
+      activeConversationId: typeof parsed.activeConversationId === "string" ? parsed.activeConversationId : undefined
+    };
+  } catch {
+    persisted = { workspaceRoot: process.cwd(), conversations: [] };
+  }
+}
+
+async function persistState(): Promise<void> {
+  await writeFile(statePath(), `${JSON.stringify(persisted, null, 2)}\n`, "utf8");
+}
+
+function isConfiguration(value: unknown): value is DesktopConfiguration {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<DesktopConfiguration>;
+  return (candidate.provider === "ollama" || candidate.provider === "openai-compatible")
+    && typeof candidate.baseUrl === "string"
+    && typeof candidate.model === "string"
+    && (candidate.mode === "chat" || candidate.mode === "plan" || candidate.mode === "edit")
+    && (candidate.permission === "ask" || candidate.permission === "auto-read" || candidate.permission === "auto-all")
+    && typeof candidate.contextWindow === "number";
+}
+
+function normalizeConfiguration(value: DesktopConfiguration): DesktopConfiguration {
+  return {
+    ...value,
+    baseUrl: value.baseUrl.trim(),
+    model: value.model.trim(),
+    contextWindow: Math.max(512, Math.min(1_000_000, Math.floor(value.contextWindow || 8_192)))
+  };
+}
+
+function localEndpoint(configuration: Pick<DesktopConfiguration, "provider" | "baseUrl">): LocalModelEndpoint {
+  return { id: "configured", label: "Configured endpoint", kind: configuration.provider, baseUrl: configuration.baseUrl };
+}
+
+function clientConfiguration(configuration: DesktopConfiguration): ClientConfiguration {
+  const approval: ToolApproval = {
+    approve(call: ToolCall): Promise<boolean> {
+      const readOnly = ["read_file", "list_directory", "search_files", "grep"].includes(call.name);
+      if (configuration.permission === "auto-all" || (configuration.permission === "auto-read" && readOnly)) return Promise.resolve(true);
+      return new Promise<boolean>((resolveApproval) => {
+        approvalResolvers.set(call.id, resolveApproval);
+        send({ type: "approval", callId: call.id, tool: call.name, input: call.input });
+      });
+    }
+  };
+  return {
+    workspaceRoot: persisted.workspaceRoot,
+    provider: configuration.provider,
+    baseUrl: configuration.baseUrl,
+    model: configuration.model,
+    mode: configuration.mode,
+    approval
+  };
+}
+
+async function releaseOllamaModel(configuration: DesktopConfiguration | undefined): Promise<void> {
+  if (!configuration || configuration.provider !== "ollama" || !configuration.model) return;
+  try {
+    await fetch(`${configuration.baseUrl.replace(/\/$/, "")}/api/generate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: configuration.model, keep_alive: 0 }),
+      signal: AbortSignal.timeout(2_000)
+    });
+  } catch {
+    // Local server lifecycle is provider-owned; release is best-effort.
+  }
+}
+
+function disposeRuntime(): void {
+  activeAbort?.abort();
+  activeAbort = undefined;
+  activeRun = undefined;
+  activeSessionId = undefined;
+  activeConversationId = undefined;
+  sessionConversationIds.clear();
+  unsubscribeEvents?.();
+  unsubscribeEvents = undefined;
+  runtimeClient = undefined;
+  for (const resolveApproval of approvalResolvers.values()) resolveApproval(false);
+  approvalResolvers.clear();
+}
+
+function configureRuntime(configuration: DesktopConfiguration): void {
+  disposeRuntime();
+  runtimeClient = createClientRuntime(clientConfiguration(configuration));
+  unsubscribeEvents = runtimeClient.events.subscribe((event) => send({ type: "agent", conversationId: sessionConversationIds.get(event.sessionId), event }));
+}
+
+function ensurePathInsideWorkspace(path: string): string {
+  const workspace = resolve(persisted.workspaceRoot);
+  const target = resolve(workspace, path);
+  if (target !== workspace && !target.startsWith(`${workspace}${sep}`)) throw new Error("Path must remain inside the selected workspace.");
+  return target;
+}
+
+async function collectFiles(current = persisted.workspaceRoot, files: DesktopFile[] = []): Promise<DesktopFile[]> {
+  if (files.length >= maxFiles) return files;
+  for (const entry of await readdir(current, { withFileTypes: true })) {
+    if (files.length >= maxFiles) break;
+    if (entry.isDirectory() && !ignoredDirectories.has(entry.name)) await collectFiles(join(current, entry.name), files);
+    if (entry.isFile()) files.push({ path: relative(persisted.workspaceRoot, join(current, entry.name)) });
+  }
+  return files.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+async function gitOutput(args: readonly string[]): Promise<string> {
+  try {
+    return (await execFile("git", [...args], { cwd: persisted.workspaceRoot, maxBuffer: 1_000_000 })).stdout;
+  } catch (error) {
+    const stdout = error && typeof error === "object" && "stdout" in error ? (error as { readonly stdout?: unknown }).stdout : undefined;
+    return typeof stdout === "string" ? stdout : "";
+  }
+}
+
+function normalizeCommitMessage(value: string): string {
+  return value.trim()
+    .replace(/^```(?:gitcommit|text|markdown)?\s*/i, "")
+    .replace(/\s*```$/, "")
+    .replace(/^(?:commit message|message):\s*/i, "")
+    .trim();
+}
+
+function compactCommitDiff(diff: string, contextWindow: number): string {
+  const limit = Math.max(8_000, Math.min(48_000, Math.floor(contextWindow * 1.25)));
+  if (diff.length <= limit) return diff;
+
+  const segments = diff.split(/(?=^diff --git )/m).filter(Boolean);
+  const isGenerated = (segment: string): boolean => /(?:package-lock\.json|(?:^|[/\\])(?:dist|coverage|\.next)(?:[/\\])|\.map(?:\r?$))/m.test(segment);
+  const selected: string[] = [];
+  let remaining = limit - 240;
+  for (const segment of [...segments.filter((segment) => !isGenerated(segment)), ...segments.filter(isGenerated)]) {
+    if (remaining <= 0) break;
+    if (segment.length <= remaining) {
+      selected.push(segment);
+      remaining -= segment.length;
+      continue;
+    }
+    const head = Math.max(1_000, Math.floor(remaining * 0.7));
+    const tail = Math.max(500, remaining - head - 90);
+    selected.push(`${segment.slice(0, head)}\n... diff content omitted for context budget ...\n${segment.slice(-tail)}`);
+    remaining = 0;
+  }
+  if (!selected.length) selected.push(`${diff.slice(0, Math.floor(limit * 0.7))}\n... diff content omitted for context budget ...\n${diff.slice(-Math.floor(limit * 0.25))}`);
+  return `The full diff exceeds the configured context budget. Generate a message from this representative selection; do not mention that it was truncated.\n\n${selected.join("\n")}`;
+}
+
+async function generateCommitMessage(): Promise<string> {
+  const configuration = persisted.configuration;
+  if (!configuration?.model) throw new Error("Choose a local model before generating a commit message.");
+
+  let diff = await gitOutput(["diff", "--cached", "--no-ext-diff"]);
+  if (!diff.trim()) diff = await gitOutput(["diff", "--no-ext-diff"]);
+  if (!diff.trim()) throw new Error("There are no staged or unstaged changes to summarize.");
+
+  const prompt = `You write accurate, production-quality Git commit messages. Analyze the diff and return only one Conventional Commit message.
+
+Requirements:
+- First line format: type(optional scope): imperative summary
+- Choose the most accurate type from feat, fix, refactor, perf, docs, test, build, ci, or chore.
+- Keep the subject under 72 characters and describe the actual user-visible or technical change.
+- Use specific verbs and nouns. Do not use vague wording such as "update", "changes", or "stuff".
+- Add a blank line and a concise body only when it clarifies important behavior, constraints, or follow-up effects.
+- Do not include Markdown, quotes, explanations, issue numbers, or text such as "Commit message:".
+
+Diff:
+${compactCommitDiff(diff, configuration.contextWindow)}`;
+  const response = await generateLocalText({ kind: configuration.provider, baseUrl: configuration.baseUrl, model: configuration.model }, prompt);
+  const message = normalizeCommitMessage(response);
+  if (!message) throw new Error("The model returned an empty commit message.");
+  return message;
+}
+
+async function gitCommand(args: readonly string[]): Promise<string> {
+  try {
+    const { stdout, stderr } = await execFile("git", [...args], { cwd: persisted.workspaceRoot, maxBuffer: 1_000_000 });
+    return (stdout || stderr || "Git command completed.").trim();
+  } catch (error) {
+    const detail = error && typeof error === "object"
+      ? ["stderr", "stdout"].map((key) => (error as Record<string, unknown>)[key]).find((value): value is string => typeof value === "string" && Boolean(value.trim()))
+      : undefined;
+    throw new Error(detail?.trim() || (error instanceof Error ? error.message : String(error)));
+  }
+}
+
+function gitPaths(paths: readonly string[]): string[] {
+  if (!Array.isArray(paths) || !paths.length) throw new Error("Select at least one file.");
+  return paths.map((path) => relative(persisted.workspaceRoot, ensurePathInsideWorkspace(path)));
+}
+
+async function getGitStatus(): Promise<DesktopGitStatus> {
+  try {
+    const output = await gitCommand(["status", "--porcelain=v1", "--branch"]);
+    let branch: string | undefined;
+    let ahead = 0;
+    let behind = 0;
+    const files: DesktopGitStatus["files"][number][] = [];
+    for (const line of output.split(/\r?\n/)) {
+      if (line.startsWith("## ")) {
+        const details = line.slice(3);
+        branch = details.split("...")[0].trim();
+        const aheadBehind = details.match(/\[ahead (\d+)(?:, behind (\d+))?\]|\[behind (\d+)(?:, ahead (\d+))?\]/);
+        if (aheadBehind) {
+          ahead = Number.parseInt(aheadBehind[1] ?? aheadBehind[4] ?? "0", 10);
+          behind = Number.parseInt(aheadBehind[2] ?? aheadBehind[3] ?? "0", 10);
+        }
+        continue;
+      }
+      if (line.length < 4) continue;
+      files.push({ path: line.slice(3), indexStatus: line[0], workTreeStatus: line[1] });
+    }
+    return { available: true, branch, ahead, behind, files };
+  } catch (error) {
+    return { available: false, ahead: 0, behind: 0, files: [], error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function promptWithFileContext(prompt: string, attachedPaths: readonly string[] | undefined): Promise<string> {
+  const paths = [...new Set(attachedPaths ?? [])].slice(0, 8);
+  const files: string[] = [];
+  let remaining = 80_000;
+  for (const path of paths) {
+    if (remaining <= 0) break;
+    try {
+      const content = await readFile(ensurePathInsideWorkspace(path), "utf8");
+      const clipped = content.slice(0, Math.min(30_000, remaining));
+      files.push(`<file path="${path.replaceAll('"', "&quot;")}">\n${clipped}\n</file>`);
+      remaining -= clipped.length;
+    } catch {
+      // The renderer only offers workspace files, but a stale entry must not fail a chat request.
+    }
+  }
+  return files.length ? `${prompt}\n\n<attached_workspace_files>\n${files.join("\n")}\n</attached_workspace_files>` : prompt;
+}
+
+async function executeChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly attachedPaths?: readonly string[] }): Promise<void> {
+  const configuration = persisted.configuration;
+  if (!configuration || !configuration.model) throw new Error("Choose a local model before starting the agent.");
+  if (!runtimeClient) configureRuntime(configuration);
+  const client = runtimeClient as ReturnType<typeof createClientRuntime>;
+  if (!activeSessionId || activeConversationId !== input.conversationId) {
+    const session = await client.runtime.createSession(input.history);
+    activeSessionId = session.id;
+    activeConversationId = input.conversationId;
+    sessionConversationIds.set(session.id, input.conversationId);
+  }
+  const controller = new AbortController();
+  activeAbort = controller;
+  send({ type: "chat-start", conversationId: input.conversationId });
+  try {
+    await client.runtime.run(activeSessionId, await promptWithFileContext(input.prompt, input.attachedPaths), controller.signal);
+    send({ type: "chat-end", conversationId: input.conversationId, aborted: controller.signal.aborted });
+  } catch (error) {
+    if (!controller.signal.aborted) send({ type: "chat-error", conversationId: input.conversationId, message: error instanceof Error ? error.message : String(error) });
+    else send({ type: "chat-end", conversationId: input.conversationId, aborted: true });
+  } finally {
+    if (activeAbort === controller) activeAbort = undefined;
+  }
+}
+
+async function runChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly attachedPaths?: readonly string[] }): Promise<void> {
+  const previousRun = activeRun;
+  if (previousRun) {
+    activeAbort?.abort();
+    await previousRun.catch(() => undefined);
+  }
+  const run = executeChat(input);
+  activeRun = run;
+  try {
+    await run;
+  } finally {
+    if (activeRun === run) activeRun = undefined;
+  }
+}
+
+async function createMainWindow(): Promise<void> {
+  mainWindow = new BrowserWindow({
+    width: 1440,
+    height: 940,
+    minWidth: 960,
+    minHeight: 640,
+    title: brand.productName,
+    icon: join(distDirectory(), "assets", "brand-logo.png"),
+    autoHideMenuBar: true,
+    backgroundColor: "#11161a",
+    webPreferences: {
+    preload: join(distDirectory(), "preload.cjs"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false
+    }
+  });
+  await mainWindow.loadFile(join(distDirectory(), "index.html"));
+  mainWindow.on("closed", () => { mainWindow = undefined; });
+}
+
+if (process.platform === "win32") app.setAppUserModelId(`com.${brand.productSlug}.desktop`);
+
+app.whenReady().then(async () => {
+  await loadPersistedState();
+  if (persisted.configuration) configureRuntime(persisted.configuration);
+  await createMainWindow();
+  app.on("activate", () => { if (!mainWindow) void createMainWindow(); });
+});
+
+app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
+app.on("before-quit", () => disposeRuntime());
+
+ipcMain.handle("truss:initial-state", (): DesktopState => persisted);
+ipcMain.handle("truss:choose-workspace", async (): Promise<DesktopState | undefined> => {
+  const options: OpenDialogOptions = { properties: ["openDirectory"] };
+  const selection = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+  const workspaceRoot = selection.filePaths[0];
+  if (selection.canceled || !workspaceRoot) return undefined;
+  persisted = { ...persisted, workspaceRoot };
+  if (persisted.configuration) configureRuntime(persisted.configuration);
+  await persistState();
+  return persisted;
+});
+ipcMain.handle("truss:save-conversations", async (_event, conversations: readonly DesktopConversation[], activeConversationId?: string): Promise<void> => {
+  persisted = { ...persisted, conversations: conversations.slice(0, 30), activeConversationId };
+  await persistState();
+});
+ipcMain.handle("truss:discover-models", async (_event, partial?: Partial<DesktopConfiguration>) => {
+  const configuration = partial?.baseUrl && (partial.provider === "ollama" || partial.provider === "openai-compatible")
+    ? { provider: partial.provider, baseUrl: partial.baseUrl }
+    : persisted.configuration ? { provider: persisted.configuration.provider, baseUrl: persisted.configuration.baseUrl } : undefined;
+  const endpoints = await detectLocalEndpoints();
+  const endpoint = configuration ? localEndpoint(configuration) : endpoints[0];
+  let models: readonly string[] = [];
+  if (endpoint) {
+    try { models = (await listLocalModels(endpoint)).map((model) => model.name); } catch { /* Manual models remain available. */ }
+  }
+  return { endpoints: endpoints as readonly DesktopEndpoint[], models };
+});
+ipcMain.handle("truss:configure", async (_event, input: DesktopConfiguration): Promise<DesktopState> => {
+  let next = normalizeConfiguration(input);
+  if (!next.baseUrl || !next.model) throw new Error("A local endpoint and model are required.");
+  const detectedContextWindow = await detectLocalContextWindow(localEndpoint(next), next.model).catch(() => undefined);
+  if (detectedContextWindow) next = { ...next, contextWindow: detectedContextWindow };
+  const previous = persisted.configuration;
+  persisted = { ...persisted, configuration: next };
+  configureRuntime(next);
+  if (previous?.model !== next.model || previous?.baseUrl !== next.baseUrl || previous?.provider !== next.provider) void releaseOllamaModel(previous);
+  await persistState();
+  return persisted;
+});
+ipcMain.handle("truss:send-chat", (_event, input) => runChat(input));
+ipcMain.handle("truss:stop-chat", (): void => activeAbort?.abort());
+ipcMain.handle("truss:resolve-approval", (_event, callId: string, approved: boolean): void => {
+  approvalResolvers.get(callId)?.(approved);
+  approvalResolvers.delete(callId);
+});
+ipcMain.handle("truss:list-files", () => collectFiles());
+ipcMain.handle("truss:read-file", async (_event, path: string): Promise<string> => readFile(ensurePathInsideWorkspace(path), "utf8"));
+ipcMain.handle("truss:diff-file", async (_event, path: string): Promise<string> => {
+  const target = ensurePathInsideWorkspace(path);
+  const relativePath = relative(persisted.workspaceRoot, target);
+  const againstHead = await gitOutput(["diff", "--no-ext-diff", "HEAD", "--", relativePath]);
+  if (againstHead) return againstHead;
+  const staged = await gitOutput(["diff", "--cached", "--no-ext-diff", "--", relativePath]);
+  const workingTree = await gitOutput(["diff", "--no-ext-diff", "--", relativePath]);
+  if (staged || workingTree) return [staged, workingTree].filter(Boolean).join("\n");
+  const tracked = await gitOutput(["ls-files", "--error-unmatch", "--", relativePath]);
+  if (!tracked) {
+    const untracked = await gitOutput(["diff", "--no-index", "--", "/dev/null", relativePath]);
+    if (untracked) return untracked;
+  }
+  return "No Git diff for this file.";
+});
+ipcMain.handle("truss:get-plan", () => new FileWorkspacePlanStore(persisted.workspaceRoot).load());
+ipcMain.handle("truss:git-status", () => getGitStatus());
+ipcMain.handle("truss:git-stage", async (_event, paths: readonly string[]): Promise<string> => gitCommand(["add", "--", ...gitPaths(paths)]));
+ipcMain.handle("truss:git-unstage", async (_event, paths: readonly string[]): Promise<string> => {
+  const selected = gitPaths(paths);
+  try {
+    return await gitCommand(["restore", "--staged", "--", ...selected]);
+  } catch {
+    return gitCommand(["rm", "--cached", "--", ...selected]);
+  }
+});
+ipcMain.handle("truss:git-generate-commit-message", () => generateCommitMessage());
+ipcMain.handle("truss:git-commit", async (_event, message: string): Promise<string> => {
+  if (typeof message !== "string" || !message.trim()) throw new Error("Enter a commit message.");
+  return gitCommand(["commit", "-m", message.trim()]);
+});
+ipcMain.handle("truss:git-pull", (): Promise<string> => gitCommand(["pull"]));
+ipcMain.handle("truss:git-push", (): Promise<string> => gitCommand(["push"]));
+ipcMain.handle("truss:run-terminal", (_event, command: string): string => {
+  const commandId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const child = spawn(command, { cwd: persisted.workspaceRoot, shell: true, windowsHide: true });
+  child.stdout.on("data", (data: Buffer) => send({ type: "terminal-output", commandId, text: data.toString() }));
+  child.stderr.on("data", (data: Buffer) => send({ type: "terminal-output", commandId, text: data.toString() }));
+  child.on("error", (error) => send({ type: "terminal-output", commandId, text: `\n[terminal error] ${error.message}\n` }));
+  child.on("close", (code) => send({ type: "terminal-output", commandId, text: `\n[process exited: ${code ?? "unknown"}]\n` }));
+  return commandId;
+});

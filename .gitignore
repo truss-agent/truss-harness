@@ -1,0 +1,11 @@
+node_modules
+.env
+.next/
+**/.next/
+dist/
+**/dist/
+release/
+**/release/
+*.tgz
+*.vsix
+.truss-harness/

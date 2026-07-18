@@ -1,0 +1,42 @@
+{
+  "name": "@truss-harness/branding",
+  "version": "0.1.0",
+  "description": "Shared product identity configuration for Truss clients.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "logo.png"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/truss-harness/truss-harness.git"
+  },
+  "bugs": {
+    "url": "https://github.com/truss-harness/truss-harness/issues"
+  },
+  "homepage": "https://github.com/truss-harness/truss-harness#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "ai",
+    "coding-agent",
+    "branding",
+    "local-first"
+  ]
+}
