@@ -6,12 +6,12 @@
   "publisher": "truss-harness",
   "repository": {
     "type": "git",
-    "url": "https://github.com/truss-harness/truss-harness"
+    "url": "https://github.com/truss-agent/truss-harness"
   },
   "bugs": {
-    "url": "https://github.com/truss-harness/truss-harness/issues"
+    "url": "https://github.com/truss-agent/truss-harness/issues"
   },
-  "homepage": "https://github.com/truss-harness/truss-harness#readme",
+  "homepage": "https://github.com/truss-agent/truss-harness#readme",
   "type": "module",
   "engines": {
     "vscode": "^1.85.0"

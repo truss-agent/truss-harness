@@ -65,11 +65,34 @@ body {
     color: #0b7965;
 }
 
-.site-nav .site-nav-docs {
+.site-nav .site-nav-download {
     background: #14231f;
     border-radius: 5px;
     color: #f8fbf7;
     padding: 8px 12px;
+}
+
+.site-theme-toggle {
+    background: transparent;
+    border: 1px solid #99aaa1;
+    border-radius: 5px;
+    color: #40554d;
+    cursor: pointer;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 750;
+    min-height: 34px;
+    padding: 0 10px;
+}
+
+.site-theme-toggle:hover {
+    background: #e2ebe4;
+    color: #075d4e;
+}
+
+.site-theme-toggle:focus-visible {
+    outline: 2px solid #0b7965;
+    outline-offset: 2px;
 }
 
 .site-hero {
@@ -345,6 +368,17 @@ body {
     margin-top: auto;
 }
 
+.site-card-links {
+    align-items: center;
+    display: flex;
+    gap: 16px;
+    margin-top: auto;
+}
+
+.site-card-links .site-text-link {
+    margin-top: 0;
+}
+
 .site-foundations {
     background: #e7eee7;
     border-block: 1px solid #c7d6ca;
@@ -392,6 +426,7 @@ body {
     margin: 0 auto;
     max-width: 1180px;
     padding: 25px 28px;
+    margin-top: 80px;
 }
 
 .site-footer>div {
@@ -504,7 +539,246 @@ body {
     gap: 21px;
 }
 
+.download-page {
+    padding-bottom: 70px;
+}
+
+.download-intro {
+    max-width: 850px;
+    padding-bottom: 40px;
+}
+
+.download-intro h1 {
+    max-width: 800px;
+}
+
+.download-release-bar {
+    align-items: center;
+    background: #e3ece5;
+    border: 1px solid #c4d3c8;
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 46px;
+    min-height: 62px;
+    padding: 13px 16px;
+}
+
+.download-release-bar > div:first-child {
+    align-items: center;
+    display: flex;
+    gap: 11px;
+    min-width: 0;
+}
+
+.download-release-bar p {
+    align-items: baseline;
+    display: flex;
+    gap: 9px;
+    margin-bottom: 0;
+}
+
+.download-release-bar p span,
+.download-release-links > span {
+    color: #5b6f66;
+    font-size: 13px;
+}
+
+.download-status {
+    background: #7e9188;
+    border-radius: 50%;
+    display: block;
+    flex: 0 0 auto;
+    height: 9px;
+    width: 9px;
+}
+
+.download-status-loading {
+    animation: download-pulse 1.2s ease-in-out infinite;
+}
+
+.download-status-ready {
+    background: #0b7965;
+}
+
+.download-status-unavailable {
+    background: #a86d22;
+}
+
+.download-release-links {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 15px;
+    justify-content: flex-end;
+}
+
+.download-release-links a {
+    color: #075d4e;
+    font-size: 13px;
+    font-weight: 750;
+}
+
+.download-platform {
+    margin-bottom: 48px;
+}
+
+.download-platform > header {
+    align-items: center;
+    display: flex;
+    gap: 14px;
+    margin-bottom: 18px;
+}
+
+.download-platform > header h2 {
+    font-size: 25px;
+    margin-bottom: 4px;
+}
+
+.download-platform > header p {
+    color: #5b6f66;
+    font-size: 14px;
+    margin-bottom: 0;
+}
+
+.download-platform-mark {
+    align-items: center;
+    background: #14231f;
+    border-radius: 5px;
+    color: #f8fbf7;
+    display: flex;
+    flex: 0 0 auto;
+    font-size: 14px;
+    font-weight: 800;
+    height: 38px;
+    justify-content: center;
+    width: 38px;
+}
+
+.download-build-list {
+    border: 1px solid #cbd7ce;
+    border-bottom: 0;
+}
+
+.download-build {
+    align-items: center;
+    background: #fbfdf9;
+    border-bottom: 1px solid #cbd7ce;
+    display: grid;
+    gap: 20px;
+    grid-template-columns: minmax(220px, 1fr) minmax(180px, .55fr) 120px;
+    min-height: 88px;
+    padding: 14px 16px;
+}
+
+.download-build-copy {
+    min-width: 0;
+}
+
+.download-build-copy > div {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+}
+
+.download-build h3 {
+    font-size: 16px;
+    margin-bottom: 0;
+}
+
+.download-build p {
+    color: #5b6f66;
+    font-size: 13px;
+    margin: 5px 0 0;
+}
+
+.download-recommended {
+    background: #d7eee4;
+    border-radius: 3px;
+    color: #075d4e;
+    font-size: 10px;
+    font-weight: 800;
+    padding: 3px 6px;
+    text-transform: uppercase;
+}
+
+.download-build-meta {
+    display: grid;
+    gap: 5px;
+}
+
+.download-build-meta span:first-child {
+    font-size: 13px;
+    font-weight: 750;
+}
+
+.download-build-meta span:last-child {
+    color: #687a72;
+    font-size: 12px;
+}
+
+.download-build .site-button {
+    min-width: 120px;
+}
+
+.download-button-unavailable {
+    background: #e6ebe7;
+    border-color: #ccd5ce;
+    color: #77877f;
+    cursor: not-allowed;
+}
+
+.download-help {
+    align-items: center;
+    border-top: 1px solid #b7cabe;
+    display: flex;
+    gap: 30px;
+    justify-content: space-between;
+    padding-top: 42px;
+}
+
+.download-help h2 {
+    font-size: 25px;
+    margin-bottom: 7px;
+}
+
+.download-help > div > p:last-child {
+    color: #52675e;
+    line-height: 1.55;
+    margin-bottom: 0;
+    max-width: 650px;
+}
+
+.site-infographic {
+    text-align: center;
+    display: flex;
+    justify-content: center;
+    flex-direction: column;
+    border-radius: 8px;
+    width: 59%;
+    margin: 0 auto;
+    margin-bottom: 60px;
+}
+
+@keyframes download-pulse {
+    50% {
+        opacity: .35;
+    }
+}
+
 @media (max-width: 780px) {
+
+    .site-infographic {
+            text-align: center;
+            display: flex;
+            justify-content: center;
+            flex-direction: column;
+            border: 1px solid #cfd9d1;
+            border-radius: 8px;
+            width: 85%;
+            margin: 0 auto;
+            margin-bottom: 60px;
+        }
     .site-header-inner {
         min-height: 62px;
         padding: 0 18px;
@@ -634,10 +908,222 @@ body {
         font-size: 29px;
     }
 
+    .download-page {
+        padding-bottom: 45px;
+    }
+
+    .download-release-bar,
+    .download-help {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .download-release-bar {
+        gap: 13px;
+        margin-bottom: 37px;
+    }
+
+    .download-release-bar p {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .download-release-links {
+        justify-content: flex-start;
+        padding-left: 20px;
+    }
+
+    .download-platform {
+        margin-bottom: 38px;
+    }
+
+    .download-build {
+        gap: 13px;
+        grid-template-columns: 1fr auto;
+        padding: 16px;
+    }
+
+    .download-build-meta {
+        grid-column: 1;
+        grid-row: 2;
+    }
+
+    .download-build .site-button {
+        grid-column: 2;
+        grid-row: 1 / span 2;
+        min-width: 108px;
+    }
+
     .site-footer {
         align-items: flex-start;
         flex-direction: column;
         margin: 10px 0;
         padding: 22px 18px;
+    }
+}
+
+@media (max-width: 520px) {
+    .site-nav {
+        gap: 10px;
+    }
+
+    .site-nav a:nth-child(2),
+    .site-nav a:nth-child(3) {
+        display: none;
+    }
+
+    .download-build {
+        grid-template-columns: 1fr;
+    }
+
+    .download-build-meta,
+    .download-build .site-button {
+        grid-column: 1;
+        grid-row: auto;
+    }
+
+    .download-build .site-button {
+        width: 100%;
+    }
+
+    .download-help .site-button {
+        width: 100%;
+    }
+}
+
+:root[data-truss-theme="dark"] {
+    color-scheme: dark;
+}
+
+:root[data-truss-theme="dark"] body,
+:root[data-truss-theme="dark"] .site {
+    background: #0c1613;
+    color: #ecf5ef;
+}
+
+:root[data-truss-theme="dark"] .site-header {
+    background: rgba(12, 22, 19, .94);
+    border-color: #29453a;
+}
+
+:root[data-truss-theme="dark"] .site-nav a,
+:root[data-truss-theme="dark"] .site-footer span,
+:root[data-truss-theme="dark"] .site-footer a {
+    color: #b6c8be;
+}
+
+:root[data-truss-theme="dark"] .site-nav .site-nav-download {
+    background: #dff5e8;
+    color: #11241d;
+}
+
+:root[data-truss-theme="dark"] .site-theme-toggle {
+    border-color: #4f7565;
+    color: #d7e8de;
+}
+
+:root[data-truss-theme="dark"] .site-theme-toggle:hover,
+:root[data-truss-theme="dark"] .site-button-secondary:hover {
+    background: #1d342b;
+    color: #f1faf4;
+}
+
+:root[data-truss-theme="dark"] .site-lede,
+:root[data-truss-theme="dark"] .site-page-intro>p:last-child,
+:root[data-truss-theme="dark"] .site-band-copy,
+:root[data-truss-theme="dark"] .site-principles p,
+:root[data-truss-theme="dark"] .site-feature p,
+:root[data-truss-theme="dark"] .site-about-copy p,
+:root[data-truss-theme="dark"] .site-client-grid p,
+:root[data-truss-theme="dark"] .site-foundations-intro>p:last-child,
+:root[data-truss-theme="dark"] .site-client-summary p {
+    color: #b5c9bf;
+}
+
+:root[data-truss-theme="dark"] .site-button-secondary {
+    border-color: #4f7565;
+    color: #dcece3;
+}
+
+:root[data-truss-theme="dark"] .site-band,
+:root[data-truss-theme="dark"] .site-foundations,
+:root[data-truss-theme="dark"] .site-client-summary,
+:root[data-truss-theme="dark"] .site-callout {
+    background: #14261f;
+    border-color: #29453a;
+}
+
+:root[data-truss-theme="dark"] .site-client-grid article,
+:root[data-truss-theme="dark"] .site-feature {
+    background: #13231d;
+    border-color: #2d4b3f;
+}
+
+:root[data-truss-theme="dark"] .site-client-grid article:hover {
+    border-color: #73a98f;
+    box-shadow: 0 12px 24px rgba(0, 0, 0, .22);
+}
+
+:root[data-truss-theme="dark"] .site-principles article,
+:root[data-truss-theme="dark"] .site-about-grid,
+:root[data-truss-theme="dark"] .site-footer {
+    border-color: #365a4a;
+}
+
+:root[data-truss-theme="dark"] .download-release-bar {
+    background: #14261f;
+    border-color: #365a4a;
+}
+
+:root[data-truss-theme="dark"] .download-release-bar p span,
+:root[data-truss-theme="dark"] .download-release-links>span,
+:root[data-truss-theme="dark"] .download-platform>header p,
+:root[data-truss-theme="dark"] .download-build p,
+:root[data-truss-theme="dark"] .download-build-meta span:last-child,
+:root[data-truss-theme="dark"] .download-help>div>p:last-child {
+    color: #b5c9bf;
+}
+
+:root[data-truss-theme="dark"] .download-release-links a {
+    color: #8cddb6;
+}
+
+:root[data-truss-theme="dark"] .download-platform-mark {
+    background: #d9f1e2;
+    color: #11241d;
+}
+
+:root[data-truss-theme="dark"] .download-build-list {
+    border-color: #365a4a;
+}
+
+:root[data-truss-theme="dark"] .download-build {
+    background: #13231d;
+    border-color: #365a4a;
+}
+
+:root[data-truss-theme="dark"] .download-build:hover {
+    background: #172b23;
+}
+
+:root[data-truss-theme="dark"] .download-recommended {
+    background: #1a4937;
+    color: #9ce8c0;
+}
+
+:root[data-truss-theme="dark"] .download-button-unavailable {
+    background: #263a31;
+    border-color: #426452;
+    color: #a8beb2;
+}
+
+:root[data-truss-theme="dark"] .download-help {
+    border-color: #365a4a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .download-status-loading {
+        animation: none;
     }
 }

@@ -2,10 +2,12 @@ node_modules
 .env
 .next/
 **/.next/
+**/.next-*/
 dist/
 **/dist/
 release/
 **/release/
 *.tgz
 *.vsix
+*.tsbuildinfo
 .truss-harness/

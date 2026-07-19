@@ -88,7 +88,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/truss-harness/truss-harness.git"
+    "url": "git+https://github.com/truss-agent/truss-harness.git"
   },
   "dependencies": {
     "@truss-harness/branding": "0.1.0",
@@ -102,7 +102,7 @@
     "esbuild": "^0.25.0"
   },
   "bugs": {
-    "url": "https://github.com/truss-harness/truss-harness/issues"
+    "url": "https://github.com/truss-agent/truss-harness/issues"
   },
-  "homepage": "https://github.com/truss-harness/truss-harness#readme"
+  "homepage": "https://github.com/truss-agent/truss-harness#readme"
 }

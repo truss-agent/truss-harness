@@ -11,7 +11,8 @@ export const brand = Object.freeze({
   agentInstructionsFile: "AGENTS.md",
   assetDirectory: "assets/brand",
   vscodeActivityBarIcon: "logo_vs.svg",
-  repositoryUrl: "https://github.com/truss-harness/truss-harness"
+  repositoryUrl: "https://github.com/truss-agent/truss-harness",
+  repositoryBranch: "master"
 });
 
 export type Brand = typeof brand;

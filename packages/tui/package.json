@@ -22,12 +22,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/truss-harness/truss-harness.git"
+    "url": "git+https://github.com/truss-agent/truss-harness.git"
   },
   "bugs": {
-    "url": "https://github.com/truss-harness/truss-harness/issues"
+    "url": "https://github.com/truss-agent/truss-harness/issues"
   },
-  "homepage": "https://github.com/truss-harness/truss-harness#readme",
+  "homepage": "https://github.com/truss-agent/truss-harness#readme",
   "publishConfig": {
     "access": "public"
   },

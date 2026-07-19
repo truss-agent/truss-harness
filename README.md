@@ -6,6 +6,187 @@ Truss is a local-first, provider-neutral runtime for coding agents. It currently
 
 The project is in active development. The recommended way to use it today is from this repository against a local model server.
 
+## Build and Ship Everything
+
+Truss has four independently shipped products:
+
+| Product | Distribution | Release trigger |
+| --- | --- | --- |
+| CLI and TUI | Public npm packages | Manual `npm publish` |
+| Desktop app | GitHub Release installers | Pushed `v*` Git tag |
+| VS Code extension | VS Code Marketplace or `.vsix` | Manual `vsce publish` |
+| Website and docs | Next.js hosting provider | Manual or provider deployment |
+
+The reusable npm dependencies must also be published because the CLI and TUI
+reference them as normal package dependencies.
+
+### Complete Release Check
+
+From a clean checkout with Node.js 20 or newer:
+
+```sh
+npm ci
+npm run brand:sync
+npm run release:check
+```
+
+`release:check` performs a fresh TypeScript build, runs the complete test suite,
+builds the production website, creates npm tarballs, and packages the VS Code
+extension as a `.vsix`. It does not publish anything. Its documentation build
+uses an isolated temporary output directory, so a running development docs
+server does not lock the release check on Windows.
+
+Desktop installers are excluded from this command because Windows and Linux
+packages must be built on their native GitHub Actions runners.
+
+Before publishing, confirm:
+
+```sh
+git status
+npm test
+```
+
+Commit and push the exact source state that passed these checks before creating
+any public release.
+
+### Publish the npm Packages
+
+The public npm package scope is `@truss-harness`. The npm account or
+organization performing the release must own that scope. Authenticate and
+confirm the active account:
+
+```sh
+npm login
+npm whoami
+```
+
+Publish packages in dependency order:
+
+```sh
+npm publish --workspace @truss-harness/branding --access public
+npm publish --workspace @truss-harness/runtime --access public
+npm publish --workspace @truss-harness/provider-openai-compatible --access public
+npm publish --workspace @truss-harness/cli --access public
+npm publish --workspace @truss-harness/tui --access public
+```
+
+Users then install the clients with:
+
+```sh
+npm install -g @truss-harness/cli
+npm install -g @truss-harness/tui
+```
+
+Verify the published executables:
+
+```sh
+truss-cli --help
+truss-tui --help
+```
+
+Package versions cannot be published to npm more than once. For later releases,
+update the package versions and their internal `@truss-harness/*` dependency
+versions together before running `release:check`.
+
+### Package and Publish the VS Code Extension
+
+The Marketplace publisher ID must be `truss-harness`, matching the `publisher`
+field in `packages/vscode/package.json`. The publisher's display name can be
+`Truss`.
+
+Create the installable extension:
+
+```sh
+npm run package:vscode
+```
+
+The command writes `truss-harness-vscode-<version>.vsix` under
+`packages/vscode`. Test that exact package locally:
+
+```sh
+code --install-extension packages/vscode/truss-harness-vscode-0.1.0.vsix
+```
+
+Authenticate and publish the tested VSIX:
+
+```sh
+cd packages/vscode
+npx vsce login truss-harness
+npx vsce publish --packagePath truss-harness-vscode-0.1.0.vsix
+cd ../..
+```
+
+Increment `packages/vscode/package.json` before each later Marketplace release.
+Marketplace publication is separate from npm and desktop releases.
+
+### Build and Deploy the Website
+
+Build the production Next.js site:
+
+```sh
+npm run web:build
+```
+
+Run the production build locally:
+
+```sh
+npm --workspace @truss-harness/docs run start
+```
+
+Configure a Next.js-compatible host to run `npm ci` followed by
+`npm run web:build`. Set `NEXT_PUBLIC_SITE_URL` to the public HTTPS origin during
+the production build. Website deployment is not currently performed by the
+desktop release workflow.
+
+For Vercel, import `truss-agent/truss-harness` and use:
+
+| Vercel setting | Value |
+| --- | --- |
+| Framework Preset | Next.js |
+| Root Directory | `packages/docs` |
+| Include source files outside Root Directory | Enabled |
+| Production Branch | `master` |
+| Node.js Version | 20.x |
+| Output Directory | Leave at the Next.js default |
+| Environment Variable | `NEXT_PUBLIC_SITE_URL=https://your-domain.example` |
+
+`packages/docs/vercel.json` supplies the monorepo-aware install and build
+commands. After the GitHub repository is connected, a push to `master`
+automatically creates a production deployment. Pushes to other branches and
+pull requests create preview deployments.
+
+The `/download` page resolves installers from the latest public release at
+`truss-agent/truss-harness`. It starts serving direct desktop downloads after
+the first tagged desktop release succeeds.
+
+### Ship the Desktop App
+
+The full first-push, manual build-validation, and tagged-release procedure is in
+the [Desktop Client](#desktop-client) section. In summary:
+
+1. Push the tested source commit normally.
+2. Run **Desktop release** manually from GitHub Actions and inspect its
+   Windows and Linux artifacts.
+3. Create an annotated tag matching `packages/desktop/package.json`, such as
+   `v0.1.0`.
+4. Push the tag to build and publish every desktop installer plus
+   `SHA256SUMS.txt`.
+5. Confirm the files appear on the website `/download` page.
+
+### Release Order
+
+For a coordinated release, use this order:
+
+1. Run `npm run release:check`.
+2. Commit and push the tested source.
+3. Deploy the website.
+4. Publish reusable npm packages, then the CLI and TUI.
+5. Package, test, and publish the VS Code extension.
+6. Run the manual desktop workflow.
+7. Push the matching desktop version tag.
+8. Verify npm installs, Marketplace installation, GitHub Release assets, and
+   website downloads.
+
 ## Local Development
 
 ### Prerequisites
@@ -163,6 +344,66 @@ npm run desktop:package:linux:arm64
 ```
 
 The GitHub Actions desktop release workflow builds Windows NSIS, AppImage, Debian, RPM, and Arch packages for x64 and ARM64. Pushing a `v*` tag publishes them to a GitHub Release with SHA-256 checksums.
+
+#### First Repository Push
+
+A normal Git push uploads source code only. It does not publish a desktop
+release.
+
+Configure the repository remote before the first push:
+
+```sh
+git remote add origin https://github.com/truss-agent/truss-harness.git
+
+git add -A
+git status
+git commit -m "feat: initial Truss release"
+git push -u origin master
+```
+
+Review `git status` before committing to confirm that only the intended files
+are staged.
+
+#### Test Desktop Builds
+
+After the workflow is available on GitHub:
+
+1. Open the repository's **Actions** tab.
+2. Select **Desktop release**.
+3. Select **Run workflow**.
+
+A manual workflow run:
+
+- Runs the full automated test suite.
+- Builds Windows x64 and ARM64 installers.
+- Builds Linux x64 and ARM64 packages.
+- Stores the packages as downloadable workflow artifacts.
+- Does not create a public GitHub Release.
+
+Run this manual validation before the first public release because Linux
+packages must be built and tested on native GitHub-hosted Linux runners.
+
+#### Publish Desktop 0.1.0
+
+The desktop package is currently version `0.1.0`. After the manual workflow
+succeeds, create and push its matching version tag:
+
+```sh
+git tag -a v0.1.0 -m "Truss Desktop 0.1.0"
+git push origin v0.1.0
+```
+
+Pushing the tag automatically:
+
+1. Runs all tests.
+2. Builds every configured Windows and Linux desktop package.
+3. Creates the `v0.1.0` GitHub Release.
+4. Uploads the installers and `SHA256SUMS.txt`.
+5. Makes the builds available through the website download page.
+
+This workflow does not publish npm packages or the VS Code extension. Those
+remain separate release processes. Unsigned desktop builds require no
+repository secrets; Windows code signing can be configured later.
 
 ### VS Code Extension
 

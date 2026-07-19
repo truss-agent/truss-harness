@@ -18,5 +18,5 @@ const navbar = <Navbar logo={<span style={{ alignItems: "center", display: "inli
 const footer = <Footer>{brand.productName} documentation</Footer>;
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <Layout navbar={navbar} pageMap={await getPageMap()} footer={footer} docsRepositoryBase={`${brand.repositoryUrl}/tree/main/packages/docs`}>{children}</Layout>;
+  return <Layout navbar={navbar} pageMap={await getPageMap()} footer={footer} docsRepositoryBase={`${brand.repositoryUrl}/tree/${brand.repositoryBranch}/packages/docs`}>{children}</Layout>;
 }

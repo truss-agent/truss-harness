@@ -44,4 +44,17 @@ npm run desktop:package:linux:arm64
 
 Linux packages must be built on Linux. The `desktop-release.yml` GitHub Actions workflow uses native Windows, Linux x64, and Linux ARM64 runners. A manual workflow run stores downloadable Actions artifacts. Pushing a version tag such as `v0.2.0` also creates a GitHub Release, uploads every package, and generates `SHA256SUMS.txt`.
 
+Before creating the tag, update the desktop package version and commit it:
+
+```sh
+npm version 0.2.0 --workspace @truss-harness/desktop --no-git-tag-version
+git add packages/desktop/package.json package-lock.json
+git commit -m "chore(desktop): release 0.2.0"
+git tag -a v0.2.0 -m "Truss Desktop 0.2.0"
+git push origin HEAD
+git push origin v0.2.0
+```
+
+The release workflow rejects tags that do not match the version in `packages/desktop/package.json`.
+
 Windows installers are unsigned until a certificate is supplied to Electron Builder through `CSC_LINK` and `CSC_KEY_PASSWORD`.

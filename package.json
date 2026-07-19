@@ -23,9 +23,10 @@
     "brand:sync": "node scripts/sync-brand-assets.mjs",
     "package:npm": "npm pack --workspace @truss-harness/branding --workspace @truss-harness/runtime --workspace @truss-harness/provider-openai-compatible --workspace @truss-harness/cli --workspace @truss-harness/tui",
     "package:vscode": "npm --workspace truss-harness-vscode run package",
-    "release:check": "npm run build:fresh && npm test && npm run docs:build && npm run package:npm && npm run package:vscode",
+    "release:check": "npm run build:fresh && npm test && npm run docs:build:isolated && npm run package:npm && npm run package:vscode",
     "docs:dev": "npm run brand:sync && npm --workspace @truss-harness/branding run build && npm --workspace @truss-harness/docs run dev",
-    "docs:build": "npm run brand:sync && npm --workspace @truss-harness/branding run build && npm --workspace @truss-harness/docs run build"
+    "docs:build": "npm run brand:sync && npm --workspace @truss-harness/branding run build && npm --workspace @truss-harness/docs run build",
+    "docs:build:isolated": "npm run brand:sync && npm --workspace @truss-harness/branding run build && node scripts/build-docs-isolated.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",

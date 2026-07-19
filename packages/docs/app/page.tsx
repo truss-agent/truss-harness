@@ -25,6 +25,12 @@ export default function HomePage() {
             <div className="site-actions">
               <Link
                 className="site-button site-button-primary"
+                href="/download"
+              >
+                Download desktop
+              </Link>
+              <Link
+                className="site-button site-button-secondary"
                 href="/docs/getting-started"
               >
                 Get started
@@ -122,9 +128,14 @@ export default function HomePage() {
                 Use the standalone Electron app for file browsing, diffs,
                 terminal commands, chat, approvals, and a built-in Git workflow.
               </p>
-              <Link className="site-text-link" href="/docs/clients/desktop">
-                Desktop documentation
-              </Link>
+              <div className="site-card-links">
+                <Link className="site-text-link" href="/download">
+                  Download desktop
+                </Link>
+                <Link className="site-text-link" href="/docs/clients/desktop">
+                  Documentation
+                </Link>
+              </div>
             </article>
           </div>
         </section>
