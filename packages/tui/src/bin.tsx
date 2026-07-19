@@ -14,6 +14,23 @@ import { createClientRuntime, type ClientConfiguration } from "@truss-harness/cl
 import { executeWorkspaceCommand, FileWorkspacePlanStore, workspaceCommandHelp, type ContextBlock, type ToolApproval, type ToolCall, type WorkspacePlan } from "@truss-harness/runtime";
 import { buildFileTree, fuzzyFiles, syntaxTokens, wrapSyntaxTokens, type FileEntry, type SyntaxToken } from "./file-browser.js";
 
+const tuiHelp = `${brand.productName} TUI
+
+Full-screen terminal workspace for local coding models.
+
+Usage:
+  ${brand.tuiCommand}
+
+The TUI starts in the current workspace and reads the same configuration
+profiles as ${brand.cliCommand}. Press ? inside the TUI for its complete
+keyboard-control reference.
+`;
+
+if (process.argv.slice(2).some((argument) => argument === "--help" || argument === "-h")) {
+  process.stdout.write(tuiHelp);
+  process.exit(0);
+}
+
 const execFile = promisify(execFileCallback);
 const ignoredDirectories = new Set([".git", ".next", ".truss-harness", "node_modules", "dist", "coverage"]);
 const focusOrder = ["files", "editor", "chat", "terminal"] as const;

@@ -11,6 +11,8 @@ npm install -g @truss-harness/tui
 truss-tui
 ```
 
+Run `truss-tui --help` for a non-interactive launch reference. Inside the TUI, press `?` for the complete keyboard-control reference.
+
 The TUI reads the same `.truss-harness/config.json` profiles as `@truss-harness/cli`, or lets you select a detected Ollama, LM Studio, llama.cpp, or custom compatible endpoint at startup.
 
 Configured MCP stdio servers are connected when an Agent session starts, and their connection status appears in the Terminal pane. Plan mode loads only servers explicitly marked `readOnly`. Run `truss-cli config path` to locate the shared user and workspace configuration files.
