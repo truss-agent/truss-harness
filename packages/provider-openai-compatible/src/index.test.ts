@@ -1,7 +1,28 @@
 import { describe, expect, it } from "vitest";
-import { OllamaProvider, OpenAICompatibleProvider, detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, generateLocalText, listLocalModels } from "./index.js";
+import { OllamaProvider, OpenAICompatibleProvider, detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, generateLocalText, listLocalModels, normalizeLocalBaseUrl } from "./index.js";
 
 describe("OpenAICompatibleProvider", () => {
+  it("repairs LM Studio's root endpoint without changing custom compatible endpoints", () => {
+    expect(normalizeLocalBaseUrl("openai-compatible", "http://127.0.0.1:1234")).toBe("http://127.0.0.1:1234/v1");
+    expect(normalizeLocalBaseUrl("openai-compatible", "http://127.0.0.1:1234/v1")).toBe("http://127.0.0.1:1234/v1");
+    expect(normalizeLocalBaseUrl("openai-compatible", "http://localhost:8080/api")).toBe("http://localhost:8080/api");
+  });
+
+  it("uses LM Studio's v1 chat route when an older root endpoint is configured", async () => {
+    let requestUrl = "";
+    const provider = new OpenAICompatibleProvider({
+      baseUrl: "http://127.0.0.1:1234",
+      model: "local-model",
+      fetch: async (url) => {
+        requestUrl = String(url);
+        return new Response('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n');
+      }
+    });
+
+    for await (const _event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
+    expect(requestUrl).toBe("http://127.0.0.1:1234/v1/chat/completions");
+  });
+
   it("converts streaming content and tool-call fragments into runtime events", async () => {
     const body = [
       'data: {"choices":[{"delta":{"content":"Hello "}}]}\n\n',

@@ -70,6 +70,23 @@ interface PartialToolCall {
   arguments: string;
 }
 
+/**
+ * LM Studio exposes OpenAI-compatible routes below /v1. Older Truss settings
+ * sometimes stored its root URL, so repair only that well-known local default.
+ * Custom compatible endpoints are otherwise preserved exactly as configured.
+ */
+export function normalizeLocalBaseUrl(kind: LocalEndpointKind, baseUrl: string): string {
+  const normalized = baseUrl.trim().replace(/\/$/, "");
+  if (kind !== "openai-compatible") return normalized;
+  try {
+    const url = new URL(normalized);
+    const isLocalLmStudio = ["127.0.0.1", "localhost", "::1"].includes(url.hostname) && url.port === "1234" && (url.pathname === "" || url.pathname === "/");
+    return isLocalLmStudio ? `${url.origin}/v1` : normalized;
+  } catch {
+    return normalized;
+  }
+}
+
 function toOpenAIMessage(message: ChatMessage): JsonObject {
   if (message.role === "assistant" && message.toolCalls?.length) {
     return {
@@ -157,7 +174,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   constructor(private readonly options: OpenAICompatibleProviderOptions) {
     this.id = options.id ?? "openai-compatible";
-    this.endpoint = `${options.baseUrl.replace(/\/$/, "")}/chat/completions`;
+    this.endpoint = `${normalizeLocalBaseUrl("openai-compatible", options.baseUrl)}/chat/completions`;
     this.requestFetch = options.fetch ?? globalThis.fetch;
   }
 
@@ -311,7 +328,7 @@ const defaultLocalEndpoints: readonly LocalModelEndpoint[] = [
 function modelsUrl(endpoint: LocalModelEndpoint): string {
   return endpoint.kind === "ollama"
     ? `${endpoint.baseUrl.replace(/\/$/, "")}/api/tags`
-    : `${endpoint.baseUrl.replace(/\/$/, "")}/models`;
+    : `${normalizeLocalBaseUrl(endpoint.kind, endpoint.baseUrl)}/models`;
 }
 
 /** Lists models advertised by a local endpoint. A missing model route is reported as an empty list. */
@@ -405,7 +422,7 @@ export async function generateLocalText(configuration: LocalModelConfiguration, 
   const requestFetch = options.fetch ?? globalThis.fetch;
   const endpoint = configuration.kind === "ollama"
     ? `${configuration.baseUrl.replace(/\/$/, "")}/api/chat`
-    : `${configuration.baseUrl.replace(/\/$/, "")}/chat/completions`;
+    : `${normalizeLocalBaseUrl(configuration.kind, configuration.baseUrl)}/chat/completions`;
   const response = await requestFetch(endpoint, {
     method: "POST",
     signal: options.signal,

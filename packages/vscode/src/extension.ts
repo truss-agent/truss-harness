@@ -2,7 +2,7 @@ import { execFile as execFileCallback, spawn, type ChildProcessWithoutNullStream
 import { relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { createInterface } from "node:readline";
-import { detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
+import { detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, listLocalModels, normalizeLocalBaseUrl, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import { brand } from "@truss-harness/branding";
 import { executeWorkspaceCommand, type ContextBlock, type WorkspacePlan } from "@truss-harness/runtime";
 import * as vscode from "vscode";
@@ -296,7 +296,7 @@ function normalizeConfiguration(value: unknown): ModelConfiguration {
   if (!isConfiguration(value)) return defaultConfiguration;
   return {
     provider: value.provider,
-    baseUrl: value.baseUrl,
+    baseUrl: normalizeLocalBaseUrl(value.provider, value.baseUrl),
     model: value.model,
     mode: value.mode === "plan" || value.mode === "edit" ? value.mode : "chat",
     permission: value.permission === "auto-read" || value.permission === "auto-all" ? value.permission : "ask",
