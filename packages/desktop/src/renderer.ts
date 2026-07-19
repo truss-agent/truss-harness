@@ -8,6 +8,7 @@ declare global {
 }
 
 interface EmbeddedBrowserView extends HTMLElement {
+  src: string;
   loadURL(url: string): Promise<void>;
   getURL(): string;
   canGoBack(): boolean;
@@ -187,7 +188,9 @@ function navigatePreview(value: string): void {
   }
   browserUrl.value = url;
   setCenterView("preview");
-  void browserView.loadURL(url).catch((error: unknown) => notify(error instanceof Error ? error.message : String(error)));
+  // Setting src follows the webview's regular navigation lifecycle. loadURL()
+  // rejects when it supersedes the initial about:blank navigation on Electron.
+  browserView.src = url;
 }
 
 function renderDevServer(status: "starting" | "running" | "stopped" | "failed", message?: string): void {

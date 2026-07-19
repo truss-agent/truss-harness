@@ -1,12 +1,9 @@
 import Link from "next/link";
 import { brand } from "@truss-harness/branding";
 import { SiteFooter, SiteHeader } from "./site-chrome";
+import { createPageMetadata } from "./site-metadata";
 
-export const metadata = {
-  title: brand.productName,
-  description:
-    "A modular, local-first coding-agent harness for local model workflows.",
-};
+export const metadata = createPageMetadata({ title: brand.productName, description: "A modular, local-first coding-agent runtime for CLI, terminal, VS Code, and desktop workflows.", path: "/" });
 
 export default function HomePage() {
   return (
@@ -76,7 +73,7 @@ export default function HomePage() {
             open a dedicated desktop workspace without changing your local model
             setup or safety controls.
           </p>
-          <Link className="site-text-link" href="/features#clients">
+          <Link className="site-text-link" href="/clients">
             Meet the clients
           </Link>
         </section>
@@ -95,8 +92,8 @@ export default function HomePage() {
                 Run chat, model discovery, profiles, and durable workspace
                 commands from scripts or your normal terminal.
               </p>
-              <Link className="site-text-link" href="/docs/clients/cli">
-                CLI documentation
+              <Link className="site-text-link" href="/clients/cli">
+                Explore CLI
               </Link>
             </article>
             <article>
@@ -106,8 +103,8 @@ export default function HomePage() {
                 Use a full-screen workspace with files, editor, Git diff
                 preview, chat, shell output, approvals, and model controls.
               </p>
-              <Link className="site-text-link" href="/docs/clients/tui">
-                TUI documentation
+              <Link className="site-text-link" href="/clients/tui">
+                Explore TUI
               </Link>
             </article>
             <article>
@@ -121,8 +118,8 @@ export default function HomePage() {
                 <a className="site-text-link" href="https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode" target="_blank" rel="noreferrer">
                   Get extension
                 </a>
-                <Link className="site-text-link" href="/docs/clients/vscode">
-                  VS Code documentation
+                <Link className="site-text-link" href="/clients/vscode">
+                  Explore VS Code
                 </Link>
               </div>
             </article>
@@ -137,8 +134,8 @@ export default function HomePage() {
                 <Link className="site-text-link" href="/download">
                   Download desktop
                 </Link>
-                <Link className="site-text-link" href="/docs/clients/desktop">
-                  Documentation
+                <Link className="site-text-link" href="/clients/desktop">
+                  Explore desktop
                 </Link>
               </div>
             </article>

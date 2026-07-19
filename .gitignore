@@ -1,6 +1,8 @@
 node_modules
 .env
 .env*
+!.env.example
+!**/.env.example
 .vercel/
 **/.vercel/
 .next/
@@ -14,3 +16,4 @@ release/
 *.vsix
 *.tsbuildinfo
 .truss-harness/
+/plans/

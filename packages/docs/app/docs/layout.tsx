@@ -7,6 +7,21 @@ export const metadata = {
   title: { default: "Docs", template: `%s | ${brand.productName}` },
   description: `Documentation for the local-first ${brand.productName} coding-agent runtime and clients.`,
   applicationName: brand.productName,
+  alternates: { canonical: "/docs" },
+  openGraph: {
+    type: "website",
+    url: "/docs",
+    siteName: brand.productName,
+    title: `${brand.productName} Documentation`,
+    description: `Documentation for the local-first ${brand.productName} coding-agent runtime and clients.`,
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: `${brand.productName} Documentation` }]
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${brand.productName} Documentation`,
+    description: `Documentation for the local-first ${brand.productName} coding-agent runtime and clients.`,
+    images: ["/og.png"]
+  },
   icons: {
     icon: "/brand-logo.png",
     shortcut: "/brand-logo.png",

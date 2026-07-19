@@ -11,6 +11,7 @@ export function SiteHeader() {
           <span>{brand.productName}</span>
         </Link>
         <nav className="site-nav" aria-label="Primary navigation">
+          <Link href="/clients">Clients</Link>
           <Link href="/features">Features</Link>
           <Link href="/about">About</Link>
           <Link href="/docs">Docs</Link>
@@ -33,6 +34,7 @@ export function SiteFooter() {
       </div>
       <nav aria-label="Footer navigation">
         <Link href="/download">Download</Link>
+        <Link href="/clients">Clients</Link>
         <Link href="/features">Features</Link>
         <Link href="/about">About</Link>
         <Link href="/docs">Documentation</Link>

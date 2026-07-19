@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { brand } from "@truss-harness/branding";
 import { SiteFooter, SiteHeader } from "../site-chrome";
+import { createPageMetadata } from "../site-metadata";
 
 const features = [
   ["Local model discovery", "Find Ollama, LM Studio, llama.cpp, and other compatible local servers, choose a model, and keep reusable workspace-aware profiles."],
@@ -14,10 +15,7 @@ const features = [
   ["Replaceable foundations", "Providers, tools, context sources, session storage, memory, plans, and clients are isolated behind focused TypeScript interfaces."]
 ] as const;
 
-export const metadata = {
-  title: "Features",
-  description: `Local-model, tool-execution, and client capabilities in ${brand.productName}.`
-};
+export const metadata = createPageMetadata({ title: "Features", description: `Local-model, tool-execution, and client capabilities in ${brand.productName}.`, path: "/features" });
 
 export default function FeaturesPage() {
   return <div className="site"><SiteHeader /><main className="site-page"><header className="site-page-intro"><p className="site-eyebrow">Current capabilities</p><h1>One local agent platform, ready in every workspace.</h1><p>Truss keeps the runtime independent from its interfaces. Its CLI, terminal UI, VS Code extension, and desktop app share the same local-model discovery, tools, permissions, and durable workspace state.</p></header><section id="clients" className="site-client-summary" aria-labelledby="client-summary-heading"><div><p className="site-eyebrow">Available today</p><h2 id="client-summary-heading">Four clients. One runtime.</h2></div><p><strong>CLI</strong> for automation, <strong>TUI</strong> for terminal-native work, <strong>VS Code</strong> for editor workflows, and a <strong>desktop app</strong> for a dedicated local workspace.</p></section><section className="site-feature-grid">{features.map(([title, description], index) => <article key={title} className="site-feature"><span>{String(index + 1).padStart(2, "0")}</span><h2>{title}</h2><p>{description}</p></article>)}</section><section className="site-callout"><div><p className="site-eyebrow">Implementation details</p><h2>See the interfaces, configuration, and local setup.</h2></div><Link className="site-button site-button-primary" href="/docs">Open documentation</Link></section></main><SiteFooter /></div>;

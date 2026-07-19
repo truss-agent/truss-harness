@@ -1,12 +1,10 @@
 import Link from "next/link";
 import { brand } from "@truss-harness/branding";
 import { SiteFooter, SiteHeader } from "../site-chrome";
+import { createPageMetadata } from "../site-metadata";
 import { DownloadClient } from "./download-client";
 
-export const metadata = {
-  title: "Download",
-  description: `Download ${brand.productName} Desktop for Windows or Linux.`,
-};
+export const metadata = createPageMetadata({ title: "Download", description: `Download ${brand.productName} Desktop for Windows or Linux.`, path: "/download" });
 
 function getReleaseApiUrl(repositoryUrl: string) {
   const repository = repositoryUrl.replace(/^https:\/\/github\.com\//, "").replace(/\/$/, "");
