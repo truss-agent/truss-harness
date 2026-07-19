@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { cwd } from "node:process";
+import { createInterface } from "node:readline/promises";
 import { detectLocalEndpoints, listLocalModels } from "@truss-harness/provider-openai-compatible";
 import { brand } from "@truss-harness/branding";
 import { executeWorkspaceCommand, workspaceCommandHelp } from "@truss-harness/runtime";
-import { createClientRuntime } from "./runtime.js";
-import { configurationPaths, initializeWorkspaceConfiguration, parseConfigurationOverrides, resolveConfiguration } from "./config.js";
+import { createClientRuntime, type ClientRuntime } from "./runtime.js";
+import { configurationPaths, initializeWorkspaceConfiguration, parseConfigurationOverrides, resolveConfiguration, type ResolvedConfiguration } from "./config.js";
 import { ProtocolToolApproval, runService } from "./protocol.js";
 
 const help = `${brand.productName} CLI
@@ -76,6 +77,90 @@ Examples:
 ${workspaceCommandHelp()}
 `;
 
+function subscribeToRuntimeEvents(events: ClientRuntime["events"]): void {
+  events.subscribe((event) => {
+    if (event.type === "text_delta") process.stdout.write(event.text);
+    if (event.type === "tool_call_requested") process.stderr.write("\n[tool] " + event.tool + "\n");
+    if (event.type === "plan_updated") {
+      const steps = event.plan.steps.map((step) => "  " + (step.status === "completed" ? "[x]" : step.status === "in_progress" ? "[..]" : "[ ]") + " " + step.content).join("\n");
+      process.stderr.write("\n[plan] " + event.plan.title + "\n" + steps + "\n");
+    }
+  });
+}
+
+function inlineMode(input: string): { readonly mode?: "chat" | "plan" | "edit"; readonly prompt: string } {
+  const match = input.trim().match(/^--mode\s+(chat|plan|edit)(?:\s+([\s\S]*))?$/);
+  return match ? { mode: match[1] as "chat" | "plan" | "edit", prompt: match[2]?.trim() ?? "" } : { prompt: input.trim() };
+}
+
+async function runInteractiveChat(initialConfiguration: ResolvedConfiguration): Promise<void> {
+  let configuration = initialConfiguration;
+  let client = await createClientRuntime(configuration);
+  let session = await client.runtime.createSession();
+  let messages = session.messages;
+  subscribeToRuntimeEvents(client.events);
+  const readline = createInterface({ input: process.stdin, output: process.stdout, terminal: process.stdin.isTTY === true });
+  process.stdout.write(brand.productName + " interactive chat. :help for controls. Mode: " + configuration.mode + ".\n");
+
+  const replaceRuntime = async (mode: "chat" | "plan" | "edit"): Promise<void> => {
+    const current = await client.runtime.getSession(session.id);
+    messages = current?.messages ?? messages;
+    await client.dispose();
+    configuration = { ...configuration, mode };
+    client = await createClientRuntime(configuration);
+    session = await client.runtime.createSession(messages);
+    subscribeToRuntimeEvents(client.events);
+    process.stdout.write("\n[mode: " + mode + "]\n");
+  };
+
+  try {
+    while (true) {
+      const line = await readline.question(brand.cliCommand + " (" + configuration.mode + ") > ").catch(() => undefined);
+      if (line === undefined) break;
+      const input = line.trim();
+      if (!input) continue;
+      if (input === ":exit" || input === ":quit") break;
+      if (input === ":help") {
+        process.stdout.write("Controls: :mode chat|plan|edit, :clear, :exit. You can also prefix a message with --mode chat|plan|edit.\n");
+        continue;
+      }
+      if (input === ":clear") {
+        session = await client.runtime.createSession();
+        messages = session.messages;
+        process.stdout.write("[conversation cleared]\n");
+        continue;
+      }
+      const modeCommand = input.match(/^:mode\s+(chat|plan|edit)$/);
+      if (modeCommand) {
+        await replaceRuntime(modeCommand[1] as "chat" | "plan" | "edit");
+        continue;
+      }
+      if (input.startsWith(":mode")) {
+        process.stdout.write("Use :mode chat, :mode plan, or :mode edit.\n");
+        continue;
+      }
+
+      const next = inlineMode(input);
+      if (next.mode && next.mode !== configuration.mode) await replaceRuntime(next.mode);
+      if (!next.prompt) continue;
+      const workspaceCommand = await executeWorkspaceCommand({ workspaceRoot: cwd(), input: next.prompt });
+      if (workspaceCommand.handled) {
+        process.stdout.write(workspaceCommand.message + "\n");
+        continue;
+      }
+      try {
+        await client.runtime.run(session.id, next.prompt);
+        process.stdout.write("\n");
+      } catch (error) {
+        process.stderr.write("\n" + (error instanceof Error ? error.message : String(error)) + "\n");
+      }
+    }
+  } finally {
+    readline.close();
+    await client.dispose();
+  }
+}
+
 async function main(): Promise<void> {
   const [command = "help", ...rawArgs] = process.argv.slice(2);
   if (command === "help" || command === "--help" || command === "-h") {
@@ -118,7 +203,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (command === "chat") {
+  if (command === "chat" && args.length) {
     const prompt = args.join(" ").trim();
     if (!prompt) throw new Error(`Provide a prompt: ${brand.cliCommand} chat <prompt>`);
     const result = await executeWorkspaceCommand({ workspaceRoot: cwd(), input: prompt });
@@ -142,6 +227,11 @@ async function main(): Promise<void> {
     } finally {
       await client.dispose();
     }
+    return;
+  }
+
+  if (command === "chat" && !args.join(" ").trim()) {
+    await runInteractiveChat(configuration);
     return;
   }
 

@@ -29,7 +29,7 @@ Start your local model server, open a terminal in the project you want Truss to 
 
 ```sh
 truss-cli models
-truss-cli chat "Explain this workspace"
+truss-cli chat --mode edit "Explain this workspace"
 ```
 
 Truss probes the standard Ollama, LM Studio, and llama.cpp endpoints when no model is configured. Create a reusable workspace profile when you want explicit settings:
@@ -49,6 +49,16 @@ truss-cli chat --internet-access "Check the current library documentation"
 ```
 
 Direct CLI chat is non-interactive and auto-allows registered tools. Run it only in a trusted workspace. Public internet tools are disabled unless `--internet-access`, a profile, or the environment explicitly enables them.
+
+## Persistent chat
+
+Run `truss-cli chat` without a prompt to keep one local conversation open. The configuration flags supplied when it starts remain active, and history remains available as you send messages.
+
+```sh
+truss-cli chat --mode edit --permission auto-read
+```
+
+Use `:mode chat`, `:mode plan`, or `:mode edit` to change the active mode. You can also prefix a message with `--mode edit`, for example `--mode edit Inspect the repository and explain it.` The mode change persists for the rest of that conversation. Use `:clear` for a fresh conversation, `:help` for controls, and `:exit` to close it.
 
 ## Workspace commands
 
