@@ -24,7 +24,8 @@ const defaultConfiguration: DesktopConfiguration = {
   mode: "chat",
   permission: "ask",
   contextWindow: 8_192,
-  internetAccess: false
+  internetAccess: false,
+  mcpServers: {}
 };
 
 const element = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -83,6 +84,8 @@ const modelOptions = element<HTMLDataListElement>("modelOptions");
 const contextInput = element<HTMLInputElement>("contextInput");
 const permissionSelect = element<HTMLSelectElement>("permissionSelect");
 const internetAccessInput = element<HTMLInputElement>("internetAccessInput");
+const mcpServersInput = element<HTMLTextAreaElement>("mcpServersInput");
+const mcpStatus = element<HTMLDivElement>("mcpStatus");
 const toast = element<HTMLDivElement>("toast");
 
 let desktopState: DesktopState = { workspaceRoot: "", conversations: [] };
@@ -886,6 +889,13 @@ async function discover(input?: Partial<DesktopConfiguration>): Promise<void> {
 
 function settingsConfiguration(): DesktopConfiguration {
   const current = configuration();
+  let mcpServers: DesktopConfiguration["mcpServers"] = {};
+  const mcpSource = mcpServersInput.value.trim();
+  if (mcpSource) {
+    const parsed = JSON.parse(mcpSource) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("MCP servers must be a JSON object.");
+    mcpServers = parsed as DesktopConfiguration["mcpServers"];
+  }
   return {
     provider: providerSelect.value === "openai-compatible" ? "openai-compatible" : "ollama",
     baseUrl: baseUrlInput.value.trim(),
@@ -893,8 +903,27 @@ function settingsConfiguration(): DesktopConfiguration {
     mode: current.mode,
     permission: permissionSelect.value === "auto-read" || permissionSelect.value === "auto-all" ? permissionSelect.value : "ask",
     contextWindow: Math.max(512, Number.parseInt(contextInput.value, 10) || 8_192),
-    internetAccess: internetAccessInput.checked
+    internetAccess: internetAccessInput.checked,
+    mcpServers
   };
+}
+
+function renderMcpStatus(): void {
+  const statuses = desktopState.mcpStatuses ?? [];
+  if (!statuses.length) {
+    mcpStatus.textContent = Object.keys(configuration().mcpServers).length
+      ? "MCP servers connect when Agent or eligible Plan mode starts."
+      : "No MCP servers configured.";
+    return;
+  }
+  mcpStatus.replaceChildren(...statuses.map((status) => {
+    const item = document.createElement("span");
+    item.className = status.state;
+    item.textContent = status.state === "connected"
+      ? `${status.name}: ${status.toolCount} tools`
+      : `${status.name}: ${status.error ?? "connection failed"}`;
+    return item;
+  }));
 }
 
 function populateSettings(): void {
@@ -905,6 +934,8 @@ function populateSettings(): void {
   contextInput.value = String(current.contextWindow);
   permissionSelect.value = current.permission;
   internetAccessInput.checked = current.internetAccess;
+  mcpServersInput.value = Object.keys(current.mcpServers).length ? JSON.stringify(current.mcpServers, null, 2) : "";
+  renderMcpStatus();
 }
 
 async function applyConfiguration(next: DesktopConfiguration): Promise<void> {
@@ -1236,7 +1267,15 @@ element<HTMLButtonElement>("fileButton").onclick = () => { setCenterView("editor
 element<HTMLButtonElement>("diffButton").onclick = () => { setCenterView("editor"); if (activeFile) void openFile(activeFile, !showingDiff); };
 element<HTMLButtonElement>("settingsButton").onclick = () => { populateSettings(); settingsDialog.showModal(); };
 element<HTMLButtonElement>("dialogRefresh").onclick = () => void discover({ provider: providerSelect.value === "openai-compatible" ? "openai-compatible" : "ollama", baseUrl: baseUrlInput.value });
-element<HTMLButtonElement>("applySettings").onclick = (event) => { event.preventDefault(); void applyConfiguration(settingsConfiguration()).then(() => settingsDialog.close()).catch((error) => notify(error instanceof Error ? error.message : String(error))); };
+element<HTMLButtonElement>("applySettings").onclick = (event) => {
+  event.preventDefault();
+  try {
+    const next = settingsConfiguration();
+    void applyConfiguration(next).then(() => settingsDialog.close()).catch((error) => notify(error instanceof Error ? error.message : String(error)));
+  } catch (error) {
+    notify(error instanceof Error ? error.message : String(error));
+  }
+};
 endpointSelect.onchange = () => { if (!endpointSelect.value) return; const selected = JSON.parse(endpointSelect.value) as DesktopEndpoint; providerSelect.value = selected.kind; baseUrlInput.value = selected.baseUrl; void discover({ provider: selected.kind, baseUrl: selected.baseUrl }); };
 quickModel.onchange = () => { const next = quickModel.value; if (!next || next === configuration().model) return; void applyConfiguration({ ...configuration(), model: next }).catch((error) => notify(error instanceof Error ? error.message : String(error))); };
 document.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((button) => button.onclick = () => void applyConfiguration({ ...configuration(), mode: button.dataset.mode as DesktopConfiguration["mode"] }).catch((error) => notify(error instanceof Error ? error.message : String(error))));

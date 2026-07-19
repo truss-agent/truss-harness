@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const packages = ["runtime", "provider-openai-compatible", "cli", "tui"];
+const packages = ["runtime", "mcp", "provider-openai-compatible", "cli", "tui"];
 
 async function removeTests(directory) {
   let entries;

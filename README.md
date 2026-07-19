@@ -2,7 +2,7 @@
 
 <p align="center"><img src="assets/brand/logo.svg" width="112" alt="Truss logo"></p>
 
-Truss is a local-first, provider-neutral runtime for coding agents. It currently ships a reusable runtime, native Ollama adapter, OpenAI-compatible local server adapter, CLI, terminal UI, VS Code client, and standalone desktop client.
+Truss is a local-first, provider-neutral runtime for coding agents. It currently ships a reusable runtime, MCP stdio adapter, native Ollama adapter, OpenAI-compatible local server adapter, CLI, terminal UI, VS Code client, and standalone desktop client.
 
 The project is in active development. The recommended way to use it today is from this repository against a local model server.
 
@@ -65,6 +65,7 @@ Publish packages in dependency order:
 ```sh
 npm publish --workspace @truss-harness/branding --access public
 npm publish --workspace @truss-harness/runtime --access public
+npm publish --workspace @truss-harness/mcp --access public
 npm publish --workspace @truss-harness/provider-openai-compatible --access public
 npm publish --workspace @truss-harness/cli --access public
 npm publish --workspace @truss-harness/tui --access public
@@ -268,6 +269,7 @@ Optional environment variables:
 | `TRUSS_HARNESS_MODEL`         | Required model name or ID.                             |
 | `TRUSS_HARNESS_API_KEY`       | Optional token for a protected local endpoint.         |
 | `TRUSS_HARNESS_SYSTEM_PROMPT` | Optional system prompt.                                |
+| `TRUSS_HARNESS_MCP_SERVERS`   | Optional JSON object containing local MCP servers.     |
 
 ### Configuration Files and Profiles
 
@@ -305,7 +307,7 @@ Example `.truss-harness/config.json`:
 }
 ```
 
-Available profile fields are `provider`, `baseUrl`, `model`, `mode`, `permission`, `internetAccess`, `systemPrompt`, and `apiKeyEnv`. Internet research is disabled by default. Put endpoint tokens in environment variables, then reference their names with `apiKeyEnv`; do not put secrets directly in configuration files.
+Available profile fields are `provider`, `baseUrl`, `model`, `mode`, `permission`, `internetAccess`, `systemPrompt`, `apiKeyEnv`, and `mcpServers`. Internet research is disabled by default. Put endpoint tokens in environment variables, then reference their names with `apiKeyEnv`; do not put secrets directly in configuration files.
 
 Settings are resolved in this order, from highest to lowest precedence:
 
@@ -324,6 +326,30 @@ node packages\cli\dist\bin.js chat --profile lm-studio-fast --mode edit "Update 
 
 The full-screen TUI resolves the same files when it starts. The VS Code panel keeps its endpoint, model, mode, and permission selections in VS Code workspace state.
 
+### MCP Servers
+
+Truss can connect to local Model Context Protocol servers over stdio and register their tools with the provider-neutral runtime:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+      "cwd": ".",
+      "enabled": true,
+      "readOnly": true
+    }
+  }
+}
+```
+
+Put this object in the shared CLI/TUI configuration or in **MCP servers (JSON)** under the desktop or VS Code settings. Chat mode does not load MCP tools. Plan mode loads only servers marked `readOnly`; Agent mode loads every enabled server. MCP calls prompt under Ask and Auto-allow read-only, while Auto-allow all permits them without prompting.
+
+MCP definitions in user configuration load normally. Workspace configuration can launch local processes, so its MCP definitions are ignored by default. To trust them, set `"allowWorkspaceMcpServers": true` in the user configuration printed by `truss-cli config path`. A workspace cannot grant this permission to itself.
+
+The current implementation supports MCP tool discovery and invocation over local stdio. Streamable HTTP, OAuth, resources, and prompts are not included yet. See the production documentation at `/docs/runtime/mcp`.
+
 ### Desktop Client
 
 The Electron desktop client provides a standalone workspace with a file tree, editor and Git diff preview, terminal pane, persistent chat history, model controls, tool approvals, and the same local-first runtime used by the other clients.
@@ -332,7 +358,7 @@ The Electron desktop client provides a standalone workspace with a file tree, ed
 npm.cmd run desktop:dev
 ```
 
-Open a workspace, configure a local endpoint in **Settings**, and select a model. The collapsible **Git** section above Files supports status, individual stage/unstage, stage all, commit messages, pull, and push. The renderer has no Node access; filesystem, terminal, Git, and runtime operations are handled through a narrow IPC bridge in the Electron main process.
+Open a workspace, configure a local endpoint in **Settings**, and select a model. The same dialog accepts MCP server JSON and displays connection status after applying it. The collapsible **Git** section above Files supports status, individual stage/unstage, stage all, commit messages, pull, and push. The renderer has no Node access; filesystem, terminal, Git, and runtime operations are handled through a narrow IPC bridge in the Electron main process.
 
 Desktop release commands:
 
@@ -413,7 +439,7 @@ repository secrets; Windows code signing can be configured later.
 4. In the Extension Development Host, select the **Truss** Activity Bar icon.
 5. Open **Model**, select a detected server or enter a custom endpoint, refresh the model list, choose a model, and select **Use model**.
 
-The side panel provides chat, model configuration, tool approval controls, generation cancellation, new conversations, and commit-message generation. Inline completions are registered for editor documents; accept a returned suggestion with the normal VS Code inline-completion key binding, typically Tab.
+The side panel provides chat, model and MCP configuration, MCP connection diagnostics, tool approval controls, generation cancellation, new conversations, and commit-message generation. Inline completions are registered for editor documents; accept a returned suggestion with the normal VS Code inline-completion key binding, typically Tab.
 
 Use the mode selector in the panel to control what the model can do:
 

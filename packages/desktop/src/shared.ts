@@ -10,6 +10,7 @@ export interface DesktopConfiguration {
   readonly permission: DesktopPermission;
   readonly contextWindow: number;
   readonly internetAccess: boolean;
+  readonly mcpServers: McpServerConfigurations;
 }
 
 export interface DesktopMessage {
@@ -62,6 +63,7 @@ export interface DesktopState {
   readonly configuration?: DesktopConfiguration;
   readonly conversations: readonly DesktopConversation[];
   readonly activeConversationId?: string;
+  readonly mcpStatuses?: readonly McpServerStatus[];
 }
 
 export type DesktopEvent =
@@ -100,3 +102,4 @@ export interface DesktopBridge {
   onEvent(listener: (event: DesktopEvent) => void): () => void;
 }
 import type { WorkspacePlan } from "@truss-harness/runtime";
+import type { McpServerConfigurations, McpServerStatus } from "@truss-harness/mcp";

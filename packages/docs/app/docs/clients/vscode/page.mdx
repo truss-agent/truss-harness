@@ -57,3 +57,7 @@ When Internet research is enabled, `web_search` and `web_fetch` are available in
 ## Workspace commands
 
 The chat composer accepts `/init`, `/update [note]`, `/status`, `/clear-memory`, and `/help`. These run locally, so they work without a configured model. Use the **Help** button in the side panel to display them, or run the matching **<Brand />** actions from the Command Palette.
+
+## MCP servers
+
+Enter an `mcpServers` JSON object in the panel's **MCP servers (JSON)** setting. Applying settings restarts the external runtime on the next request and displays server connection diagnostics in the panel. Plan mode loads only servers marked `readOnly`; Agent mode loads every enabled server. See [MCP Servers](/docs/runtime/mcp).

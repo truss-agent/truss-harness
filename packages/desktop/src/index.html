@@ -68,6 +68,8 @@
       <label>Context window<input id="contextInput" type="number" min="512" max="1000000" step="512"></label>
       <label>Tool permissions<select id="permissionSelect"><option value="ask">Ask every time</option><option value="auto-read">Auto-allow read-only</option><option value="auto-all">Auto-allow all tools</option></select></label>
       <label class="checkbox-setting"><input id="internetAccessInput" type="checkbox"><span>Allow public internet research</span></label>
+      <label class="mcp-setting">MCP servers (JSON)<textarea id="mcpServersInput" rows="8" spellcheck="false" placeholder='{"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]}}'></textarea></label>
+      <div id="mcpStatus" class="mcp-status">No MCP servers configured.</div>
       <div class="dialog-actions"><button id="dialogRefresh" type="button">Refresh</button><button id="applySettings" class="primary" value="default">Apply</button></div>
     </form>
   </dialog>

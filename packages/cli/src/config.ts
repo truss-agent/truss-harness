@@ -2,6 +2,7 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { brand } from "@truss-harness/branding";
+import { parseMcpServerConfigurations, type McpServerConfigurations } from "@truss-harness/mcp";
 import { detectActiveLocalModel, type LocalEndpointKind } from "@truss-harness/provider-openai-compatible";
 import type { AgentMode, ClientConfiguration } from "./runtime.js";
 import type { PermissionMode } from "./protocol.js";
@@ -16,11 +17,14 @@ export interface ProfileConfiguration {
   readonly systemPrompt?: string;
   /** Name of an environment variable containing a local endpoint token. */
   readonly apiKeyEnv?: string;
+  readonly mcpServers?: McpServerConfigurations;
 }
 
 export interface HarnessConfiguration extends ProfileConfiguration {
   readonly defaultProfile?: string;
   readonly profiles?: Readonly<Record<string, ProfileConfiguration>>;
+  /** User-level opt-in for executable MCP definitions from workspace configuration. */
+  readonly allowWorkspaceMcpServers?: boolean;
 }
 
 export interface ConfigurationOverrides extends ProfileConfiguration {
@@ -65,7 +69,8 @@ function parseProfile(value: unknown): ProfileConfiguration {
     permission: validPermission(source.permission),
     internetAccess: typeof source.internetAccess === "boolean" ? source.internetAccess : undefined,
     systemPrompt: typeof source.systemPrompt === "string" ? source.systemPrompt : undefined,
-    apiKeyEnv: typeof source.apiKeyEnv === "string" ? source.apiKeyEnv : undefined
+    apiKeyEnv: typeof source.apiKeyEnv === "string" ? source.apiKeyEnv : undefined,
+    mcpServers: source.mcpServers === undefined ? undefined : parseMcpServerConfigurations(source.mcpServers)
   };
 }
 
@@ -76,7 +81,12 @@ function parseConfiguration(value: unknown): HarnessConfiguration {
   const profiles = profilesSource
     ? Object.fromEntries(Object.entries(profilesSource).map(([name, profile]) => [name, parseProfile(profile)]))
     : undefined;
-  return { ...parseProfile(source), defaultProfile: typeof source.defaultProfile === "string" ? source.defaultProfile : undefined, profiles };
+  return {
+    ...parseProfile(source),
+    defaultProfile: typeof source.defaultProfile === "string" ? source.defaultProfile : undefined,
+    profiles,
+    allowWorkspaceMcpServers: source.allowWorkspaceMcpServers === true
+  };
 }
 
 async function readConfiguration(path: string): Promise<HarnessConfiguration> {
@@ -90,6 +100,14 @@ async function readConfiguration(path: string): Promise<HarnessConfiguration> {
 }
 
 function environmentConfiguration(environment: NodeJS.ProcessEnv): ProfileConfiguration {
+  let mcpServers: McpServerConfigurations | undefined;
+  if (environment.TRUSS_HARNESS_MCP_SERVERS) {
+    try {
+      mcpServers = parseMcpServerConfigurations(JSON.parse(environment.TRUSS_HARNESS_MCP_SERVERS) as unknown);
+    } catch (error) {
+      throw new Error(`TRUSS_HARNESS_MCP_SERVERS must contain valid MCP server JSON: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
   return {
     provider: validProvider(environment.TRUSS_HARNESS_PROVIDER),
     baseUrl: environment.TRUSS_HARNESS_BASE_URL,
@@ -100,7 +118,8 @@ function environmentConfiguration(environment: NodeJS.ProcessEnv): ProfileConfig
       ? undefined
       : environment.TRUSS_HARNESS_INTERNET_ACCESS === "true" || environment.TRUSS_HARNESS_INTERNET_ACCESS === "1",
     systemPrompt: environment.TRUSS_HARNESS_SYSTEM_PROMPT,
-    apiKeyEnv: environment.TRUSS_HARNESS_API_KEY ? "TRUSS_HARNESS_API_KEY" : undefined
+    apiKeyEnv: environment.TRUSS_HARNESS_API_KEY ? "TRUSS_HARNESS_API_KEY" : undefined,
+    mcpServers
   };
 }
 
@@ -126,14 +145,23 @@ export async function resolveConfiguration(options: {
   const profile = options.overrides?.profile ?? workspace.defaultProfile ?? user.defaultProfile ?? environment.TRUSS_HARNESS_PROFILE;
   const userProfile = profile ? user.profiles?.[profile] : undefined;
   const workspaceProfile = profile ? workspace.profiles?.[profile] : undefined;
+  const environmentProfile = environmentConfiguration(environment);
   const merged = {
-    ...environmentConfiguration(environment),
+    ...environmentProfile,
     ...user,
     ...userProfile,
     ...workspace,
     ...workspaceProfile,
     ...options.overrides
   };
+  const workspaceMcpServers = user.allowWorkspaceMcpServers
+    ? workspaceProfile?.mcpServers ?? workspace.mcpServers
+    : undefined;
+  const mcpServers = options.overrides?.mcpServers
+    ?? workspaceMcpServers
+    ?? userProfile?.mcpServers
+    ?? user.mcpServers
+    ?? environmentProfile.mcpServers;
   let provider = merged.provider ?? "ollama";
   let baseUrl = merged.baseUrl;
   let model = merged.model;
@@ -164,6 +192,7 @@ export async function resolveConfiguration(options: {
     internetAccess: merged.internetAccess ?? false,
     apiKey,
     systemPrompt: merged.systemPrompt,
+    mcpServers,
     profile,
     paths
   };
@@ -194,6 +223,14 @@ export async function initializeWorkspaceConfiguration(workspaceRoot: string, pa
         model: "local-model-id",
         mode: "plan",
         permission: "auto-read"
+      }
+    },
+    mcpServers: {
+      filesystem: {
+        enabled: false,
+        command: "npx",
+        args: ["-y", "@modelcontextprotocol/server-filesystem", "."],
+        readOnly: false
       }
     }
   }, null, 2)}\n`, "utf8");

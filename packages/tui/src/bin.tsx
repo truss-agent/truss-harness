@@ -151,7 +151,7 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
   const [viewport, setViewport] = useState(() => ({ columns: process.stdout.columns || 120, rows: process.stdout.rows || 36 }));
   const workspaceRoot = useMemo(() => cwd(), []);
   const [configuration, setConfiguration] = useState<ClientConfiguration | undefined>(initialConfiguration);
-  const [client, setClient] = useState<ReturnType<typeof createClientRuntime> | undefined>();
+  const [client, setClient] = useState<Awaited<ReturnType<typeof createClientRuntime>> | undefined>();
   const [sessionId, setSessionId] = useState<string>();
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [fileIndex, setFileIndex] = useState(0);
@@ -294,7 +294,7 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
 
   useEffect(() => {
     if (!client) return;
-    return client.events.subscribe((event) => {
+    const unsubscribe = client.events.subscribe((event) => {
       if (event.type === "text_delta") {
         setRunStatus("thinking");
         setChatScroll(0);
@@ -321,6 +321,10 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
         appendTerminal(`[agent error] ${event.error.message}`);
       }
     });
+    return () => {
+      unsubscribe();
+      void client.dispose();
+    };
   }, [client]);
 
   const loadFile = async (entry: FileEntry): Promise<void> => {
@@ -378,7 +382,7 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
       setIsDiff(true);
     }
   };
-  const configureRuntime = (): void => {
+  const configureRuntime = async (): Promise<void> => {
     if (!endpointInput.trim() || !modelInput.trim()) {
       appendTerminal("[configuration] An endpoint and model are required.");
       return;
@@ -406,16 +410,28 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
       } satisfies ToolApproval
     };
     setConfiguration(nextConfiguration);
-    setClient(createClientRuntime(nextConfiguration));
+    setRunStatus("thinking");
+    try {
+      const nextClient = await createClientRuntime(nextConfiguration);
+      setClient(nextClient);
+      for (const server of nextClient.mcpServers) {
+        appendTerminal(`[mcp] ${server.name}: ${server.state}${server.error ? ` (${server.error})` : ` (${server.toolCount} tools)`}`);
+      }
+    } catch (error) {
+      appendTerminal(`[mcp] Unable to configure runtime: ${error instanceof Error ? error.message : String(error)}`);
+      setRunStatus("ready");
+      return;
+    }
     setSessionId(undefined);
     setChat([]);
     setChatScroll(0);
     setStreamMetrics({ startedAt: 0, generatedTokens: 0 });
     setScreen("workspace");
     appendTerminal(`[configuration] ${nextConfiguration.provider} ${nextConfiguration.model} at ${nextConfiguration.baseUrl}`);
+    setRunStatus("ready");
   };
   useEffect(() => {
-    if (initialConfiguration && !client) configureRuntime();
+    if (initialConfiguration && !client) void configureRuntime();
   }, []);
   const openFileContext = async (): Promise<readonly ContextBlock[]> => {
     if (!openFilePath) return [];
@@ -583,10 +599,10 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
       }
       if (settingsField === "internet") {
         if (input === " " || key.leftArrow || key.rightArrow) setInternetAccess((current) => !current);
-        if (key.return && endpointInput && modelInput) configureRuntime();
+        if (key.return && endpointInput && modelInput) void configureRuntime();
         return;
       }
-      if (key.return && endpointInput && modelInput) { configureRuntime(); return; }
+      if (key.return && endpointInput && modelInput) { void configureRuntime(); return; }
       const setter = settingsField === "endpoint" ? setEndpointInput : setModelInput;
       if (key.backspace || key.delete) setter((current) => current.slice(0, -1));
       else if (!key.return && input) setter((current) => current + input);

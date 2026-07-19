@@ -42,4 +42,44 @@ describe("resolveConfiguration", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("ignores workspace MCP commands until the user explicitly trusts them", async () => {
+    const root = join(process.cwd(), ".test-workspaces", randomUUID());
+    const paths = { user: join(root, "user.json"), workspace: join(root, "workspace.json") };
+    await mkdir(root, { recursive: true });
+    try {
+      await writeFile(paths.user, JSON.stringify({
+        model: "test-model",
+        mcpServers: { user: { command: "user-server" } }
+      }));
+      await writeFile(paths.workspace, JSON.stringify({
+        mcpServers: { workspace: { command: "workspace-server" } }
+      }));
+
+      const untrusted = await resolveConfiguration({
+        workspaceRoot: root,
+        paths,
+        environment: {}
+      });
+      expect(untrusted.mcpServers).toEqual({
+        user: { command: "user-server", enabled: true, readOnly: false }
+      });
+
+      await writeFile(paths.user, JSON.stringify({
+        model: "test-model",
+        allowWorkspaceMcpServers: true,
+        mcpServers: { user: { command: "user-server" } }
+      }));
+      const trusted = await resolveConfiguration({
+        workspaceRoot: root,
+        paths,
+        environment: {}
+      });
+      expect(trusted.mcpServers).toEqual({
+        workspace: { command: "workspace-server", enabled: true, readOnly: false }
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

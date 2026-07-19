@@ -12,6 +12,14 @@ const execFile = promisify(execFileCallback);
 
 type AgentMode = "chat" | "plan" | "edit";
 type PermissionMode = "ask" | "auto-read" | "auto-all";
+type McpServerConfigurations = Readonly<Record<string, {
+  readonly command: string;
+  readonly args?: readonly string[];
+  readonly cwd?: string;
+  readonly env?: Readonly<Record<string, string>>;
+  readonly enabled?: boolean;
+  readonly readOnly?: boolean;
+}>>;
 
 interface ModelConfiguration {
   readonly provider: LocalEndpointKind;
@@ -21,6 +29,7 @@ interface ModelConfiguration {
   readonly permission: PermissionMode;
   readonly contextWindow: number;
   readonly internetAccess: boolean;
+  readonly mcpServers: McpServerConfigurations;
 }
 
 interface ServiceEvent {
@@ -84,10 +93,11 @@ class RuntimeService implements vscode.Disposable {
   private readonly reader;
   private requestSequence = 0;
 
-  constructor(command: string, commandArguments: readonly string[], cwd: string, environment: NodeJS.ProcessEnv, private readonly onEvent: (event: ServiceEvent) => void) {
+  constructor(command: string, commandArguments: readonly string[], cwd: string, environment: NodeJS.ProcessEnv, private readonly onEvent: (event: ServiceEvent) => void, onDiagnostic: (text: string) => void) {
     this.process = spawn(command, [...commandArguments, "serve"], { cwd, env: environment, windowsHide: true });
     this.reader = createInterface({ input: this.process.stdout, crlfDelay: Infinity });
     this.reader.on("line", (line) => this.handleMessage(line));
+    this.process.stderr.on("data", (data: Buffer) => onDiagnostic(data.toString()));
     this.process.on("error", (error) => this.failAll(error));
     this.process.on("exit", (code) => this.failAll(new Error(`Truss service exited with code ${code ?? "unknown"}.`)));
   }
@@ -167,7 +177,8 @@ const defaultConfiguration: ModelConfiguration = {
   mode: "chat",
   permission: "ask",
   contextWindow: 8_192,
-  internetAccess: false
+  internetAccess: false,
+  mcpServers: {}
 };
 
 const maxStoredConversations = 12;
@@ -274,7 +285,7 @@ function localEndpoint(configuration: ModelConfiguration): LocalModelEndpoint {
   return { id: "configured", label: "Configured endpoint", kind: configuration.provider, baseUrl: configuration.baseUrl };
 }
 
-function isConfiguration(value: unknown): value is Omit<ModelConfiguration, "mode" | "permission" | "contextWindow" | "internetAccess"> & Partial<Pick<ModelConfiguration, "mode" | "permission" | "contextWindow" | "internetAccess">> {
+function isConfiguration(value: unknown): value is Omit<ModelConfiguration, "mode" | "permission" | "contextWindow" | "internetAccess" | "mcpServers"> & Partial<Pick<ModelConfiguration, "mode" | "permission" | "contextWindow" | "internetAccess" | "mcpServers">> {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<ModelConfiguration>;
   return (candidate.provider === "ollama" || candidate.provider === "openai-compatible")
@@ -293,8 +304,33 @@ function normalizeConfiguration(value: unknown): ModelConfiguration {
     contextWindow: typeof value.contextWindow === "number" && Number.isFinite(value.contextWindow)
       ? Math.max(512, Math.min(1_000_000, Math.floor(value.contextWindow)))
       : defaultConfiguration.contextWindow,
-    internetAccess: value.internetAccess === true
+    internetAccess: value.internetAccess === true,
+    mcpServers: normalizeMcpServers(value.mcpServers)
   };
+}
+
+function normalizeMcpServers(value: unknown): McpServerConfigurations {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return Object.fromEntries(Object.entries(value).flatMap(([name, item]) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const source = item as Record<string, unknown>;
+    if (typeof source.command !== "string" || !source.command.trim()) return [];
+    const args = Array.isArray(source.args) && source.args.every((argument) => typeof argument === "string")
+      ? source.args as string[]
+      : undefined;
+    const env = source.env && typeof source.env === "object" && !Array.isArray(source.env)
+      && Object.values(source.env).every((entry) => typeof entry === "string")
+      ? source.env as Record<string, string>
+      : undefined;
+    return [[name, {
+      command: source.command,
+      args,
+      cwd: typeof source.cwd === "string" ? source.cwd : undefined,
+      env,
+      enabled: source.enabled !== false,
+      readOnly: source.readOnly === true
+    }]];
+  }));
 }
 
 function normalizeCommitMessage(value: string): string {
@@ -341,7 +377,8 @@ export function activate(context: vscode.ExtensionContext): void {
       TRUSS_HARNESS_MODEL: configuration.model,
       TRUSS_HARNESS_AGENT_MODE: configuration.mode,
       TRUSS_HARNESS_PERMISSION_MODE: configuration.permission,
-      TRUSS_HARNESS_INTERNET_ACCESS: configuration.internetAccess ? "true" : "false"
+      TRUSS_HARNESS_INTERNET_ACCESS: configuration.internetAccess ? "true" : "false",
+      TRUSS_HARNESS_MCP_SERVERS: JSON.stringify(configuration.mcpServers)
     }, (message) => {
       if (message.event.type === "plan_updated" && message.event.plan) post({ type: "plan", plan: message.event.plan });
       if (message.requestId === activeChatRequest) {
@@ -358,6 +395,11 @@ export function activate(context: vscode.ExtensionContext): void {
       const buffer = inlineBuffers.get(message.requestId);
       if (buffer !== undefined && message.event.type === "text_delta") {
         inlineBuffers.set(message.requestId, buffer + (message.event.text ?? ""));
+      }
+    }, (text) => {
+      output.append(text);
+      for (const line of text.split(/\r?\n/).filter((item) => item.startsWith("[mcp]"))) {
+        post({ type: "mcpDiagnostic", message: line.replace(/^\[mcp\]\s*/, "") });
       }
     });
     context.subscriptions.push(service);
@@ -664,7 +706,7 @@ function webviewHtml(webview: vscode.Webview): string {
   header { flex: 0 0 auto; padding: 11px 10px 9px; border-bottom: 1px solid var(--vscode-panel-border); display: grid; gap: 9px; background: var(--vscode-sideBar-background); } .brand-row, .actions, .segmented { display: flex; align-items: center; gap: 5px; min-width: 0; } .brand { font-weight: 700; letter-spacing: .2px; white-space: nowrap; margin-right: auto; } #modelStatus { color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } 
   .segmented { padding: 2px; border: 1px solid var(--vscode-panel-border); border-radius: 5px; } .segmented button { border: 0; background: transparent; min-height: 24px; padding: 3px 7px; } .segmented button.active { background: var(--vscode-button-background); color: var(--vscode-button-foreground); box-shadow: inset 0 0 0 1px var(--vscode-focusBorder); }
   #telemetry { display: grid; grid-template-columns: minmax(130px, 1fr) auto; align-items: center; gap: 10px; min-width: 0; color: var(--vscode-descriptionForeground); font-size: 11px; } .telemetry-context { min-width: 0; display: grid; grid-template-columns: auto minmax(52px, 1fr); gap: 5px 7px; align-items: center; } .telemetry-label { color: var(--vscode-descriptionForeground); font-size: 10px; font-weight: 700; letter-spacing: .35px; } #contextValue, #rateValue { color: var(--vscode-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; } .meter { height: 4px; min-width: 0; overflow: hidden; background: var(--vscode-progressBar-background); border-radius: 999px; } .meter > span { display: block; width: 0; height: 100%; background: var(--vscode-progressBar-background, var(--vscode-focusBorder)); border-radius: inherit; transition: width 120ms linear, background-color 120ms linear; } .meter > span.active { background: var(--vscode-focusBorder); } .meter > span.warning { background: var(--vscode-editorWarning-foreground); } .meter > span.critical { background: var(--vscode-editorError-foreground); }
-  #settings { display: none; flex: 0 1 auto; max-height: 38vh; overflow: auto; padding: 10px; gap: 8px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); } #settings.open { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); } label { min-width: 0; display: grid; gap: 4px; color: var(--vscode-descriptionForeground); font-size: 11px; } input, select { width: 100%; min-width: 0; padding: 5px 6px; } #settings .actions { align-self: end; }
+  #settings { display: none; flex: 0 1 auto; max-height: 52vh; overflow: auto; padding: 10px; gap: 8px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); } #settings.open { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); } label { min-width: 0; display: grid; gap: 4px; color: var(--vscode-descriptionForeground); font-size: 11px; } input, select { width: 100%; min-width: 0; padding: 5px 6px; } #settings .actions { align-self: end; } .mcp-setting, #mcpStatus { grid-column: 1 / -1; } .mcp-setting textarea { min-height: 96px; max-height: 180px; resize: vertical; font-family: var(--vscode-editor-font-family); font-size: 11px; line-height: 1.45; } #mcpStatus { color: var(--vscode-descriptionForeground); font-size: 11px; overflow-wrap: anywhere; }
   #workspace { flex: 1 1 0; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(118px, 30%) minmax(0, 1fr); } #history { min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; border-right: 1px solid var(--vscode-panel-border); padding: 7px; } .history-title { color: var(--vscode-descriptionForeground); font-size: 11px; text-transform: uppercase; margin: 2px 3px 7px; } .conversation-row { display: grid; grid-template-columns: minmax(0, 1fr) 24px; align-items: center; margin-bottom: 2px; } .conversation { display: block; width: 100%; text-align: left; background: transparent; border: 0; border-radius: 3px; padding: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .conversation.active { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); } .delete-conversation { min-height: 24px; padding: 0; border: 0; background: transparent; color: var(--vscode-descriptionForeground); } .delete-conversation:hover { color: var(--vscode-errorForeground); background: var(--vscode-list-hoverBackground); }
   #chat { min-width: 0; min-height: 0; height: 100%; padding: 12px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 12px; } .plan { display: grid; gap: 4px; padding: 8px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; background: var(--vscode-textBlockQuote-background); font-size: 12px; } .plan strong { overflow-wrap: anywhere; } .plan-step { overflow-wrap: anywhere; color: var(--vscode-descriptionForeground); } .plan-step.in_progress { color: var(--vscode-editorWarning-foreground); } .plan-step.completed { color: var(--vscode-terminal-ansiGreen); text-decoration: line-through; } .empty { color: var(--vscode-descriptionForeground); line-height: 1.5; margin: auto 0; } .message { white-space: pre-wrap; line-height: 1.5; overflow-wrap: anywhere; } .message-header { color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 700; margin-bottom: 3px; } .message.user { padding-left: 8px; border-left: 2px solid var(--vscode-focusBorder); } .message.assistant { padding-left: 8px; border-left: 2px solid var(--vscode-terminal-ansiGreen); } .tool { padding: 7px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-textBlockQuote-background); border-radius: 4px; color: var(--vscode-descriptionForeground); } .tool button { margin: 6px 4px 0 0; }
   #composer { flex: 0 0 auto; min-width: 0; min-height: 0; position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 6px; padding: 9px 10px 6px; border-top: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); box-shadow: 0 -3px 10px color-mix(in srgb, var(--vscode-sideBar-background) 78%, transparent); } textarea { min-height: 36px; max-height: 120px; resize: vertical; padding: 7px; } #stop { display: none; } body.streaming #stop { display: inline-block; } body.streaming #send { display: none; } #agentControls { flex: 0 0 auto; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; align-items: center; padding: 0 10px 9px; background: var(--vscode-sideBar-background); } .quick-model { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 5px; } .quick-model span { color: var(--vscode-descriptionForeground); font-size: 10px; font-weight: 700; letter-spacing: .35px; } #quickModel { min-width: 0; height: 28px; padding: 3px 6px; }
@@ -672,13 +714,13 @@ function webviewHtml(webview: vscode.Webview): string {
   @media (max-width: 700px) { #settings.open { grid-template-columns: repeat(2, minmax(0, 1fr)); } } @media (max-width: 560px) { header { padding: 8px; } .brand-row { flex-wrap: wrap; } #telemetry { width: 100%; } #workspace { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } #history { display: flex; gap: 4px; overflow-x: auto; overflow-y: hidden; padding: 5px; border-right: 0; border-bottom: 1px solid var(--vscode-panel-border); } .history-title { display: none; } .conversation-row { display: flex; min-width: 122px; } .conversation { width: auto; min-width: 96px; } #settings.open { grid-template-columns: 1fr; } #composer { grid-template-columns: minmax(0, 1fr) auto; } #stop, #send { grid-column: 2; } #agentControls { grid-template-columns: 1fr; } .quick-model { grid-template-columns: auto minmax(0, 1fr); } }
 </style></head><body>
 <header><div class="brand-row"><span class="brand">${brand.productName}</span><button id="new" title="New conversation">New</button><button id="help" title="Show local workspace commands">Help</button><button id="settingsButton" title="Model and agent settings">Settings</button></div><div id="telemetry"><div class="telemetry-context" title="Estimated from the active conversation. Local model servers do not consistently report prompt-token usage."><span class="telemetry-label">CONTEXT</span><span id="contextValue">0 / 8.2k</span><div class="meter"><span id="contextMeter"></span></div></div><div title="Estimated from streamed response text"><span class="telemetry-label">SPEED </span><span id="rateValue">-- tok/s</span></div></div></header>
-<section id="settings"><label>Detected server<select id="server"><option value="">Custom / manual</option></select></label><label>Provider<select id="provider"><option value="ollama">Ollama</option><option value="openai-compatible">Compatible API</option></select></label><label>Endpoint<input id="endpoint" placeholder="http://127.0.0.1:11434"></label><label>Model<input id="model" list="models" placeholder="Refresh to discover models"><datalist id="models"></datalist></label><label>Context window<input id="contextWindow" type="number" min="512" max="1000000" step="512" value="8192"></label><label>Tool permissions<select id="permission"><option value="ask">Ask every time</option><option value="auto-read">Auto-allow read-only</option><option value="auto-all">Auto-allow all tools</option></select></label><label>Internet research<select id="internetAccess"><option value="false">Disabled</option><option value="true">Enabled</option></select></label><div class="actions"><button id="refresh">Refresh</button><button id="apply" class="primary">Apply</button></div></section>
+<section id="settings"><label>Detected server<select id="server"><option value="">Custom / manual</option></select></label><label>Provider<select id="provider"><option value="ollama">Ollama</option><option value="openai-compatible">Compatible API</option></select></label><label>Endpoint<input id="endpoint" placeholder="http://127.0.0.1:11434"></label><label>Model<input id="model" list="models" placeholder="Refresh to discover models"><datalist id="models"></datalist></label><label>Context window<input id="contextWindow" type="number" min="512" max="1000000" step="512" value="8192"></label><label>Tool permissions<select id="permission"><option value="ask">Ask every time</option><option value="auto-read">Auto-allow read-only</option><option value="auto-all">Auto-allow all tools</option></select></label><label>Internet research<select id="internetAccess"><option value="false">Disabled</option><option value="true">Enabled</option></select></label><label class="mcp-setting">MCP servers (JSON)<textarea id="mcpServers" rows="7" spellcheck="false" placeholder='{"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]}}'></textarea></label><div id="mcpStatus">No MCP servers configured.</div><div class="actions"><button id="refresh">Refresh</button><button id="apply" class="primary">Apply</button></div></section>
 <main id="workspace"><aside id="history"><div class="history-title">Conversations</div></aside><section id="chat"><div class="empty">Select a local model in Settings, then ask about the workspace. Use Plan for read-only investigation and Agent when you want the agent to change files or run commands.</div></section></main>
 <form id="composer"><div id="slashMenu" role="listbox" hidden></div><textarea id="prompt" placeholder="Ask about this workspace. Type / to attach a file." rows="2"></textarea><button id="stop" type="button">Cancel</button><button id="send" class="primary" type="submit">Send</button></form>
 <section id="agentControls" aria-label="Agent controls"><div class="segmented" aria-label="Agent mode"><button data-mode="chat">Chat</button><button data-mode="plan">Plan</button><button data-mode="edit">Agent</button></div><label class="quick-model"><span>MODEL</span><select id="quickModel" title="Switch local model"></select></label><span id="modelStatus">Choose a local model</span></section>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi(); const state = vscode.getState() || { conversations: [], activeId: undefined }; const history = document.getElementById('history'); const chat = document.getElementById('chat'); const settings = document.getElementById('settings'); const status = document.getElementById('modelStatus'); let persistTimer; let activePlan;
-  const server = document.getElementById('server'); const provider = document.getElementById('provider'); const endpoint = document.getElementById('endpoint'); const model = document.getElementById('model'); const modelOptions = document.getElementById('models'); const quickModel = document.getElementById('quickModel'); const permission = document.getElementById('permission'); const internetAccess = document.getElementById('internetAccess'); const contextWindow = document.getElementById('contextWindow'); const contextValue = document.getElementById('contextValue'); const contextMeter = document.getElementById('contextMeter'); const rateValue = document.getElementById('rateValue'); const prompt = document.getElementById('prompt'); const slashMenu = document.getElementById('slashMenu'); let configuration; let streamStartedAt = 0; let generatedTokens = 0; let workspaceFiles = []; let slashResults = []; let slashIndex = 0;
+  const server = document.getElementById('server'); const provider = document.getElementById('provider'); const endpoint = document.getElementById('endpoint'); const model = document.getElementById('model'); const modelOptions = document.getElementById('models'); const quickModel = document.getElementById('quickModel'); const permission = document.getElementById('permission'); const internetAccess = document.getElementById('internetAccess'); const contextWindow = document.getElementById('contextWindow'); const contextValue = document.getElementById('contextValue'); const contextMeter = document.getElementById('contextMeter'); const rateValue = document.getElementById('rateValue'); const mcpServers = document.getElementById('mcpServers'); const mcpStatus = document.getElementById('mcpStatus'); const prompt = document.getElementById('prompt'); const slashMenu = document.getElementById('slashMenu'); let configuration; let streamStartedAt = 0; let generatedTokens = 0; let workspaceFiles = []; let slashResults = []; let slashIndex = 0;
   const persist = () => { vscode.setState(state); clearTimeout(persistTimer); persistTimer = setTimeout(() => vscode.postMessage({ type: 'saveConversations', state: { conversations: state.conversations, activeId: state.activeId } }), 250); }; const active = () => state.conversations.find((item) => item.id === state.activeId); const byId = (conversationId) => state.conversations.find((item) => item.id === conversationId); const id = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const addConversation = () => { const conversation = { id: id(), title: 'New conversation', messages: [], updatedAt: new Date().toISOString() }; state.conversations.unshift(conversation); state.activeId = conversation.id; persist(); return conversation; };
   const current = () => active() || addConversation();
@@ -695,7 +737,8 @@ function webviewHtml(webview: vscode.Webview): string {
   const planView = () => { if (!activePlan) return undefined; const view = document.createElement('section'); view.className = 'plan'; const title = document.createElement('strong'); title.textContent = activePlan.title; view.append(title); activePlan.steps.forEach((step) => { const row = document.createElement('div'); row.className = 'plan-step ' + step.status; row.textContent = (step.status === 'completed' ? '[x] ' : step.status === 'in_progress' ? '[..] ' : '[ ] ') + step.content; view.append(row); }); return view; };
   const renderChat = () => { chat.replaceChildren(); const plan = planView(); if (plan) chat.append(plan); const conversation = active(); if (!conversation || !conversation.messages.length) { const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = 'Select a local model in Settings, then ask about the workspace. Use Plan for read-only investigation and Agent when you want the agent to change files or run commands.'; chat.append(empty); renderTelemetry(); return; } conversation.messages.forEach((item) => { const view = message(item.role, item.content); chat.append(view.element); }); chat.scrollTop = chat.scrollHeight; renderTelemetry(); };
   const addMessage = (role, content) => { const conversation = current(); conversation.messages.push({ role, content }); conversation.updatedAt = new Date().toISOString(); if (role === 'user' && conversation.title === 'New conversation') conversation.title = content.replace(/\s+/g, ' ').slice(0, 32) || conversation.title; persist(); renderHistory(); renderChat(); return conversation.messages.length - 1; };
-  const configurationValue = () => ({ provider: provider.value, baseUrl: endpoint.value.trim(), model: model.value.trim(), mode: configuration ? configuration.mode : 'chat', permission: permission.value, contextWindow: configuredContextWindow(), internetAccess: internetAccess.value === 'true' });
+  const parsedMcpServers = () => { const source = mcpServers.value.trim(); if (!source) return {}; const parsed = JSON.parse(source); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('MCP servers must be a JSON object.'); for (const [name, server] of Object.entries(parsed)) { if (!server || typeof server !== 'object' || typeof server.command !== 'string' || !server.command.trim()) throw new Error('MCP server ' + name + ' needs a command.'); } return parsed; };
+  const configurationValue = () => ({ provider: provider.value, baseUrl: endpoint.value.trim(), model: model.value.trim(), mode: configuration ? configuration.mode : 'chat', permission: permission.value, contextWindow: configuredContextWindow(), internetAccess: internetAccess.value === 'true', mcpServers: parsedMcpServers() });
   const postConfigure = () => vscode.postMessage({ type: 'configure', configuration: configurationValue() });
   const beginStream = () => { streamStartedAt = performance.now(); generatedTokens = 0; renderTelemetry(); };
   const slashQuery = () => { const beforeCursor = prompt.value.slice(0, prompt.selectionStart || prompt.value.length); const match = beforeCursor.match(/(?:^|\s)\/([^\s]*)$/); return match ? { start: beforeCursor.length - match[1].length - 1, query: match[1] } : undefined; };
@@ -705,7 +748,7 @@ function webviewHtml(webview: vscode.Webview): string {
   const attachedPaths = (text) => [...new Set([...text.matchAll(/(?:^|\s)\/([^\s]+)/g)].map((match) => match[1].replaceAll('\\', '/')).filter((path) => workspaceFiles.includes(path)))];
   const sendChat = (text) => { const conversation = current(); const history = conversation.messages.map((message) => ({ role: message.role, content: message.content })); addMessage('user', text); addMessage('assistant', ''); prompt.value = ''; slashMenu.hidden = true; beginStream(); document.body.classList.add('streaming'); vscode.postMessage({ type: 'send', prompt: text, conversationId: conversation.id, history, attachedPaths: attachedPaths(text) }); };
   document.getElementById('settingsButton').onclick = () => settings.classList.toggle('open'); document.getElementById('new').onclick = () => { addConversation(); renderHistory(); renderChat(); vscode.postMessage({ type: 'newConversation' }); }; document.getElementById('help').onclick = () => sendChat('/help');
-  document.getElementById('refresh').onclick = () => vscode.postMessage({ type: 'discover', configuration: configurationValue() }); document.getElementById('apply').onclick = postConfigure;
+  document.getElementById('refresh').onclick = () => { try { vscode.postMessage({ type: 'discover', configuration: configurationValue() }); } catch (error) { mcpStatus.textContent = error.message || String(error); } }; document.getElementById('apply').onclick = () => { try { mcpStatus.textContent = 'MCP connections restart when the agent runs.'; postConfigure(); } catch (error) { mcpStatus.textContent = error.message || String(error); } };
   contextWindow.oninput = renderTelemetry;
   const setMode = (mode) => { configuration = { ...(configuration || configurationValue()), mode }; document.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode)); postConfigure(); };
   document.querySelectorAll('[data-mode]').forEach((button) => button.onclick = () => setMode(button.dataset.mode));
@@ -717,7 +760,8 @@ function webviewHtml(webview: vscode.Webview): string {
   document.getElementById('stop').onclick = () => vscode.postMessage({ type: 'stop' });
   window.addEventListener('message', (event) => { const message = event.data;
     if (message.type === 'conversations') { state.conversations = message.state.conversations || []; state.activeId = message.state.activeId; vscode.setState(state); renderHistory(); renderChat(); }
-    if (message.type === 'state') { const next = message.state; configuration = next.configuration; provider.value = configuration.provider; endpoint.value = configuration.baseUrl; model.value = configuration.model; permission.value = configuration.permission; internetAccess.value = configuration.internetAccess ? 'true' : 'false'; contextWindow.value = configuration.contextWindow || 8192; modelOptions.replaceChildren(...next.models.map((name) => { const option = document.createElement('option'); option.value = name; return option; })); const quickModels = [...new Set([configuration.model, ...next.models].filter(Boolean))]; quickModel.replaceChildren(...quickModels.map((name) => { const option = document.createElement('option'); option.value = name; option.textContent = name; return option; })); quickModel.value = configuration.model; server.replaceChildren(...[{ label: 'Custom / manual', kind: '', baseUrl: '' }, ...next.endpoints].map((item) => { const option = document.createElement('option'); option.value = item.kind ? JSON.stringify(item) : ''; option.textContent = item.label + (item.baseUrl ? ' (' + item.baseUrl + ')' : ''); return option; })); document.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === configuration.mode)); status.textContent = configuration.model ? configuration.provider + ' / ' + configuration.model : 'Choose a local model'; renderTelemetry(); }
+    if (message.type === 'state') { const next = message.state; configuration = next.configuration; provider.value = configuration.provider; endpoint.value = configuration.baseUrl; model.value = configuration.model; permission.value = configuration.permission; internetAccess.value = configuration.internetAccess ? 'true' : 'false'; contextWindow.value = configuration.contextWindow || 8192; mcpServers.value = Object.keys(configuration.mcpServers || {}).length ? JSON.stringify(configuration.mcpServers, null, 2) : ''; mcpStatus.textContent = Object.keys(configuration.mcpServers || {}).length ? Object.keys(configuration.mcpServers).length + ' MCP server(s) configured.' : 'No MCP servers configured.'; modelOptions.replaceChildren(...next.models.map((name) => { const option = document.createElement('option'); option.value = name; return option; })); const quickModels = [...new Set([configuration.model, ...next.models].filter(Boolean))]; quickModel.replaceChildren(...quickModels.map((name) => { const option = document.createElement('option'); option.value = name; option.textContent = name; return option; })); quickModel.value = configuration.model; server.replaceChildren(...[{ label: 'Custom / manual', kind: '', baseUrl: '' }, ...next.endpoints].map((item) => { const option = document.createElement('option'); option.value = item.kind ? JSON.stringify(item) : ''; option.textContent = item.label + (item.baseUrl ? ' (' + item.baseUrl + ')' : ''); return option; })); document.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === configuration.mode)); status.textContent = configuration.model ? configuration.provider + ' / ' + configuration.model : 'Choose a local model'; renderTelemetry(); }
+    if (message.type === 'mcpDiagnostic') { mcpStatus.textContent = message.message; }
     if (message.type === 'workspaceFiles') { workspaceFiles = Array.isArray(message.files) ? message.files : []; }
     if (message.type === 'plan') { activePlan = message.plan; renderChat(); }
     if (message.type === 'delta') { const conversation = byId(message.conversationId) || active(); const last = conversation && conversation.messages.at(-1); if (last && last.role === 'assistant') { last.content += message.text; generatedTokens += estimateTokens(message.text); conversation.updatedAt = new Date().toISOString(); persist(); if (conversation.id === state.activeId) renderChat(); else renderTelemetry(); } }

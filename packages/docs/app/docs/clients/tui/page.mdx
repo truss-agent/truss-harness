@@ -46,3 +46,7 @@ Tool approvals use `Y` or Enter to allow and `N` or Escape to deny. The terminal
 ## Workspace commands
 
 Enter `/init`, `/update [note]`, `/status`, `/clear-memory`, or `/help` in the Agent pane. They run locally rather than through the model. This is useful for creating `AGENTS.md` context and recording a handoff before a new conversation.
+
+## MCP servers
+
+The TUI uses the CLI's shared `mcpServers` configuration. Connection results appear in the Terminal pane when the runtime starts. Plan mode connects only to servers marked `readOnly`; Agent mode connects to every enabled server. See [MCP Servers](/docs/runtime/mcp).

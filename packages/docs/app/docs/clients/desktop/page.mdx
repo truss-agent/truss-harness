@@ -49,3 +49,7 @@ Agent messages render safe Markdown with headings, lists, links, inline code, an
 Choose **Ask every time**, **Auto-allow read-only**, or **Auto-allow all tools** in Settings. File reads, searches, and directory listing are read-only; writes and terminal commands require approval unless the selected policy allows them.
 
 Enable **Allow public internet research** to expose bounded `web_search` and `web_fetch` tools. Internet access is off by default, and network requests require approval unless **Auto-allow all** is selected.
+
+## MCP servers
+
+Paste an `mcpServers` JSON object into **MCP servers (JSON)** in Settings. Apply the settings to restart the agent runtime and display connection status. MCP tools use the same permission policy as other tools; only Auto-allow all bypasses their approval prompt. See [MCP Servers](/docs/runtime/mcp) for fields and mode behavior.

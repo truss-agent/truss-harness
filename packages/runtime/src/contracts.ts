@@ -4,11 +4,7 @@ import type { WorkspacePlan } from "./plans.js";
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
 
-export interface JsonSchema {
-  readonly type: "object";
-  readonly properties?: Record<string, { type: string; description?: string }>;
-  readonly required?: readonly string[];
-}
+export type JsonSchema = JsonObject & { readonly type: "object" };
 
 export interface ChatMessage {
   readonly role: "system" | "user" | "assistant" | "tool";

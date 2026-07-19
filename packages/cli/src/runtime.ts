@@ -1,4 +1,5 @@
 import { createLocalModelProvider, type LocalEndpointKind } from "@truss-harness/provider-openai-compatible";
+import { parseMcpServerConfigurations, registerMcpServers, type McpServerConfigurations, type McpServerStatus } from "@truss-harness/mcp";
 import {
   AgentRuntime,
   CompositeContextManager,
@@ -32,12 +33,17 @@ export interface ClientRuntimeOptions {
   readonly approval?: ToolApproval;
   readonly mode?: AgentMode;
   readonly internetAccess?: boolean;
+  readonly mcpServers?: McpServerConfigurations;
 }
 
-export function createClientRuntime(options: ClientRuntimeOptions): {
+export interface ClientRuntime {
   readonly runtime: AgentRuntime;
   readonly events: EventBus<RuntimeEvent>;
-} {
+  readonly mcpServers: readonly McpServerStatus[];
+  dispose(): Promise<void>;
+}
+
+export async function createClientRuntime(options: ClientRuntimeOptions): Promise<ClientRuntime> {
   const events = new EventBus<RuntimeEvent>();
   const tools = new ToolRegistry();
   const memory = new FileWorkspaceMemoryStore(options.workspaceRoot);
@@ -54,9 +60,17 @@ export function createClientRuntime(options: ClientRuntimeOptions): {
     tools.register(grepTool);
   }
   if (options.internetAccess) registerWebTools(tools);
+  const enabledMcpServers = mode === "edit"
+    ? options.mcpServers
+    : mode === "plan"
+      ? Object.fromEntries(Object.entries(options.mcpServers ?? {}).filter(([, server]) => server.readOnly))
+      : {};
+  const mcp = await registerMcpServers(tools, enabledMcpServers, { workspaceRoot: options.workspaceRoot });
 
   return {
     events,
+    mcpServers: mcp.statuses,
+    dispose: () => mcp.close(),
     runtime: new AgentRuntime({
       provider: createLocalModelProvider({
         kind: options.provider,
@@ -103,6 +117,9 @@ export function configurationFromEnvironment(workspaceRoot: string, environment:
     apiKey: environment.TRUSS_HARNESS_API_KEY,
     systemPrompt: environment.TRUSS_HARNESS_SYSTEM_PROMPT,
     mode,
-    internetAccess: environment.TRUSS_HARNESS_INTERNET_ACCESS === "true" || environment.TRUSS_HARNESS_INTERNET_ACCESS === "1"
+    internetAccess: environment.TRUSS_HARNESS_INTERNET_ACCESS === "true" || environment.TRUSS_HARNESS_INTERNET_ACCESS === "1",
+    mcpServers: environment.TRUSS_HARNESS_MCP_SERVERS
+      ? parseMcpServerConfigurations(JSON.parse(environment.TRUSS_HARNESS_MCP_SERVERS) as unknown)
+      : undefined
   };
 }

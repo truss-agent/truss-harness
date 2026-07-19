@@ -52,3 +52,7 @@ Service mode uses newline-delimited JSON on standard input/output. Output is res
 <CliUsage command="models" />
 
 This prints detected endpoints and model IDs for local servers.
+
+## MCP servers
+
+The CLI reads `mcpServers` from the shared configuration system and reports each connection before an Agent run. Run <CliCommand /> `config path` to locate the user and workspace files. Repository-provided MCP commands require the user-level `allowWorkspaceMcpServers` opt-in. See [MCP Servers](/docs/runtime/mcp) for the complete schema and safety behavior.

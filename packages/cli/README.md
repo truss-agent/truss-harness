@@ -64,7 +64,7 @@ truss-cli commands             Show slash commands used by interactive clients
 
 ## Configuration
 
-`truss-cli config init` creates `.truss-harness/config.json`. Profiles support `provider`, `baseUrl`, `model`, `mode`, `permission`, `internetAccess`, `systemPrompt`, and `apiKeyEnv`.
+`truss-cli config init` creates `.truss-harness/config.json`. Profiles support `provider`, `baseUrl`, `model`, `mode`, `permission`, `internetAccess`, `systemPrompt`, `apiKeyEnv`, and `mcpServers`.
 
 ```json
 {
@@ -83,6 +83,8 @@ truss-cli commands             Show slash commands used by interactive clients
 ```
 
 Keep endpoint tokens out of JSON. Set the token in an environment variable and place that variable's name in `apiKeyEnv`.
+
+MCP stdio servers can be defined under `mcpServers`. User-level definitions load normally. Workspace definitions can launch local processes and are ignored unless the user configuration sets `"allowWorkspaceMcpServers": true`. Plan mode loads only servers marked `"readOnly": true`; Agent mode loads all enabled servers. MCP calls follow the selected approval policy.
 
 ## Service mode
 

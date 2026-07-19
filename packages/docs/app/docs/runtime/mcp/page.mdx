@@ -1,0 +1,63 @@
+# MCP Servers
+
+<Brand /> can connect to local [Model Context Protocol](https://modelcontextprotocol.io/) servers and expose their tools to compatible local models. The initial implementation supports MCP servers launched over standard input/output (`stdio`).
+
+## Configure a server
+
+Add an `mcpServers` object to a CLI or TUI configuration file, or paste the same object into **MCP servers (JSON)** in the desktop or VS Code settings:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+      "cwd": ".",
+      "env": {
+        "MCP_TOKEN": "${env:MY_MCP_TOKEN}"
+      },
+      "enabled": true,
+      "readOnly": false
+    }
+  }
+}
+```
+
+| Field | Purpose |
+| --- | --- |
+| `command` | Required executable to start |
+| `args` | Optional command arguments |
+| `cwd` | Working directory, resolved from the open workspace |
+| `env` | Extra environment variables; `${env:NAME}` reads from the parent environment |
+| `enabled` | Set to `false` without deleting the definition |
+| `readOnly` | Allows this server's tools in Plan mode |
+
+The server named `filesystem` contributes namespaced tools such as `mcp_filesystem_read_file`. Namespacing prevents ordinary MCP tool names from replacing built-in tools.
+
+## CLI and TUI configuration
+
+Run `truss-cli config path` to print both configuration paths. User configuration is stored under the operating system's application configuration directory. Workspace configuration is `.truss-harness/config.json`.
+
+An MCP server definition can execute a local process. For that reason, workspace MCP definitions are ignored by default. To trust MCP definitions from repositories you open, set this only in your **user** configuration:
+
+```json
+{
+  "allowWorkspaceMcpServers": true
+}
+```
+
+The workspace file cannot grant this permission to itself. User-level `mcpServers` do not need this flag. For temporary automation, `TRUSS_HARNESS_MCP_SERVERS` accepts the `mcpServers` object as JSON.
+
+## Modes and approvals
+
+- Chat mode does not load MCP tools.
+- Plan mode loads tools only from servers marked `readOnly: true`.
+- Agent mode loads every enabled server.
+- Ask and Auto-allow read-only both request approval before MCP calls.
+- Auto-allow all permits MCP calls without a prompt.
+
+MCP tools are treated as potentially state-changing because a client cannot reliably infer side effects from a tool schema. Configure only servers and commands you trust.
+
+## Current scope
+
+The first release supports tool discovery and invocation over local stdio transports. Streamable HTTP transport, OAuth, MCP resources, prompts, and server installation management are not included yet.

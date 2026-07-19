@@ -65,6 +65,7 @@ Environment:
   TRUSS_HARNESS_INTERNET_ACCESS true or 1 to enable public web tools
   TRUSS_HARNESS_API_KEY     Optional bearer token
   TRUSS_HARNESS_SYSTEM_PROMPT Optional system prompt
+  TRUSS_HARNESS_MCP_SERVERS JSON object containing local stdio MCP servers
 
 Examples:
   ${brand.cliCommand} chat --mode plan "Plan the authentication change"
@@ -132,12 +133,23 @@ async function main(): Promise<void> {
 
   if (command === "serve") {
     const approval = new ProtocolToolApproval(configuration.permission);
-    const { runtime, events } = createClientRuntime({ ...configuration, approval });
-    await runService(runtime, events, approval);
+    const client = await createClientRuntime({ ...configuration, approval });
+    for (const server of client.mcpServers) {
+      process.stderr.write(`[mcp] ${server.name}: ${server.state}${server.error ? ` (${server.error})` : ` (${server.toolCount} tools)`}\n`);
+    }
+    try {
+      await runService(client.runtime, client.events, approval);
+    } finally {
+      await client.dispose();
+    }
     return;
   }
 
-  const { runtime, events } = createClientRuntime(configuration);
+  const client = await createClientRuntime(configuration);
+  const { runtime, events } = client;
+  for (const server of client.mcpServers) {
+    process.stderr.write(`[mcp] ${server.name}: ${server.state}${server.error ? ` (${server.error})` : ` (${server.toolCount} tools)`}\n`);
+  }
 
   if (command === "chat") {
     const prompt = args.join(" ").trim();
@@ -148,9 +160,13 @@ async function main(): Promise<void> {
         process.stderr.write(`\n[plan] ${event.plan.title}\n${event.plan.steps.map((step) => `  ${step.status === "completed" ? "[x]" : step.status === "in_progress" ? "[..]" : "[ ]"} ${step.content}`).join("\n")}\n`);
       }
     });
-    const session = await runtime.createSession();
-    await runtime.run(session.id, prompt);
-    process.stdout.write("\n");
+    try {
+      const session = await runtime.createSession();
+      await runtime.run(session.id, prompt);
+      process.stdout.write("\n");
+    } finally {
+      await client.dispose();
+    }
     return;
   }
 

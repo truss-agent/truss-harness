@@ -1,30 +1,23 @@
 {
-  "name": "@truss-harness/cli",
+  "name": "@truss-harness/mcp",
   "version": "0.1.0",
-  "description": "Command-line client and runtime service for Truss.",
+  "description": "Model Context Protocol client adapter for Truss.",
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    "./runtime": {
-      "types": "./dist/runtime.d.ts",
-      "default": "./dist/runtime.js"
-    },
-    "./config": {
-      "types": "./dist/config.d.ts",
-      "default": "./dist/config.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
     }
-  },
-  "bin": {
-    "truss-cli": "./dist/bin.js"
   },
   "scripts": {
     "build": "tsc -b",
-    "postinstall": "node scripts/postinstall.mjs",
     "prepack": "node ../../scripts/clean-publish-tests.mjs",
     "prepublishOnly": "npm run build"
   },
   "files": [
     "dist",
-    "scripts/postinstall.mjs",
     "README.md",
     "logo.png"
   ],
@@ -43,18 +36,8 @@
   "publishConfig": {
     "access": "public"
   },
-  "keywords": [
-    "ai",
-    "coding-agent",
-    "cli",
-    "ollama",
-    "lm-studio",
-    "local-first"
-  ],
   "dependencies": {
-    "@truss-harness/branding": "0.1.0",
-    "@truss-harness/mcp": "0.1.0",
-    "@truss-harness/provider-openai-compatible": "0.1.0",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@truss-harness/runtime": "0.1.0"
   }
 }

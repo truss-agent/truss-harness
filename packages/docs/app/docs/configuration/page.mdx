@@ -49,8 +49,29 @@ On Windows, the user configuration file is <UserConfigPath />. Each workspace ca
 | `internetAccess` | Enables optional public web search and page fetching; defaults to `false` |
 | `systemPrompt` | Optional system instruction |
 | `apiKeyEnv` | Name of an environment variable that contains a token |
+| `mcpServers` | Named local stdio MCP server definitions |
+| `allowWorkspaceMcpServers` | User-level opt-in for MCP commands defined by a workspace |
 
 Keep tokens out of JSON files. Use `apiKeyEnv` to reference an environment variable instead.
+
+## MCP configuration
+
+MCP servers can expose additional tools to Agent and Plan modes:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+      "enabled": true,
+      "readOnly": true
+    }
+  }
+}
+```
+
+User-level MCP definitions load normally. Workspace MCP definitions are ignored unless the user configuration sets `"allowWorkspaceMcpServers": true`, because opening a workspace must not silently authorize it to launch a local command. See [MCP Servers](/docs/runtime/mcp) for the complete schema, UI setup, mode rules, and security behavior.
 
 ## Precedence
 
@@ -63,3 +84,5 @@ Keep tokens out of JSON files. Use `apiKeyEnv` to reference an environment varia
 CLI flags include `--profile`, `--provider`, `--base-url`, `--model`, `--mode`, `--permission`, `--internet-access`, and `--no-internet-access`.
 
 Set `TRUSS_HARNESS_INTERNET_ACCESS=true` to enable the same capability through the environment.
+
+`TRUSS_HARNESS_MCP_SERVERS` accepts an `mcpServers` object encoded as JSON.

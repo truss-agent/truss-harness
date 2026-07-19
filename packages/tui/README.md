@@ -13,6 +13,8 @@ truss-tui
 
 The TUI reads the same `.truss-harness/config.json` profiles as `@truss-harness/cli`, or lets you select a detected Ollama, LM Studio, llama.cpp, or custom compatible endpoint at startup.
 
+Configured MCP stdio servers are connected when an Agent session starts, and their connection status appears in the Terminal pane. Plan mode loads only servers explicitly marked `readOnly`. Run `truss-cli config path` to locate the shared user and workspace configuration files.
+
 ## Controls
 
 | Key | Action |

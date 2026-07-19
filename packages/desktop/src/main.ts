@@ -8,6 +8,7 @@ import { Readable } from "node:stream";
 import { promisify } from "node:util";
 import { brand } from "@truss-harness/branding";
 import { createClientRuntime, type ClientConfiguration } from "@truss-harness/cli/runtime";
+import { parseMcpServerConfigurations } from "@truss-harness/mcp";
 import { detectLocalContextWindow, detectLocalEndpoints, generateLocalText, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import { FileWorkspacePlanStore, type ContextBlock, type ToolApproval, type ToolCall } from "@truss-harness/runtime";
 import type { DesktopConfiguration, DesktopConversation, DesktopEndpoint, DesktopEvent, DesktopFile, DesktopGitStatus, DesktopMessage, DesktopState } from "./shared.js";
@@ -34,7 +35,7 @@ interface PersistedState extends DesktopState {}
 
 let mainWindow: BrowserWindow | undefined;
 let persisted: PersistedState = { workspaceRoot: process.cwd(), conversations: [] };
-let runtimeClient: ReturnType<typeof createClientRuntime> | undefined;
+let runtimeClient: Awaited<ReturnType<typeof createClientRuntime>> | undefined;
 let unsubscribeEvents: (() => void) | undefined;
 let activeSessionId: string | undefined;
 let activeConversationId: string | undefined;
@@ -126,7 +127,8 @@ function normalizeConfiguration(value: DesktopConfiguration): DesktopConfigurati
     baseUrl: value.baseUrl.trim(),
     model: value.model.trim(),
     contextWindow: Math.max(512, Math.min(1_000_000, Math.floor(value.contextWindow || 8_192))),
-    internetAccess: value.internetAccess ?? false
+    internetAccess: value.internetAccess ?? false,
+    mcpServers: parseMcpServerConfigurations(value.mcpServers)
   };
 }
 
@@ -152,6 +154,7 @@ function clientConfiguration(configuration: DesktopConfiguration): ClientConfigu
     model: configuration.model,
     mode: configuration.mode,
     internetAccess: configuration.internetAccess,
+    mcpServers: configuration.mcpServers,
     approval
   };
 }
@@ -170,7 +173,7 @@ async function releaseOllamaModel(configuration: DesktopConfiguration | undefine
   }
 }
 
-function disposeRuntime(): void {
+async function disposeRuntime(): Promise<void> {
   activeAbort?.abort();
   activeAbort = undefined;
   activeRun = undefined;
@@ -179,14 +182,17 @@ function disposeRuntime(): void {
   sessionConversationIds.clear();
   unsubscribeEvents?.();
   unsubscribeEvents = undefined;
+  const previousClient = runtimeClient;
   runtimeClient = undefined;
+  await previousClient?.dispose();
   for (const resolveApproval of approvalResolvers.values()) resolveApproval(false);
   approvalResolvers.clear();
 }
 
-function configureRuntime(configuration: DesktopConfiguration): void {
-  disposeRuntime();
-  runtimeClient = createClientRuntime(clientConfiguration(configuration));
+async function configureRuntime(configuration: DesktopConfiguration): Promise<void> {
+  await disposeRuntime();
+  runtimeClient = await createClientRuntime(clientConfiguration(configuration));
+  persisted = { ...persisted, mcpStatuses: runtimeClient.mcpServers };
   unsubscribeEvents = runtimeClient.events.subscribe((event) => send({ type: "agent", conversationId: sessionConversationIds.get(event.sessionId), event }));
 }
 
@@ -406,8 +412,8 @@ async function fileContext(activeFilePath: string | undefined, attachedPaths: re
 async function executeChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[] }): Promise<void> {
   const configuration = persisted.configuration;
   if (!configuration || !configuration.model) throw new Error("Choose a local model before starting the agent.");
-  if (!runtimeClient) configureRuntime(configuration);
-  const client = runtimeClient as ReturnType<typeof createClientRuntime>;
+  if (!runtimeClient) await configureRuntime(configuration);
+  const client = runtimeClient as Awaited<ReturnType<typeof createClientRuntime>>;
   if (!activeSessionId || activeConversationId !== input.conversationId) {
     const session = await client.runtime.createSession(input.history);
     activeSessionId = session.id;
@@ -489,7 +495,7 @@ if (process.platform === "win32") app.setAppUserModelId(`com.${brand.productSlug
 app.whenReady().then(async () => {
   await loadPersistedState();
   protocol.handle("truss-media", workspaceMediaResponse);
-  if (persisted.configuration) configureRuntime(persisted.configuration);
+  if (persisted.configuration) await configureRuntime(persisted.configuration);
   await createMainWindow();
   app.on("activate", () => { if (!mainWindow) void createMainWindow(); });
 });
@@ -497,7 +503,7 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("before-quit", () => {
   stopManagedDevServer();
-  disposeRuntime();
+  void disposeRuntime();
 });
 
 ipcMain.handle("truss:initial-state", (): DesktopState => persisted);
@@ -508,7 +514,7 @@ ipcMain.handle("truss:choose-workspace", async (): Promise<DesktopState | undefi
   if (selection.canceled || !workspaceRoot) return undefined;
   stopManagedDevServer();
   persisted = { ...persisted, workspaceRoot };
-  if (persisted.configuration) configureRuntime(persisted.configuration);
+  if (persisted.configuration) await configureRuntime(persisted.configuration);
   await persistState();
   return persisted;
 });
@@ -535,7 +541,7 @@ ipcMain.handle("truss:configure", async (_event, input: DesktopConfiguration): P
   if (detectedContextWindow) next = { ...next, contextWindow: detectedContextWindow };
   const previous = persisted.configuration;
   persisted = { ...persisted, configuration: next };
-  configureRuntime(next);
+  await configureRuntime(next);
   if (previous?.model !== next.model || previous?.baseUrl !== next.baseUrl || previous?.provider !== next.provider) void releaseOllamaModel(previous);
   await persistState();
   return persisted;

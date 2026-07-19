@@ -27,8 +27,8 @@ const brand = Object.freeze({
 const npmRepositoryUrl = `git+${brand.repositoryUrl}.git`;
 const packageScope = `@${brand.productSlug}`;
 const extensionNamespace = brand.productSlug.replace(/-([a-z0-9])/g, (_, character) => character.toUpperCase());
-const workspacePackageNames = new Set(["branding", "runtime", "provider-openai-compatible", "cli", "tui", "desktop", "docs"]);
-const publishablePackageNames = ["branding", "runtime", "provider-openai-compatible", "cli", "tui"];
+const workspacePackageNames = new Set(["branding", "runtime", "mcp", "provider-openai-compatible", "cli", "tui", "desktop", "docs"]);
+const publishablePackageNames = ["branding", "runtime", "mcp", "provider-openai-compatible", "cli", "tui"];
 
 async function updatePackageJson(relativePath, update) {
   const filePath = resolve(root, relativePath);
@@ -137,6 +137,13 @@ await Promise.all([
     includeLogoInPackage(manifest);
     applyRepositoryMetadata(manifest);
   }),
+  updatePackageJson("packages/mcp/package.json", (manifest) => {
+    manifest.name = `${packageScope}/mcp`;
+    manifest.description = `Model Context Protocol client adapter for ${brand.productName}.`;
+    applyWorkspaceDependencies(manifest);
+    includeLogoInPackage(manifest);
+    applyRepositoryMetadata(manifest);
+  }),
   updatePackageJson("packages/provider-openai-compatible/package.json", (manifest) => {
     manifest.name = `${packageScope}/provider-openai-compatible`;
     manifest.description = `OpenAI-compatible streaming model provider for ${brand.productName}.`;
@@ -203,7 +210,7 @@ await Promise.all([
     writeFile(resolve(root, `packages/${packageName}/logo.png`), logoPng)
   )
 ]);
-await Promise.all(["branding", "runtime", "provider-openai-compatible", "cli", "tui", "vscode"].map((packageName) =>
+await Promise.all(["branding", "runtime", "mcp", "provider-openai-compatible", "cli", "tui", "vscode"].map((packageName) =>
   copyFile(resolve(root, "LICENSE"), resolve(root, `packages/${packageName}/LICENSE`))
 ));
 process.stdout.write("Synchronized brand display metadata, logo assets, and package licenses.\n");

@@ -840,6 +840,35 @@ dialog::backdrop {
     min-height: 30px;
 }
 
+.settings-form .mcp-setting,
+.mcp-status {
+    grid-column: 1 / -1;
+}
+
+.mcp-setting textarea {
+    min-height: 112px;
+    resize: vertical;
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    font-size: 11px;
+    line-height: 1.45;
+}
+
+.mcp-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 12px;
+    color: #9badb5;
+    font-size: 11px;
+}
+
+.mcp-status .connected {
+    color: #69d6b5;
+}
+
+.mcp-status .failed {
+    color: #f09b86;
+}
+
 .checkbox-setting input {
     width: 16px;
     height: 16px;

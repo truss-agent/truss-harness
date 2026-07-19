@@ -12,9 +12,8 @@
   },
   "include": ["src"],
   "references": [
-    { "path": "../branding" },
-    { "path": "../runtime" },
-    { "path": "../mcp" },
-    { "path": "../provider-openai-compatible" }
+    {
+      "path": "../runtime"
+    }
   ]
 }

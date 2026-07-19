@@ -3,6 +3,7 @@
   "references": [
     { "path": "./packages/branding" },
     { "path": "./packages/runtime" },
+    { "path": "./packages/mcp" },
     { "path": "./packages/provider-openai-compatible" },
     { "path": "./packages/cli" },
     { "path": "./packages/tui" },
