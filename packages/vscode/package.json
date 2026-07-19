@@ -2,7 +2,7 @@
   "name": "truss-harness-vscode",
   "displayName": "Truss",
   "description": "VS Code client for the Truss runtime.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "publisher": "truss-harness",
   "repository": {
     "type": "git",
