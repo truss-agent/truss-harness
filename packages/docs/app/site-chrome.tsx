@@ -2,7 +2,7 @@ import Link from "next/link";
 import { brand } from "@truss-harness/branding";
 
 export function SiteHeader() {
-  return <header className="site-header"><div className="site-header-inner"><Link className="site-brand" href="/"><img src="/brand-logo.png" width={30} height={30} alt="" /><span>{brand.productName}</span></Link><nav className="site-nav" aria-label="Primary navigation"><Link href="/features">Features</Link><Link href="/about">About</Link><Link className="site-nav-docs" href="/docs">Docs</Link></nav></div></header>;
+  return <header className="site-header"><div className="site-header-inner"><Link className="site-brand" href="/"><img src="/brand-logo.png" width={30} height={30} alt="" /><span>{brand.productName}</span></Link><nav className="site-nav" aria-label="Primary navigation"><Link href="/features#clients">Clients</Link><Link href="/features">Features</Link><Link href="/about">About</Link><Link className="site-nav-docs" href="/docs">Docs</Link></nav></div></header>;
 }
 
 export function SiteFooter() {

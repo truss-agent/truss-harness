@@ -22,7 +22,9 @@ const conversations = element<HTMLDivElement>("conversationList");
 const workbench = document.querySelector<HTMLElement>(".workbench") as HTMLElement;
 const sidebar = document.querySelector<HTMLElement>(".sidebar") as HTMLElement;
 const editorArea = document.querySelector<HTMLElement>(".editor-area") as HTMLElement;
+const filesSection = document.querySelector<HTMLElement>(".files-section") as HTMLElement;
 const historySection = document.querySelector<HTMLElement>(".history-section") as HTMLElement;
+const editorContent = document.querySelector<HTMLElement>(".editor-content") as HTMLElement;
 const terminal = document.querySelector<HTMLElement>(".terminal") as HTMLElement;
 const gitPanel = element<HTMLElement>("gitPanel");
 const gitBody = element<HTMLDivElement>("gitBody");
@@ -71,7 +73,7 @@ let slashIndex = 0;
 const collapsedDirectories = new Set<string>();
 let gitStatus: DesktopGitStatus = { available: false, ahead: 0, behind: 0, files: [] };
 let gitCollapsed = false;
-let gitPanelHeight = 274;
+let gitPanelHeight = 220;
 let activePlan: WorkspacePlan | undefined;
 let streamStartedAt = 0;
 let streamedTokenEstimate = 0;
@@ -168,10 +170,34 @@ function statusLabel(file: DesktopGitStatus["files"][number]): string {
   return status.trim() || "CHG";
 }
 
+function sidebarTracks(): { readonly git: number; readonly files: number; readonly history: number } {
+  return {
+    git: gitPanel.getBoundingClientRect().height,
+    files: filesSection.getBoundingClientRect().height,
+    history: historySection.getBoundingClientRect().height
+  };
+}
+
+function applySidebarTracks(git: number, files: number, history: number): void {
+  sidebar.style.setProperty("--git-height", `${git}px`);
+  sidebar.style.setProperty("--files-height", `${files}px`);
+  sidebar.style.setProperty("--history-height", `${history}px`);
+}
+
+function setGitCollapsed(collapsed: boolean): void {
+  if (gitCollapsed === collapsed) return;
+  const tracks = sidebarTracks();
+  const desiredGit = collapsed ? 38 : gitPanelHeight;
+  const applied = clamp(desiredGit - tracks.git, 110 - tracks.files, Number.MAX_SAFE_INTEGER);
+  if (!collapsed) gitPanelHeight = tracks.git + applied;
+  gitCollapsed = collapsed;
+  renderGit();
+  applySidebarTracks(collapsed ? 38 : gitPanelHeight, tracks.files - applied, tracks.history);
+}
+
 function renderGit(): void {
   gitPanel.classList.toggle("collapsed", gitCollapsed);
   gitBody.hidden = gitCollapsed;
-  sidebar.style.setProperty("--git-height", `${gitCollapsed ? 38 : gitPanelHeight}px`);
   const toggle = element<HTMLButtonElement>("toggleGit");
   toggle.textContent = gitCollapsed ? "Show" : "Hide";
   toggle.title = gitCollapsed ? "Expand Git panel" : "Collapse Git panel";
@@ -831,23 +857,28 @@ bindPaneResize("chatSplitter", "x", () => {
   return (delta) => workbench.style.setProperty("--chat-width", `${clamp(initial - delta, 330, 680)}px`);
 });
 bindPaneResize("gitSplitter", "y", () => {
-  if (gitCollapsed) {
-    gitCollapsed = false;
-    renderGit();
-  }
-  const initial = gitPanel.getBoundingClientRect().height;
+  if (gitCollapsed) setGitCollapsed(false);
+  const initial = sidebarTracks();
   return (delta) => {
-    gitPanelHeight = clamp(initial + delta, 160, 430);
-    sidebar.style.setProperty("--git-height", `${gitPanelHeight}px`);
+    const applied = clamp(delta, 160 - initial.git, initial.files - 110);
+    gitPanelHeight = initial.git + applied;
+    applySidebarTracks(gitPanelHeight, initial.files - applied, initial.history);
   };
 });
 bindPaneResize("historySplitter", "y", () => {
-  const initial = historySection.getBoundingClientRect().height;
-  return (delta) => sidebar.style.setProperty("--history-height", `${clamp(initial - delta, 110, 420)}px`);
+  const initial = sidebarTracks();
+  return (delta) => {
+    const applied = clamp(delta, 110 - initial.files, initial.history - 110);
+    applySidebarTracks(initial.git, initial.files + applied, initial.history - applied);
+  };
 });
 bindPaneResize("terminalSplitter", "y", () => {
   const initial = terminal.getBoundingClientRect().height;
-  return (delta) => editorArea.style.setProperty("--terminal-height", `${clamp(initial - delta, 120, 600)}px`);
+  const adjacent = editorContent.getBoundingClientRect().height;
+  return (delta) => {
+    const applied = clamp(delta, 160 - adjacent, initial - 120);
+    editorArea.style.setProperty("--terminal-height", `${initial - applied}px`);
+  };
 });
 
 element<HTMLButtonElement>("chooseWorkspace").onclick = async () => {
@@ -865,7 +896,7 @@ element<HTMLButtonElement>("chooseWorkspace").onclick = async () => {
 element<HTMLButtonElement>("refreshModels").onclick = () => void discover({ provider: providerSelect.value === "openai-compatible" ? "openai-compatible" : "ollama", baseUrl: baseUrlInput.value || configuration().baseUrl });
 element<HTMLButtonElement>("refreshFiles").onclick = () => void loadFiles();
 element<HTMLButtonElement>("refreshGit").onclick = () => void refreshGit();
-element<HTMLButtonElement>("toggleGit").onclick = () => { gitCollapsed = !gitCollapsed; renderGit(); };
+element<HTMLButtonElement>("toggleGit").onclick = () => setGitCollapsed(!gitCollapsed);
 element<HTMLButtonElement>("stageAll").onclick = () => {
   if (!gitStatus.files.length) { notify("No changed files to stage."); return; }
   void runGitAction("stage", () => window.trussDesktop.gitStage(gitStatus.files.map((file) => file.path)));
@@ -934,6 +965,9 @@ void (async () => {
   populateSettings();
   await discover(desktopState.configuration);
   await Promise.all([loadFiles(), refreshGit(), window.trussDesktop.getPlan().then((plan) => { activePlan = plan; renderPlan(); })]);
+  const tracks = sidebarTracks();
+  gitPanelHeight = tracks.git;
+  applySidebarTracks(tracks.git, tracks.files, tracks.history);
   renderConversations();
   renderChat();
   renderRuntime();
