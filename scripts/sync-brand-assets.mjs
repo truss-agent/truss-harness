@@ -95,7 +95,7 @@ function applyExtensionIdentity(manifest) {
   manifest.publisher = brand.productSlug;
   manifest.icon = `media/${brand.productSlug}.png`;
   manifest.main = "./dist/extension.cjs";
-  manifest.scripts.bundle = "node ../../scripts/prepare-vscode-bundle.mjs && esbuild ./src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs";
+  manifest.scripts.bundle = "node ../../scripts/prepare-vscode-bundle.mjs && esbuild ./src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs && esbuild ../cli/src/bin.ts --bundle --platform=node --format=cjs --outfile=dist/truss-service.cjs";
   manifest.scripts.package = "node ../../scripts/sync-brand-assets.mjs && npm run build && vsce package --no-dependencies";
   manifest.activationEvents = manifest.activationEvents.map((event) => replaceExtensionNamespace(event, previousNamespace));
 
@@ -117,8 +117,8 @@ function applyExtensionIdentity(manifest) {
     ])
   );
   const commandSetting = manifest.contributes.configuration.properties[`${extensionNamespace}.command`];
-  commandSetting.default = brand.cliCommand;
-  commandSetting.description = `Path to the ${brand.productName} CLI executable.`;
+  commandSetting.default = "";
+  commandSetting.description = `Optional path to an external ${brand.productName} CLI executable. Leave empty to use the service bundled with the extension.`;
 }
 
 await Promise.all([

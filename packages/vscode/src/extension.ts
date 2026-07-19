@@ -368,9 +368,15 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!configuration.model) throw new Error("Choose a local model before starting the agent.");
     const settings = vscode.workspace.getConfiguration("trussHarness");
     const developmentCli = resolve(context.extensionPath, "../cli/dist/bin.js");
-    const useWorkspaceCli = context.extensionMode === vscode.ExtensionMode.Development;
-    service = new RuntimeService(useWorkspaceCli ? process.execPath : settings.get<string>("command", "truss-harness"), useWorkspaceCli ? [developmentCli] : [], workspaceRoot(), {
+    const bundledCli = resolve(context.extensionPath, "dist/truss-service.cjs");
+    const configuredCommand = settings.get<string>("command", "").trim();
+    const useWorkspaceCli = context.extensionMode === vscode.ExtensionMode.Development && !configuredCommand;
+    const useBundledCli = context.extensionMode !== vscode.ExtensionMode.Development && !configuredCommand;
+    const command = configuredCommand || process.execPath;
+    const commandArguments = useWorkspaceCli ? [developmentCli] : useBundledCli ? [bundledCli] : [];
+    service = new RuntimeService(command, commandArguments, workspaceRoot(), {
       ...process.env,
+      ...(configuredCommand ? {} : { ELECTRON_RUN_AS_NODE: "1" }),
       TRUSS_HARNESS_PROVIDER: configuration.provider,
       TRUSS_HARNESS_BASE_URL: configuration.baseUrl,
       TRUSS_HARNESS_MODEL: configuration.model,

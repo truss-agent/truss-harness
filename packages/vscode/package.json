@@ -2,7 +2,7 @@
   "name": "truss-harness-vscode",
   "displayName": "Truss",
   "description": "VS Code client for the Truss runtime.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "truss-harness",
   "repository": {
     "type": "git",
@@ -92,8 +92,8 @@
       "properties": {
         "trussHarness.command": {
           "type": "string",
-          "default": "truss-cli",
-          "description": "Path to the Truss CLI executable."
+          "default": "",
+          "description": "Optional path to an external Truss CLI executable. Leave empty to use the service bundled with the extension."
         },
         "trussHarness.model": {
           "type": "string",
@@ -109,7 +109,7 @@
   },
   "scripts": {
     "build": "tsc -p . && npm run bundle",
-    "bundle": "node ../../scripts/prepare-vscode-bundle.mjs && esbuild ./src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs",
+    "bundle": "node ../../scripts/prepare-vscode-bundle.mjs && esbuild ./src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs && esbuild ../cli/src/bin.ts --bundle --platform=node --format=cjs --outfile=dist/truss-service.cjs",
     "package": "node ../../scripts/sync-brand-assets.mjs && npm run build && vsce package --no-dependencies",
     "prepublishOnly": "npm run package"
   },
