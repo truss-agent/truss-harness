@@ -117,9 +117,14 @@ export default function HomePage() {
                 Get streaming chat, file context, inline completions, agent
                 modes, approvals, and Git commit-message help in VS Code.
               </p>
-              <Link className="site-text-link" href="/docs/clients/vscode">
-                VS Code documentation
-              </Link>
+              <div className="site-card-links">
+                <a className="site-text-link" href="https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode" target="_blank" rel="noreferrer">
+                  Get extension
+                </a>
+                <Link className="site-text-link" href="/docs/clients/vscode">
+                  VS Code documentation
+                </Link>
+              </div>
             </article>
             <article>
               <span>DESKTOP</span>

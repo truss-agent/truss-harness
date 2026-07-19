@@ -37,9 +37,14 @@ export default function DownloadPage() {
             <h2>Prefer the terminal or VS Code?</h2>
             <p>The CLI and TUI install through npm. The VS Code extension installs from the Marketplace or a VSIX.</p>
           </div>
-          <Link className="site-button site-button-secondary" href="/docs/getting-started">
-            View installation guide
-          </Link>
+          <div className="site-card-links">
+            <a className="site-text-link" href="https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode" target="_blank" rel="noreferrer">
+              Get VS Code extension
+            </a>
+            <Link className="site-text-link" href="/docs/getting-started">
+              View installation guide
+            </Link>
+          </div>
         </section>
       </main>
       <SiteFooter />
