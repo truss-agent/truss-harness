@@ -6,7 +6,7 @@ Truss is a local-first coding-agent side panel for VS Code. It connects to Ollam
 
 Install [**Truss for VS Code**](https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode) from the Marketplace, then open the Truss icon in the Activity Bar. The extension includes its runtime service, so the CLI is not required.
 
-In **Settings**, select a detected local server or enter an endpoint, refresh models, and set the context window, permission policy, and optional internet research access. Use the bottom control bar to switch models and agent modes during a session. Agent responses render Markdown and formatted code blocks. Type `/` in the chat composer to fuzzy-search workspace files; choose a file with arrow keys and Enter or Tab to attach its bounded contents to the next prompt.
+In **Settings**, select a detected local server or enter an endpoint, refresh models, and set the context window, permission policy, and optional internet research access. Use the bottom control bar to switch models and agent modes during a session. Agent responses render Markdown and formatted code blocks. Type `@/` in the chat composer to fuzzy-search workspace files; choose a file with arrow keys and Enter or Tab to attach its bounded contents to the next prompt. Slash commands such as `/status`, `/update`, and `/help` remain reserved for local workspace actions.
 
 To add local MCP tools, enter an `mcpServers` JSON object in the MCP settings field. The extension passes it to its runtime service; Agent mode loads enabled servers and Plan mode loads only servers marked `readOnly`. Connections restart after settings change and their status is shown in the panel.
 

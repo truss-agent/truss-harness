@@ -23,7 +23,7 @@ The panel remembers endpoint, model, mode, permission selections, and bounded co
 
 Agent replies render Markdown, including headings, lists, links, inline code, and fenced code blocks with readable syntax color. Model output is rendered as safe DOM content; it is not injected as HTML.
 
-Type `/` in the chat composer to fuzzy-search workspace files. Use the arrow keys followed by Enter or Tab to select a file. The selected `/path/to/file` remains visible in the prompt, and Truss sends a bounded copy of that file with the next model request. Up to eight files can be attached, with an 80,000-character total limit.
+Type `@/` in the chat composer to fuzzy-search workspace files. Use the arrow keys followed by Enter or Tab to select a file. The selected `@/path/to/file` remains visible in the prompt, and Truss sends a bounded copy of that file with the next model request. Up to eight files can be attached, with an 80,000-character total limit. Slash commands such as `/status`, `/update`, and `/help` are reserved for local workspace actions.
 
 ## Agent modes
 
