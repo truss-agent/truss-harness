@@ -4,13 +4,17 @@ import type { WorkspaceMemoryStore } from "./memory.js";
 import type { WorkspacePlanStore } from "./plans.js";
 import { resolveWorkspacePath } from "./workspace.js";
 
-export interface ContextManager { build(session: Session, systemPrompt?: string): Promise<ChatMessage[]>; }
+export interface ContextManager {
+  build(session: Session, systemPrompt?: string, requestContext?: readonly ContextBlock[]): Promise<ChatMessage[]>;
+}
 
 /** Keeps a bounded recent conversation; richer repository context can implement this interface later. */
 export class RecentHistoryContextManager implements ContextManager {
-  constructor(private readonly maxMessages = 40) {}
-  async build(session: Session, systemPrompt?: string): Promise<ChatMessage[]> {
-    return [ ...(systemPrompt ? [{ role: "system" as const, content: systemPrompt }] : []), ...session.messages.slice(-this.maxMessages) ];
+  constructor(private readonly maxMessages = 40, private readonly maxContextCharacters = 24_000) {}
+  async build(session: Session, systemPrompt?: string, requestContext: readonly ContextBlock[] = []): Promise<ChatMessage[]> {
+    const context = formatContextBlocks(requestContext, this.maxContextCharacters);
+    const prompt = [systemPrompt, context ? `Workspace context:\n${context}` : undefined].filter(Boolean).join("\n\n");
+    return [ ...(prompt ? [{ role: "system" as const, content: prompt }] : []), ...session.messages.slice(-this.maxMessages) ];
   }
 }
 
@@ -22,6 +26,23 @@ export interface ContextBlock {
 
 export interface ContextProvider {
   collect(session: Session): Promise<readonly ContextBlock[]>;
+}
+
+export function formatContextBlocks(blocks: readonly ContextBlock[], maxCharacters: number): string {
+  let remaining = maxCharacters;
+  const selected: string[] = [];
+  const prioritized = [...blocks].sort((left, right) => (right.priority ?? 0) - (left.priority ?? 0));
+
+  for (const block of prioritized) {
+    const source = block.source.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
+    const formatted = `<context source="${source}">\n${block.content}\n</context>`;
+    if (formatted.length > remaining) continue;
+
+    selected.push(formatted);
+    remaining -= formatted.length;
+  }
+
+  return selected.join("\n\n");
 }
 
 export class StaticContextProvider implements ContextProvider {
@@ -94,29 +115,15 @@ export class CompositeContextManager implements ContextManager {
     private readonly options: { maxMessages?: number; maxContextCharacters?: number } = {}
   ) {}
 
-  async build(session: Session, systemPrompt?: string): Promise<ChatMessage[]> {
+  async build(session: Session, systemPrompt?: string, requestContext: readonly ContextBlock[] = []): Promise<ChatMessage[]> {
     const maxMessages = this.options.maxMessages ?? 40;
-    const blocks = (await Promise.all(this.providers.map((provider) => provider.collect(session))))
-      .flat()
-      .sort((left, right) => (right.priority ?? 0) - (left.priority ?? 0));
-    const context = this.formatBlocks(blocks, this.options.maxContextCharacters ?? 24_000);
+    const blocks = [
+      ...requestContext,
+      ...(await Promise.all(this.providers.map((provider) => provider.collect(session)))).flat()
+    ];
+    const context = formatContextBlocks(blocks, this.options.maxContextCharacters ?? 24_000);
     const prompt = [systemPrompt, context ? `Workspace context:\n${context}` : undefined].filter(Boolean).join("\n\n");
 
     return [...(prompt ? [{ role: "system" as const, content: prompt }] : []), ...session.messages.slice(-maxMessages)];
-  }
-
-  private formatBlocks(blocks: readonly ContextBlock[], maxCharacters: number): string {
-    let remaining = maxCharacters;
-    const selected: string[] = [];
-
-    for (const block of blocks) {
-      const formatted = `<context source="${block.source}">\n${block.content}\n</context>`;
-      if (formatted.length > remaining) continue;
-
-      selected.push(formatted);
-      remaining -= formatted.length;
-    }
-
-    return selected.join("\n\n");
   }
 }

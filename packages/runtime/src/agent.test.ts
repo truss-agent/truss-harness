@@ -234,12 +234,41 @@ describe("ContextManager", () => {
       { maxMessages: 1 }
     );
 
-    const messages = await context.build(session, "system instructions");
+    const messages = await context.build(session, "system instructions", [
+      { source: "active-file:src/current.ts", content: "export const current = true;", priority: 1_000 }
+    ]);
 
     expect(messages).toEqual([
-      { role: "system", content: 'system instructions\n\nWorkspace context:\n<context source="open-file">\nexport const value = 1;\n</context>' },
+      { role: "system", content: 'system instructions\n\nWorkspace context:\n<context source="active-file:src/current.ts">\nexport const current = true;\n</context>\n\n<context source="open-file">\nexport const value = 1;\n</context>' },
       { role: "assistant", content: "new" }
     ]);
+  });
+
+  it("keeps per-run context out of persisted conversation history", async () => {
+    let modelMessages: readonly { readonly role: string; readonly content: string }[] = [];
+    const provider: ModelProvider = { id: "fake", async *stream(request) {
+      modelMessages = request.messages;
+      yield { type: "finish", reason: "stop" } as const;
+    }};
+    const sessions = new InMemorySessionStore();
+    const runtime = new AgentRuntime({
+      provider,
+      tools: new ToolRegistry(),
+      sessions,
+      context: new CompositeContextManager(),
+      events: new EventBus<RuntimeEvent>(),
+      workspaceRoot: process.cwd()
+    });
+    const session = await runtime.createSession();
+
+    await runtime.run(session.id, "Explain this file", undefined, [
+      { source: "active-file:src/current.ts", content: "const privateContext = true;", priority: 1_000 }
+    ]);
+
+    expect(modelMessages[0]?.content).toContain("active-file:src/current.ts");
+    expect(modelMessages[0]?.content).toContain("const privateContext = true;");
+    expect((await sessions.get(session.id))?.messages[0]).toEqual({ role: "user", content: "Explain this file" });
+    expect((await sessions.get(session.id))?.messages.some((message) => message.content.includes("privateContext"))).toBe(false);
   });
 });
 

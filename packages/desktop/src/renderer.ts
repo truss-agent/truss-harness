@@ -7,6 +7,16 @@ declare global {
   }
 }
 
+interface EmbeddedBrowserView extends HTMLElement {
+  loadURL(url: string): Promise<void>;
+  getURL(): string;
+  canGoBack(): boolean;
+  canGoForward(): boolean;
+  goBack(): void;
+  goForward(): void;
+  reload(): void;
+}
+
 const defaultConfiguration: DesktopConfiguration = {
   provider: "ollama",
   baseUrl: "http://127.0.0.1:11434",
@@ -24,6 +34,7 @@ const sidebar = document.querySelector<HTMLElement>(".sidebar") as HTMLElement;
 const editorArea = document.querySelector<HTMLElement>(".editor-area") as HTMLElement;
 const filesSection = document.querySelector<HTMLElement>(".files-section") as HTMLElement;
 const historySection = document.querySelector<HTMLElement>(".history-section") as HTMLElement;
+const centerSurface = element<HTMLElement>("centerSurface");
 const editorContent = document.querySelector<HTMLElement>(".editor-content") as HTMLElement;
 const terminal = document.querySelector<HTMLElement>(".terminal") as HTMLElement;
 const gitPanel = element<HTMLElement>("gitPanel");
@@ -34,7 +45,19 @@ const gitFiles = element<HTMLDivElement>("gitFiles");
 const commitMessage = element<HTMLInputElement>("commitMessage");
 const generateCommitMessage = element<HTMLButtonElement>("generateCommitMessage");
 const editor = element<HTMLPreElement>("editor");
+const editorTabsElement = element<HTMLDivElement>("editorTabs");
 const editorTitle = element<HTMLSpanElement>("editorTitle");
+const browserPanel = element<HTMLElement>("browserPanel");
+const browserView = element<EmbeddedBrowserView>("browserView");
+const browserUrl = element<HTMLInputElement>("browserUrl");
+const browserBack = element<HTMLButtonElement>("browserBack");
+const browserForward = element<HTMLButtonElement>("browserForward");
+const browserReload = element<HTMLButtonElement>("browserReload");
+const browserExternal = element<HTMLButtonElement>("browserExternal");
+const devServerCommand = element<HTMLInputElement>("devServerCommand");
+const devServerStatus = element<HTMLSpanElement>("devServerStatus");
+const startDevServer = element<HTMLButtonElement>("startDevServer");
+const stopDevServer = element<HTMLButtonElement>("stopDevServer");
 const terminalOutput = element<HTMLPreElement>("terminalOutput");
 const chatMessages = element<HTMLDivElement>("chatMessages");
 const planPanel = element<HTMLElement>("planPanel");
@@ -66,6 +89,17 @@ let models: readonly string[] = [];
 let files: readonly DesktopFile[] = [];
 let activeFile: string | undefined;
 let showingDiff = false;
+type EditorTabMode = "file" | "diff";
+type EditorTabState = "loading" | "ready" | "error";
+interface EditorTab {
+  readonly path: string;
+  mode: EditorTabMode;
+  state: EditorTabState;
+  content: string;
+  scrollTop: number;
+  revision: number;
+}
+const openEditorTabs: EditorTab[] = [];
 let busy = false;
 let persistTimer: number | undefined;
 let slashResults: readonly DesktopFile[] = [];
@@ -78,6 +112,7 @@ let activePlan: WorkspacePlan | undefined;
 let streamStartedAt = 0;
 let streamedTokenEstimate = 0;
 let runningConversationId: string | undefined;
+let centerView: "editor" | "preview" = "editor";
 
 function configuration(): DesktopConfiguration {
   return desktopState.configuration ?? defaultConfiguration;
@@ -107,6 +142,55 @@ function notify(message: string): void {
   toast.textContent = message;
   toast.classList.add("show");
   window.setTimeout(() => toast.classList.remove("show"), 2_800);
+}
+
+function normalizedPreviewUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error("Enter a preview URL.");
+  const normalized = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  const url = new URL(normalized);
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Preview URLs must use HTTP or HTTPS.");
+  return url.toString();
+}
+
+function setCenterView(next: "editor" | "preview"): void {
+  centerView = next;
+  editor.hidden = next !== "editor";
+  browserPanel.hidden = next !== "preview";
+  document.querySelectorAll<HTMLButtonElement>("[data-center-view]").forEach((button) => button.classList.toggle("active", button.dataset.centerView === next));
+}
+
+function updateBrowserNavigation(): void {
+  try {
+    browserBack.disabled = !browserView.canGoBack();
+    browserForward.disabled = !browserView.canGoForward();
+    const current = browserView.getURL();
+    if (current && current !== "about:blank") browserUrl.value = current;
+  } catch {
+    browserBack.disabled = true;
+    browserForward.disabled = true;
+  }
+}
+
+function navigatePreview(value: string): void {
+  let url: string;
+  try {
+    url = normalizedPreviewUrl(value);
+  } catch (error) {
+    notify(error instanceof Error ? error.message : String(error));
+    return;
+  }
+  browserUrl.value = url;
+  setCenterView("preview");
+  void browserView.loadURL(url).catch((error: unknown) => notify(error instanceof Error ? error.message : String(error)));
+}
+
+function renderDevServer(status: "starting" | "running" | "stopped" | "failed", message?: string): void {
+  devServerStatus.textContent = status === "starting" ? "Starting" : status === "running" ? "Running" : status === "failed" ? "Failed" : "Stopped";
+  devServerStatus.className = `dev-server-status ${status}`;
+  startDevServer.disabled = status === "starting" || status === "running";
+  stopDevServer.disabled = status === "stopped" || status === "failed";
+  if (message && status === "failed") notify(message);
 }
 
 function saveConversations(): void {
@@ -405,14 +489,30 @@ function appendInlineMarkdown(parent: HTMLElement, text: string): void {
   if (cursor < text.length) parent.append(document.createTextNode(text.slice(cursor)));
 }
 
-function appendHighlightedCode(parent: HTMLElement, code: string): void {
-  const token = /(\/\/[^\n]*|#[^\n]*)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(\b(?:const|let|var|function|return|if|else|for|while|class|interface|type|import|export|from|async|await|new|public|private|static|def|fn|match|use|package)\b)|(\b\d+(?:\.\d+)?\b)/g;
+function appendHighlightedCode(parent: HTMLElement, code: string, language = ""): void {
+  if (/^(?:html|xml|svg|vue|svelte)$/i.test(language)) {
+    const markupToken = /(<!--[\s\S]*?-->)|(<\/?[A-Za-z][^>]*>)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g;
+    let markupCursor = 0;
+    for (const match of code.matchAll(markupToken)) {
+      const index = match.index ?? 0;
+      if (index > markupCursor) parent.append(document.createTextNode(code.slice(markupCursor, index)));
+      const span = document.createElement("span");
+      span.className = match[1] ? "token-comment" : match[2] ? "token-tag" : "token-string";
+      span.textContent = match[0];
+      parent.append(span);
+      markupCursor = index + match[0].length;
+    }
+    if (markupCursor < code.length) parent.append(document.createTextNode(code.slice(markupCursor)));
+    return;
+  }
+
+  const token = /(\/\*[\s\S]*?\*\/|\/\/[^\n]*|#[^\n]*)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(\b(?:as|async|await|break|case|catch|class|const|continue|def|default|delete|do|else|enum|export|extends|false|finally|fn|for|from|function|if|implements|import|in|instanceof|interface|let|match|new|null|package|private|protected|public|return|static|super|switch|this|throw|true|try|type|typeof|undefined|use|var|while|yield)\b)|(\b(?:0x[\da-f]+|\d+(?:\.\d+)?)\b)|([{}()[\].,:;=+\-*/<>!?&|]+)/gi;
   let cursor = 0;
   for (const match of code.matchAll(token)) {
     const index = match.index ?? 0;
     if (index > cursor) parent.append(document.createTextNode(code.slice(cursor, index)));
     const span = document.createElement("span");
-    span.className = match[1] ? "token-comment" : match[2] ? "token-string" : match[3] ? "token-keyword" : "token-number";
+    span.className = match[1] ? "token-comment" : match[2] ? "token-string" : match[3] ? "token-keyword" : match[4] ? "token-number" : "token-operator";
     span.textContent = match[0];
     parent.append(span);
     cursor = index + match[0].length;
@@ -438,7 +538,7 @@ function renderMarkdown(container: HTMLElement, content: string): void {
       label.textContent = language;
       const pre = document.createElement("pre");
       const codeElement = document.createElement("code");
-      appendHighlightedCode(codeElement, code.join("\n"));
+      appendHighlightedCode(codeElement, code.join("\n"), language);
       pre.append(codeElement);
       block.append(label, pre);
       container.append(block);
@@ -566,17 +666,193 @@ function updateConversation(conversationId: string, update: (conversation: Deskt
   desktopState = { ...desktopState, conversations: desktopState.conversations.map((conversation) => conversation.id === conversationId ? update(conversation) : conversation) };
 }
 
-async function openFile(path: string, diff: boolean): Promise<void> {
-  activeFile = path;
-  showingDiff = diff;
-  editorTitle.textContent = diff ? `Diff: ${path}` : path;
-  editor.textContent = "Loading...";
-  renderFiles();
-  try {
-    editor.textContent = diff ? await window.trussDesktop.diffFile(path) : await window.trussDesktop.readFile(path);
-  } catch (error) {
-    editor.textContent = `Unable to open ${path}: ${error instanceof Error ? error.message : String(error)}`;
+function languageForPath(path: string): string {
+  const extension = path.split(".").at(-1)?.toLowerCase() ?? "";
+  const languages: Record<string, string> = {
+    cjs: "javascript", css: "css", go: "go", htm: "html", html: "html", java: "java",
+    js: "javascript", json: "json", jsx: "jsx", md: "markdown", mjs: "javascript",
+    php: "php", py: "python", rb: "ruby", rs: "rust", scss: "scss", sh: "shell",
+    sql: "sql", svelte: "svelte", svg: "svg", toml: "toml", ts: "typescript",
+    tsx: "tsx", vue: "vue", xml: "xml", yaml: "yaml", yml: "yaml"
+  };
+  return languages[extension] ?? extension;
+}
+
+function mediaKindForPath(path: string): "image" | "video" | undefined {
+  const extension = path.split(".").at(-1)?.toLowerCase();
+  if (extension && ["jpg", "jpeg", "png", "svg", "webp"].includes(extension)) return "image";
+  if (extension && ["mp4", "webm"].includes(extension)) return "video";
+  return undefined;
+}
+
+function workspaceMediaUrl(path: string): string {
+  return `truss-media://workspace/${encodeURIComponent(path.replaceAll("\\", "/"))}`;
+}
+
+function activeEditorTab(): EditorTab | undefined {
+  return activeFile ? openEditorTabs.find((tab) => tab.path === activeFile) : undefined;
+}
+
+function preserveEditorScroll(): void {
+  const tab = activeEditorTab();
+  if (tab) tab.scrollTop = editor.scrollTop;
+}
+
+function renderEditorContent(tab: EditorTab | undefined): void {
+  editor.className = "editor-content";
+  editor.replaceChildren();
+  if (!tab) {
+    editor.append(document.createTextNode("Open a workspace file to inspect it."));
+    editor.scrollTop = 0;
+    return;
   }
+  if (tab.state === "loading") {
+    editor.classList.add("loading");
+    editor.append(document.createTextNode(`Loading ${tab.path}...`));
+  } else if (tab.state === "error") {
+    editor.classList.add("error");
+    editor.append(document.createTextNode(tab.content));
+  } else if (tab.mode === "file" && mediaKindForPath(tab.path)) {
+    const kind = mediaKindForPath(tab.path);
+    editor.classList.add("media");
+    const stage = document.createElement("span");
+    stage.className = "editor-media-stage";
+    const showError = (): void => {
+      const error = document.createElement("span");
+      error.className = "editor-media-error";
+      error.textContent = `Unable to display ${tab.path}.`;
+      stage.replaceChildren(error);
+    };
+    if (kind === "image") {
+      const image = document.createElement("img");
+      image.className = "editor-media-image";
+      image.src = workspaceMediaUrl(tab.path);
+      image.alt = tab.path;
+      image.draggable = false;
+      image.title = "Click to toggle actual size";
+      image.onerror = showError;
+      image.onclick = () => image.classList.toggle("actual-size");
+      stage.append(image);
+    } else {
+      const video = document.createElement("video");
+      video.className = "editor-media-video";
+      video.src = workspaceMediaUrl(tab.path);
+      video.controls = true;
+      video.preload = "metadata";
+      video.onerror = showError;
+      stage.append(video);
+    }
+    editor.append(stage);
+  } else if (tab.mode === "diff") {
+    const language = languageForPath(tab.path);
+    for (const line of tab.content.replace(/\r\n/g, "\n").split("\n")) {
+      const row = document.createElement("span");
+      row.className = "editor-diff-line";
+      if (line.startsWith("+") && !line.startsWith("+++")) row.classList.add("added");
+      else if (line.startsWith("-") && !line.startsWith("---")) row.classList.add("removed");
+      else if (line.startsWith("@@")) row.classList.add("hunk");
+      const marker = document.createElement("span");
+      marker.className = "diff-marker";
+      marker.textContent = line[0] === "+" || line[0] === "-" || line[0] === " " ? line[0] : " ";
+      const code = document.createElement("span");
+      appendHighlightedCode(code, marker.textContent.trim() ? line.slice(1) : line, language);
+      row.append(marker, code);
+      editor.append(row);
+    }
+  } else {
+    appendHighlightedCode(editor, tab.content, languageForPath(tab.path));
+  }
+  window.requestAnimationFrame(() => { editor.scrollTop = tab.scrollTop; });
+}
+
+function selectEditorTab(tab: EditorTab): void {
+  preserveEditorScroll();
+  activeFile = tab.path;
+  showingDiff = tab.mode === "diff";
+  setCenterView("editor");
+  renderEditorTabs();
+  renderEditorContent(tab);
+  renderFiles();
+}
+
+function closeEditorTab(path: string): void {
+  const index = openEditorTabs.findIndex((tab) => tab.path === path);
+  if (index < 0) return;
+  const wasActive = activeFile === path;
+  if (wasActive) preserveEditorScroll();
+  openEditorTabs.splice(index, 1);
+  if (wasActive) {
+    const next = openEditorTabs[Math.min(index, openEditorTabs.length - 1)];
+    activeFile = undefined;
+    showingDiff = false;
+    if (next) {
+      selectEditorTab(next);
+      return;
+    }
+    editorTitle.textContent = "Workspace";
+    renderEditorContent(undefined);
+    renderFiles();
+  }
+  renderEditorTabs();
+}
+
+function renderEditorTabs(): void {
+  editorTitle.hidden = openEditorTabs.length > 0;
+  const tabs = openEditorTabs.map((tab) => {
+    const container = document.createElement("div");
+    container.className = `editor-tab ${tab.mode === "diff" ? "diff" : ""} ${tab.path === activeFile ? "active" : ""}`;
+    container.setAttribute("role", "presentation");
+    const select = document.createElement("button");
+    select.className = "editor-tab-main";
+    select.type = "button";
+    select.setAttribute("role", "tab");
+    select.setAttribute("aria-selected", String(tab.path === activeFile));
+    select.textContent = tab.path.split(/[\\/]/).at(-1) ?? tab.path;
+    select.title = `${tab.mode === "diff" ? "Diff: " : ""}${tab.path}`;
+    select.onclick = () => selectEditorTab(tab);
+    const close = document.createElement("button");
+    close.className = "editor-tab-close";
+    close.type = "button";
+    close.textContent = "x";
+    close.title = `Close ${tab.path}`;
+    close.setAttribute("aria-label", `Close ${tab.path}`);
+    close.onclick = () => closeEditorTab(tab.path);
+    container.append(select, close);
+    return container;
+  });
+  editorTabsElement.replaceChildren(editorTitle, ...tabs);
+}
+
+async function loadEditorTab(tab: EditorTab): Promise<void> {
+  const revision = ++tab.revision;
+  tab.state = "loading";
+  if (tab.path === activeFile) renderEditorContent(tab);
+  try {
+    const content = tab.mode === "file" && mediaKindForPath(tab.path)
+      ? ""
+      : tab.mode === "diff" ? await window.trussDesktop.diffFile(tab.path) : await window.trussDesktop.readFile(tab.path);
+    if (revision !== tab.revision) return;
+    tab.content = content;
+    tab.state = "ready";
+  } catch (error) {
+    if (revision !== tab.revision) return;
+    tab.content = `Unable to open ${tab.path}: ${error instanceof Error ? error.message : String(error)}`;
+    tab.state = "error";
+  }
+  if (tab.path === activeFile) renderEditorContent(tab);
+}
+
+async function openFile(path: string, diff: boolean): Promise<void> {
+  let tab = openEditorTabs.find((candidate) => candidate.path === path);
+  if (!tab) {
+    tab = { path, mode: diff ? "diff" : "file", state: "loading", content: "", scrollTop: 0, revision: 0 };
+    openEditorTabs.push(tab);
+  } else if (tab.mode !== (diff ? "diff" : "file")) {
+    tab.mode = diff ? "diff" : "file";
+    tab.scrollTop = 0;
+  }
+  selectEditorTab(tab);
+  await loadEditorTab(tab);
 }
 
 async function loadFiles(): Promise<void> {
@@ -728,7 +1004,7 @@ async function sendChat(): Promise<void> {
   try {
     runningConversationId = conversation.id;
     setBusy(true);
-    await window.trussDesktop.sendChat({ prompt, conversationId: conversation.id, history, attachedPaths: attachedPaths(prompt) });
+    await window.trussDesktop.sendChat({ prompt, conversationId: conversation.id, history, activeFilePath: activeFile, attachedPaths: attachedPaths(prompt) });
   } catch (error) {
     updateConversation(conversation.id, (current) => ({ ...current, messages: [...current.messages.slice(0, -1), { role: "assistant", content: `Error: ${error instanceof Error ? error.message : String(error)}` }] }));
     setBusy(false);
@@ -769,6 +1045,11 @@ function handleEvent(message: DesktopEvent): void {
     return;
   }
   if (message.type === "terminal-output") { appendTerminal(message.text); return; }
+  if (message.type === "dev-server") {
+    renderDevServer(message.status, message.message);
+    if (message.url) navigatePreview(message.url);
+    return;
+  }
   if (message.type === "approval") {
     const approval = document.createElement("div");
     approval.className = "tool-message";
@@ -801,6 +1082,11 @@ function handleEvent(message: DesktopEvent): void {
       saveConversations();
       renderChat();
     }
+    const modified = new Set((event.modifiedFiles ?? []).map((path) => path.replaceAll("\\", "/")));
+    for (const tab of openEditorTabs) {
+      if (modified.has(tab.path.replaceAll("\\", "/"))) void loadEditorTab(tab);
+    }
+    if (centerView === "preview" && browserView.getURL() !== "about:blank") browserView.reload();
     return;
   }
   if (event.type === "text_delta") {
@@ -874,7 +1160,7 @@ bindPaneResize("historySplitter", "y", () => {
 });
 bindPaneResize("terminalSplitter", "y", () => {
   const initial = terminal.getBoundingClientRect().height;
-  const adjacent = editorContent.getBoundingClientRect().height;
+  const adjacent = centerSurface.getBoundingClientRect().height;
   return (delta) => {
     const applied = clamp(delta, 160 - adjacent, initial - 120);
     editorArea.style.setProperty("--terminal-height", `${initial - applied}px`);
@@ -886,8 +1172,12 @@ element<HTMLButtonElement>("chooseWorkspace").onclick = async () => {
   if (!next) return;
   desktopState = next;
   activeFile = undefined;
+  showingDiff = false;
+  openEditorTabs.splice(0, openEditorTabs.length);
+  setCenterView("editor");
   editorTitle.textContent = "Workspace";
-  editor.textContent = "Workspace changed. Select a file to inspect it.";
+  renderEditorTabs();
+  renderEditorContent(undefined);
   await Promise.all([loadFiles(), refreshGit(), window.trussDesktop.getPlan().then((plan) => { activePlan = plan; renderPlan(); })]);
   renderConversations();
   renderChat();
@@ -938,8 +1228,8 @@ element<HTMLFormElement>("commitForm").onsubmit = (event) => {
   });
 };
 element<HTMLButtonElement>("newChat").onclick = () => { cancelActiveRunForNavigation(); createConversation(); renderConversations(); renderChat(); renderRuntime(); saveConversations(); };
-element<HTMLButtonElement>("fileButton").onclick = () => { if (activeFile) void openFile(activeFile, false); };
-element<HTMLButtonElement>("diffButton").onclick = () => { if (activeFile) void openFile(activeFile, !showingDiff); };
+element<HTMLButtonElement>("fileButton").onclick = () => { setCenterView("editor"); if (activeFile) void openFile(activeFile, false); };
+element<HTMLButtonElement>("diffButton").onclick = () => { setCenterView("editor"); if (activeFile) void openFile(activeFile, !showingDiff); };
 element<HTMLButtonElement>("settingsButton").onclick = () => { populateSettings(); settingsDialog.showModal(); };
 element<HTMLButtonElement>("dialogRefresh").onclick = () => void discover({ provider: providerSelect.value === "openai-compatible" ? "openai-compatible" : "ollama", baseUrl: baseUrlInput.value });
 element<HTMLButtonElement>("applySettings").onclick = (event) => { event.preventDefault(); void applyConfiguration(settingsConfiguration()).then(() => settingsDialog.close()).catch((error) => notify(error instanceof Error ? error.message : String(error))); };
@@ -958,6 +1248,54 @@ chatInput.onkeydown = (event) => {
 stopChat.onclick = () => void window.trussDesktop.stopChat();
 cancelChatButton.onclick = () => void window.trussDesktop.stopChat();
 element<HTMLFormElement>("terminalForm").onsubmit = (event) => { event.preventDefault(); const input = element<HTMLInputElement>("terminalInput"); const command = input.value.trim(); if (!command) return; input.value = ""; appendTerminal(`\n> ${command}\n`); void window.trussDesktop.runTerminal(command); };
+document.querySelectorAll<HTMLButtonElement>("[data-center-view]").forEach((button) => {
+  button.onclick = () => setCenterView(button.dataset.centerView === "preview" ? "preview" : "editor");
+});
+element<HTMLFormElement>("browserForm").onsubmit = (event) => { event.preventDefault(); navigatePreview(browserUrl.value); };
+browserBack.onclick = () => { if (browserView.canGoBack()) browserView.goBack(); };
+browserForward.onclick = () => { if (browserView.canGoForward()) browserView.goForward(); };
+browserReload.onclick = () => { if (browserView.getURL() !== "about:blank") browserView.reload(); };
+browserExternal.onclick = () => void window.trussDesktop.openExternal(browserUrl.value).catch((error) => notify(error instanceof Error ? error.message : String(error)));
+element<HTMLFormElement>("devServerForm").onsubmit = (event) => {
+  event.preventDefault();
+  const command = devServerCommand.value.trim();
+  if (!command) { notify("Enter a dev-server command."); return; }
+  renderDevServer("starting");
+  appendTerminal(`\n[dev server] ${command}\n`);
+  void window.trussDesktop.startDevServer(command).catch((error) => renderDevServer("failed", error instanceof Error ? error.message : String(error)));
+};
+stopDevServer.onclick = () => void window.trussDesktop.stopDevServer();
+browserView.addEventListener("dom-ready", updateBrowserNavigation);
+browserView.addEventListener("did-navigate", updateBrowserNavigation);
+browserView.addEventListener("did-navigate-in-page", updateBrowserNavigation);
+browserView.addEventListener("did-fail-load", (event) => {
+  const detail = event as Event & { readonly errorCode?: number; readonly errorDescription?: string };
+  if (detail.errorCode === -3) return;
+  notify(detail.errorDescription ? `Preview failed: ${detail.errorDescription}` : "Preview failed to load.");
+});
+window.addEventListener("keydown", (event) => {
+  if (centerView === "editor" && event.ctrlKey && event.key.toLowerCase() === "w" && activeFile) {
+    event.preventDefault();
+    closeEditorTab(activeFile);
+    return;
+  }
+  if (centerView === "editor" && event.ctrlKey && event.key === "Tab" && openEditorTabs.length > 1) {
+    event.preventDefault();
+    const current = openEditorTabs.findIndex((tab) => tab.path === activeFile);
+    const direction = event.shiftKey ? -1 : 1;
+    selectEditorTab(openEditorTabs[(current + direction + openEditorTabs.length) % openEditorTabs.length]);
+    return;
+  }
+  if (centerView === "preview" && event.ctrlKey && event.key.toLowerCase() === "l") {
+    event.preventDefault();
+    browserUrl.focus();
+    browserUrl.select();
+  }
+  if (centerView === "preview" && event.key === "F5") {
+    event.preventDefault();
+    if (browserView.getURL() !== "about:blank") browserView.reload();
+  }
+});
 
 window.trussDesktop.onEvent(handleEvent);
 void (async () => {

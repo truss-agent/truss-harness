@@ -29,8 +29,23 @@
     </aside>
     <div id="sidebarSplitter" class="pane-splitter vertical" role="separator" aria-label="Resize sidebar"></div>
     <section class="editor-area">
-      <div class="editor-toolbar"><span id="editorTitle">Workspace</span><div><button id="fileButton">Open file</button><button id="diffButton">Diff</button></div></div>
-      <pre id="editor" class="editor-content">Open a workspace to browse its files.</pre>
+      <div class="editor-toolbar"><div id="editorTabs" class="editor-tabs" role="tablist" aria-label="Open files"><span id="editorTitle" class="editor-empty-title">Workspace</span></div><div class="editor-toolbar-actions"><div class="center-tabs" aria-label="Center view"><button class="active" data-center-view="editor">Editor</button><button data-center-view="preview">Preview</button></div><button id="fileButton">File</button><button id="diffButton">Diff</button></div></div>
+      <div id="centerSurface" class="center-surface">
+        <pre id="editor" class="editor-content">Open a workspace to browse its files.</pre>
+        <section id="browserPanel" class="browser-panel" hidden>
+          <form id="browserForm" class="browser-toolbar">
+            <div class="browser-nav"><button id="browserBack" type="button" title="Back" aria-label="Back" disabled>&#8592;</button><button id="browserForward" type="button" title="Forward" aria-label="Forward" disabled>&#8594;</button><button id="browserReload" type="button" title="Reload" aria-label="Reload">&#8635;</button></div>
+            <input id="browserUrl" type="text" spellcheck="false" value="http://127.0.0.1:3000" aria-label="Preview URL">
+            <button class="primary" type="submit">Go</button><button id="browserExternal" type="button" title="Open in system browser">Open</button>
+          </form>
+          <form id="devServerForm" class="dev-server-toolbar">
+            <span id="devServerStatus" class="dev-server-status">Stopped</span>
+            <input id="devServerCommand" type="text" spellcheck="false" value="npm run dev" aria-label="Dev server command">
+            <button id="startDevServer" class="primary" type="submit">Start</button><button id="stopDevServer" type="button" disabled>Stop</button>
+          </form>
+          <webview id="browserView" class="browser-view" src="about:blank" partition="truss-preview"></webview>
+        </section>
+      </div>
       <div id="terminalSplitter" class="pane-splitter horizontal" role="separator" aria-label="Resize terminal"></div>
       <section class="terminal"><div class="terminal-heading">Terminal</div><pre id="terminalOutput" class="terminal-output">Terminal ready.</pre><form id="terminalForm" class="terminal-form"><span>&gt;</span><input id="terminalInput" autocomplete="off" placeholder="Run a command in the workspace"><button type="submit">Run</button></form></section>
     </section>

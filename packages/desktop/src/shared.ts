@@ -69,6 +69,7 @@ export type DesktopEvent =
   | { readonly type: "chat-end"; readonly conversationId: string; readonly aborted?: boolean }
   | { readonly type: "chat-error"; readonly conversationId: string; readonly message: string }
   | { readonly type: "approval"; readonly callId: string; readonly tool: string; readonly input: Record<string, unknown> }
+  | { readonly type: "dev-server"; readonly status: "starting" | "running" | "stopped" | "failed"; readonly command?: string; readonly url?: string; readonly message?: string }
   | { readonly type: "terminal-output"; readonly commandId: string; readonly text: string };
 
 export interface DesktopBridge {
@@ -77,7 +78,7 @@ export interface DesktopBridge {
   saveConversations(conversations: readonly DesktopConversation[], activeConversationId?: string): Promise<void>;
   discoverModels(configuration?: Partial<DesktopConfiguration>): Promise<{ readonly endpoints: readonly DesktopEndpoint[]; readonly models: readonly string[] }>;
   configure(configuration: DesktopConfiguration): Promise<DesktopState>;
-  sendChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly attachedPaths?: readonly string[] }): Promise<void>;
+  sendChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[] }): Promise<void>;
   stopChat(): Promise<void>;
   resolveApproval(callId: string, approved: boolean): Promise<void>;
   listFiles(): Promise<readonly DesktopFile[]>;
@@ -92,6 +93,9 @@ export interface DesktopBridge {
   gitPull(): Promise<string>;
   gitPush(): Promise<string>;
   runTerminal(command: string): Promise<string>;
+  startDevServer(command: string): Promise<string>;
+  stopDevServer(): Promise<void>;
+  openExternal(url: string): Promise<void>;
   onEvent(listener: (event: DesktopEvent) => void): () => void;
 }
 import type { WorkspacePlan } from "@truss-harness/runtime";

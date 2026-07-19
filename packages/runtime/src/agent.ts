@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ChatMessage, JsonObject, ModelProvider, RuntimeEvent, Session, ToolCall, ToolResult } from "./contracts.js";
-import type { ContextManager } from "./context.js";
+import type { ContextBlock, ContextManager } from "./context.js";
 import type { RuntimeEventBus } from "./events.js";
 import type { SessionStore } from "./sessions.js";
 import type { ToolRegistry } from "./tools.js";
@@ -29,7 +29,7 @@ export class AgentRuntime {
   async listSessions(): Promise<readonly Session[]> { return this.options.sessions.list(); }
   async deleteSession(sessionId: string): Promise<boolean> { return this.options.sessions.delete(sessionId); }
   async restoreSessionCheckpoint(sessionId: string): Promise<Session | undefined> { return this.options.sessions.restoreCheckpoint(sessionId); }
-  async run(sessionId: string, prompt: string, signal?: AbortSignal): Promise<void> {
+  async run(sessionId: string, prompt: string, signal?: AbortSignal, requestContext: readonly ContextBlock[] = []): Promise<void> {
     const session = await this.options.sessions.get(sessionId);
     if (!session) throw new Error(`Unknown session: ${sessionId}`);
     const taskId = randomUUID();
@@ -46,7 +46,7 @@ export class AgentRuntime {
       for (let turn = 0; turn < this.maxTurns; turn++) {
         const calls: ToolCall[] = [];
         let text = "";
-        for await (const event of this.options.provider.stream({ messages: await this.options.context.build(session, this.options.systemPrompt), tools: this.options.tools.definitions(), signal })) {
+        for await (const event of this.options.provider.stream({ messages: await this.options.context.build(session, this.options.systemPrompt, requestContext), tools: this.options.tools.definitions(), signal })) {
           if (event.type === "text_delta") { text += event.text; assistantText += event.text; await this.emit({ type: "text_delta", sessionId, text: event.text }); }
           else if (event.type === "tool_call") calls.push(event);
           else if (event.type === "error") throw event.error;

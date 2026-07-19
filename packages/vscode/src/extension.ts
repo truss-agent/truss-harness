@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { createInterface } from "node:readline";
 import { detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import { brand } from "@truss-harness/branding";
-import { executeWorkspaceCommand, type WorkspacePlan } from "@truss-harness/runtime";
+import { executeWorkspaceCommand, type ContextBlock, type WorkspacePlan } from "@truss-harness/runtime";
 import * as vscode from "vscode";
 
 const execFile = promisify(execFileCallback);
@@ -91,10 +91,10 @@ class RuntimeService implements vscode.Disposable {
     this.process.on("exit", (code) => this.failAll(new Error(`Truss service exited with code ${code ?? "unknown"}.`)));
   }
 
-  run(prompt: string, sessionId?: string): RunHandle {
+  run(prompt: string, sessionId?: string, context?: readonly ContextBlock[]): RunHandle {
     const requestId = `vscode-${++this.requestSequence}`;
     const result = new Promise<ServiceResponse>((resolve, reject) => this.requests.set(requestId, { resolve, reject }));
-    this.process.stdin.write(`${JSON.stringify({ type: "run", requestId, prompt, sessionId })}\n`);
+    this.process.stdin.write(`${JSON.stringify({ type: "run", requestId, prompt, sessionId, context })}\n`);
     return { requestId, result };
   }
 
@@ -230,25 +230,42 @@ async function workspaceFiles(): Promise<readonly string[]> {
     .sort((left, right) => left.localeCompare(right));
 }
 
-async function promptWithWorkspaceFiles(prompt: string, attachedPaths: readonly string[] | undefined): Promise<string> {
+function activeEditorWorkspaceFile(): { readonly path: string; readonly content: string } | undefined {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor || editor.document.uri.scheme !== "file") return undefined;
   const root = resolve(workspaceRoot());
-  const paths = [...new Set(attachedPaths ?? [])].slice(0, 8);
-  const attachments: string[] = [];
+  const target = resolve(editor.document.uri.fsPath);
+  if (target === root || !target.startsWith(`${root}${sep}`)) return undefined;
+  return { path: relative(root, target).replaceAll("\\", "/"), content: editor.document.getText() };
+}
+
+async function workspaceFileContext(attachedPaths: readonly string[] | undefined): Promise<readonly ContextBlock[]> {
+  const root = resolve(workspaceRoot());
+  const activeFile = activeEditorWorkspaceFile();
+  const paths = [...new Set([activeFile?.path, ...(attachedPaths ?? [])].filter((path): path is string => Boolean(path)))].slice(0, 8);
+  const blocks: ContextBlock[] = [];
   let remaining = 80_000;
   for (const path of paths) {
     if (remaining <= 0) break;
     const target = resolve(root, path);
     if (target !== root && !target.startsWith(`${root}${sep}`)) continue;
     try {
-      const content = new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.file(target)));
-      const clipped = content.slice(0, Math.min(30_000, remaining));
-      attachments.push(`<file path="${path.replaceAll('"', "&quot;")}">\n${clipped}\n</file>`);
+      const isPrimary = path === activeFile?.path;
+      const content = isPrimary ? activeFile.content : new TextDecoder().decode(await vscode.workspace.fs.readFile(vscode.Uri.file(target)));
+      const clipped = content.slice(0, Math.min(isPrimary ? 12_000 : 30_000, remaining));
+      blocks.push({
+        source: `${isPrimary ? "active-file" : "attached-file"}:${path}`,
+        content: isPrimary
+          ? `This is the currently open workspace file and the primary context for this request. Tool results produced later in the run take precedence over this request-start snapshot.\n\n${clipped}`
+          : clipped,
+        priority: isPrimary ? 1_000 : 100
+      });
       remaining -= clipped.length;
     } catch {
       // A selected file can disappear or become unavailable before the request is sent.
     }
   }
-  return attachments.length ? `${prompt}\n\n<attached_workspace_files>\n${attachments.join("\n")}\n</attached_workspace_files>` : prompt;
+  return blocks;
 }
 
 function localEndpoint(configuration: ModelConfiguration): LocalModelEndpoint {
@@ -384,7 +401,7 @@ export function activate(context: vscode.ExtensionContext): void {
     sessionId = liveSessionIds.get(conversationId) ?? await current.createSession(normalizeHistory(history));
     liveSessionIds.set(conversationId, sessionId);
     post({ type: "assistantStart", conversationId });
-    const run = current.run(await promptWithWorkspaceFiles(prompt, attachedPaths), sessionId);
+    const run = current.run(prompt, sessionId, await workspaceFileContext(attachedPaths));
     activeChatRequest = run.requestId;
     activeChatConversationId = conversationId;
     try {

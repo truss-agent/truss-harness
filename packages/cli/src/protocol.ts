@@ -1,9 +1,9 @@
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
-import type { AgentRuntime, ChatMessage, RuntimeEvent, ToolApproval, ToolCall, Session } from "@truss-harness/runtime";
+import type { AgentRuntime, ChatMessage, ContextBlock, RuntimeEvent, ToolApproval, ToolCall, Session } from "@truss-harness/runtime";
 
 export type RuntimeServiceRequest =
-  | { readonly type: "run"; readonly requestId: string; readonly prompt: string; readonly sessionId?: string }
+  | { readonly type: "run"; readonly requestId: string; readonly prompt: string; readonly sessionId?: string; readonly context?: readonly ContextBlock[] }
   | { readonly type: "create_session"; readonly requestId: string; readonly messages?: readonly ChatMessage[] }
   | { readonly type: "abort"; readonly requestId: string }
   | { readonly type: "tool_approval"; readonly requestId: string; readonly callId: string; readonly approved: boolean };
@@ -101,7 +101,15 @@ export async function runService(runtime: AgentRuntime, events: { subscribe(list
     const controller = new AbortController();
     requestsBySession.set(session.id, request.requestId);
     controllers.set(request.requestId, controller);
-    void runtime.run(session.id, request.prompt, controller.signal)
+    const requestContext = Array.isArray(request.context)
+      ? request.context.filter((block): block is ContextBlock =>
+        Boolean(block)
+        && typeof block === "object"
+        && typeof block.source === "string"
+        && typeof block.content === "string"
+        && (block.priority === undefined || typeof block.priority === "number"))
+      : [];
+    void runtime.run(session.id, request.prompt, controller.signal, requestContext)
       .then(() => write({ type: "response", requestId: request.requestId, result: { sessionId: session.id } }))
       .catch((error: unknown) => write({ type: "error", requestId: request.requestId, message: error instanceof Error ? error.message : String(error) }))
       .finally(() => {

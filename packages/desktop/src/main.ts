@@ -1,18 +1,34 @@
-import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, protocol, shell, type OpenDialogOptions } from "electron";
 import { spawn } from "node:child_process";
 import { execFile as execFileCallback } from "node:child_process";
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve, sep } from "node:path";
+import { Readable } from "node:stream";
 import { promisify } from "node:util";
 import { brand } from "@truss-harness/branding";
 import { createClientRuntime, type ClientConfiguration } from "@truss-harness/cli/runtime";
 import { detectLocalContextWindow, detectLocalEndpoints, generateLocalText, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
-import { FileWorkspacePlanStore, type ToolApproval, type ToolCall } from "@truss-harness/runtime";
+import { FileWorkspacePlanStore, type ContextBlock, type ToolApproval, type ToolCall } from "@truss-harness/runtime";
 import type { DesktopConfiguration, DesktopConversation, DesktopEndpoint, DesktopEvent, DesktopFile, DesktopGitStatus, DesktopMessage, DesktopState } from "./shared.js";
 
 const execFile = promisify(execFileCallback);
 const ignoredDirectories = new Set([".git", "node_modules", "dist", "coverage", ".next"]);
 const maxFiles = 600;
+const mediaTypes = new Map([
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".png", "image/png"],
+  [".svg", "image/svg+xml"],
+  [".webp", "image/webp"],
+  [".mp4", "video/mp4"],
+  [".webm", "video/webm"]
+]);
+
+protocol.registerSchemesAsPrivileged([{
+  scheme: "truss-media",
+  privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true }
+}]);
 
 interface PersistedState extends DesktopState {}
 
@@ -24,11 +40,46 @@ let activeSessionId: string | undefined;
 let activeConversationId: string | undefined;
 let activeAbort: AbortController | undefined;
 let activeRun: Promise<void> | undefined;
+let devServerProcess: ReturnType<typeof spawn> | undefined;
 const approvalResolvers = new Map<string, (approved: boolean) => void>();
 const sessionConversationIds = new Map<string, string>();
 
 function send(event: DesktopEvent): void {
   mainWindow?.webContents.send("truss:event", event);
+}
+
+function detectedPreviewUrl(output: string): string | undefined {
+  const match = output.match(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?(?:\/[^\s]*)?/i);
+  return match?.[0].replace(/[),.;]+$/, "").replace("0.0.0.0", "127.0.0.1");
+}
+
+function validatedPreviewUrl(value: string): string {
+  const normalized = /^[a-z][a-z\d+.-]*:\/\//i.test(value.trim()) ? value.trim() : `http://${value.trim()}`;
+  const url = new URL(normalized);
+  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Preview URLs must use HTTP or HTTPS.");
+  return url.toString();
+}
+
+function isAllowedPreviewUrl(value: string): boolean {
+  if (value === "about:blank") return true;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function stopManagedDevServer(): void {
+  const child = devServerProcess;
+  devServerProcess = undefined;
+  if (!child || child.killed) return;
+  if (process.platform === "win32" && child.pid) {
+    void execFile("taskkill", ["/PID", String(child.pid), "/T", "/F"]).catch(() => child.kill());
+  } else {
+    child.kill();
+  }
+  send({ type: "dev-server", status: "stopped" });
 }
 
 function distDirectory(): string {
@@ -141,6 +192,56 @@ function ensurePathInsideWorkspace(path: string): string {
   const target = resolve(workspace, path);
   if (target !== workspace && !target.startsWith(`${workspace}${sep}`)) throw new Error("Path must remain inside the selected workspace.");
   return target;
+}
+
+function mediaType(path: string): string | undefined {
+  const extension = path.slice(path.lastIndexOf(".")).toLowerCase();
+  return mediaTypes.get(extension);
+}
+
+async function workspaceMediaResponse(request: Request): Promise<Response> {
+  try {
+    const url = new URL(request.url);
+    if (url.hostname !== "workspace") return new Response("Unknown media source.", { status: 404 });
+    const relativePath = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
+    const target = ensurePathInsideWorkspace(relativePath);
+    const contentType = mediaType(target);
+    if (!contentType) return new Response("Unsupported media type.", { status: 415 });
+    const file = await stat(target);
+    if (!file.isFile()) return new Response("Media file not found.", { status: 404 });
+
+    let start = 0;
+    let end = Math.max(0, file.size - 1);
+    let status = 200;
+    const range = request.headers.get("range")?.match(/^bytes=(\d*)-(\d*)$/);
+    if (range && file.size > 0) {
+      if (!range[1] && range[2]) {
+        const suffixLength = Math.min(file.size, Number.parseInt(range[2], 10));
+        start = file.size - suffixLength;
+      } else {
+        start = Number.parseInt(range[1] || "0", 10);
+        end = range[2] ? Math.min(file.size - 1, Number.parseInt(range[2], 10)) : file.size - 1;
+      }
+      if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || start >= file.size) {
+        return new Response(null, { status: 416, headers: { "content-range": `bytes */${file.size}` } });
+      }
+      status = 206;
+    }
+
+    const length = file.size ? end - start + 1 : 0;
+    const headers: Record<string, string> = {
+      "accept-ranges": "bytes",
+      "cache-control": "no-store",
+      "content-length": String(length),
+      "content-type": contentType
+    };
+    if (status === 206) headers["content-range"] = `bytes ${start}-${end}/${file.size}`;
+    if (request.method === "HEAD" || file.size === 0) return new Response(null, { status, headers });
+    const body = Readable.toWeb(createReadStream(target, { start, end })) as ReadableStream<Uint8Array>;
+    return new Response(body, { status, headers });
+  } catch {
+    return new Response("Media file not found.", { status: 404 });
+  }
 }
 
 async function collectFiles(current = persisted.workspaceRoot, files: DesktopFile[] = []): Promise<DesktopFile[]> {
@@ -264,25 +365,42 @@ async function getGitStatus(): Promise<DesktopGitStatus> {
   }
 }
 
-async function promptWithFileContext(prompt: string, attachedPaths: readonly string[] | undefined): Promise<string> {
-  const paths = [...new Set(attachedPaths ?? [])].slice(0, 8);
-  const files: string[] = [];
+async function fileContext(activeFilePath: string | undefined, attachedPaths: readonly string[] | undefined): Promise<readonly ContextBlock[]> {
+  const paths = [...new Set([activeFilePath, ...(attachedPaths ?? [])].filter((path): path is string => Boolean(path)))].slice(0, 8);
+  const blocks: ContextBlock[] = [];
+  const primaryBudget = Math.max(2_000, Math.min(20_000, persisted.configuration?.contextWindow ?? 8_192));
   let remaining = 80_000;
   for (const path of paths) {
     if (remaining <= 0) break;
     try {
+      const isPrimary = path === activeFilePath;
+      const contentType = mediaType(path);
+      if (contentType && contentType !== "image/svg+xml") {
+        blocks.push({
+          source: `${isPrimary ? "active-file" : "attached-file"}:${path}`,
+          content: `This ${contentType.startsWith("video/") ? "video" : "image"} file is open in the desktop viewer. Binary content is not included in text model context.`,
+          priority: isPrimary ? 1_000 : 100
+        });
+        continue;
+      }
       const content = await readFile(ensurePathInsideWorkspace(path), "utf8");
-      const clipped = content.slice(0, Math.min(30_000, remaining));
-      files.push(`<file path="${path.replaceAll('"', "&quot;")}">\n${clipped}\n</file>`);
+      const clipped = content.slice(0, Math.min(isPrimary ? primaryBudget : 30_000, remaining));
+      blocks.push({
+        source: `${isPrimary ? "active-file" : "attached-file"}:${path}`,
+        content: isPrimary
+          ? `This is the currently open workspace file and the primary context for this request. Tool results produced later in the run take precedence over this request-start snapshot.\n\n${clipped}`
+          : clipped,
+        priority: isPrimary ? 1_000 : 100
+      });
       remaining -= clipped.length;
     } catch {
       // The renderer only offers workspace files, but a stale entry must not fail a chat request.
     }
   }
-  return files.length ? `${prompt}\n\n<attached_workspace_files>\n${files.join("\n")}\n</attached_workspace_files>` : prompt;
+  return blocks;
 }
 
-async function executeChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly attachedPaths?: readonly string[] }): Promise<void> {
+async function executeChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[] }): Promise<void> {
   const configuration = persisted.configuration;
   if (!configuration || !configuration.model) throw new Error("Choose a local model before starting the agent.");
   if (!runtimeClient) configureRuntime(configuration);
@@ -297,7 +415,7 @@ async function executeChat(input: { readonly prompt: string; readonly conversati
   activeAbort = controller;
   send({ type: "chat-start", conversationId: input.conversationId });
   try {
-    await client.runtime.run(activeSessionId, await promptWithFileContext(input.prompt, input.attachedPaths), controller.signal);
+    await client.runtime.run(activeSessionId, input.prompt, controller.signal, await fileContext(input.activeFilePath, input.attachedPaths));
     send({ type: "chat-end", conversationId: input.conversationId, aborted: controller.signal.aborted });
   } catch (error) {
     if (!controller.signal.aborted) send({ type: "chat-error", conversationId: input.conversationId, message: error instanceof Error ? error.message : String(error) });
@@ -307,7 +425,7 @@ async function executeChat(input: { readonly prompt: string; readonly conversati
   }
 }
 
-async function runChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly attachedPaths?: readonly string[] }): Promise<void> {
+async function runChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[] }): Promise<void> {
   const previousRun = activeRun;
   if (previousRun) {
     activeAbort?.abort();
@@ -333,11 +451,31 @@ async function createMainWindow(): Promise<void> {
     autoHideMenuBar: true,
     backgroundColor: "#11161a",
     webPreferences: {
-    preload: join(distDirectory(), "preload.cjs"),
+      preload: join(distDirectory(), "preload.cjs"),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: false,
+      webviewTag: true
     }
+  });
+  mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
+    if (!isAllowedPreviewUrl(params.src)) {
+      event.preventDefault();
+      return;
+    }
+    delete webPreferences.preload;
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
+  });
+  mainWindow.webContents.on("did-attach-webview", (_event, contents) => {
+    contents.setWindowOpenHandler(({ url }) => {
+      if (isAllowedPreviewUrl(url) && url !== "about:blank") void shell.openExternal(url);
+      return { action: "deny" };
+    });
+    contents.on("will-navigate", (event, url) => {
+      if (!isAllowedPreviewUrl(url)) event.preventDefault();
+    });
   });
   await mainWindow.loadFile(join(distDirectory(), "index.html"));
   mainWindow.on("closed", () => { mainWindow = undefined; });
@@ -347,13 +485,17 @@ if (process.platform === "win32") app.setAppUserModelId(`com.${brand.productSlug
 
 app.whenReady().then(async () => {
   await loadPersistedState();
+  protocol.handle("truss-media", workspaceMediaResponse);
   if (persisted.configuration) configureRuntime(persisted.configuration);
   await createMainWindow();
   app.on("activate", () => { if (!mainWindow) void createMainWindow(); });
 });
 
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-app.on("before-quit", () => disposeRuntime());
+app.on("before-quit", () => {
+  stopManagedDevServer();
+  disposeRuntime();
+});
 
 ipcMain.handle("truss:initial-state", (): DesktopState => persisted);
 ipcMain.handle("truss:choose-workspace", async (): Promise<DesktopState | undefined> => {
@@ -361,6 +503,7 @@ ipcMain.handle("truss:choose-workspace", async (): Promise<DesktopState | undefi
   const selection = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
   const workspaceRoot = selection.filePaths[0];
   if (selection.canceled || !workspaceRoot) return undefined;
+  stopManagedDevServer();
   persisted = { ...persisted, workspaceRoot };
   if (persisted.configuration) configureRuntime(persisted.configuration);
   await persistState();
@@ -443,4 +586,54 @@ ipcMain.handle("truss:run-terminal", (_event, command: string): string => {
   child.on("error", (error) => send({ type: "terminal-output", commandId, text: `\n[terminal error] ${error.message}\n` }));
   child.on("close", (code) => send({ type: "terminal-output", commandId, text: `\n[process exited: ${code ?? "unknown"}]\n` }));
   return commandId;
+});
+ipcMain.handle("truss:start-dev-server", (_event, command: string): string => {
+  const normalized = typeof command === "string" ? command.trim() : "";
+  if (!normalized) throw new Error("Enter a dev-server command.");
+  if (normalized.length > 2_000) throw new Error("The dev-server command is too long.");
+  stopManagedDevServer();
+  const commandId = `dev-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const child = spawn(normalized, {
+    cwd: persisted.workspaceRoot,
+    shell: true,
+    windowsHide: true,
+    env: { ...process.env, FORCE_COLOR: "0" }
+  });
+  devServerProcess = child;
+  let announcedUrl: string | undefined;
+  send({ type: "dev-server", status: "starting", command: normalized });
+  child.once("spawn", () => {
+    if (devServerProcess === child) send({ type: "dev-server", status: "running", command: normalized });
+  });
+  const output = (text: string): void => {
+    send({ type: "terminal-output", commandId, text });
+    const url = detectedPreviewUrl(text);
+    if (url && url !== announcedUrl && devServerProcess === child) {
+      announcedUrl = url;
+      send({ type: "dev-server", status: "running", command: normalized, url });
+    }
+  };
+  child.stdout.on("data", (data: Buffer) => output(data.toString()));
+  child.stderr.on("data", (data: Buffer) => output(data.toString()));
+  child.on("error", (error) => {
+    if (devServerProcess === child) {
+      devServerProcess = undefined;
+    }
+    send({ type: "dev-server", status: "failed", command: normalized, message: error.message });
+  });
+  child.on("close", (code) => {
+    if (devServerProcess !== child) return;
+    devServerProcess = undefined;
+    send({
+      type: "dev-server",
+      status: code === 0 ? "stopped" : "failed",
+      command: normalized,
+      message: code === 0 ? undefined : `Dev server exited with code ${code ?? "unknown"}.`
+    });
+  });
+  return commandId;
+});
+ipcMain.handle("truss:stop-dev-server", (): void => stopManagedDevServer());
+ipcMain.handle("truss:open-external", async (_event, value: string): Promise<void> => {
+  await shell.openExternal(validatedPreviewUrl(value));
 });
