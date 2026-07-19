@@ -15,7 +15,7 @@ const features = [
 ] as const;
 
 export const metadata = {
-  title: `Features | ${brand.productName}`,
+  title: "Features",
   description: `Local-model, tool-execution, and client capabilities in ${brand.productName}.`
 };
 

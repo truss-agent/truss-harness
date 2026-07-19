@@ -4,7 +4,7 @@ import { SiteFooter, SiteHeader } from "../site-chrome";
 import { DownloadClient } from "./download-client";
 
 export const metadata = {
-  title: `Download | ${brand.productName}`,
+  title: "Download",
   description: `Download ${brand.productName} Desktop for Windows or Linux.`,
 };
 

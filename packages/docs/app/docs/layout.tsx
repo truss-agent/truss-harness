@@ -4,7 +4,7 @@ import { brand } from "@truss-harness/branding";
 import "nextra-theme-docs/style.css";
 
 export const metadata = {
-  title: { default: `${brand.productName} Docs`, template: `%s | ${brand.productName}` },
+  title: { default: "Docs", template: `%s | ${brand.productName}` },
   description: `Documentation for the local-first ${brand.productName} coding-agent runtime and clients.`,
   applicationName: brand.productName,
   icons: {

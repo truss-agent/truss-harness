@@ -3,7 +3,7 @@ import { brand } from "@truss-harness/branding";
 import { SiteFooter, SiteHeader } from "../site-chrome";
 
 export const metadata = {
-  title: `About | ${brand.productName}`,
+  title: "About",
   description: `Why ${brand.productName} is a local-first, modular coding-agent runtime.`
 };
 
