@@ -4,7 +4,7 @@
   "description": "Interactive terminal client for Truss.",
   "type": "module",
   "bin": {
-    "truss-tui": "./dist/bin.js"
+    "truss-tui": "dist/bin.js"
   },
   "scripts": {
     "build": "tsc -b",
