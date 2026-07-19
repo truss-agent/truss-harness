@@ -1,7 +1,5 @@
 # Truss for VS Code
 
-<p align="center"><img src="./media/truss-harness.png" width="96" alt="Truss logo"></p>
-
 Truss is a local-first coding-agent side panel for VS Code. It connects to Ollama, LM Studio, llama.cpp server, and custom OpenAI-compatible local endpoints through the Truss runtime service. It does not require a cloud provider account.
 
 ## Install
