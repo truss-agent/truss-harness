@@ -123,6 +123,30 @@ function environmentConfiguration(environment: NodeJS.ProcessEnv): ProfileConfig
   };
 }
 
+const profileKeys = [
+  "provider",
+  "baseUrl",
+  "model",
+  "mode",
+  "permission",
+  "internetAccess",
+  "systemPrompt",
+  "apiKeyEnv",
+  "mcpServers"
+] as const satisfies readonly (keyof ProfileConfiguration)[];
+
+function mergeProfiles(...sources: readonly (ProfileConfiguration | undefined)[]): ProfileConfiguration {
+  const merged: Record<string, unknown> = {};
+  for (const source of sources) {
+    if (!source) continue;
+    for (const key of profileKeys) {
+      const value = source[key];
+      if (value !== undefined) merged[key] = value;
+    }
+  }
+  return merged as ProfileConfiguration;
+}
+
 export function configurationPaths(workspaceRoot: string, environment: NodeJS.ProcessEnv = process.env): ConfigurationPaths {
   const userRoot = process.platform === "win32"
     ? environment.APPDATA ?? join(homedir(), "AppData", "Roaming")
@@ -146,14 +170,7 @@ export async function resolveConfiguration(options: {
   const userProfile = profile ? user.profiles?.[profile] : undefined;
   const workspaceProfile = profile ? workspace.profiles?.[profile] : undefined;
   const environmentProfile = environmentConfiguration(environment);
-  const merged = {
-    ...environmentProfile,
-    ...user,
-    ...userProfile,
-    ...workspace,
-    ...workspaceProfile,
-    ...options.overrides
-  };
+  const merged = mergeProfiles(environmentProfile, user, userProfile, workspace, workspaceProfile, options.overrides);
   const workspaceMcpServers = user.allowWorkspaceMcpServers
     ? workspaceProfile?.mcpServers ?? workspace.mcpServers
     : undefined;
