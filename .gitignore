@@ -1,5 +1,8 @@
 node_modules
 .env
+.env*
+.vercel/
+**/.vercel/
 .next/
 **/.next/
 **/.next-*/
