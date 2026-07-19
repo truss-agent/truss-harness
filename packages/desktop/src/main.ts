@@ -10,7 +10,7 @@ import { brand } from "@truss-harness/branding";
 import { createClientRuntime, type ClientConfiguration } from "@truss-harness/cli/runtime";
 import { parseMcpServerConfigurations } from "@truss-harness/mcp";
 import { detectLocalContextWindow, detectLocalEndpoints, generateLocalText, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
-import { FileWorkspacePlanStore, type ContextBlock, type ToolApproval, type ToolCall } from "@truss-harness/runtime";
+import { executeWorkspaceCommand, FileWorkspacePlanStore, type ContextBlock, type ToolApproval, type ToolCall } from "@truss-harness/runtime";
 import type { DesktopConfiguration, DesktopConversation, DesktopEndpoint, DesktopEvent, DesktopFile, DesktopGitStatus, DesktopMessage, DesktopState } from "./shared.js";
 
 const execFile = promisify(execFileCallback);
@@ -587,9 +587,21 @@ ipcMain.handle("truss:git-commit", async (_event, message: string): Promise<stri
 });
 ipcMain.handle("truss:git-pull", (): Promise<string> => gitCommand(["pull"]));
 ipcMain.handle("truss:git-push", (): Promise<string> => gitCommand(["push"]));
-ipcMain.handle("truss:run-terminal", (_event, command: string): string => {
+ipcMain.handle("truss:run-terminal", async (_event, command: string): Promise<string> => {
   const commandId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const child = spawn(command, { cwd: persisted.workspaceRoot, shell: true, windowsHide: true });
+  const normalized = typeof command === "string" ? command.trim() : "";
+  if (!normalized) throw new Error("Enter a terminal command.");
+  if (normalized.length > 20_000) throw new Error("The terminal command is too long.");
+  if (normalized.startsWith("/")) {
+    try {
+      const result = await executeWorkspaceCommand({ workspaceRoot: persisted.workspaceRoot, input: normalized });
+      send({ type: "terminal-output", commandId, text: `${result.message}\n\n[workspace command ${result.ok ? "completed" : "failed"}]\n` });
+    } catch (error) {
+      send({ type: "terminal-output", commandId, text: `[workspace command failed] ${error instanceof Error ? error.message : String(error)}\n` });
+    }
+    return commandId;
+  }
+  const child = spawn(normalized, { cwd: persisted.workspaceRoot, shell: true, windowsHide: true });
   child.stdout.on("data", (data: Buffer) => send({ type: "terminal-output", commandId, text: data.toString() }));
   child.stderr.on("data", (data: Buffer) => send({ type: "terminal-output", commandId, text: data.toString() }));
   child.on("error", (error) => send({ type: "terminal-output", commandId, text: `\n[terminal error] ${error.message}\n` }));

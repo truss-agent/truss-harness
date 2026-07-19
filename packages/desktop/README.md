@@ -29,6 +29,8 @@ The Settings dialog also accepts an `mcpServers` JSON object for local stdio MCP
 
 The three-pane workspace supports a hierarchical file tree, multiple editor tabs, syntax-highlighted source previews, image and video previews, Git diffs, a workspace command terminal, persisted chat, plans, approvals, context and speed metrics, and optional public internet research. The collapsible **Git** section supports stage, unstage, generated commit messages, commit, pull, and push. Type `/` in chat to fuzzy-search and attach workspace files.
 
+The terminal accepts both ordinary shell commands and Truss workspace commands. Enter `/help`, `/status`, `/init`, `/update [note]`, or `/clear-memory` directly; slash commands run locally through Truss rather than being sent to the operating-system shell.
+
 ## Security model
 
 The renderer runs with `contextIsolation` enabled and `nodeIntegration` disabled. Filesystem, terminal, Git, provider, and runtime operations are exposed only through explicit IPC handlers in `src/main.ts`.

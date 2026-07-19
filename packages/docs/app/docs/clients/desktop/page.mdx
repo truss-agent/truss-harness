@@ -44,6 +44,8 @@ The collapsible **Git** panel sits above the file tree. It shows the current bra
 
 Agent messages render safe Markdown with headings, lists, links, inline code, and fenced code blocks. Type `/` in the chat input to fuzzy-search workspace files. Select a result with arrow keys and Enter or Tab; the selected `/path/to/file` is attached as bounded context for the next request. At most eight files and 80,000 total characters are attached.
 
+The terminal accepts ordinary workspace shell commands. It also recognizes `/help`, `/status`, `/init`, `/update [note]`, and `/clear-memory`, routing those commands through Truss instead of the operating-system shell.
+
 ## Permissions
 
 Choose **Ask every time**, **Auto-allow read-only**, or **Auto-allow all tools** in Settings. File reads, searches, and directory listing are read-only; writes and terminal commands require approval unless the selected policy allows them.
