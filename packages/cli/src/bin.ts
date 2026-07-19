@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 import { cwd } from "node:process";
 import { createInterface } from "node:readline/promises";
-import { detectLocalEndpoints, listLocalModels } from "@truss-harness/provider-openai-compatible";
+import { detectLocalEndpoints, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import { brand } from "@truss-harness/branding";
 import { executeWorkspaceCommand, workspaceCommandHelp } from "@truss-harness/runtime";
 import { createClientRuntime, type ClientRuntime } from "./runtime.js";
-import { configurationPaths, initializeWorkspaceConfiguration, parseConfigurationOverrides, resolveConfiguration, type ResolvedConfiguration } from "./config.js";
+import { configurationPaths, initializeWorkspaceConfiguration, parseConfigurationOverrides, resolveConfiguration, saveUserProfile, type ResolvedConfiguration } from "./config.js";
 import { ProtocolToolApproval, runService } from "./protocol.js";
 
 const help = `${brand.productName} CLI
@@ -18,11 +18,14 @@ Usage:
 Quick start:
   1. Start Ollama, LM Studio, llama.cpp, or a compatible local server.
   2. Run: ${brand.cliCommand} models
-  3. Run: ${brand.cliCommand} chat "Explain this workspace"
-  4. Optional: ${brand.cliCommand} config init
+ 3. Run: ${brand.cliCommand} chat "Explain this workspace"
+  3. Run: ${brand.cliCommand} setup
+  4. Run: ${brand.cliCommand} chat --mode edit
+  5. Optional: ${brand.cliCommand} config init
 
 Commands:
-  chat <prompt>          Stream one agent response in the current workspace
+  chat [prompt]          Stream one response or open persistent chat
+  setup                 Interactively choose and save local-model defaults
   models                List detected local servers and models
   config path           Print user and workspace configuration paths
   config init           Create a workspace configuration template
@@ -161,6 +164,62 @@ async function runInteractiveChat(initialConfiguration: ResolvedConfiguration): 
   }
 }
 
+function selectedIndex(input: string, count: number, fallback: number): number {
+  const index = Number.parseInt(input, 10);
+  return Number.isInteger(index) && index >= 1 && index <= count ? index - 1 : fallback;
+}
+
+async function runSetup(): Promise<void> {
+  const readline = createInterface({ input: process.stdin, output: process.stdout, terminal: process.stdin.isTTY === true });
+  const ask = async (label: string, fallback: string): Promise<string> => {
+    const answer = (await readline.question(label + " [" + fallback + "]: ")).trim();
+    return answer || fallback;
+  };
+
+  try {
+    const endpoints = await detectLocalEndpoints();
+    process.stdout.write(brand.productName + " setup\n");
+    process.stdout.write("Choose a local model server. Values in brackets are defaults.\n\n");
+    endpoints.forEach((endpoint, index) => process.stdout.write(String(index + 1) + ". " + endpoint.label + " (" + endpoint.baseUrl + ")\n"));
+    process.stdout.write(String(endpoints.length + 1) + ". Custom endpoint\n");
+    const endpointChoice = selectedIndex(await ask("Server", "1"), endpoints.length + 1, 0);
+
+    let endpoint: LocalModelEndpoint;
+    if (endpointChoice < endpoints.length) {
+      endpoint = endpoints[endpointChoice];
+    } else {
+      const provider = await ask("Provider: ollama or openai-compatible", "openai-compatible") as LocalEndpointKind;
+      if (provider !== "ollama" && provider !== "openai-compatible") throw new Error("Provider must be ollama or openai-compatible.");
+      const fallbackUrl = provider === "ollama" ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234/v1";
+      endpoint = { id: "custom", label: "Custom endpoint", kind: provider, baseUrl: await ask("Endpoint URL", fallbackUrl) };
+    }
+
+    const models = await listLocalModels(endpoint).catch(() => []);
+    models.forEach((model, index) => process.stdout.write(String(index + 1) + ". " + model.name + "\n"));
+    const model = models.length
+      ? models[selectedIndex(await ask("Model", "1"), models.length, 0)].name
+      : await ask("Model ID", "local-model");
+    const profileName = await ask("Profile name", endpoint.id === "custom" ? "local" : endpoint.id);
+    const mode = await ask("Default mode: chat, plan, or edit", "edit");
+    if (mode !== "chat" && mode !== "plan" && mode !== "edit") throw new Error("Mode must be chat, plan, or edit.");
+    const permission = await ask("Default permission: ask, auto-read, or auto-all", "auto-read");
+    if (permission !== "ask" && permission !== "auto-read" && permission !== "auto-all") throw new Error("Permission must be ask, auto-read, or auto-all.");
+    const internet = await ask("Enable internet research: yes or no", "no");
+    const path = await saveUserProfile(cwd(), profileName, {
+      provider: endpoint.kind,
+      baseUrl: endpoint.baseUrl,
+      model,
+      mode,
+      permission,
+      internetAccess: /^(y|yes|true|1)$/i.test(internet)
+    });
+    process.stdout.write("\nSaved profile '" + profileName + "' to " + path + "\n");
+    process.stdout.write("Start a persistent session with: " + brand.cliCommand + " chat --profile " + profileName + "\n");
+  } finally {
+    readline.close();
+  }
+}
+
 async function main(): Promise<void> {
   const [command = "help", ...rawArgs] = process.argv.slice(2);
   if (command === "help" || command === "--help" || command === "-h") {
@@ -172,6 +231,11 @@ async function main(): Promise<void> {
     const endpoints = await detectLocalEndpoints();
     const models = await Promise.all(endpoints.map(async (endpoint) => ({ endpoint, models: await listLocalModels(endpoint) })));
     process.stdout.write(`${JSON.stringify(models, null, 2)}\n`);
+    return;
+  }
+
+  if (command === "setup") {
+    await runSetup();
     return;
   }
 

@@ -23,6 +23,10 @@ truss-cli
 truss-cli help
 ```
 
+## Interactive setup
+
+Run truss-cli setup after installation to discover local servers, choose a model, and save a default user-level profile. It is a command rather than an install-time prompt, so npm installs remain safe in CI and scripts.
+
 ## First run
 
 Start your local model server, open a terminal in the project you want Truss to work on, and run:

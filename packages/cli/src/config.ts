@@ -254,6 +254,26 @@ export async function initializeWorkspaceConfiguration(workspaceRoot: string, pa
   return paths.workspace;
 }
 
+/** Saves a selected local-model profile in the user configuration file. */
+export async function saveUserProfile(
+  workspaceRoot: string,
+  profileName: string,
+  profile: ProfileConfiguration,
+  paths = configurationPaths(workspaceRoot)
+): Promise<string> {
+  const existing = await readConfiguration(paths.user);
+  await mkdir(dirname(paths.user), { recursive: true });
+  await writeFile(paths.user, JSON.stringify({
+    ...existing,
+    defaultProfile: profileName,
+    profiles: {
+      ...existing.profiles,
+      [profileName]: profile
+    }
+  }, null, 2) + "\n", "utf8");
+  return paths.user;
+}
+
 export function parseConfigurationOverrides(arguments_: readonly string[]): { readonly overrides: ConfigurationOverrides; readonly rest: readonly string[] } {
   const overrides: { profile?: string; provider?: LocalEndpointKind; baseUrl?: string; model?: string; mode?: AgentMode; permission?: PermissionMode; internetAccess?: boolean } = {};
   const rest: string[] = [];
