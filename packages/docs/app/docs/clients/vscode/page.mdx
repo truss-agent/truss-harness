@@ -1,16 +1,10 @@
 # <Brand /> VS Code Extension
 
-The extension is a client of the runtime service. It contains the side-panel UI, local model settings, approval prompts, chat history, inline completion, and commit-message action. Runtime execution remains outside VS Code.
+The extension contains the side-panel UI, local model settings, approval prompts, chat history, inline completion, commit-message action, and a bundled Truss runtime service.
 
 ## Install
 
-Install the companion runtime service first:
-
-```sh
-npm install -g @truss-harness/cli
-```
-
-Install **Truss** from the VS Code Marketplace, then open its Activity Bar icon to start the side panel. When you use a non-default CLI location, set `trussHarness.command` to the `truss-cli` executable path.
+Install **Truss** from the VS Code Marketplace, then open its Activity Bar icon to start the side panel. No separate CLI installation is required. Advanced users can set `trussHarness.command` to use an external `truss-cli` executable instead of the bundled service.
 
 Repository-only Extension Development Host instructions are available in [Development](/docs/development).
 
@@ -60,4 +54,4 @@ The chat composer accepts `/init`, `/update [note]`, `/status`, `/clear-memory`,
 
 ## MCP servers
 
-Enter an `mcpServers` JSON object in the panel's **MCP servers (JSON)** setting. Applying settings restarts the external runtime on the next request and displays server connection diagnostics in the panel. Plan mode loads only servers marked `readOnly`; Agent mode loads every enabled server. See [MCP Servers](/docs/runtime/mcp).
+Enter an `mcpServers` JSON object in the panel's **MCP servers (JSON)** setting. Applying settings restarts the runtime service on the next request and displays server connection diagnostics in the panel. Plan mode loads only servers marked `readOnly`; Agent mode loads every enabled server. See [MCP Servers](/docs/runtime/mcp).

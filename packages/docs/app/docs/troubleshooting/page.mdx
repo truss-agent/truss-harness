@@ -40,7 +40,7 @@ Internet research is disabled by default. Enable `internetAccess` in a profile, 
 
 ## VS Code cannot start the runtime
 
-Install the companion CLI globally and verify `truss-cli help` works in VS Code's integrated terminal. If npm installed it in a non-default location, set `trussHarness.command` to the full executable path, then reload the VS Code window.
+Update to the latest Truss extension and reload the VS Code window. The extension includes its runtime service. If `trussHarness.command` contains an old or unavailable CLI path, clear that setting to restore the bundled service. Check **View → Output → Truss** for runtime diagnostics.
 
 ## Get the effective configuration
 

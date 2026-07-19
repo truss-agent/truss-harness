@@ -6,15 +6,11 @@ Truss is a local-first coding-agent side panel for VS Code. It connects to Ollam
 
 ## Install
 
-From the Marketplace, install **Truss** and then install the companion CLI:
+From the Marketplace, install **Truss**, then open the Truss icon in the Activity Bar. The extension includes its runtime service, so the CLI is not required.
 
-```sh
-npm install -g @truss-harness/cli
-```
+In **Settings**, select a detected local server or enter an endpoint, refresh models, and set the context window, permission policy, and optional internet research access. Use the bottom control bar to switch models and agent modes during a session. Agent responses render Markdown and formatted code blocks. Type `/` in the chat composer to fuzzy-search workspace files; choose a file with arrow keys and Enter or Tab to attach its bounded contents to the next prompt.
 
-Open the Truss icon in the Activity Bar. In **Settings**, select a detected local server or enter an endpoint, refresh models, and set the context window, permission policy, and optional internet research access. Use the bottom control bar to switch models and agent modes during a session. Agent responses render Markdown and formatted code blocks. Type `/` in the chat composer to fuzzy-search workspace files; choose a file with arrow keys and Enter or Tab to attach its bounded contents to the next prompt.
-
-To add local MCP tools, enter an `mcpServers` JSON object in the MCP settings field. The extension passes it to the external runtime service; Agent mode loads enabled servers and Plan mode loads only servers marked `readOnly`. Connections restart after settings change and their status is shown in the panel.
+To add local MCP tools, enter an `mcpServers` JSON object in the MCP settings field. The extension passes it to its runtime service; Agent mode loads enabled servers and Plan mode loads only servers marked `readOnly`. Connections restart after settings change and their status is shown in the panel.
 
 For local development, build the repository, open it in VS Code, and run **Run Truss Extension** from **Run and Debug**. The Extension Development Host automatically uses the workspace CLI build instead of a global installation.
 
@@ -79,7 +75,7 @@ Truss registers VS Code inline completions for editor documents. When a completi
 
 | Setting | Purpose |
 | --- | --- |
-| `trussHarness.command` | Path to the globally installed `truss-cli` executable used outside development. |
+| `trussHarness.command` | Optional path to an external `truss-cli`. Leave empty to use the bundled service. |
 | `trussHarness.model` | Optional model identifier fallback. The panel's workspace state takes precedence. |
 | `trussHarness.baseUrl` | Optional local endpoint fallback. The panel's workspace state takes precedence. |
 
