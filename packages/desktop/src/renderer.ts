@@ -23,7 +23,8 @@ const defaultConfiguration: DesktopConfiguration = {
   model: "",
   mode: "chat",
   permission: "ask",
-  contextWindow: 8_192
+  contextWindow: 8_192,
+  internetAccess: false
 };
 
 const element = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -81,6 +82,7 @@ const modelInput = element<HTMLInputElement>("modelInput");
 const modelOptions = element<HTMLDataListElement>("modelOptions");
 const contextInput = element<HTMLInputElement>("contextInput");
 const permissionSelect = element<HTMLSelectElement>("permissionSelect");
+const internetAccessInput = element<HTMLInputElement>("internetAccessInput");
 const toast = element<HTMLDivElement>("toast");
 
 let desktopState: DesktopState = { workspaceRoot: "", conversations: [] };
@@ -890,7 +892,8 @@ function settingsConfiguration(): DesktopConfiguration {
     model: modelInput.value.trim(),
     mode: current.mode,
     permission: permissionSelect.value === "auto-read" || permissionSelect.value === "auto-all" ? permissionSelect.value : "ask",
-    contextWindow: Math.max(512, Number.parseInt(contextInput.value, 10) || 8_192)
+    contextWindow: Math.max(512, Number.parseInt(contextInput.value, 10) || 8_192),
+    internetAccess: internetAccessInput.checked
   };
 }
 
@@ -901,6 +904,7 @@ function populateSettings(): void {
   modelInput.value = current.model;
   contextInput.value = String(current.contextWindow);
   permissionSelect.value = current.permission;
+  internetAccessInput.checked = current.internetAccess;
 }
 
 async function applyConfiguration(next: DesktopConfiguration): Promise<void> {

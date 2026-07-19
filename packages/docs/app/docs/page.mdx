@@ -1,6 +1,6 @@
 # <Brand />
 
-<Brand /> is a local-first runtime for coding agents. It separates agent execution from clients, so the same runtime can power a CLI, a full-screen terminal workspace, and a VS Code side panel without coupling agent behavior to any one interface.
+<Brand /> is a local-first runtime for coding agents. It separates agent execution from clients, so the same runtime powers a CLI, full-screen terminal workspace, desktop app, and VS Code side panel without coupling agent behavior to any one interface.
 
 ## What works today
 
@@ -8,7 +8,8 @@
 - Automatic local provider and model detection
 - Streaming chat, native tool calling, approvals, and interruption
 - Filesystem search, file reads and writes, grep, and terminal execution
-- CLI, full-screen terminal UI, and VS Code side-panel client
+- Optional bounded public web search and page reading
+- CLI, full-screen terminal UI, desktop app, and VS Code side-panel client
 - Workspace configuration profiles and persistent project memory
 
 ## Choose a starting point
@@ -19,7 +20,9 @@
 | Configure Ollama, LM Studio, or llama.cpp | [Local Models](/docs/local-models) |
 | Use commands or service mode | [CLI](/docs/clients/cli) |
 | Use the terminal workspace | [Terminal UI](/docs/clients/tui) |
+| Use the standalone workspace | [Desktop App](/docs/clients/desktop) |
 | Use the VS Code side panel | [VS Code Extension](/docs/clients/vscode) |
+| Diagnose installation or model issues | [Troubleshooting](/docs/troubleshooting) |
 
 ## Install clients
 
@@ -29,7 +32,7 @@ Install the command-line and terminal clients from npm:
 npm install -g @truss-harness/cli @truss-harness/tui
 ```
 
-Then use `truss-cli` from the folder you want the agent to work in, or launch `truss-tui` for the full-screen terminal workspace. Repository maintainers can find build, test, and extension-development instructions in [Development](/docs/development).
+Then use `truss-cli` from the folder you want the agent to work in, or launch `truss-tui` for the full-screen terminal workspace.
 
 ## Architecture
 

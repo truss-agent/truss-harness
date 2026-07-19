@@ -14,12 +14,14 @@ npm install -g @truss-harness/tui
 
 If a profile or local server can supply a model, the workspace starts with it. Otherwise, open the configuration view and select a detected server and model.
 
+The model configuration view includes **Internet research**. Select that field with Tab and press Space to toggle bounded public web search and page fetching.
+
 ## Workspace panes
 
 | Pane | Purpose |
 | --- | --- |
-| Files | Browse workspace files and open a preview. |
-| Editor | Read a selected file and toggle its Git diff. |
+| Files | Browse a collapsible directory-first tree or fuzzy-search paths. |
+| Editor | Read a syntax-highlighted file and toggle its Git diff. |
 | Agent | Stream chat and approve or deny tool calls. |
 | Terminal | View tool activity and run workspace shell commands. |
 
@@ -27,16 +29,19 @@ If a profile or local server can supply a model, the workspace starts with it. O
 
 | Key | Action |
 | --- | --- |
-| `Tab` | Move focus between panes |
+| `Tab` / `Shift+Tab` | Move focus forward or backward between panes |
+| `Ctrl+Left` / `Ctrl+Right` | Move directly to the adjacent pane |
+| `/` | Open fuzzy file search from the Files pane |
 | `m` | Open local model configuration outside chat input |
 | `Enter` | Send chat input or open the selected file |
+| `Left` / `Right` | Collapse or expand a selected directory |
 | `d` | Toggle Git diff in the editor pane |
-| `!` | Open a shell command prompt from the terminal pane |
+| Type directly | Enter a command while the terminal pane has focus |
 | `?` | Open local workspace-command help |
 | `Esc` | Stop active generation |
 | `Ctrl+C` | Stop generation, or exit when idle |
 
-Tool approvals use `Y` or Enter to allow and `N` or Escape to deny. An embedded PTY and editable file buffers are not implemented; the terminal pane runs commands from the workspace root and displays their output.
+Tool approvals use `Y` or Enter to allow and `N` or Escape to deny. The terminal pane accepts commands directly, runs them from the workspace root, and displays their output. It is a command runner rather than a fully emulated interactive PTY.
 
 ## Workspace commands
 

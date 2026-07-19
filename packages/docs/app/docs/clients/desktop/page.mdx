@@ -4,7 +4,26 @@ The desktop app is a standalone local-first workspace for Ollama, LM Studio, lla
 
 ## Install
 
-Download and run the Windows installer from the project release. Open the app, choose a workspace, then select a detected local server and model in **Settings**. A custom compatible endpoint can be entered manually.
+Download the artifact matching your platform and CPU from the project release:
+
+| Platform | Packages | Architectures |
+| --- | --- | --- |
+| Windows | NSIS `.exe` installer | x64/AMD64 and ARM64 |
+| General Linux | Portable `.AppImage` | x64/AMD64 and ARM64 |
+| Debian, Ubuntu, Mint | `.deb` | x64/AMD64 and ARM64 |
+| Fedora, RHEL, openSUSE | `.rpm` | x64/AMD64 and ARM64 |
+| Arch Linux, Manjaro | pacman package | x64/AMD64 and ARM64 |
+
+For an AppImage:
+
+```sh
+chmod +x Truss-*.AppImage
+./Truss-*.AppImage
+```
+
+Install a native Linux package with your distribution's package manager, such as `sudo apt install ./file.deb`, `sudo dnf install ./file.rpm`, or `sudo pacman -U ./file.pacman`.
+
+Open the app, choose a workspace, then select a detected local server and model in **Settings**. A custom compatible endpoint can be entered manually.
 
 ## Workspace
 
@@ -23,3 +42,5 @@ Agent messages render safe Markdown with headings, lists, links, inline code, an
 ## Permissions
 
 Choose **Ask every time**, **Auto-allow read-only**, or **Auto-allow all tools** in Settings. File reads, searches, and directory listing are read-only; writes and terminal commands require approval unless the selected policy allows them.
+
+Enable **Allow public internet research** to expose bounded `web_search` and `web_fetch` tools. Internet access is off by default, and network requests require approval unless **Auto-allow all** is selected.

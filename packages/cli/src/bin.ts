@@ -9,17 +9,29 @@ import { ProtocolToolApproval, runService } from "./protocol.js";
 
 const help = `${brand.productName} CLI
 
+Local-first coding agent and runtime service.
+
 Usage:
-  ${brand.cliCommand} chat <prompt>
-  ${brand.cliCommand} serve
-  ${brand.cliCommand} models
-  ${brand.cliCommand} init
-  ${brand.cliCommand} update [note]
-  ${brand.cliCommand} status
-  ${brand.cliCommand} clear-memory
-  ${brand.cliCommand} commands
-  ${brand.cliCommand} config path
-  ${brand.cliCommand} config init
+  ${brand.cliCommand} <command> [options]
+
+Quick start:
+  1. Start Ollama, LM Studio, llama.cpp, or a compatible local server.
+  2. Run: ${brand.cliCommand} models
+  3. Run: ${brand.cliCommand} chat "Explain this workspace"
+  4. Optional: ${brand.cliCommand} config init
+
+Commands:
+  chat <prompt>          Stream one agent response in the current workspace
+  models                List detected local servers and models
+  config path           Print user and workspace configuration paths
+  config init           Create a workspace configuration template
+  init                  Create or refresh generated AGENTS.md workspace context
+  update [note]         Record Git state and a durable handoff note
+  status                Show Git state and recent durable agent records
+  clear-memory          Delete this workspace's durable agent memory
+  commands              Print slash commands shared by interactive clients
+  serve                 Start the JSONL runtime service for editor clients
+  help                  Show this reference
 
 Options:
   --profile <name>       Select a named configuration profile
@@ -28,6 +40,21 @@ Options:
   --model <name>         Model identifier
   --mode <name>          chat, plan, or edit
   --permission <name>    ask, auto-read, or auto-all
+  --internet-access      Enable public web search and page fetching
+  --no-internet-access   Disable internet tools
+
+Modes:
+  chat                   Conversation only; optional internet tools
+  plan                   Read-only inspection and a saved implementation plan
+  edit                   Filesystem, planning, and terminal tools
+
+Permissions:
+  ask                    Ask interactive clients before each tool
+  auto-read              Auto-allow workspace reads; ask for writes, commands, and web
+  auto-all               Auto-allow every registered tool
+
+  Direct '${brand.cliCommand} chat' runs non-interactively and auto-allows tools.
+  Use it only in a trusted workspace. Internet tools remain off unless enabled.
 
 Environment:
   TRUSS_HARNESS_MODEL       Required model identifier
@@ -35,10 +62,16 @@ Environment:
   TRUSS_HARNESS_BASE_URL    Local server base URL (default depends on provider)
   TRUSS_HARNESS_AGENT_MODE  chat (default), plan, or edit
   TRUSS_HARNESS_PERMISSION_MODE ask (default), auto-read, or auto-all
+  TRUSS_HARNESS_INTERNET_ACCESS true or 1 to enable public web tools
   TRUSS_HARNESS_API_KEY     Optional bearer token
   TRUSS_HARNESS_SYSTEM_PROMPT Optional system prompt
 
-Workspace commands:
+Examples:
+  ${brand.cliCommand} chat --mode plan "Plan the authentication change"
+  ${brand.cliCommand} chat --mode edit "Fix the failing tests"
+  ${brand.cliCommand} chat --internet-access "Check the current library documentation"
+  ${brand.cliCommand} chat --profile lm-studio "Review the active file structure"
+
 ${workspaceCommandHelp()}
 `;
 

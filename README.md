@@ -110,7 +110,8 @@ Example `.truss-harness/config.json`:
       "baseUrl": "http://127.0.0.1:11434",
       "model": "qwen3:8b",
       "mode": "edit",
-      "permission": "ask"
+      "permission": "ask",
+      "internetAccess": false
     },
     "lm-studio-fast": {
       "provider": "openai-compatible",
@@ -123,11 +124,11 @@ Example `.truss-harness/config.json`:
 }
 ```
 
-Available profile fields are `provider`, `baseUrl`, `model`, `mode`, `permission`, `systemPrompt`, and `apiKeyEnv`. Put endpoint tokens in environment variables, then reference their names with `apiKeyEnv`; do not put secrets directly in configuration files.
+Available profile fields are `provider`, `baseUrl`, `model`, `mode`, `permission`, `internetAccess`, `systemPrompt`, and `apiKeyEnv`. Internet research is disabled by default. Put endpoint tokens in environment variables, then reference their names with `apiKeyEnv`; do not put secrets directly in configuration files.
 
 Settings are resolved in this order, from highest to lowest precedence:
 
-1. CLI flags: `--profile`, `--provider`, `--base-url`, `--model`, `--mode`, and `--permission`
+1. CLI flags: `--profile`, `--provider`, `--base-url`, `--model`, `--mode`, `--permission`, `--internet-access`, and `--no-internet-access`
 2. Selected workspace profile and workspace-level fields
 3. Selected user profile and user-level fields
 4. `TRUSS_HARNESS_*` environment variables
@@ -150,7 +151,18 @@ The Electron desktop client provides a standalone workspace with a file tree, ed
 npm.cmd run desktop:dev
 ```
 
-Open a workspace, configure a local endpoint in **Settings**, and select a model. The collapsible **Git** section above Files supports status, individual stage/unstage, stage all, commit messages, pull, and push. The renderer has no Node access; filesystem, terminal, Git, and runtime operations are handled through a narrow IPC bridge in the Electron main process. Build an installer with `npm.cmd run desktop:package`.
+Open a workspace, configure a local endpoint in **Settings**, and select a model. The collapsible **Git** section above Files supports status, individual stage/unstage, stage all, commit messages, pull, and push. The renderer has no Node access; filesystem, terminal, Git, and runtime operations are handled through a narrow IPC bridge in the Electron main process.
+
+Desktop release commands:
+
+```sh
+npm run desktop:package:win:x64
+npm run desktop:package:win:arm64
+npm run desktop:package:linux:x64
+npm run desktop:package:linux:arm64
+```
+
+The GitHub Actions desktop release workflow builds Windows NSIS, AppImage, Debian, RPM, and Arch packages for x64 and ARM64. Pushing a `v*` tag publishes them to a GitHub Release with SHA-256 checksums.
 
 ### VS Code Extension
 
@@ -166,7 +178,7 @@ Use the mode selector in the panel to control what the model can do:
 
 | Mode | Tool access                                                     |
 | ---- | --------------------------------------------------------------- |
-| Chat | No tools; useful for general questions and explanations.        |
+| Chat | No workspace tools; optional internet tools can be enabled.     |
 | Plan | Read-only workspace inspection: read, list, search, and grep.   |
 | Edit | Full tool access, including file writes and terminal execution. |
 

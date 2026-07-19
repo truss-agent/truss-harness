@@ -1,0 +1,55 @@
+# Troubleshooting
+
+## Command not found after npm install
+
+Confirm the packages are installed globally:
+
+```sh
+npm list -g --depth=0
+npm prefix -g
+```
+
+The executable names are `truss-cli` and `truss-tui`. Restart the terminal after installation so it reloads `PATH`. On Windows, the npm global directory is commonly under `%APPDATA%\npm`.
+
+## No local models detected
+
+1. Start Ollama, LM Studio, llama.cpp, or your compatible server.
+2. Load a model in the server.
+3. Run `truss-cli models`.
+4. Confirm the server address matches one of the standard endpoints or configure `baseUrl` explicitly.
+
+For LM Studio and llama.cpp, use the server's model ID rather than its display name. See [Local Models](/docs/local-models).
+
+## The model chats but does not edit files
+
+Select Agent/Edit mode and use a model with native tool calling. Chat mode has no workspace tools, and Plan mode is read-only. Very small or instruction-only models may emit tool-shaped text instead of native calls; Truss cannot safely treat simulated tool text as an executed operation.
+
+Use an interactive client to inspect each requested and completed tool call. A claimed edit is not a successful edit unless a write tool completed.
+
+## Context-size errors
+
+Set the client context window to the size actually loaded by your local server. Lower the retained conversation length, start a new conversation, attach fewer files, or load the model with a larger context window. Truss bounds file attachments and Git commit-message diffs, but the server is the final authority on available context.
+
+## A tool is waiting
+
+Under **Ask every time**, approve or deny the request in the client. **Auto-allow read-only** only authorizes workspace reads. Writes, terminal commands, and internet requests still wait for approval. **Auto-allow all** should only be used in a trusted workspace.
+
+## Internet search is unavailable
+
+Internet research is disabled by default. Enable `internetAccess` in a profile, use `--internet-access`, or turn on the setting in the desktop or VS Code client. The tools only reach public HTTP/HTTPS text resources; localhost, private addresses, binary downloads, browser interaction, and sign-in flows are intentionally unavailable.
+
+## VS Code cannot start the runtime
+
+Install the companion CLI globally and verify `truss-cli help` works in VS Code's integrated terminal. If npm installed it in a non-default location, set `trussHarness.command` to the full executable path, then reload the VS Code window.
+
+## Get the effective configuration
+
+Run:
+
+```sh
+truss-cli config path
+truss-cli models
+truss-cli help
+```
+
+Configuration precedence is documented in [Configuration](/docs/configuration). Workspace settings override user settings, and explicit CLI flags override both.

@@ -2,7 +2,13 @@
 
 <p align="center"><img src="./logo.png" width="96" alt="Truss logo"></p>
 
-The Truss CLI runs a local-first coding agent from a shell and hosts the newline-delimited JSON service used by editor clients.
+Truss is a local-first coding-agent runtime. The CLI runs one-shot agent tasks and hosts the runtime service used by editor clients.
+
+## Requirements
+
+- Node.js 20 or newer
+- Ollama, LM Studio, llama.cpp, or another compatible local model server
+- A model with native tool calling for Agent and Plan workflows
 
 ## Install
 
@@ -10,31 +16,55 @@ The Truss CLI runs a local-first coding agent from a shell and hosts the newline
 npm install -g @truss-harness/cli
 ```
 
-Start Ollama, LM Studio, llama.cpp server, or another local OpenAI-compatible server, then either create a workspace profile or pass the model settings directly.
+The global installer prints a short first-run checklist. You can display the complete reference at any time:
 
 ```sh
-truss-harness config init
-truss-harness models
-truss-harness chat --profile ollama "Explain this repository"
+truss-cli
+truss-cli help
 ```
+
+## First run
+
+Start your local model server, open a terminal in the project you want Truss to work on, and run:
+
+```sh
+truss-cli models
+truss-cli chat "Explain this workspace"
+```
+
+Truss probes the standard Ollama, LM Studio, and llama.cpp endpoints when no model is configured. Create a reusable workspace profile when you want explicit settings:
+
+```sh
+truss-cli config init
+truss-cli config path
+```
+
+## Agent tasks
+
+```sh
+truss-cli chat --mode chat "Explain the architecture"
+truss-cli chat --mode plan "Plan an authentication refactor"
+truss-cli chat --mode edit "Fix the failing tests"
+truss-cli chat --internet-access "Check the current library documentation"
+```
+
+Direct CLI chat is non-interactive and auto-allows registered tools. Run it only in a trusted workspace. Public internet tools are disabled unless `--internet-access`, a profile, or the environment explicitly enables them.
 
 ## Workspace commands
 
-These commands do not call a model and work even when no provider is configured:
+These deterministic commands work without a configured model:
 
 ```text
-truss-harness init                 Scan the repository and create or refresh AGENTS.md context.
-truss-harness update [note]        Record Git state and a progress note in .truss-harness/agent-state.json.
-truss-harness status               Show current Git state and recent durable records.
-truss-harness clear-memory         Remove durable workspace memory.
-truss-harness commands             Show the slash-command help text.
+truss-cli init                 Create or refresh generated AGENTS.md context
+truss-cli update [note]        Record Git state and a durable handoff note
+truss-cli status               Show Git state and recent durable records
+truss-cli clear-memory         Remove durable workspace memory
+truss-cli commands             Show slash commands used by interactive clients
 ```
 
-The same actions can be sent to chat as `/init`, `/update`, `/status`, `/clear-memory`, and `/help`.
+## Configuration
 
-## Local model profiles
-
-`truss-harness config init` creates `.truss-harness/config.json`. Profiles support `provider`, `baseUrl`, `model`, `mode`, `permission`, `systemPrompt`, and `apiKeyEnv`.
+`truss-cli config init` creates `.truss-harness/config.json`. Profiles support `provider`, `baseUrl`, `model`, `mode`, `permission`, `internetAccess`, `systemPrompt`, and `apiKeyEnv`.
 
 ```json
 {
@@ -45,10 +75,17 @@ The same actions can be sent to chat as `/init`, `/update`, `/status`, `/clear-m
       "baseUrl": "http://127.0.0.1:11434",
       "model": "qwen3:8b",
       "mode": "edit",
-      "permission": "ask"
+      "permission": "ask",
+      "internetAccess": false
     }
   }
 }
 ```
 
-Use `truss-harness help` for command options. `truss-harness serve` reserves standard output for its JSON protocol; do not add terminal logging to that stream.
+Keep endpoint tokens out of JSON. Set the token in an environment variable and place that variable's name in `apiKeyEnv`.
+
+## Service mode
+
+`truss-cli serve` starts the newline-delimited JSON runtime protocol used by clients such as the VS Code extension. Standard output is reserved for protocol messages.
+
+Run `truss-cli help` for every command, flag, environment variable, mode, permission policy, and example.

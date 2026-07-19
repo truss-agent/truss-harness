@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "tsc -b",
+    "prepack": "node ../../scripts/clean-publish-tests.mjs",
     "prepublishOnly": "npm run build"
   },
   "files": [

@@ -95,7 +95,7 @@ async function loadPersistedState(): Promise<void> {
     const parsed = JSON.parse(await readFile(statePath(), "utf8")) as Partial<PersistedState>;
     persisted = {
       workspaceRoot: typeof parsed.workspaceRoot === "string" ? parsed.workspaceRoot : process.cwd(),
-      configuration: isConfiguration(parsed.configuration) ? parsed.configuration : undefined,
+      configuration: isConfiguration(parsed.configuration) ? normalizeConfiguration(parsed.configuration) : undefined,
       conversations: Array.isArray(parsed.conversations) ? parsed.conversations.slice(0, 30) : [],
       activeConversationId: typeof parsed.activeConversationId === "string" ? parsed.activeConversationId : undefined
     };
@@ -116,7 +116,8 @@ function isConfiguration(value: unknown): value is DesktopConfiguration {
     && typeof candidate.model === "string"
     && (candidate.mode === "chat" || candidate.mode === "plan" || candidate.mode === "edit")
     && (candidate.permission === "ask" || candidate.permission === "auto-read" || candidate.permission === "auto-all")
-    && typeof candidate.contextWindow === "number";
+    && typeof candidate.contextWindow === "number"
+    && (candidate.internetAccess === undefined || typeof candidate.internetAccess === "boolean");
 }
 
 function normalizeConfiguration(value: DesktopConfiguration): DesktopConfiguration {
@@ -124,7 +125,8 @@ function normalizeConfiguration(value: DesktopConfiguration): DesktopConfigurati
     ...value,
     baseUrl: value.baseUrl.trim(),
     model: value.model.trim(),
-    contextWindow: Math.max(512, Math.min(1_000_000, Math.floor(value.contextWindow || 8_192)))
+    contextWindow: Math.max(512, Math.min(1_000_000, Math.floor(value.contextWindow || 8_192))),
+    internetAccess: value.internetAccess ?? false
   };
 }
 
@@ -149,6 +151,7 @@ function clientConfiguration(configuration: DesktopConfiguration): ClientConfigu
     baseUrl: configuration.baseUrl,
     model: configuration.model,
     mode: configuration.mode,
+    internetAccess: configuration.internetAccess,
     approval
   };
 }

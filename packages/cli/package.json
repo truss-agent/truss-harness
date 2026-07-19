@@ -18,11 +18,13 @@
   },
   "scripts": {
     "build": "tsc -b",
+    "postinstall": "node scripts/postinstall.mjs",
     "prepack": "node ../../scripts/clean-publish-tests.mjs",
     "prepublishOnly": "npm run build"
   },
   "files": [
     "dist",
+    "scripts/postinstall.mjs",
     "README.md",
     "logo.png"
   ],

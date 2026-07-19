@@ -37,6 +37,7 @@
     "local-first"
   ],
   "dependencies": {
+    "cheerio": "^1.2.0",
     "@truss-harness/branding": "0.1.0"
   }
 }

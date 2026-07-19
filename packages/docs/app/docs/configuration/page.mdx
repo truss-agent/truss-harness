@@ -23,7 +23,8 @@ On Windows, the user configuration file is <UserConfigPath />. Each workspace ca
       "baseUrl": "http://127.0.0.1:11434",
       "model": "qwen3:8b",
       "mode": "edit",
-      "permission": "ask"
+      "permission": "ask",
+      "internetAccess": false
     },
     "lm-studio-fast": {
       "provider": "openai-compatible",
@@ -45,6 +46,7 @@ On Windows, the user configuration file is <UserConfigPath />. Each workspace ca
 | `model` | Server model ID |
 | `mode` | `chat`, `plan`, or `edit` |
 | `permission` | `ask`, `auto-read`, or `auto-all` |
+| `internetAccess` | Enables optional public web search and page fetching; defaults to `false` |
 | `systemPrompt` | Optional system instruction |
 | `apiKeyEnv` | Name of an environment variable that contains a token |
 
@@ -58,4 +60,6 @@ Keep tokens out of JSON files. Use `apiKeyEnv` to reference an environment varia
 4. `TRUSS_HARNESS_*` environment variables
 5. Detected local model and defaults
 
-CLI flags include `--profile`, `--provider`, `--base-url`, `--model`, `--mode`, and `--permission`.
+CLI flags include `--profile`, `--provider`, `--base-url`, `--model`, `--mode`, `--permission`, `--internet-access`, and `--no-internet-access`.
+
+Set `TRUSS_HARNESS_INTERNET_ACCESS=true` to enable the same capability through the environment.

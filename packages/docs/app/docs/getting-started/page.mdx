@@ -15,6 +15,15 @@ npm install -g @truss-harness/cli @truss-harness/tui
 
 The CLI is enough to begin. Install the terminal UI when you want the full-screen workspace client.
 
+Confirm the executables are on your path:
+
+```sh
+truss-cli help
+truss-tui
+```
+
+The npm global install prints a short CLI checklist. Running `truss-cli` with no arguments always displays the full command reference.
+
 ## Find a local model
 
 ```sh
@@ -31,6 +40,16 @@ truss-cli chat "Explain this workspace."
 
 If no local server is running, configure a profile first. See [Configuration](/docs/configuration).
 
+## Run a first agent task
+
+Run Agent/Edit mode only inside a workspace you trust. Direct CLI chat is non-interactive and auto-allows tools.
+
+```sh
+truss-cli chat --mode edit "Read README.md and add one concise sentence describing the CLI. Make no other changes."
+```
+
+Use the TUI, desktop app, or VS Code extension when you want interactive approval prompts and persistent conversation controls.
+
 ## Continue setup
 
-Create a reusable local-model profile with <CliUsage command="config init" />, or continue to [Local Models](/docs/local-models) to configure Ollama, LM Studio, llama.cpp, or another compatible local server. Repository build and documentation-site instructions are in [Development](/docs/development).
+Create a reusable local-model profile with <CliUsage command="config init" />, continue to [Local Models](/docs/local-models), or see [Troubleshooting](/docs/troubleshooting) when discovery or tool calling fails.

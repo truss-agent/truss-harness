@@ -12,20 +12,18 @@ import { brand } from "@truss-harness/branding";
 import { resolveConfiguration, type ResolvedConfiguration } from "@truss-harness/cli/config";
 import { createClientRuntime, type ClientConfiguration } from "@truss-harness/cli/runtime";
 import { executeWorkspaceCommand, FileWorkspacePlanStore, workspaceCommandHelp, type ContextBlock, type ToolApproval, type ToolCall, type WorkspacePlan } from "@truss-harness/runtime";
+import { buildFileTree, fuzzyFiles, syntaxTokens, wrapSyntaxTokens, type FileEntry, type SyntaxToken } from "./file-browser.js";
 
 const execFile = promisify(execFileCallback);
-const ignoredDirectories = new Set([".git", "node_modules", "dist", "coverage"]);
+const ignoredDirectories = new Set([".git", ".next", ".truss-harness", "node_modules", "dist", "coverage"]);
 const focusOrder = ["files", "editor", "chat", "terminal"] as const;
 type Focus = (typeof focusOrder)[number];
-type Screen = "workspace" | "settings" | "approval" | "help";
-type SettingsField = "server" | "endpoint" | "model";
+type Screen = "workspace" | "settings" | "approval" | "help" | "file-search";
+type SettingsField = "server" | "endpoint" | "model" | "internet";
 type RunStatus = "ready" | "thinking" | "tool" | "waiting";
 type ChatMessage = { readonly role: "user" | "assistant"; readonly content: string };
 type ChatDisplayLine = { readonly role: ChatMessage["role"]; readonly text: string; readonly header: boolean };
-
-interface FileEntry {
-  readonly path: string;
-}
+type EditorDisplayRow = { readonly sourceLine: number; readonly continuation: boolean; readonly tokens: readonly SyntaxToken[] };
 
 function truncate(value: string, length: number): string {
   return value.length <= length ? value : `${value.slice(0, Math.max(0, length - 3))}...`;
@@ -81,9 +79,9 @@ function configuredContextWindow(): number {
 }
 
 async function collectFiles(root: string, current = root, result: FileEntry[] = []): Promise<FileEntry[]> {
-  if (result.length >= 160) return result;
+  if (result.length >= 2_000) return result;
   for (const entry of await readdir(current, { withFileTypes: true })) {
-    if (result.length >= 160) break;
+    if (result.length >= 2_000) break;
     if (entry.isDirectory() && !ignoredDirectories.has(entry.name)) await collectFiles(root, join(current, entry.name), result);
     if (entry.isFile()) result.push({ path: relative(root, join(current, entry.name)) });
   }
@@ -157,6 +155,9 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
   const [sessionId, setSessionId] = useState<string>();
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [fileIndex, setFileIndex] = useState(0);
+  const [collapsedDirectories, setCollapsedDirectories] = useState<ReadonlySet<string>>(() => new Set());
+  const [fileSearchInput, setFileSearchInput] = useState("");
+  const [fileSearchIndex, setFileSearchIndex] = useState(0);
   const [openFilePath, setOpenFilePath] = useState<string>();
   const [editor, setEditor] = useState("Select a file from the workspace tree.");
   const [editorTitle, setEditorTitle] = useState("Preview");
@@ -186,6 +187,7 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
   const [providerKind, setProviderKind] = useState<LocalEndpointKind>(initialConfiguration?.provider ?? "ollama");
   const [agentMode] = useState(initialConfiguration?.mode ?? "chat");
   const [permissionMode] = useState(initialConfiguration?.permission ?? "ask");
+  const [internetAccess, setInternetAccess] = useState(initialConfiguration?.internetAccess ?? false);
   const approvalResolvers = useRef(new Map<string, (approved: boolean) => void>());
   const abortController = useRef<AbortController | undefined>(undefined);
   const terminalProcess = useRef<ChildProcess | undefined>(undefined);
@@ -208,6 +210,12 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
     { id: "custom", label: "Custom compatible endpoint", kind: "openai-compatible", baseUrl: "" }
   ], [endpoints]);
   const selectedEndpoint = candidates[Math.min(serverIndex, Math.max(candidates.length - 1, 0))];
+  const fileTree = useMemo(() => buildFileTree(files, collapsedDirectories), [files, collapsedDirectories]);
+  const selectedFileTreeEntry = fileTree[Math.min(fileIndex, Math.max(0, fileTree.length - 1))];
+  const fileSearchResults = useMemo(
+    () => fuzzyFiles(files, fileSearchInput, Math.max(6, Math.min(14, viewport.rows - 10))),
+    [files, fileSearchInput, viewport.rows]
+  );
   const compactLayout = viewport.columns < 106;
   const terminalHeight = clamp(Math.floor(viewport.rows * 0.24), 7, 11);
   const workspaceHeight = Math.max(compactLayout ? 14 : 9, viewport.rows - terminalHeight - 6);
@@ -220,10 +228,28 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
   const chatLineCount = Math.max(2, compactChatHeight - (activePlan ? 7 : 0) - 4);
   const chatTranscript = chatDisplayLines(chat, busy, Math.max(12, chatWidth - 5));
   const chatLines = visibleLines(chatTranscript, chatLineCount, chatScroll);
-  const editorLines = editor.split(/\r?\n/);
-  const visibleEditorLines = visibleLines(editorLines, editorLineCount, editorScroll);
+  const editorRows = useMemo<readonly EditorDisplayRow[]>(() => {
+    const maximumCharacters = Math.max(12, editorWidth - 7);
+    return editor.split(/\r?\n/).flatMap((line, sourceIndex) => {
+      const color: SyntaxToken["color"] = isDiff
+        ? line.startsWith("+") && !line.startsWith("+++")
+          ? "green"
+          : line.startsWith("-") && !line.startsWith("---")
+            ? "red"
+            : undefined
+        : undefined;
+      const tokens: readonly SyntaxToken[] = isDiff ? [{ text: line, color }] : syntaxTokens(line, openFilePath ?? "");
+      return wrapSyntaxTokens(tokens, maximumCharacters).map((row, rowIndex) => ({
+        sourceLine: sourceIndex + 1,
+        continuation: rowIndex > 0,
+        tokens: row
+      }));
+    });
+  }, [editor, editorWidth, isDiff, openFilePath]);
+  const visibleEditorRows = editorRows.slice(editorScroll, editorScroll + editorLineCount);
   const visibleTerminalLines = visibleLines(terminalLines, Math.max(1, terminalHeight - 4), terminalScroll);
-  const editorStartLine = Math.max(0, editorLines.length - clamp(editorScroll, 0, Math.max(0, editorLines.length - editorLineCount)) - visibleEditorLines.length);
+  const fileTreeStart = clamp(fileIndex - Math.floor(editorLineCount / 2), 0, Math.max(0, fileTree.length - editorLineCount));
+  const visibleFileTree = fileTree.slice(fileTreeStart, fileTreeStart + editorLineCount);
   const overlayWidth = clamp(viewport.columns - 4, 42, 90);
 
   useEffect(() => {
@@ -235,6 +261,20 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
       if (preferred >= 0) setServerIndex(preferred);
     });
   }, [workspaceRoot]);
+
+  useEffect(() => {
+    setFileIndex((current) => clamp(current, 0, Math.max(0, fileTree.length - 1)));
+  }, [fileTree.length]);
+
+  useEffect(() => {
+    setEditorScroll((current) => clamp(current, 0, Math.max(0, editorRows.length - editorLineCount)));
+  }, [editorRows.length, editorLineCount]);
+
+  useEffect(() => {
+    if (!openFilePath) return;
+    const index = fileTree.findIndex((entry) => entry.kind === "file" && entry.path === openFilePath);
+    if (index >= 0) setFileIndex(index);
+  }, [fileTree, openFilePath]);
 
   useEffect(() => {
     const refreshViewport = (): void => setViewport({ columns: process.stdout.columns || 120, rows: process.stdout.rows || 36 });
@@ -290,13 +330,41 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
       setOpenFilePath(entry.path);
       setEditorTitle(entry.path);
       setEditor(await readFile(join(workspaceRoot, entry.path), "utf8"));
+      setFocus("editor");
     } catch (error) {
       setEditor(`Unable to read ${entry.path}: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
+  const toggleDirectory = (path: string, expand?: boolean): void => {
+    setCollapsedDirectories((current) => {
+      const next = new Set(current);
+      const currentlyExpanded = !next.has(path);
+      const shouldExpand = expand ?? !currentlyExpanded;
+      if (shouldExpand) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+  const openSearchResult = (entry: FileEntry): void => {
+    const parts = entry.path.replaceAll("\\", "/").split("/");
+    parts.pop();
+    setCollapsedDirectories((current) => {
+      const next = new Set(current);
+      let path = "";
+      for (const part of parts) {
+        path = path ? `${path}/${part}` : part;
+        next.delete(path);
+      }
+      return next;
+    });
+    setFileSearchInput("");
+    setFileSearchIndex(0);
+    setScreen("workspace");
+    void loadFile(entry);
+  };
   const toggleDiff = async (): Promise<void> => {
-    const entry = files[fileIndex];
-    if (!entry) return;
+    if (!openFilePath) return;
+    const entry = { path: openFilePath };
     if (isDiff) return void loadFile(entry);
     try {
       setOpenFilePath(entry.path);
@@ -323,6 +391,7 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
       apiKey: process.env.TRUSS_HARNESS_API_KEY,
       systemPrompt: process.env.TRUSS_HARNESS_SYSTEM_PROMPT,
       mode: agentMode,
+      internetAccess,
       approval: {
         approve: async (call) => {
           const readOnly = ["read_file", "list_directory", "search_files", "grep"].includes(call.name);
@@ -428,6 +497,12 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
 
     await runTrackedCommand(input, workspaceRoot, appendTerminal, (process) => { terminalProcess.current = process; });
   };
+  const moveFocus = (direction: 1 | -1): void => {
+    setFocus((current) => {
+      const currentIndex = focusOrder.indexOf(current);
+      return focusOrder[(currentIndex + direction + focusOrder.length) % focusOrder.length];
+    });
+  };
 
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
@@ -448,13 +523,49 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
       if (input.toLowerCase() === "n" || key.escape) resolveApproval(false);
       return;
     }
+    if (screen === "file-search") {
+      if (key.escape) {
+        setFileSearchInput("");
+        setFileSearchIndex(0);
+        setScreen("workspace");
+        return;
+      }
+      if (key.upArrow) {
+        setFileSearchIndex((current) => Math.max(0, current - 1));
+        return;
+      }
+      if (key.downArrow) {
+        setFileSearchIndex((current) => Math.min(Math.max(0, fileSearchResults.length - 1), current + 1));
+        return;
+      }
+      if (key.return) {
+        const result = fileSearchResults[Math.min(fileSearchIndex, Math.max(0, fileSearchResults.length - 1))];
+        if (result) openSearchResult(result);
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setFileSearchInput((current) => current.slice(0, -1));
+        setFileSearchIndex(0);
+      } else if (input) {
+        setFileSearchInput((current) => current + input);
+        setFileSearchIndex(0);
+      }
+      return;
+    }
     if (screen === "help") {
       setScreen("workspace");
       return;
     }
     if (screen === "settings") {
       if (key.escape) { setScreen("workspace"); return; }
-      if (key.tab) { setSettingsField((current) => current === "server" ? "endpoint" : current === "endpoint" ? "model" : "server"); return; }
+      if (key.tab) {
+        const fields: readonly SettingsField[] = ["server", "endpoint", "model", "internet"];
+        setSettingsField((current) => {
+          const index = fields.indexOf(current);
+          return fields[(index + (key.shift ? -1 : 1) + fields.length) % fields.length];
+        });
+        return;
+      }
       if (settingsField === "server") {
         if (key.upArrow) setServerIndex((current) => Math.max(0, current - 1));
         if (key.downArrow) setServerIndex((current) => Math.min(candidates.length - 1, current + 1));
@@ -470,14 +581,23 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
         if (key.downArrow) setModelIndex((current) => Math.min(models.length - 1, current + 1));
         if (models[modelIndex] && (key.return || key.rightArrow)) setModelInput(models[modelIndex]);
       }
+      if (settingsField === "internet") {
+        if (input === " " || key.leftArrow || key.rightArrow) setInternetAccess((current) => !current);
+        if (key.return && endpointInput && modelInput) configureRuntime();
+        return;
+      }
       if (key.return && endpointInput && modelInput) { configureRuntime(); return; }
       const setter = settingsField === "endpoint" ? setEndpointInput : setModelInput;
       if (key.backspace || key.delete) setter((current) => current.slice(0, -1));
       else if (!key.return && input) setter((current) => current + input);
       return;
     }
+    if (key.ctrl && (key.leftArrow || key.rightArrow)) {
+      moveFocus(key.leftArrow ? -1 : 1);
+      return;
+    }
     if (key.tab) {
-      setFocus((current) => focusOrder[(focusOrder.indexOf(current) + 1) % focusOrder.length]);
+      moveFocus(key.shift ? -1 : 1);
       return;
     }
     if (key.escape && busy) {
@@ -512,14 +632,23 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
     if (input === "m" && focus !== "chat") { setScreen("settings"); return; }
     if (input === "n" && focus !== "chat") { startNewConversation(); return; }
     if (focus === "files") {
+      if (input === "/") {
+        setFileSearchInput("");
+        setFileSearchIndex(0);
+        setScreen("file-search");
+        return;
+      }
       if (key.upArrow) setFileIndex((current) => Math.max(0, current - 1));
-      if (key.downArrow) setFileIndex((current) => Math.min(Math.max(files.length - 1, 0), current + 1));
-      if (key.return && files[fileIndex]) void loadFile(files[fileIndex]);
+      if (key.downArrow) setFileIndex((current) => Math.min(Math.max(fileTree.length - 1, 0), current + 1));
+      if (key.leftArrow && selectedFileTreeEntry?.kind === "directory") toggleDirectory(selectedFileTreeEntry.path, false);
+      if (key.rightArrow && selectedFileTreeEntry?.kind === "directory") toggleDirectory(selectedFileTreeEntry.path, true);
+      if (key.return && selectedFileTreeEntry?.kind === "directory") toggleDirectory(selectedFileTreeEntry.path);
+      if (key.return && selectedFileTreeEntry?.kind === "file") void loadFile(selectedFileTreeEntry);
       return;
     }
     if (focus === "editor") {
-      if (key.upArrow) { setEditorScroll((current) => clamp(current + 1, 0, Math.max(0, editorLines.length - editorLineCount))); return; }
-      if (key.downArrow) { setEditorScroll((current) => clamp(current - 1, 0, Math.max(0, editorLines.length - editorLineCount))); return; }
+      if (key.upArrow) { setEditorScroll((current) => clamp(current - 1, 0, Math.max(0, editorRows.length - editorLineCount))); return; }
+      if (key.downArrow) { setEditorScroll((current) => clamp(current + 1, 0, Math.max(0, editorRows.length - editorLineCount))); return; }
       if (input === "d") void toggleDiff();
       return;
     }
@@ -536,11 +665,23 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
     else if (input) setChatInput((current) => current + input);
   });
 
-  const filesPanel = <Panel title="FILES  [up/down]" active={focus === "files"}>
-    {files.slice(Math.max(0, fileIndex - Math.floor(editorLineCount / 2)), fileIndex + Math.ceil(editorLineCount / 2)).map((entry) => <Text key={entry.path} wrap="truncate-end" color={files[fileIndex]?.path === entry.path ? "cyan" : undefined}>{files[fileIndex]?.path === entry.path ? "> " : "  "}{truncate(entry.path, Math.max(8, filesWidth - 6))}</Text>)}
+  const filesPanel = <Panel title="FILES  [/] find" active={focus === "files"}>
+    {visibleFileTree.map((entry, visibleIndex) => {
+      const selected = fileTreeStart + visibleIndex === fileIndex;
+      const marker = entry.kind === "directory" ? (entry.expanded ? "v " : "> ") : "  ";
+      const indentation = " ".repeat(entry.depth * 2);
+      const width = Math.max(6, filesWidth - indentation.length - 7);
+      return <Text key={`${entry.kind}:${entry.path}`} wrap="truncate-end" color={selected ? "cyan" : entry.kind === "directory" ? "blue" : entry.path === openFilePath ? "green" : undefined} bold={selected || entry.kind === "directory"}>
+        {selected ? "> " : "  "}{indentation}{marker}{truncate(entry.name, width)}
+      </Text>;
+    })}
+    {!fileTree.length && <Text color="gray">No workspace files found.</Text>}
   </Panel>;
-  const editorPanel = <Panel title={`${editorTitle}  [d] diff${previewUrl ? "  [o] browser" : ""}`} active={focus === "editor"}>
-    {visibleEditorLines.map((line, index) => <Text key={`${editorStartLine + index}-${line}`} wrap="truncate-end" color={isDiff ? (line.startsWith("+") ? "green" : line.startsWith("-") ? "red" : undefined) : undefined}>{String(editorStartLine + index + 1).padStart(3)} {truncate(line, Math.max(12, editorWidth - 7))}</Text>)}
+  const editorPanel = <Panel title={`${editorTitle}  [up/down] scroll  [d] diff${previewUrl ? "  [o] browser" : ""}`} active={focus === "editor"}>
+    {visibleEditorRows.map((row, index) => {
+      const lineLabel = row.continuation ? "  |" : String(row.sourceLine).padStart(3);
+      return <Text key={`${editorScroll + index}-${row.sourceLine}-${row.continuation}`} wrap="truncate-end"><Text color="gray">{lineLabel}</Text> {row.tokens.map((token, tokenIndex) => <Text key={`${tokenIndex}-${token.text}`} color={token.color} dimColor={token.dim}>{token.text}</Text>)}</Text>;
+    })}
   </Panel>;
   const agentPanel = <Panel title={chatScroll ? `AGENT  [${chatScroll} lines above]` : "AGENT  [Enter] send"} active={focus === "chat"}>
     {activePlan && <Box flexDirection="column" marginBottom={1}><Text bold color="cyan" wrap="truncate-end">PLAN: {truncate(activePlan.title, Math.max(8, chatWidth - 9))}</Text>{activePlan.steps.slice(0, 3).map((step) => <Text key={step.id} wrap="truncate-end" color={step.status === "completed" ? "green" : step.status === "in_progress" ? "yellow" : "gray"}>{step.status === "completed" ? "[x]" : step.status === "in_progress" ? "[..]" : "[ ]"} {truncate(step.content, Math.max(8, chatWidth - 7))}</Text>)}</Box>}
@@ -575,13 +716,27 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
       <Box flexGrow={1} />
       <Text wrap="truncate-end" color={focus === "terminal" ? "cyan" : "gray"}>{focus === "terminal" ? "> " : "  "}{truncate(commandInput || "Type a workspace command", Math.max(16, viewport.columns - 10))}</Text>
     </Panel></Box>
-    <Box height={1} marginTop={1} justifyContent="space-between"><Text color="gray" wrap="truncate-end">Tab focus  |  n new chat  |  m model  |  o browser  |  Ctrl+C stop process  |  Esc stop agent</Text><Text color="gray">{sessionId ? `session ${sessionId.slice(0, 8)}` : "new session"}</Text></Box>
+    <Box height={1} marginTop={1} justifyContent="space-between"><Text color="gray" wrap="truncate-end">Tab/Shift+Tab focus  |  Ctrl+Left/Right pane  |  / find  |  m model  |  Esc stop</Text><Text color="gray">{sessionId ? `session ${sessionId.slice(0, 8)}` : "new session"}</Text></Box>
+    {screen === "file-search" && <Box position="absolute" flexDirection="column" borderStyle="double" borderColor="cyan" paddingX={2} paddingY={1} width={overlayWidth} marginLeft={2} marginTop={3} backgroundColor="black">
+      <Text bold color="cyan">FIND FILE</Text>
+      <Text><Text color="cyan">&gt; </Text>{fileSearchInput || <Text color="gray">Type part of a file name or path</Text>}</Text>
+      <Text color="gray">Up/Down select  Enter open  Escape close</Text>
+      <Box flexDirection="column" marginTop={1}>
+        {fileSearchResults.map((entry, index) => {
+          const selected = index === Math.min(fileSearchIndex, Math.max(0, fileSearchResults.length - 1));
+          const fileName = entry.path.split("/").at(-1) ?? entry.path;
+          return <Text key={entry.path} color={selected ? "cyan" : undefined} bold={selected}>{selected ? "> " : "  "}{fileName}<Text color="gray">  {truncate(entry.path, Math.max(12, overlayWidth - fileName.length - 10))}</Text></Text>;
+        })}
+        {!fileSearchResults.length && <Text color="yellow">No matching files.</Text>}
+      </Box>
+    </Box>}
     {screen === "settings" && <Box position="absolute" flexDirection="column" borderStyle="double" borderColor="cyan" paddingX={2} paddingY={1} width={overlayWidth} marginLeft={2} marginTop={3} backgroundColor="black">
       <Text bold color="cyan">LOCAL MODEL CONFIGURATION</Text>
       <Text color="gray">Tab changes fields. Enter selects an item or saves when endpoint and model are set.</Text>
       <Text color={settingsField === "server" ? "cyan" : undefined}>SERVER: {selectedEndpoint?.label ?? "Scanning local servers..."}</Text>
       <Text color={settingsField === "endpoint" ? "cyan" : undefined}>ENDPOINT: {endpointInput}</Text>
       <Text color={settingsField === "model" ? "cyan" : undefined}>MODEL: {modelInput || models[modelIndex] || "Choose or type a model"}</Text>
+      <Text color={settingsField === "internet" ? "cyan" : undefined}>INTERNET RESEARCH: {internetAccess ? "enabled" : "disabled"} {settingsField === "internet" ? "[Space toggles]" : ""}</Text>
       <Text color="gray">Detected models: {models.slice(0, 5).join(", ") || "none; type one manually"}</Text>
       <Text color="yellow">Provider: {providerKind}. Use the server selector for Ollama or compatible endpoints.</Text>
     </Box>}

@@ -18,7 +18,7 @@ describe("resolveConfiguration", () => {
       }));
       await writeFile(paths.workspace, JSON.stringify({
         profiles: {
-          local: { baseUrl: "http://workspace:11434", model: "workspace-model", mode: "edit", permission: "auto-read" }
+          local: { baseUrl: "http://workspace:11434", model: "workspace-model", mode: "edit", permission: "auto-read", internetAccess: true }
         }
       }));
 
@@ -35,6 +35,7 @@ describe("resolveConfiguration", () => {
         model: "flag-model",
         mode: "edit",
         permission: "auto-all",
+        internetAccess: true,
         profile: "local"
       });
     } finally {

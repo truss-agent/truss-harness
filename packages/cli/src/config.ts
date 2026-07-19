@@ -12,6 +12,7 @@ export interface ProfileConfiguration {
   readonly model?: string;
   readonly mode?: AgentMode;
   readonly permission?: PermissionMode;
+  readonly internetAccess?: boolean;
   readonly systemPrompt?: string;
   /** Name of an environment variable containing a local endpoint token. */
   readonly apiKeyEnv?: string;
@@ -62,6 +63,7 @@ function parseProfile(value: unknown): ProfileConfiguration {
     model: typeof source.model === "string" ? source.model : undefined,
     mode: validMode(source.mode),
     permission: validPermission(source.permission),
+    internetAccess: typeof source.internetAccess === "boolean" ? source.internetAccess : undefined,
     systemPrompt: typeof source.systemPrompt === "string" ? source.systemPrompt : undefined,
     apiKeyEnv: typeof source.apiKeyEnv === "string" ? source.apiKeyEnv : undefined
   };
@@ -94,6 +96,9 @@ function environmentConfiguration(environment: NodeJS.ProcessEnv): ProfileConfig
     model: environment.TRUSS_HARNESS_MODEL,
     mode: validMode(environment.TRUSS_HARNESS_AGENT_MODE),
     permission: validPermission(environment.TRUSS_HARNESS_PERMISSION_MODE),
+    internetAccess: environment.TRUSS_HARNESS_INTERNET_ACCESS === undefined
+      ? undefined
+      : environment.TRUSS_HARNESS_INTERNET_ACCESS === "true" || environment.TRUSS_HARNESS_INTERNET_ACCESS === "1",
     systemPrompt: environment.TRUSS_HARNESS_SYSTEM_PROMPT,
     apiKeyEnv: environment.TRUSS_HARNESS_API_KEY ? "TRUSS_HARNESS_API_KEY" : undefined
   };
@@ -156,6 +161,7 @@ export async function resolveConfiguration(options: {
     model,
     mode: merged.mode ?? "chat",
     permission: merged.permission ?? "ask",
+    internetAccess: merged.internetAccess ?? false,
     apiKey,
     systemPrompt: merged.systemPrompt,
     profile,
@@ -179,7 +185,8 @@ export async function initializeWorkspaceConfiguration(workspaceRoot: string, pa
         baseUrl: "http://127.0.0.1:11434",
         model: "qwen3:8b",
         mode: "edit",
-        permission: "ask"
+        permission: "ask",
+        internetAccess: false
       },
       "lm-studio": {
         provider: "openai-compatible",
@@ -194,7 +201,7 @@ export async function initializeWorkspaceConfiguration(workspaceRoot: string, pa
 }
 
 export function parseConfigurationOverrides(arguments_: readonly string[]): { readonly overrides: ConfigurationOverrides; readonly rest: readonly string[] } {
-  const overrides: { profile?: string; provider?: LocalEndpointKind; baseUrl?: string; model?: string; mode?: AgentMode; permission?: PermissionMode } = {};
+  const overrides: { profile?: string; provider?: LocalEndpointKind; baseUrl?: string; model?: string; mode?: AgentMode; permission?: PermissionMode; internetAccess?: boolean } = {};
   const rest: string[] = [];
   for (let index = 0; index < arguments_.length; index++) {
     const argument = arguments_[index];
@@ -218,6 +225,10 @@ export function parseConfigurationOverrides(arguments_: readonly string[]): { re
       const permission = validPermission(value());
       if (!permission) throw new Error("--permission must be ask, auto-read, or auto-all");
       overrides.permission = permission;
+    } else if (argument === "--internet-access") {
+      overrides.internetAccess = true;
+    } else if (argument === "--no-internet-access") {
+      overrides.internetAccess = false;
     } else rest.push(argument);
   }
   return { overrides, rest };

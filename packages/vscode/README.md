@@ -12,7 +12,7 @@ From the Marketplace, install **Truss** and then install the companion CLI:
 npm install -g @truss-harness/cli
 ```
 
-Open the Truss icon in the Activity Bar. In **Settings**, select a detected local server or enter an endpoint, refresh models, and set the context window and permission policy. Use the bottom control bar to switch models and agent modes during a session. Agent responses render Markdown and formatted code blocks. Type `/` in the chat composer to fuzzy-search workspace files; choose a file with arrow keys and Enter or Tab to attach its bounded contents to the next prompt.
+Open the Truss icon in the Activity Bar. In **Settings**, select a detected local server or enter an endpoint, refresh models, and set the context window, permission policy, and optional internet research access. Use the bottom control bar to switch models and agent modes during a session. Agent responses render Markdown and formatted code blocks. Type `/` in the chat composer to fuzzy-search workspace files; choose a file with arrow keys and Enter or Tab to attach its bounded contents to the next prompt.
 
 For local development, build the repository, open it in VS Code, and run **Run Truss Extension** from **Run and Debug**. The Extension Development Host automatically uses the workspace CLI build instead of a global installation.
 
@@ -41,7 +41,7 @@ Modes govern the agent's available tools:
 
 | Mode | Access |
 | --- | --- |
-| Chat | Chat only; no workspace tools. |
+| Chat | Chat only; no workspace tools. Optional internet tools remain available when enabled. |
 | Plan | Read, list, search, and grep. |
 | Agent | Full registered tools, including writes and terminal commands. |
 
@@ -52,6 +52,8 @@ Permissions apply after the selected mode:
 | Ask every time | Require Allow/Deny for every tool call. |
 | Auto-allow read-only | Allow read, list, search, and grep; prompt for writes and terminal commands. |
 | Auto-allow all | Allow every registered tool. Use only in a trusted workspace. |
+
+Internet research adds bounded `web_search` and `web_fetch` tools. It is disabled by default and still prompts under Ask and Auto-allow read-only.
 
 ## Workspace commands
 

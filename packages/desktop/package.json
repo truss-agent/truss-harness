@@ -9,7 +9,11 @@
     "build": "tsc -p tsconfig.json && esbuild ./dist/main.js --bundle --platform=node --format=cjs --external:electron --outfile=./dist/main.cjs && esbuild ./dist/preload.js --bundle --platform=node --format=cjs --external:electron --outfile=./dist/preload.cjs && node ./scripts/copy-static.mjs",
     "dev": "npm run build && node ./scripts/start-electron.mjs",
     "start": "node ./scripts/start-electron.mjs",
-    "package": "npm run build && electron-builder"
+    "package": "npm run build && electron-builder",
+    "package:win:x64": "npm run build && electron-builder --win nsis --x64",
+    "package:win:arm64": "npm run build && electron-builder --win nsis --arm64",
+    "package:linux:x64": "npm run build && electron-builder --linux AppImage deb rpm pacman --x64",
+    "package:linux:arm64": "npm run build && electron-builder --linux AppImage deb rpm pacman --arm64"
   },
   "build": {
     "appId": "com.truss-harness.desktop",
@@ -22,10 +26,62 @@
       "dist/**",
       "package.json"
     ],
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
     "win": {
       "icon": "./assets/brand-logo.ico",
       "target": [
-        "nsis"
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "linux": {
+      "icon": "./assets/brand-logo.png",
+      "category": "Development",
+      "synopsis": "Local-first coding agent workspace",
+      "description": "Desktop workspace for local coding models with chat, tools, Git, terminal, editor, and approval controls.",
+      "vendor": "Truss Contributors",
+      "maintainer": "Truss Contributors",
+      "executableName": "truss-harness",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "rpm",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "pacman",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
       ]
     }
   },

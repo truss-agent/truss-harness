@@ -14,17 +14,36 @@ Tools are registered with provider-neutral schemas and executed by the runtime. 
 | `search_files` | Finds paths by substring |
 | `grep` | Searches UTF-8 text files |
 | `run_terminal` | Runs a command from the workspace root with a timeout |
+| `web_search` | Searches the public web and returns titles, URLs, and snippets when internet access is enabled |
+| `web_fetch` | Extracts readable text from a public HTTP or HTTPS page when internet access is enabled |
 
 Filesystem paths are resolved against the workspace root and cannot escape it.
 
 ## Modes and tool availability
 
-- Chat mode exposes no tools.
+- Chat mode exposes no workspace tools.
 - Plan mode exposes `read_file`, `list_directory`, `search_files`, and `grep`.
 - Edit mode exposes every built-in tool. When an active plan exists, it also receives the plan as context and uses `update_plan` to keep progress accurate.
+
+When `internetAccess` is enabled, `web_search` and `web_fetch` are added in every mode. This lets Chat answer current questions, Plan research current documentation, and Agent use current references while working.
+
+## Internet boundaries
+
+Internet access is disabled by default. The web tools:
+
+- allow only public HTTP and HTTPS URLs
+- reject localhost, private, link-local, and local-network destinations
+- validate every redirect
+- reject binary responses
+- enforce request timeouts and response-size limits
+- return extracted text instead of executing page JavaScript
+
+This is research access, not interactive browser automation. It cannot sign in, click controls, submit forms, or operate JavaScript-heavy applications.
 
 ## Approval behavior
 
 The runtime emits a tool request before execution. The service layer enforces the selected permission policy. A client must explicitly answer the request when the policy requires it.
 
 Use `auto-all` only in a workspace where commands and file writes are acceptable without review.
+
+In interactive clients, `auto-read` does not automatically approve web requests. Network calls still require approval because they contact an external server. `auto-all` approves them with all other tools. Direct CLI chat retains its documented auto-allow behavior.

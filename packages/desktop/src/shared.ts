@@ -9,6 +9,7 @@ export interface DesktopConfiguration {
   readonly mode: DesktopMode;
   readonly permission: DesktopPermission;
   readonly contextWindow: number;
+  readonly internetAccess: boolean;
 }
 
 export interface DesktopMessage {

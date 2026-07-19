@@ -163,6 +163,9 @@ await Promise.all([
   updatePackageJson("packages/desktop/package.json", (manifest) => {
     manifest.name = `${packageScope}/desktop`;
     manifest.description = `Standalone desktop client for the ${brand.productName} runtime.`;
+    manifest.build.productName = brand.productName;
+    manifest.build.appId = `com.${brand.productSlug}.desktop`;
+    manifest.build.linux.executableName = brand.productSlug;
     applyWorkspaceDependencies(manifest);
     applyRepositoryMetadata(manifest);
   }),

@@ -8,25 +8,22 @@ The CLI is the direct command-line client and the runtime service host used by e
 npm install -g @truss-harness/cli
 ```
 
+The global installer prints the first commands to run. `truss-cli` and `truss-cli help` display the complete built-in reference without requiring a model.
+
 ## Commands
 
-<CliCommand /> `chat <prompt>`
-
-<CliCommand /> `serve`
-
-<CliCommand /> `models`
-
-<CliCommand /> `config path`
-
-<CliCommand /> `config init`
-
-<CliCommand /> `init`
-
-<CliCommand /> `update [note]`
-
-<CliCommand /> `status`
-
-<CliCommand /> `clear-memory`
+| Command | Purpose |
+| --- | --- |
+| <CliCommand /> `chat <prompt>` | Stream a one-shot agent task |
+| <CliCommand /> `models` | List detected local endpoints and models |
+| <CliCommand /> `config path` | Print user and workspace configuration paths |
+| <CliCommand /> `config init` | Create a workspace profile template |
+| <CliCommand /> `init` | Generate or refresh repository instructions |
+| <CliCommand /> `update [note]` | Store Git state and a handoff note |
+| <CliCommand /> `status` | Inspect durable workspace state |
+| <CliCommand /> `clear-memory` | Reset durable workspace memory |
+| <CliCommand /> `commands` | Print shared slash commands |
+| <CliCommand /> `serve` | Host the JSONL runtime protocol |
 
 ## Workspace commands
 
@@ -39,6 +36,8 @@ Run <CliCommand /> `init` to create or refresh generated repository context in `
 <CliUsage command={'chat --profile ollama-coder --mode plan "Find the files that define the agent loop"'} />
 
 Direct CLI chat auto-allows tools. Use it only in trusted workspaces. The terminal UI and VS Code client provide interactive or policy-based approvals.
+
+Add `--internet-access` to expose `web_search` and `web_fetch` for that run. Because direct CLI chat auto-allows tools, enabling this flag also authorizes public network requests. Use `--no-internet-access` to override an enabled profile.
 
 When a Plan-mode run produces a checklist, the CLI prints the saved plan to standard error. The active plan is stored at `.truss-harness/plans/active.json` and is automatically included in later Edit-mode context.
 

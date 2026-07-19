@@ -20,7 +20,7 @@ Repository-only Extension Development Host instructions are available in [Develo
 2. Select a detected server or enter a custom endpoint.
 3. Refresh model discovery and choose a model.
 4. Select Chat, Plan, or Edit mode.
-5. Choose a tool permission policy.
+5. Choose a tool permission policy and optionally enable **Internet research**.
 6. Select **Apply** and start chatting.
 
 The panel remembers endpoint, model, mode, permission selections, and bounded conversation transcripts in VS Code workspace state. When no model is saved, it auto-detects a local model. A restored conversation creates a fresh runtime session from its saved user/assistant transcript when you send the next prompt.
@@ -35,7 +35,7 @@ Type `/` in the chat composer to fuzzy-search workspace files. Use the arrow key
 
 | Mode | Tool access |
 | --- | --- |
-| Chat | No tools |
+| Chat | No workspace tools |
 | Plan | Read-only file inspection tools |
 | Edit | Full filesystem and terminal tools |
 
@@ -46,6 +46,8 @@ Type `/` in the chat composer to fuzzy-search workspace files. Use the arrow key
 | Ask every time | Allow or deny every tool call from the panel |
 | Auto-allow read-only | Auto-runs reads, lists, grep, and search; prompts for writes and terminal commands |
 | Auto-allow all | Runs all registered tools without prompting |
+
+When Internet research is enabled, `web_search` and `web_fetch` are available in every mode. They only read public text pages, reject private/local addresses, and prompt under Ask and Auto-allow read-only policies.
 
 ## Editor actions
 

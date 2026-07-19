@@ -14,6 +14,7 @@ import {
   listDirectoryTool,
   readFileTool,
   registerCoreTools,
+  registerWebTools,
   searchFilesTool,
   type ToolApproval,
   type RuntimeEvent
@@ -30,6 +31,7 @@ export interface ClientRuntimeOptions {
   readonly systemPrompt?: string;
   readonly approval?: ToolApproval;
   readonly mode?: AgentMode;
+  readonly internetAccess?: boolean;
 }
 
 export function createClientRuntime(options: ClientRuntimeOptions): {
@@ -51,6 +53,7 @@ export function createClientRuntime(options: ClientRuntimeOptions): {
     tools.register(searchFilesTool);
     tools.register(grepTool);
   }
+  if (options.internetAccess) registerWebTools(tools);
 
   return {
     events,
@@ -99,6 +102,7 @@ export function configurationFromEnvironment(workspaceRoot: string, environment:
     model,
     apiKey: environment.TRUSS_HARNESS_API_KEY,
     systemPrompt: environment.TRUSS_HARNESS_SYSTEM_PROMPT,
-    mode
+    mode,
+    internetAccess: environment.TRUSS_HARNESS_INTERNET_ACCESS === "true" || environment.TRUSS_HARNESS_INTERNET_ACCESS === "1"
   };
 }
