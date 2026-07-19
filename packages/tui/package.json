@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/tui",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Interactive terminal client for Truss.",
   "type": "module",
   "bin": {

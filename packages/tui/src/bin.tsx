@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { execFile as execFileCallback } from "node:child_process";
 import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { cwd } from "node:process";
 import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { Box, render, Text, useApp, useInput } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { detectLocalEndpoints, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
@@ -30,6 +31,31 @@ if (process.argv.slice(2).some((argument) => argument === "--help" || argument =
   process.stdout.write(tuiHelp);
   process.exit(0);
 }
+
+function ensureInteractiveTerminal(): void {
+  if (process.stdin.isTTY && typeof process.stdin.setRawMode === "function") return;
+
+  // Git Bash exposes a pipe to Node for some console programs. winpty creates
+  // the Windows console bridge Ink needs for keyboard input.
+  if (process.platform === "win32" && process.env.MSYSTEM && process.env.TRUSS_TUI_WINPTY !== "1") {
+    const result = spawnSync(
+      "winpty",
+      [process.execPath, fileURLToPath(import.meta.url), ...process.argv.slice(2)],
+      {
+        stdio: "inherit",
+        env: { ...process.env, TRUSS_TUI_WINPTY: "1" }
+      }
+    );
+    if (!result.error) process.exit(result.status ?? 1);
+  }
+
+  process.stderr.write(
+    brand.productName + " TUI needs an interactive terminal with raw keyboard input. Open PowerShell or Windows Terminal and run " + brand.tuiCommand + ", or run winpty " + brand.tuiCommand + " from Git Bash.\n"
+  );
+  process.exit(1);
+}
+
+ensureInteractiveTerminal();
 
 const execFile = promisify(execFileCallback);
 const ignoredDirectories = new Set([".git", ".next", ".truss-harness", "node_modules", "dist", "coverage"]);
