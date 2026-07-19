@@ -157,7 +157,7 @@ await Promise.all([
   updatePackageJson("packages/cli/package.json", (manifest) => {
     manifest.name = `${packageScope}/cli`;
     manifest.description = `Command-line client and runtime service for ${brand.productName}.`;
-    manifest.bin = { [brand.cliCommand]: "./dist/bin.js" };
+    manifest.bin = { [brand.cliCommand]: "dist/bin.js" };
     applyWorkspaceDependencies(manifest);
     includeLogoInPackage(manifest);
     applyRepositoryMetadata(manifest);
@@ -165,7 +165,7 @@ await Promise.all([
   updatePackageJson("packages/tui/package.json", (manifest) => {
     manifest.name = `${packageScope}/tui`;
     manifest.description = `Interactive terminal client for ${brand.productName}.`;
-    manifest.bin = { [brand.tuiCommand]: "./dist/bin.js" };
+    manifest.bin = { [brand.tuiCommand]: "dist/bin.js" };
     applyWorkspaceDependencies(manifest);
     includeLogoInPackage(manifest);
     applyRepositoryMetadata(manifest);
