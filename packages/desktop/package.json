@@ -9,11 +9,11 @@
     "build": "tsc -p tsconfig.json && esbuild ./dist/main.js --bundle --platform=node --format=cjs --external:electron --outfile=./dist/main.cjs && esbuild ./dist/preload.js --bundle --platform=node --format=cjs --external:electron --outfile=./dist/preload.cjs && node ./scripts/copy-static.mjs",
     "dev": "npm run build && node ./scripts/start-electron.mjs",
     "start": "node ./scripts/start-electron.mjs",
-    "package": "npm run build && electron-builder",
-    "package:win:x64": "npm run build && electron-builder --win nsis --x64",
-    "package:win:arm64": "npm run build && electron-builder --win nsis --arm64",
-    "package:linux:x64": "npm run build && electron-builder --linux AppImage deb rpm pacman --x64",
-    "package:linux:arm64": "npm run build && electron-builder --linux AppImage deb rpm pacman --arm64"
+    "package": "npm run build && electron-builder --publish never",
+    "package:win:x64": "npm run build && electron-builder --publish never --win nsis --x64",
+    "package:win:arm64": "npm run build && electron-builder --publish never --win nsis --arm64",
+    "package:linux:x64": "npm run build && electron-builder --publish never --linux AppImage deb rpm pacman --x64",
+    "package:linux:arm64": "npm run build && electron-builder --publish never --linux AppImage deb rpm pacman --arm64"
   },
   "build": {
     "appId": "com.truss-harness.desktop",
