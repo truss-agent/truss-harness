@@ -94,6 +94,9 @@ function applyExtensionIdentity(manifest) {
   manifest.name = `${brand.productSlug}-vscode`;
   manifest.publisher = brand.productSlug;
   manifest.icon = `media/${brand.productSlug}.png`;
+  manifest.main = "./dist/extension.cjs";
+  manifest.scripts.bundle = "node ../../scripts/prepare-vscode-bundle.mjs && esbuild ./src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs";
+  manifest.scripts.package = "node ../../scripts/sync-brand-assets.mjs && npm run build && vsce package --no-dependencies";
   manifest.activationEvents = manifest.activationEvents.map((event) => replaceExtensionNamespace(event, previousNamespace));
 
   const views = manifest.contributes.views[previousNamespace] ?? manifest.contributes.views[extensionNamespace] ?? [];

@@ -28,7 +28,7 @@
     "onCommand:trussHarness.showWorkspaceStatus",
     "onCommand:trussHarness.clearWorkspaceMemory"
   ],
-  "main": "./dist/extension.js",
+  "main": "./dist/extension.cjs",
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -109,8 +109,8 @@
   },
   "scripts": {
     "build": "tsc -p . && npm run bundle",
-    "bundle": "esbuild ./src/extension.ts --bundle --platform=node --format=esm --external:vscode --outfile=dist/extension.js",
-    "package": "npm run build && node ../../scripts/sync-brand-assets.mjs && vsce package --no-dependencies",
+    "bundle": "node ../../scripts/prepare-vscode-bundle.mjs && esbuild ./src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs",
+    "package": "node ../../scripts/sync-brand-assets.mjs && npm run build && vsce package --no-dependencies",
     "prepublishOnly": "npm run package"
   },
   "dependencies": {
