@@ -27,7 +27,7 @@ export const clientContent: Record<ClientId, ClientContent> = {
     installLabel: "Install with npm",
     installDescription: "Requires Node.js 20 or newer. The same workspace profiles work across the CLI and TUI.",
     commands: ["npm install -g @truss-harness/cli", "truss-cli models", "truss-cli config init", "truss-cli chat \"Review the current diff\""],
-    primaryAction: { label: "View CLI docs", href: "/docs/clients/cli" },
+    primaryAction: { label: "View CLI on npm", href: "https://www.npmjs.com/package/@truss-harness/cli", external: true },
     docsHref: "/docs/clients/cli",
     highlights: [
       { title: "Run from anywhere", description: "Start a one-shot task or an ongoing chat directly in the shell you already use." },
@@ -46,7 +46,7 @@ export const clientContent: Record<ClientId, ClientContent> = {
     installLabel: "Install with npm",
     installDescription: "Requires Node.js 20 or newer and shares the CLI's local-model profiles and workspace state.",
     commands: ["npm install -g @truss-harness/tui", "truss-tui"],
-    primaryAction: { label: "View TUI docs", href: "/docs/clients/tui" },
+    primaryAction: { label: "View TUI on npm", href: "https://www.npmjs.com/package/@truss-harness/tui", external: true },
     docsHref: "/docs/clients/tui",
     highlights: [
       { title: "Four focused panes", description: "Move between files, editor, agent, and terminal panes without breaking the flow of an investigation." },

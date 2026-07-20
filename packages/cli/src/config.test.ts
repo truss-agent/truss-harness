@@ -13,7 +13,7 @@ describe("resolveConfiguration", () => {
       await writeFile(paths.user, JSON.stringify({
         defaultProfile: "local",
         profiles: {
-          local: { provider: "ollama", baseUrl: "http://user:11434", model: "user-model", permission: "ask" }
+          local: { provider: "ollama", baseUrl: "http://user:11434", model: "user-model", permission: "ask", tuiTheme: "sage" }
         }
       }));
       await writeFile(paths.workspace, JSON.stringify({
@@ -36,8 +36,22 @@ describe("resolveConfiguration", () => {
         mode: "edit",
         permission: "auto-all",
         internetAccess: true,
-        profile: "local"
+        profile: "local",
+        tuiTheme: "sage"
       });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("accepts a valid terminal theme from the environment", async () => {
+    const root = join(process.cwd(), ".test-workspaces", randomUUID());
+    const paths = { user: join(root, "user.json"), workspace: join(root, "workspace.json") };
+    await mkdir(root, { recursive: true });
+    try {
+      await writeFile(paths.user, JSON.stringify({ model: "test-model" }));
+      const resolved = await resolveConfiguration({ workspaceRoot: root, paths, environment: { TRUSS_HARNESS_TUI_THEME: "dusk" } });
+      expect(resolved.tuiTheme).toBe("dusk");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

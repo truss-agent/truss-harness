@@ -17,6 +17,18 @@ On Windows, use PowerShell or Windows Terminal. When launching from Git Bash, Tr
 
 The TUI reads the same `.truss-harness/config.json` profiles as `@truss-harness/cli`, or lets you select a detected Ollama, LM Studio, llama.cpp, or custom compatible endpoint at startup.
 
+## Themes
+
+The default `forest` theme uses restrained green, sage, and teal accents with soft syntax colors. Choose `sage` for a lighter green palette or `dusk` for a quieter deep-green palette. Set a persistent preference in the shared configuration file or use `TRUSS_HARNESS_TUI_THEME`:
+
+```json
+{
+  "tuiTheme": "forest"
+}
+```
+
+Inside the TUI, open settings with `m`, Tab to **Theme**, and use Left or Right to preview a preset for the current session.
+
 Configured MCP stdio servers are connected when an Agent session starts, and their connection status appears in the Terminal pane. Plan mode loads only servers explicitly marked `readOnly`. Run `truss-cli config path` to locate the shared user and workspace configuration files.
 
 ## Controls

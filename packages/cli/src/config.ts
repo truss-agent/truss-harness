@@ -7,6 +7,8 @@ import { detectActiveLocalModel, type LocalEndpointKind } from "@truss-harness/p
 import type { AgentMode, ClientConfiguration } from "./runtime.js";
 import type { PermissionMode } from "./protocol.js";
 
+export type TuiThemeName = "forest" | "sage" | "dusk";
+
 export interface ProfileConfiguration {
   readonly provider?: LocalEndpointKind;
   readonly baseUrl?: string;
@@ -18,6 +20,8 @@ export interface ProfileConfiguration {
   /** Name of an environment variable containing a local endpoint token. */
   readonly apiKeyEnv?: string;
   readonly mcpServers?: McpServerConfigurations;
+  /** Visual preset used by the terminal UI. */
+  readonly tuiTheme?: TuiThemeName;
 }
 
 export interface HarnessConfiguration extends ProfileConfiguration {
@@ -34,6 +38,7 @@ export interface ConfigurationOverrides extends ProfileConfiguration {
 export interface ResolvedConfiguration extends ClientConfiguration {
   readonly profile?: string;
   readonly permission: PermissionMode;
+  readonly tuiTheme?: TuiThemeName;
   readonly paths: { readonly user: string; readonly workspace: string };
 }
 
@@ -54,6 +59,10 @@ function validPermission(value: unknown): PermissionMode | undefined {
   return value === "ask" || value === "auto-read" || value === "auto-all" ? value : undefined;
 }
 
+function validTuiTheme(value: unknown): TuiThemeName | undefined {
+  return value === "forest" || value === "sage" || value === "dusk" ? value : undefined;
+}
+
 function object(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
@@ -70,7 +79,8 @@ function parseProfile(value: unknown): ProfileConfiguration {
     internetAccess: typeof source.internetAccess === "boolean" ? source.internetAccess : undefined,
     systemPrompt: typeof source.systemPrompt === "string" ? source.systemPrompt : undefined,
     apiKeyEnv: typeof source.apiKeyEnv === "string" ? source.apiKeyEnv : undefined,
-    mcpServers: source.mcpServers === undefined ? undefined : parseMcpServerConfigurations(source.mcpServers)
+    mcpServers: source.mcpServers === undefined ? undefined : parseMcpServerConfigurations(source.mcpServers),
+    tuiTheme: validTuiTheme(source.tuiTheme)
   };
 }
 
@@ -119,7 +129,8 @@ function environmentConfiguration(environment: NodeJS.ProcessEnv): ProfileConfig
       : environment.TRUSS_HARNESS_INTERNET_ACCESS === "true" || environment.TRUSS_HARNESS_INTERNET_ACCESS === "1",
     systemPrompt: environment.TRUSS_HARNESS_SYSTEM_PROMPT,
     apiKeyEnv: environment.TRUSS_HARNESS_API_KEY ? "TRUSS_HARNESS_API_KEY" : undefined,
-    mcpServers
+    mcpServers,
+    tuiTheme: validTuiTheme(environment.TRUSS_HARNESS_TUI_THEME)
   };
 }
 
@@ -132,7 +143,8 @@ const profileKeys = [
   "internetAccess",
   "systemPrompt",
   "apiKeyEnv",
-  "mcpServers"
+  "mcpServers",
+  "tuiTheme"
 ] as const satisfies readonly (keyof ProfileConfiguration)[];
 
 function mergeProfiles(...sources: readonly (ProfileConfiguration | undefined)[]): ProfileConfiguration {
@@ -211,6 +223,7 @@ export async function resolveConfiguration(options: {
     systemPrompt: merged.systemPrompt,
     mcpServers,
     profile,
+    tuiTheme: merged.tuiTheme,
     paths
   };
 }

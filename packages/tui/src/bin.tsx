@@ -14,6 +14,7 @@ import { resolveConfiguration, type ResolvedConfiguration } from "@truss-harness
 import { createClientRuntime, type ClientConfiguration } from "@truss-harness/cli/runtime";
 import { executeWorkspaceCommand, FileWorkspacePlanStore, workspaceCommandHelp, type ContextBlock, type ToolApproval, type ToolCall, type WorkspacePlan } from "@truss-harness/runtime";
 import { buildFileTree, fuzzyFiles, syntaxTokens, wrapSyntaxTokens, type FileEntry, type SyntaxToken } from "./file-browser.js";
+import { tuiTheme, tuiThemeNames, type TuiTheme, type TuiThemeName } from "./theme.js";
 
 const tuiHelp = `${brand.productName} TUI
 
@@ -26,6 +27,17 @@ The TUI starts in the current workspace and reads the same configuration
 profiles as ${brand.cliCommand}. Press ? inside the TUI for its complete
 keyboard-control reference.
 `;
+
+const tuiControlHelp = [
+  ["NAVIGATION", "Tab / Shift+Tab move focus; Ctrl+Left / Ctrl+Right move to an adjacent pane."],
+  ["FILES", "/ opens fuzzy file search; Up/Down select; Left/Right collapse or expand; Enter opens."],
+  ["EDITOR", "Up/Down scroll; d toggles Git diff; o opens the detected preview URL externally."],
+  ["AGENT", "Enter sends; Up/Down scroll chat; n starts a new conversation outside the chat input."],
+  ["TERMINAL", "Type directly and press Enter; Up/Down scroll output; slash commands run through Truss."],
+  ["SETTINGS", "m opens settings outside chat; Tab changes fields; Theme previews forest, sage, and dusk."],
+  ["APPROVALS", "Y or Enter allows; N or Escape denies."],
+  ["CANCEL / EXIT", "Escape cancels an active agent run. Ctrl+C stops a process or run, and exits while idle."]
+] as const;
 
 if (process.argv.slice(2).some((argument) => argument === "--help" || argument === "-h")) {
   process.stdout.write(tuiHelp);
@@ -62,7 +74,7 @@ const ignoredDirectories = new Set([".git", ".next", ".truss-harness", "node_mod
 const focusOrder = ["files", "editor", "chat", "terminal"] as const;
 type Focus = (typeof focusOrder)[number];
 type Screen = "workspace" | "settings" | "approval" | "help" | "file-search";
-type SettingsField = "server" | "endpoint" | "model" | "internet";
+type SettingsField = "server" | "endpoint" | "model" | "internet" | "theme";
 type RunStatus = "ready" | "thinking" | "tool" | "waiting";
 type ChatMessage = { readonly role: "user" | "assistant"; readonly content: string };
 type ChatDisplayLine = { readonly role: ChatMessage["role"]; readonly text: string; readonly header: boolean };
@@ -105,9 +117,31 @@ function wrapText(value: string, width: number): string[] {
   return result;
 }
 
+function plainChatText(value: string): string {
+  let inCodeBlock = false;
+  return value.split(/\r?\n/).flatMap((sourceLine) => {
+    if (/^\s*```/.test(sourceLine)) {
+      inCodeBlock = !inCodeBlock;
+      return [];
+    }
+    if (inCodeBlock) return [`  ${sourceLine}`];
+    const line = sourceLine
+      .replace(/^\s{0,3}#{1,6}\s+/, "")
+      .replace(/^\s*>\s?/, "")
+      .replace(/^\s*[-*+]\s+/, "- ")
+      .replace(/^\s*\d+[.)]\s+/, "- ")
+      .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+      .replace(/`([^`]+)`/g, "$1")
+      .replace(/(\*\*|__|\*|_|~~)/g, "");
+    return /^\s*[-:|]+\s*$/.test(line) ? [] : [line];
+  }).join("\n");
+}
+
 function chatDisplayLines(messages: readonly ChatMessage[], busy: boolean, width: number): readonly ChatDisplayLine[] {
   const transcript = messages.flatMap((message) => {
-    const content = message.content || (busy && message.role === "assistant" ? "Thinking..." : "");
+    const content = message.content
+      ? message.role === "assistant" ? plainChatText(message.content) : message.content
+      : busy && message.role === "assistant" ? "Thinking..." : "";
     return [
       { role: message.role, text: message.role === "user" ? "YOU" : "AGENT", header: true },
       ...wrapText(content, width).map((text) => ({ role: message.role, text, header: false }))
@@ -182,14 +216,14 @@ async function stopProcessTree(child: ChildProcess): Promise<void> {
   child.kill();
 }
 
-function Panel({ title, active, children }: { readonly title: string; readonly active: boolean; readonly children: React.ReactNode }): React.ReactElement {
-  return <Box flexDirection="column" borderStyle="round" borderColor={active ? "cyan" : "gray"} paddingX={1} width="100%" height="100%" overflow="hidden">
-    <Text color={active ? "cyan" : "gray"} bold>{title}</Text>
+function Panel({ title, active, theme, children }: { readonly title: string; readonly active: boolean; readonly theme: TuiTheme; readonly children: React.ReactNode }): React.ReactElement {
+  return <Box flexDirection="column" borderStyle="round" borderColor={active ? theme.focus : theme.panel} paddingX={1} width="100%" height="100%" overflow="hidden">
+    <Text color={active ? theme.focus : theme.muted} bold>{title}</Text>
     {children}
   </Box>;
 }
 
-function App({ initialConfiguration }: { readonly initialConfiguration?: ResolvedConfiguration }): React.ReactElement {
+function App({ initialConfiguration }: { readonly initialConfiguration?: ResolvedConfiguration & { readonly tuiTheme?: TuiThemeName } }): React.ReactElement {
   const { exit } = useApp();
   const [viewport, setViewport] = useState(() => ({ columns: process.stdout.columns || 120, rows: process.stdout.rows || 36 }));
   const workspaceRoot = useMemo(() => cwd(), []);
@@ -225,6 +259,7 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
   const [models, setModels] = useState<readonly string[]>([]);
   const [modelIndex, setModelIndex] = useState(0);
   const [settingsField, setSettingsField] = useState<SettingsField>("server");
+  const [themeName, setThemeName] = useState<TuiThemeName>(initialConfiguration?.tuiTheme ?? "forest");
   const [endpointInput, setEndpointInput] = useState(initialConfiguration?.baseUrl ?? "http://127.0.0.1:11434");
   const [modelInput, setModelInput] = useState(initialConfiguration?.model ?? "");
   const [providerKind, setProviderKind] = useState<LocalEndpointKind>(initialConfiguration?.provider ?? "ollama");
@@ -239,6 +274,7 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
   const tokensPerSecond = streamMetrics.startedAt && streamMetrics.generatedTokens
     ? streamMetrics.generatedTokens / Math.max((Date.now() - streamMetrics.startedAt) / 1_000, 0.1)
     : undefined;
+  const theme = tuiTheme(themeName);
 
   const appendTerminal = (output: string): void => {
     const next = output.replace(/\r/g, "").split("\n").filter(Boolean);
@@ -618,7 +654,7 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
     if (screen === "settings") {
       if (key.escape) { setScreen("workspace"); return; }
       if (key.tab) {
-        const fields: readonly SettingsField[] = ["server", "endpoint", "model", "internet"];
+        const fields: readonly SettingsField[] = ["server", "endpoint", "model", "internet", "theme"];
         setSettingsField((current) => {
           const index = fields.indexOf(current);
           return fields[(index + (key.shift ? -1 : 1) + fields.length) % fields.length];
@@ -642,6 +678,12 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
       }
       if (settingsField === "internet") {
         if (input === " " || key.leftArrow || key.rightArrow) setInternetAccess((current) => !current);
+        if (key.return && endpointInput && modelInput) void configureRuntime();
+        return;
+      }
+      if (settingsField === "theme") {
+        if (key.leftArrow || key.upArrow) setThemeName((current) => tuiThemeNames[(tuiThemeNames.indexOf(current) - 1 + tuiThemeNames.length) % tuiThemeNames.length]);
+        if (key.rightArrow || key.downArrow || input === " ") setThemeName((current) => tuiThemeNames[(tuiThemeNames.indexOf(current) + 1) % tuiThemeNames.length]);
         if (key.return && endpointInput && modelInput) void configureRuntime();
         return;
       }
@@ -724,40 +766,40 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
     else if (input) setChatInput((current) => current + input);
   });
 
-  const filesPanel = <Panel title="FILES  [/] find" active={focus === "files"}>
+  const filesPanel = <Panel title="FILES  [/] find" active={focus === "files"} theme={theme}>
     {visibleFileTree.map((entry, visibleIndex) => {
       const selected = fileTreeStart + visibleIndex === fileIndex;
       const marker = entry.kind === "directory" ? (entry.expanded ? "v " : "> ") : "  ";
       const indentation = " ".repeat(entry.depth * 2);
       const width = Math.max(6, filesWidth - indentation.length - 7);
-      return <Text key={`${entry.kind}:${entry.path}`} wrap="truncate-end" color={selected ? "cyan" : entry.kind === "directory" ? "blue" : entry.path === openFilePath ? "green" : undefined} bold={selected || entry.kind === "directory"}>
+      return <Text key={`${entry.kind}:${entry.path}`} wrap="truncate-end" color={selected ? theme.focus : entry.kind === "directory" ? theme.directory : entry.path === openFilePath ? theme.success : theme.text} bold={selected || entry.kind === "directory"}>
         {selected ? "> " : "  "}{indentation}{marker}{truncate(entry.name, width)}
       </Text>;
     })}
-    {!fileTree.length && <Text color="gray">No workspace files found.</Text>}
+    {!fileTree.length && <Text color={theme.muted}>No workspace files found.</Text>}
   </Panel>;
-  const editorPanel = <Panel title={`${editorTitle}  [up/down] scroll  [d] diff${previewUrl ? "  [o] browser" : ""}`} active={focus === "editor"}>
+  const editorPanel = <Panel title={`${editorTitle}  [up/down] scroll  [d] diff${previewUrl ? "  [o] browser" : ""}`} active={focus === "editor"} theme={theme}>
     {visibleEditorRows.map((row, index) => {
       const lineLabel = row.continuation ? "  |" : String(row.sourceLine).padStart(3);
-      return <Text key={`${editorScroll + index}-${row.sourceLine}-${row.continuation}`} wrap="truncate-end"><Text color="gray">{lineLabel}</Text> {row.tokens.map((token, tokenIndex) => <Text key={`${tokenIndex}-${token.text}`} color={token.color} dimColor={token.dim}>{token.text}</Text>)}</Text>;
+      return <Text key={`${editorScroll + index}-${row.sourceLine}-${row.continuation}`} wrap="truncate-end" color={theme.text}><Text color={theme.muted}>{lineLabel}</Text> {row.tokens.map((token, tokenIndex) => <Text key={`${tokenIndex}-${token.text}`} color={token.color ? theme.syntax[token.color] : theme.text} dimColor={token.dim}>{token.text}</Text>)}</Text>;
     })}
   </Panel>;
-  const agentPanel = <Panel title={chatScroll ? `AGENT  [${chatScroll} lines above]` : "AGENT  [Enter] send"} active={focus === "chat"}>
-    {activePlan && <Box flexDirection="column" marginBottom={1}><Text bold color="cyan" wrap="truncate-end">PLAN: {truncate(activePlan.title, Math.max(8, chatWidth - 9))}</Text>{activePlan.steps.slice(0, 3).map((step) => <Text key={step.id} wrap="truncate-end" color={step.status === "completed" ? "green" : step.status === "in_progress" ? "yellow" : "gray"}>{step.status === "completed" ? "[x]" : step.status === "in_progress" ? "[..]" : "[ ]"} {truncate(step.content, Math.max(8, chatWidth - 7))}</Text>)}</Box>}
-    {chatLines.map((line, index) => <Text key={`${line.role}-${line.header}-${index}-${line.text}`} color={line.role === "user" ? "cyan" : "green"} bold={line.header}>{line.text}</Text>)}
+  const agentPanel = <Panel title={chatScroll ? `AGENT  [${chatScroll} lines above]` : "AGENT  [Enter] send"} active={focus === "chat"} theme={theme}>
+    {activePlan && <Box flexDirection="column" marginBottom={1}><Text bold color={theme.accent} wrap="truncate-end">PLAN: {truncate(activePlan.title, Math.max(8, chatWidth - 9))}</Text>{activePlan.steps.slice(0, 3).map((step) => <Text key={step.id} wrap="truncate-end" color={step.status === "completed" ? theme.success : step.status === "in_progress" ? theme.warning : theme.muted}>{step.status === "completed" ? "[x]" : step.status === "in_progress" ? "[..]" : "[ ]"} {truncate(step.content, Math.max(8, chatWidth - 7))}</Text>)}</Box>}
+    {chatLines.map((line, index) => <Text key={`${line.role}-${line.header}-${index}-${line.text}`} color={line.role === "user" ? theme.user : theme.agent} bold={line.header}>{line.text}</Text>)}
     <Box flexGrow={1} />
-    <Text wrap="truncate-end" color={focus === "chat" ? "cyan" : "gray"}>{focus === "chat" ? "> " : "  "}{truncate(chatInput || (busy ? "Working... Escape cancels" : "Ask about this workspace"), Math.max(12, chatWidth - 5))}</Text>
+    <Text wrap="truncate-end" color={focus === "chat" ? theme.focus : theme.muted}>{focus === "chat" ? "> " : "  "}{truncate(chatInput || (busy ? "Working... Escape cancels" : "Ask about this workspace"), Math.max(12, chatWidth - 5))}</Text>
   </Panel>;
 
   return <Box flexDirection="column" height={viewport.rows} paddingX={1} overflow="hidden">
     <Box height={1} justifyContent="space-between" marginBottom={1}>
-      <Text bold color="cyan">{brand.productName.toUpperCase()}</Text>
-      <Text color="gray">{configuration ? `${configuration.provider} / ${configuration.model}` : "No model selected"}</Text>
-      <Text color={runStatus === "waiting" ? "yellow" : busy ? "cyan" : "green"}>{runStatus === "waiting" ? "APPROVAL" : runStatus === "tool" ? "TOOL" : busy ? "WORKING" : "READY"}</Text>
+      <Text bold color={theme.accent}>{brand.productName.toUpperCase()}</Text>
+      <Text color={theme.muted}>{configuration ? `${configuration.provider} / ${configuration.model}` : "No model selected"}</Text>
+      <Text color={runStatus === "waiting" ? theme.warning : busy ? theme.focus : theme.success}>{runStatus === "waiting" ? "APPROVAL" : runStatus === "tool" ? "TOOL" : busy ? "WORKING" : "READY"}</Text>
     </Box>
     <Box height={1} justifyContent="space-between" marginBottom={1}>
-      <Text color="gray">CONTEXT <Text color={contextTokens / contextWindow >= 0.9 ? "red" : contextTokens / contextWindow >= 0.7 ? "yellow" : "cyan"}>{formatTokenCount(contextTokens)} / {formatTokenCount(contextWindow)}</Text> estimated</Text>
-      <Text color="gray">SPEED <Text color={busy ? "green" : "gray"}>{tokensPerSecond ? `${tokensPerSecond.toFixed(1)} tok/s` : "-- tok/s"}</Text>{previewUrl ? `  PREVIEW ${truncate(previewUrl, Math.max(16, Math.floor(viewport.columns * 0.3)))}` : ""}</Text>
+      <Text color={theme.muted}>CONTEXT <Text color={contextTokens / contextWindow >= 0.9 ? theme.error : contextTokens / contextWindow >= 0.7 ? theme.warning : theme.accent}>{formatTokenCount(contextTokens)} / {formatTokenCount(contextWindow)}</Text> estimated</Text>
+      <Text color={theme.muted}>SPEED <Text color={busy ? theme.success : theme.muted}>{tokensPerSecond ? `${tokensPerSecond.toFixed(1)} tok/s` : "-- tok/s"}</Text>{previewUrl ? `  PREVIEW ${truncate(previewUrl, Math.max(16, Math.floor(viewport.columns * 0.3)))}` : ""}</Text>
     </Box>
     {compactLayout ? <Box height={workspaceHeight} flexDirection="column" gap={1} overflow="hidden">
       <Box height={editorHeight} flexDirection="row" gap={1} overflow="hidden">
@@ -770,44 +812,47 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
       <Box width={editorWidth} height="100%">{editorPanel}</Box>
       <Box width={chatWidth} height="100%">{agentPanel}</Box>
     </Box>}
-    <Box height={terminalHeight} marginTop={1}><Panel title="TERMINAL  [Enter] run" active={focus === "terminal"}>
-      {visibleTerminalLines.map((line, index) => <Text key={`${index}-${line}`} wrap="truncate-end" color={line.startsWith("[agent error]") || line.startsWith("[terminal error]") ? "red" : line.startsWith("[tool") ? "yellow" : "gray"}>{truncate(line, Math.max(20, viewport.columns - 8))}</Text>)}
+    <Box height={terminalHeight} marginTop={1}><Panel title="TERMINAL  [Enter] run" active={focus === "terminal"} theme={theme}>
+      {visibleTerminalLines.map((line, index) => <Text key={`${index}-${line}`} wrap="truncate-end" color={line.startsWith("[agent error]") || line.startsWith("[terminal error]") ? theme.error : line.startsWith("[tool") ? theme.warning : theme.muted}>{truncate(line, Math.max(20, viewport.columns - 8))}</Text>)}
       <Box flexGrow={1} />
-      <Text wrap="truncate-end" color={focus === "terminal" ? "cyan" : "gray"}>{focus === "terminal" ? "> " : "  "}{truncate(commandInput || "Type a workspace command", Math.max(16, viewport.columns - 10))}</Text>
+      <Text wrap="truncate-end" color={focus === "terminal" ? theme.focus : theme.muted}>{focus === "terminal" ? "> " : "  "}{truncate(commandInput || "Type a workspace command", Math.max(16, viewport.columns - 10))}</Text>
     </Panel></Box>
-    <Box height={1} marginTop={1} justifyContent="space-between"><Text color="gray" wrap="truncate-end">Tab/Shift+Tab focus  |  Ctrl+Left/Right pane  |  / find  |  m model  |  Esc stop</Text><Text color="gray">{sessionId ? `session ${sessionId.slice(0, 8)}` : "new session"}</Text></Box>
-    {screen === "file-search" && <Box position="absolute" flexDirection="column" borderStyle="double" borderColor="cyan" paddingX={2} paddingY={1} width={overlayWidth} marginLeft={2} marginTop={3} backgroundColor="black">
-      <Text bold color="cyan">FIND FILE</Text>
-      <Text><Text color="cyan">&gt; </Text>{fileSearchInput || <Text color="gray">Type part of a file name or path</Text>}</Text>
-      <Text color="gray">Up/Down select  Enter open  Escape close</Text>
+    <Box height={1} marginTop={1} justifyContent="space-between"><Text color={theme.muted} wrap="truncate-end">Tab focus  |  Ctrl+Left/Right pane  |  / find  |  m settings  |  Esc cancel run  |  Ctrl+C exit idle</Text><Text color={theme.muted}>{sessionId ? `session ${sessionId.slice(0, 8)}` : "new session"}</Text></Box>
+    {screen === "file-search" && <Box position="absolute" flexDirection="column" borderStyle="double" borderColor={theme.focus} paddingX={2} paddingY={1} width={overlayWidth} marginLeft={2} marginTop={3} backgroundColor={theme.overlay}>
+      <Text bold color={theme.accent}>FIND FILE</Text>
+      <Text color={theme.text}><Text color={theme.focus}>&gt; </Text>{fileSearchInput || <Text color={theme.muted}>Type part of a file name or path</Text>}</Text>
+      <Text color={theme.muted}>Up/Down select  Enter open  Escape close</Text>
       <Box flexDirection="column" marginTop={1}>
         {fileSearchResults.map((entry, index) => {
           const selected = index === Math.min(fileSearchIndex, Math.max(0, fileSearchResults.length - 1));
           const fileName = entry.path.split("/").at(-1) ?? entry.path;
-          return <Text key={entry.path} color={selected ? "cyan" : undefined} bold={selected}>{selected ? "> " : "  "}{fileName}<Text color="gray">  {truncate(entry.path, Math.max(12, overlayWidth - fileName.length - 10))}</Text></Text>;
+          return <Text key={entry.path} color={selected ? theme.focus : theme.text} bold={selected}>{selected ? "> " : "  "}{fileName}<Text color={theme.muted}>  {truncate(entry.path, Math.max(12, overlayWidth - fileName.length - 10))}</Text></Text>;
         })}
-        {!fileSearchResults.length && <Text color="yellow">No matching files.</Text>}
+        {!fileSearchResults.length && <Text color={theme.warning}>No matching files.</Text>}
       </Box>
     </Box>}
-    {screen === "settings" && <Box position="absolute" flexDirection="column" borderStyle="double" borderColor="cyan" paddingX={2} paddingY={1} width={overlayWidth} marginLeft={2} marginTop={3} backgroundColor="black">
-      <Text bold color="cyan">LOCAL MODEL CONFIGURATION</Text>
-      <Text color="gray">Tab changes fields. Enter selects an item or saves when endpoint and model are set.</Text>
-      <Text color={settingsField === "server" ? "cyan" : undefined}>SERVER: {selectedEndpoint?.label ?? "Scanning local servers..."}</Text>
-      <Text color={settingsField === "endpoint" ? "cyan" : undefined}>ENDPOINT: {endpointInput}</Text>
-      <Text color={settingsField === "model" ? "cyan" : undefined}>MODEL: {modelInput || models[modelIndex] || "Choose or type a model"}</Text>
-      <Text color={settingsField === "internet" ? "cyan" : undefined}>INTERNET RESEARCH: {internetAccess ? "enabled" : "disabled"} {settingsField === "internet" ? "[Space toggles]" : ""}</Text>
-      <Text color="gray">Detected models: {models.slice(0, 5).join(", ") || "none; type one manually"}</Text>
-      <Text color="yellow">Provider: {providerKind}. Use the server selector for Ollama or compatible endpoints.</Text>
+    {screen === "settings" && <Box position="absolute" flexDirection="column" borderStyle="double" borderColor={theme.focus} paddingX={2} paddingY={1} width={overlayWidth} marginLeft={2} marginTop={3} backgroundColor={theme.overlay}>
+      <Text bold color={theme.accent}>LOCAL MODEL CONFIGURATION</Text>
+      <Text color={theme.muted}>Tab changes fields. Enter selects an item or saves when endpoint and model are set.</Text>
+      <Text color={settingsField === "server" ? theme.focus : theme.text}>SERVER: {selectedEndpoint?.label ?? "Scanning local servers..."}</Text>
+      <Text color={settingsField === "endpoint" ? theme.focus : theme.text}>ENDPOINT: {endpointInput}</Text>
+      <Text color={settingsField === "model" ? theme.focus : theme.text}>MODEL: {modelInput || models[modelIndex] || "Choose or type a model"}</Text>
+      <Text color={settingsField === "internet" ? theme.focus : theme.text}>INTERNET RESEARCH: {internetAccess ? "enabled" : "disabled"} {settingsField === "internet" ? "[Space toggles]" : ""}</Text>
+      <Text color={settingsField === "theme" ? theme.focus : theme.text}>THEME: {themeName} {settingsField === "theme" ? "[Left/Right changes]" : ""}</Text>
+      <Text color={theme.muted}>Detected models: {models.slice(0, 5).join(", ") || "none; type one manually"}</Text>
+      <Text color={theme.warning}>Provider: {providerKind}. Use the server selector for Ollama or compatible endpoints.</Text>
     </Box>}
-    {screen === "approval" && <Box position="absolute" flexDirection="column" borderStyle="double" borderColor="yellow" paddingX={2} paddingY={1} width={overlayWidth} marginLeft={2} marginTop={8} backgroundColor="black">
-      <Text bold color="yellow">TOOL APPROVAL REQUIRED</Text>
-      <Text>{pendingTool?.name} {JSON.stringify(pendingTool?.input)}</Text>
-      <Text color="gray">Press Y or Enter to allow. Press N or Escape to deny.</Text>
+    {screen === "approval" && <Box position="absolute" flexDirection="column" borderStyle="double" borderColor={theme.warning} paddingX={2} paddingY={1} width={overlayWidth} marginLeft={2} marginTop={8} backgroundColor={theme.overlay}>
+      <Text bold color={theme.warning}>TOOL APPROVAL REQUIRED</Text>
+      <Text color={theme.text}>{pendingTool?.name} {JSON.stringify(pendingTool?.input)}</Text>
+      <Text color={theme.muted}>Press Y or Enter to allow. Press N or Escape to deny.</Text>
     </Box>}
-    {screen === "help" && <Box position="absolute" flexDirection="column" borderStyle="double" borderColor="cyan" paddingX={2} paddingY={1} width={overlayWidth} marginLeft={2} marginTop={7} backgroundColor="black">
-      <Text bold color="cyan">WORKSPACE COMMANDS</Text>
-      {workspaceCommandHelp().split("\n").slice(1).map((line) => <Text key={line}>{line}</Text>)}
-      <Text color="gray">Type slash commands in the Agent or Terminal pane. Press any key to close.</Text>
+    {screen === "help" && <Box position="absolute" flexDirection="column" borderStyle="double" borderColor={theme.focus} paddingX={2} paddingY={1} width={overlayWidth} marginLeft={2} marginTop={7} backgroundColor={theme.overlay}>
+      <Text bold color={theme.accent}>TUI CONTROLS</Text>
+      {tuiControlHelp.map(([label, detail]) => <Text key={label} color={theme.text} wrap="wrap"><Text bold color={theme.focus}>{label}: </Text>{detail}</Text>)}
+      <Box marginTop={1}><Text bold color={theme.accent}>WORKSPACE COMMANDS</Text></Box>
+      {workspaceCommandHelp().split("\n").slice(1).map((line) => <Text key={line} color={theme.text}>{line}</Text>)}
+      <Text color={theme.muted}>Press any key to close this reference.</Text>
     </Box>}
   </Box>;
 }

@@ -8,13 +8,21 @@ The terminal UI is a full-screen local workspace client. It uses the same config
 npm install -g @truss-harness/tui
 ```
 
+See the [TUI package on npm](https://www.npmjs.com/package/@truss-harness/tui) for the latest published version and package details.
+
 ## Start it
 
-<TuiCommand />
+```sh
+truss-tui
+```
 
 If a profile or local server can supply a model, the workspace starts with it. Otherwise, open the configuration view and select a detected server and model.
 
 The model configuration view includes **Internet research**. Select that field with Tab and press Space to toggle bounded public web search and page fetching.
+
+## Themes
+
+The default **forest** theme is a muted green, sage, and teal palette with soft syntax colors. **sage** and **dusk** are also available. Open settings with `m`, Tab to **Theme**, then use Left or Right to preview a theme for the current session. Set `"tuiTheme": "sage"` in the shared configuration file, or use `TRUSS_HARNESS_TUI_THEME`, to make a theme persistent. See [Configuration](/docs/configuration) for precedence.
 
 ## Workspace panes
 

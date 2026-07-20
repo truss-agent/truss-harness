@@ -14,7 +14,9 @@ Workspace commands are deterministic local actions. They do not call your model,
 
 ## Initialize a repository
 
-<CliUsage command="init" />
+```sh
+truss-cli init
+```
 
 `/init` ignores heavy generated directories such as `.git`, `node_modules`, `dist`, coverage output, and <WorkspaceDirectory />. It detects source languages, source directories, package names, and useful package scripts.
 
@@ -28,7 +30,9 @@ Keep human-authored project rules outside that generated block.
 
 ## Update durable progress
 
-<CliUsage command={'update "Implemented provider autodetection"'} />
+```sh
+truss-cli update "Implemented provider autodetection"
+```
 
 An update records the current Git branch, up to 80 changed file paths, the Git diff stat, and your optional note. New agent sessions receive a bounded copy of that state through the runtime context manager, alongside recent agent task records. Run it after a meaningful task, before changing conversations, or whenever you want a concise handoff for the next agent.
 

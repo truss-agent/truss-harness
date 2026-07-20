@@ -4,9 +4,10 @@ The CLI and terminal UI share one JSON configuration system. Use named profiles 
 
 ## Find or create configuration
 
-<CliUsage command="config path" />
-
-<CliUsage command="config init" />
+```sh
+truss-cli config path
+truss-cli config init
+```
 
 On Windows, the user configuration file is <UserConfigPath />. Each workspace can also define <WorkspaceConfigPath />.
 
@@ -14,7 +15,11 @@ On Windows, the user configuration file is <UserConfigPath />. Each workspace ca
 
 ## Interactive setup
 
-Run truss-cli setup for guided user-level configuration. It discovers reachable local endpoints and saves the selected server, model, mode, permission policy, and internet setting as the default profile.
+```sh
+truss-cli setup
+```
+
+This guided user-level setup discovers reachable local endpoints and saves the selected server, model, mode, permission policy, and internet setting as the default profile.
 
 ## Profile example
 
@@ -28,7 +33,8 @@ Run truss-cli setup for guided user-level configuration. It discovers reachable 
       "model": "qwen3:8b",
       "mode": "edit",
       "permission": "ask",
-      "internetAccess": false
+      "internetAccess": false,
+      "tuiTheme": "forest"
     },
     "lm-studio-fast": {
       "provider": "openai-compatible",
@@ -54,6 +60,7 @@ Run truss-cli setup for guided user-level configuration. It discovers reachable 
 | `systemPrompt` | Optional system instruction |
 | `apiKeyEnv` | Name of an environment variable that contains a token |
 | `mcpServers` | Named local stdio MCP server definitions |
+| `tuiTheme` | Terminal UI palette: `forest` (default), `sage`, or `dusk` |
 | `allowWorkspaceMcpServers` | User-level opt-in for MCP commands defined by a workspace |
 
 Keep tokens out of JSON files. Use `apiKeyEnv` to reference an environment variable instead.
@@ -90,3 +97,5 @@ CLI flags include `--profile`, `--provider`, `--base-url`, `--model`, `--mode`, 
 Set `TRUSS_HARNESS_INTERNET_ACCESS=true` to enable the same capability through the environment.
 
 `TRUSS_HARNESS_MCP_SERVERS` accepts an `mcpServers` object encoded as JSON.
+
+Set `TRUSS_HARNESS_TUI_THEME=forest`, `sage`, or `dusk` to override the terminal UI palette for one launch.

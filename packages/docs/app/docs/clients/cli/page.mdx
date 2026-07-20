@@ -8,6 +8,8 @@ The CLI is the direct command-line client and the runtime service host used by e
 npm install -g @truss-harness/cli
 ```
 
+See the [CLI package on npm](https://www.npmjs.com/package/@truss-harness/cli) for the latest published version and package details.
+
 The global installer prints the first commands to run. `truss-cli` and `truss-cli help` display the complete built-in reference without requiring a model.
 
 ## Commands
@@ -16,6 +18,7 @@ The global installer prints the first commands to run. `truss-cli` and `truss-cl
 | --- | --- |
 | <CliCommand /> `chat [prompt]` | Stream one task, or open persistent chat with no prompt |
 | <CliCommand /> `models` | List detected local endpoints and models |
+| <CliCommand /> `setup` | Interactively discover and save local-model defaults |
 | <CliCommand /> `config path` | Print user and workspace configuration paths |
 | <CliCommand /> `config init` | Create a workspace profile template |
 | <CliCommand /> `init` | Generate or refresh repository instructions |
@@ -33,7 +36,9 @@ Run <CliCommand /> `init` to create or refresh generated repository context in `
 
 `chat` with a prompt creates an in-memory one-shot session, streams output to standard output, and prints tool requests to standard error. Run `truss-cli chat` without a prompt to keep one conversation open in the terminal.
 
-<CliUsage command={'chat --profile ollama-coder --mode plan "Find the files that define the agent loop"'} />
+```sh
+truss-cli chat --profile ollama-coder --mode plan "Find the files that define the agent loop"
+```
 
 Direct CLI chat auto-allows tools. Use it only in trusted workspaces. The terminal UI and VS Code client provide interactive or policy-based approvals.
 
@@ -45,13 +50,17 @@ When a Plan-mode run produces a checklist, the CLI prints the saved plan to stan
 
 ## Service mode
 
-<CliUsage command="serve --profile ollama-coder" />
+```sh
+truss-cli serve --profile ollama-coder
+```
 
 Service mode uses newline-delimited JSON on standard input/output. Output is reserved for protocol messages; do not add logs to standard output. The VS Code extension starts this service automatically.
 
 ## Model discovery
 
-<CliUsage command="models" />
+```sh
+truss-cli models
+```
 
 This prints detected endpoints and model IDs for local servers.
 

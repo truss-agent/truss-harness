@@ -6,10 +6,15 @@ export function SiteHeader() {
   return (
     <header className="site-header">
       <div className="site-header-inner">
-        <Link className="site-brand" href="/">
-          <img src="/brand-logo.png" width={30} height={30} alt="" />
-          <span>{brand.productName}</span>
-        </Link>
+        <div className="site-brand-group">
+          <Link className="site-brand" href="/">
+            <img src="/brand-logo.png" width={30} height={30} alt="" />
+            <span>{brand.productName}</span>
+          </Link>
+          <a className="site-open-source" href={brand.repositoryUrl} target="_blank" rel="noreferrer">
+            Open source
+          </a>
+        </div>
         <nav className="site-nav" aria-label="Primary navigation">
           <Link href="/clients">Clients</Link>
           <Link href="/features">Features</Link>
@@ -28,17 +33,28 @@ export function SiteHeader() {
 export function SiteFooter() {
   return (
     <footer className="site-footer">
-      <div>
+      <div className="site-footer-brand">
         <strong>{brand.productName}</strong>
-        <span>Local-first coding agents</span>
+        <p>
+          Truss is a local-first, modular runtime for coding agents. Use the
+          same tools, safety controls, and workspace state from your terminal,
+          VS Code, or a dedicated desktop workspace.
+        </p>
       </div>
-      <nav aria-label="Footer navigation">
-        <Link href="/download">Download</Link>
-        <Link href="/clients">Clients</Link>
-        <Link href="/features">Features</Link>
-        <Link href="/about">About</Link>
-        <Link href="/docs">Documentation</Link>
-      </nav>
+      <div className="site-footer-links">
+        <nav aria-label="Product links">
+          <Link href="/download">Download</Link>
+          <Link href="/clients">Clients</Link>
+          <Link href="/features">Features</Link>
+          <Link href="/roadmap">Roadmap</Link>
+          <Link href="/changelog">Changelog</Link>
+          <Link href="/docs">Documentation</Link>
+        </nav>
+        <nav aria-label="Community links">
+          <a href={brand.repositoryUrl} target="_blank" rel="noreferrer">GitHub</a>
+          <a href="https://www.linkedin.com/company/truss-agent" target="_blank" rel="noreferrer">LinkedIn</a>
+        </nav>
+      </div>
     </footer>
   );
 }
