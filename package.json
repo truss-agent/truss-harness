@@ -14,6 +14,7 @@
     "tui:local": "node packages/tui/dist/bin.js",
     "desktop:dev": "npm --workspace @truss-harness/desktop run dev",
     "desktop:package": "npm --workspace @truss-harness/desktop run package",
+    "desktop:package:win:all": "npm --workspace @truss-harness/desktop run package:win:all",
     "desktop:package:win:x64": "npm --workspace @truss-harness/desktop run package:win:x64",
     "desktop:package:win:arm64": "npm --workspace @truss-harness/desktop run package:win:arm64",
     "desktop:package:linux:x64": "npm --workspace @truss-harness/desktop run package:linux:x64",
