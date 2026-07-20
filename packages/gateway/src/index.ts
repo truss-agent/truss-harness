@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
-import type { AgentRuntime, RemoteCommandResult, RemoteHostCapabilities, RemoteWorkspace, RuntimeEvent, ToolApproval } from "@truss-harness/runtime";
+import type { AgentRuntime, RemoteCommandResult, RemoteHostCapabilities, RemoteToolApprovalMode, RemoteWorkspace, RuntimeEvent, ToolApproval } from "@truss-harness/runtime";
 import { toRemoteSessionEvent } from "@truss-harness/runtime";
 
 export interface GatewayRuntime {
@@ -16,7 +16,7 @@ export interface GatewayWorkspace {
   readonly id: string;
   readonly displayName: string;
   readonly capabilities?: RemoteHostCapabilities;
-  readonly createRuntime: (mode: "chat" | "plan" | "edit") => Promise<GatewayRuntime>;
+  readonly createRuntime: (mode: "chat" | "plan" | "edit", toolApprovalMode?: RemoteToolApprovalMode) => Promise<GatewayRuntime>;
 }
 
 export interface RemoteGatewayOptions {
@@ -35,6 +35,7 @@ export interface RunningRemoteGateway {
 
 interface SessionContext {
   readonly runtime: GatewayRuntime;
+  readonly workspace: ConfiguredWorkspace;
   controller?: AbortController;
 }
 
@@ -45,10 +46,15 @@ interface ConfiguredWorkspace {
 
 const defaultCapabilities: RemoteHostCapabilities = {
   modes: ["chat", "plan", "edit"],
+  toolApprovalModes: ["ask", "auto-read", "auto-all"],
   supportsAttachments: false,
   supportsDiffs: false,
   supportsToolApproval: true
 };
+
+function isApprovalMode(value: unknown): value is RemoteToolApprovalMode {
+  return value === "ask" || value === "auto-read" || value === "auto-all";
+}
 
 function hasToken(candidate: string, expectedToken: string): boolean {
   const actual = Buffer.from(candidate);
@@ -98,6 +104,12 @@ export async function startRemoteGateway(options: RemoteGatewayOptions): Promise
 
   const reject = (requestId: string, code: Extract<RemoteCommandResult, { type: "rejected" }>["code"], message: string): RemoteCommandResult => ({ requestId, type: "rejected", code, message });
 
+  const addRuntime = (runtime: GatewayRuntime): void => {
+    if (runtimes.has(runtime)) return;
+    runtimes.add(runtime);
+    cleanups.add(runtime.events.subscribe(broadcast));
+  };
+
   const readCommand = async (request: IncomingMessage): Promise<unknown> => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -121,19 +133,37 @@ export async function startRemoteGateway(options: RemoteGatewayOptions): Promise
       if (!workspace || (input.mode !== "chat" && input.mode !== "plan" && input.mode !== "edit") || !workspace.remote.capabilities.modes.includes(input.mode)) {
         return reject(requestId, "not_authorized", "The requested workspace or mode is unavailable.");
       }
-      const runtime = await workspace.createRuntime(input.mode);
-      const session = await runtime.runtime.createSession();
-      if (!runtimes.has(runtime)) {
-        runtimes.add(runtime);
-        cleanups.add(runtime.events.subscribe(broadcast));
+      if (input.toolApprovalMode !== undefined && (!isApprovalMode(input.toolApprovalMode) || !workspace.remote.capabilities.toolApprovalModes.includes(input.toolApprovalMode))) {
+        return reject(requestId, "not_authorized", "The requested tool approval mode is unavailable.");
       }
-      sessions.set(session.id, { runtime });
+      const runtime = await workspace.createRuntime(input.mode, input.toolApprovalMode);
+      const session = await runtime.runtime.createSession();
+      addRuntime(runtime);
+      sessions.set(session.id, { runtime, workspace });
       return { requestId, type: "session_created", sessionId: session.id };
     }
 
     if (typeof input.sessionId !== "string") return reject(requestId, "invalid_command", "A sessionId is required.");
     const session = sessions.get(input.sessionId);
     if (!session) return reject(requestId, "not_found", "Unknown remote session.");
+
+    if (input.type === "change_session_mode") {
+      if (session.controller) return reject(requestId, "conflict", "The session already has an active run.");
+      if ((input.mode !== "chat" && input.mode !== "plan" && input.mode !== "edit") || !session.workspace.remote.capabilities.modes.includes(input.mode)) {
+        return reject(requestId, "not_authorized", "The requested mode is unavailable.");
+      }
+      if (input.toolApprovalMode !== undefined && (!isApprovalMode(input.toolApprovalMode) || !session.workspace.remote.capabilities.toolApprovalModes.includes(input.toolApprovalMode))) {
+        return reject(requestId, "not_authorized", "The requested tool approval mode is unavailable.");
+      }
+      const previous = await session.runtime.runtime.getSession(input.sessionId);
+      if (!previous) return reject(requestId, "not_found", "The remote session is no longer available.");
+      const runtime = await session.workspace.createRuntime(input.mode, input.toolApprovalMode);
+      const replacement = await runtime.runtime.createSession(previous.messages);
+      addRuntime(runtime);
+      sessions.delete(input.sessionId);
+      sessions.set(replacement.id, { runtime, workspace: session.workspace });
+      return { requestId, type: "session_created", sessionId: replacement.id };
+    }
 
     if (input.type === "send_message") {
       if (typeof input.prompt !== "string" || !input.prompt.trim()) return reject(requestId, "invalid_command", "A non-empty prompt is required.");
