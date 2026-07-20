@@ -69,7 +69,7 @@ export default function HomePage() {
             open a dedicated desktop workspace without changing your local model
             setup or safety controls.
           </p>
-          <Link className="site-text-link" href="/clients">
+          <Link className="site-button site-button-secondary" href="/clients">
             Meet the clients
           </Link>
         </section>
@@ -79,6 +79,9 @@ export default function HomePage() {
             <h2 id="clients-heading">
               Choose the interface, not a different agent.
             </h2>
+            <p className="site-section-subtitle">
+              One shared runtime across your shell, terminal, editor, and desktop workspace.
+            </p>
           </div>
           <div className="site-client-grid" data-stagger>
             <article>
