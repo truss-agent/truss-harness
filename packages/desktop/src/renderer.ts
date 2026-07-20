@@ -1,4 +1,4 @@
-import type { WorkspacePlan } from "@truss-harness/runtime";
+import type { ChatAttachment, WorkspacePlan } from "@truss-harness/runtime";
 import type { DesktopConfiguration, DesktopConversation, DesktopEndpoint, DesktopEvent, DesktopFile, DesktopGitStatus, DesktopMessage, DesktopState } from "./shared.js";
 
 declare global {
@@ -68,6 +68,9 @@ const terminalOutput = element<HTMLPreElement>("terminalOutput");
 const chatMessages = element<HTMLDivElement>("chatMessages");
 const planPanel = element<HTMLElement>("planPanel");
 const chatInput = element<HTMLTextAreaElement>("chatInput");
+const attachmentInput = element<HTMLInputElement>("attachmentInput");
+const addAttachment = element<HTMLButtonElement>("addAttachment");
+const attachmentList = element<HTMLDivElement>("attachmentList");
 const sendChatButton = element<HTMLButtonElement>("sendChat");
 const cancelChatButton = element<HTMLButtonElement>("cancelChat");
 const slashMenu = element<HTMLDivElement>("slashMenu");
@@ -130,6 +133,11 @@ let streamStartedAt = 0;
 let streamedTokenEstimate = 0;
 let runningConversationId: string | undefined;
 let centerView: "editor" | "preview" = "editor";
+let pendingAttachments: ChatAttachment[] = [];
+const maxAttachmentCount = 5;
+const maxAttachmentBytes = 4 * 1024 * 1024;
+const maxAttachmentTotalBytes = 12 * 1024 * 1024;
+const maxFileTextCharacters = 120_000;
 
 function configuration(): DesktopConfiguration {
   return desktopState.configuration ?? defaultConfiguration;
@@ -660,6 +668,25 @@ function messageView(message: DesktopMessage): HTMLElement {
     renderMarkdown(content, message.content);
   }
   view.append(role, content);
+  if (message.attachments?.length) {
+    const attachments = document.createElement("div");
+    attachments.className = "message-attachments";
+    for (const attachment of message.attachments) {
+      const item = document.createElement("div");
+      item.className = "message-attachment";
+      if (attachment.kind === "image" && attachment.data) {
+        const image = document.createElement("img");
+        image.src = attachment.data;
+        image.alt = attachment.name;
+        item.append(image);
+      }
+      const label = document.createElement("span");
+      label.textContent = `${attachment.name} (${Math.max(1, Math.ceil(attachment.size / 1024))} KB)`;
+      item.append(label);
+      attachments.append(item);
+    }
+    view.append(attachments);
+  }
   return view;
 }
 
@@ -1145,8 +1172,72 @@ function attachedPaths(prompt: string): readonly string[] {
   return [...new Set([...prompt.matchAll(/(?:^|\s)\/([^\s]+)/g)].map((match) => match[1].replaceAll("\\", "/")).filter((path) => available.has(path)))];
 }
 
+function attachmentId(): string {
+  return `attachment-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function supportsTextAttachment(file: File): boolean {
+  return file.type.startsWith("text/") || /\.(?:md|mdx|txt|json|jsonc|ya?ml|toml|ini|cfg|conf|csv|ts|tsx|js|jsx|mjs|cjs|css|html?|xml|svg|py|go|rs|java|php|rb|sh|sql)$/i.test(file.name);
+}
+
+async function toAttachment(file: File): Promise<ChatAttachment> {
+  if (!file.name) throw new Error("The selected file has no name.");
+  if (file.size > maxAttachmentBytes) throw new Error(`${file.name} exceeds the 4 MB attachment limit.`);
+  if (file.type.startsWith("image/")) {
+    if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)) throw new Error(`${file.name} uses an unsupported image type. Use PNG, JPEG, WebP, or GIF.`);
+    const data = await new Promise<string>((resolveData, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => typeof reader.result === "string" ? resolveData(reader.result) : reject(new Error(`Unable to read ${file.name}.`));
+      reader.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
+      reader.readAsDataURL(file);
+    });
+    return { id: attachmentId(), kind: "image", name: file.name, mediaType: file.type, data, size: file.size };
+  }
+  if (!supportsTextAttachment(file)) throw new Error(`${file.name} is not a supported text file. Attach source code, Markdown, JSON, or another text file.`);
+  const text = await file.text();
+  if (text.includes("\u0000")) throw new Error(`${file.name} appears to be binary and cannot be attached as text.`);
+  return { id: attachmentId(), kind: "file", name: file.name, mediaType: file.type || "text/plain", text: text.slice(0, maxFileTextCharacters), size: file.size };
+}
+
+function renderPendingAttachments(): void {
+  attachmentList.hidden = pendingAttachments.length === 0;
+  attachmentList.replaceChildren(...pendingAttachments.map((attachment) => {
+    const item = document.createElement("div");
+    item.className = "pending-attachment";
+    if (attachment.kind === "image" && attachment.data) {
+      const image = document.createElement("img");
+      image.src = attachment.data;
+      image.alt = "";
+      item.append(image);
+    }
+    const name = document.createElement("span");
+    name.textContent = attachment.name;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "x";
+    remove.title = `Remove ${attachment.name}`;
+    remove.onclick = () => { pendingAttachments = pendingAttachments.filter((candidate) => candidate.id !== attachment.id); renderPendingAttachments(); };
+    item.append(name, remove);
+    return item;
+  }));
+}
+
+async function addFiles(filesToAdd: Iterable<File>): Promise<void> {
+  const selected = [...filesToAdd];
+  if (!selected.length) return;
+  if (pendingAttachments.length + selected.length > maxAttachmentCount) { notify(`Attach up to ${maxAttachmentCount} files at once.`); return; }
+  if (pendingAttachments.reduce((total, attachment) => total + attachment.size, 0) + selected.reduce((total, file) => total + file.size, 0) > maxAttachmentTotalBytes) { notify("Attachments exceed the 12 MB total limit."); return; }
+  try {
+    const attachments = await Promise.all(selected.map(toAttachment));
+    pendingAttachments = [...pendingAttachments, ...attachments];
+    renderPendingAttachments();
+  } catch (error) {
+    notify(error instanceof Error ? error.message : String(error));
+  }
+}
+
 async function sendChat(): Promise<void> {
-  const prompt = chatInput.value.trim();
+  const prompt = chatInput.value.trim() || (pendingAttachments.length ? "Review the attached files." : "");
   if (!prompt || busy) return;
   if (!configuration().model) {
     settingsDialog.showModal();
@@ -1155,12 +1246,16 @@ async function sendChat(): Promise<void> {
   }
   const conversation = ensureConversation();
   const history = conversation.messages;
-  const userMessage: DesktopMessage = { role: "user", content: prompt };
+  const attachments = pendingAttachments;
+  const userMessage: DesktopMessage = { role: "user", content: prompt, ...(attachments.length ? { attachments } : {}) };
   const assistantMessage: DesktopMessage = { role: "assistant", content: "" };
   const title = conversation.title === "New conversation" ? prompt.replace(/\s+/g, " ").slice(0, 42) || conversation.title : conversation.title;
   updateConversation(conversation.id, (current) => ({ ...current, title, messages: [...current.messages, userMessage, assistantMessage], updatedAt: new Date().toISOString() }));
   desktopState = { ...desktopState, activeConversationId: conversation.id };
   chatInput.value = "";
+  pendingAttachments = [];
+  attachmentInput.value = "";
+  renderPendingAttachments();
   renderConversations();
   renderChat();
   renderRuntime();
@@ -1172,6 +1267,7 @@ async function sendChat(): Promise<void> {
       prompt,
       conversationId: conversation.id,
       history,
+      attachments,
       activeFilePath: activeFile,
       attachedPaths: attachedPaths(prompt),
       openFilePaths: openEditorTabs.map((tab) => tab.path)
@@ -1460,6 +1556,13 @@ endpointSelect.onchange = () => { if (!endpointSelect.value) return; const selec
 quickModel.onchange = () => { const next = quickModel.value; if (!next || next === configuration().model) return; void applyConfiguration({ ...configuration(), model: next }).catch((error) => notify(error instanceof Error ? error.message : String(error))); };
 document.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((button) => button.onclick = () => void applyConfiguration({ ...configuration(), mode: button.dataset.mode as DesktopConfiguration["mode"] }).catch((error) => notify(error instanceof Error ? error.message : String(error))));
 element<HTMLFormElement>("chatForm").onsubmit = (event) => { event.preventDefault(); void sendChat(); };
+addAttachment.onclick = () => attachmentInput.click();
+attachmentInput.onchange = () => { void addFiles(Array.from(attachmentInput.files ?? [])); };
+chatInput.closest<HTMLFormElement>("form")?.addEventListener("dragover", (event) => { event.preventDefault(); });
+chatInput.closest<HTMLFormElement>("form")?.addEventListener("drop", (event) => {
+  event.preventDefault();
+  void addFiles(Array.from(event.dataTransfer?.files ?? []));
+});
 chatInput.oninput = () => { slashIndex = 0; renderSlashMenu(); };
 chatInput.onkeydown = (event) => {
   if (slashMenu.hidden || !slashResults.length) return;

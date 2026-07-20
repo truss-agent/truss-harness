@@ -16,6 +16,7 @@ export interface DesktopConfiguration {
 export interface DesktopMessage {
   readonly role: "user" | "assistant";
   readonly content: string;
+  readonly attachments?: readonly import("@truss-harness/runtime").ChatAttachment[];
 }
 
 export interface DesktopRunResult {
@@ -88,7 +89,7 @@ export interface DesktopBridge {
   checkForUpdates(): Promise<void>;
   downloadUpdate(): Promise<void>;
   installUpdate(): Promise<void>;
-  sendChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[]; readonly openFilePaths?: readonly string[] }): Promise<void>;
+  sendChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly attachments?: readonly import("@truss-harness/runtime").ChatAttachment[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[]; readonly openFilePaths?: readonly string[] }): Promise<void>;
   stopChat(): Promise<void>;
   resolveApproval(callId: string, approved: boolean): Promise<void>;
   listFiles(): Promise<readonly DesktopFile[]>;

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ChatMessage, JsonObject, ModelProvider, RuntimeEvent, Session, ToolCall, ToolResult } from "./contracts.js";
+import type { ChatAttachment, ChatMessage, JsonObject, ModelProvider, RuntimeEvent, Session, ToolCall, ToolResult } from "./contracts.js";
 import type { ContextBlock, ContextManager } from "./context.js";
 import type { RuntimeEventBus } from "./events.js";
 import type { SessionStore } from "./sessions.js";
@@ -29,7 +29,7 @@ export class AgentRuntime {
   async listSessions(): Promise<readonly Session[]> { return this.options.sessions.list(); }
   async deleteSession(sessionId: string): Promise<boolean> { return this.options.sessions.delete(sessionId); }
   async restoreSessionCheckpoint(sessionId: string): Promise<Session | undefined> { return this.options.sessions.restoreCheckpoint(sessionId); }
-  async run(sessionId: string, prompt: string, signal?: AbortSignal, requestContext: readonly ContextBlock[] = []): Promise<void> {
+  async run(sessionId: string, prompt: string, signal?: AbortSignal, requestContext: readonly ContextBlock[] = [], attachments: readonly ChatAttachment[] = []): Promise<void> {
     const session = await this.options.sessions.get(sessionId);
     if (!session) throw new Error(`Unknown session: ${sessionId}`);
     const taskId = randomUUID();
@@ -40,7 +40,7 @@ export class AgentRuntime {
     const filesNeedingVerification = new Set<string>();
     let assistantText = "";
     await this.recordMemory({ id: taskId, sessionId, objective: prompt, status: "running", startedAt, tools: [], modifiedFiles: [] });
-    session.messages.push({ role: "user", content: prompt }); session.checkpoint = checkpoint(session); await this.options.sessions.save(session);
+    session.messages.push({ role: "user", content: prompt, ...(attachments.length ? { attachments } : {}) }); session.checkpoint = checkpoint(session); await this.options.sessions.save(session);
     await this.emit({ type: "run_started", sessionId });
     try {
       for (let turn = 0; turn < this.maxTurns; turn++) {

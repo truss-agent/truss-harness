@@ -6,9 +6,23 @@ export type JsonObject = { [key: string]: JsonValue };
 
 export type JsonSchema = JsonObject & { readonly type: "object" };
 
+/** A client-supplied chat attachment. Image payloads are forwarded by capable providers; file text is supplied as context. */
+export interface ChatAttachment {
+  readonly id: string;
+  readonly kind: "image" | "file";
+  readonly name: string;
+  readonly mediaType: string;
+  /** Data URL for image attachments. Kept client-neutral so persisted sessions can be replayed. */
+  readonly data?: string;
+  /** Bounded UTF-8 text extracted from a generic file attachment. */
+  readonly text?: string;
+  readonly size: number;
+}
+
 export interface ChatMessage {
   readonly role: "system" | "user" | "assistant" | "tool";
   readonly content: string;
+  readonly attachments?: readonly ChatAttachment[];
   readonly name?: string;
   readonly toolCallId?: string;
   /** Present on assistant messages that requested one or more tools. */

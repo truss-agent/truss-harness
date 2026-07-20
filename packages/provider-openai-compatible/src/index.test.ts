@@ -67,6 +67,35 @@ describe("OpenAICompatibleProvider", () => {
       { type: "finish", reason: "stop" }
     ]);
   });
+
+  it("forwards image attachments and bounded text files through the provider contract", async () => {
+    let request: Record<string, unknown> | undefined;
+    const provider = new OpenAICompatibleProvider({
+      baseUrl: "http://localhost:1234/v1",
+      model: "vision-model",
+      fetch: async (_url, init) => {
+        request = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+      }
+    });
+
+    for await (const _event of provider.stream({
+      messages: [{
+        role: "user",
+        content: "Review these.",
+        attachments: [
+          { id: "image-1", kind: "image", name: "screen.png", mediaType: "image/png", data: "data:image/png;base64,AA==", size: 4 },
+          { id: "file-1", kind: "file", name: "notes.md", mediaType: "text/markdown", text: "# Notes", size: 7 }
+        ]
+      }],
+      tools: []
+    })) { /* Consume stream. */ }
+
+    expect((request?.messages as readonly { readonly content: readonly Record<string, unknown>[] }[])[0]?.content).toEqual([
+      { type: "text", text: "Review these.\n\nAttached file: notes.md (text/markdown, 7 bytes)\n\n# Notes" },
+      { type: "image_url", image_url: { url: "data:image/png;base64,AA==" } }
+    ]);
+  });
 });
 
 describe("local model discovery", () => {

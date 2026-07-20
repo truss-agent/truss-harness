@@ -11,7 +11,7 @@ import { brand } from "@truss-harness/branding";
 import { createClientRuntime, type ClientConfiguration } from "@truss-harness/cli/runtime";
 import { parseMcpServerConfigurations } from "@truss-harness/mcp";
 import { detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, generateLocalText, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
-import { executeWorkspaceCommand, FileWorkspacePlanStore, type ContextBlock, type ToolApproval, type ToolCall } from "@truss-harness/runtime";
+import { executeWorkspaceCommand, FileWorkspacePlanStore, type ChatAttachment, type ContextBlock, type ToolApproval, type ToolCall } from "@truss-harness/runtime";
 import type { DesktopConfiguration, DesktopConversation, DesktopEndpoint, DesktopEvent, DesktopFile, DesktopGitStatus, DesktopMessage, DesktopState } from "./shared.js";
 
 const execFile = promisify(execFileCallback);
@@ -455,7 +455,7 @@ async function fileContext(activeFilePath: string | undefined, attachedPaths: re
   return blocks;
 }
 
-async function executeChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[]; readonly openFilePaths?: readonly string[] }): Promise<void> {
+async function executeChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly attachments?: readonly ChatAttachment[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[]; readonly openFilePaths?: readonly string[] }): Promise<void> {
   const configuration = persisted.configuration;
   if (!configuration || !configuration.model) throw new Error("Choose a local model before starting the agent.");
   if (!runtimeClient) await configureRuntime(configuration);
@@ -470,7 +470,7 @@ async function executeChat(input: { readonly prompt: string; readonly conversati
   activeAbort = controller;
   send({ type: "chat-start", conversationId: input.conversationId });
   try {
-    await client.runtime.run(activeSessionId, input.prompt, controller.signal, await fileContext(input.activeFilePath, input.attachedPaths, input.openFilePaths));
+    await client.runtime.run(activeSessionId, input.prompt, controller.signal, await fileContext(input.activeFilePath, input.attachedPaths, input.openFilePaths), input.attachments);
     send({ type: "chat-end", conversationId: input.conversationId, aborted: controller.signal.aborted });
   } catch (error) {
     if (!controller.signal.aborted) send({ type: "chat-error", conversationId: input.conversationId, message: error instanceof Error ? error.message : String(error) });
@@ -480,7 +480,7 @@ async function executeChat(input: { readonly prompt: string; readonly conversati
   }
 }
 
-async function runChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[]; readonly openFilePaths?: readonly string[] }): Promise<void> {
+async function runChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly attachments?: readonly ChatAttachment[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[]; readonly openFilePaths?: readonly string[] }): Promise<void> {
   const previousRun = activeRun;
   if (previousRun) {
     activeAbort?.abort();
