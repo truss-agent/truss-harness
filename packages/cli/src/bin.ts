@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { cwd } from "node:process";
-import { basename } from "node:path";
+import { basename, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { detectLocalEndpoints, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import { brand } from "@truss-harness/branding";
@@ -52,6 +52,7 @@ Options:
   --gateway-token <token>  Required 24+ character token for gateway clients
   --gateway-port <port>    Gateway port (default: 4787)
   --gateway-host <host>    Bind address (default: 127.0.0.1; use a trusted LAN only)
+  --gateway-workspace <path> Share a workspace; repeat to offer multiple workspaces
 
 Modes:
   chat                   Conversation only; optional internet tools
@@ -102,10 +103,11 @@ function inlineMode(input: string): { readonly mode?: "chat" | "plan" | "edit"; 
   return match ? { mode: match[1] as "chat" | "plan" | "edit", prompt: match[2]?.trim() ?? "" } : { prompt: input.trim() };
 }
 
-function gatewayArguments(rawArgs: readonly string[]): { readonly token?: string; readonly host?: string; readonly port: number; readonly rest: readonly string[] } {
+function gatewayArguments(rawArgs: readonly string[]): { readonly token?: string; readonly host?: string; readonly port: number; readonly workspaceRoots: readonly string[]; readonly rest: readonly string[] } {
   let token: string | undefined;
   let host: string | undefined;
   let port = 4787;
+  const workspaceRoots: string[] = [];
   const rest: string[] = [];
   for (let index = 0; index < rawArgs.length; index++) {
     const argument = rawArgs[index];
@@ -125,9 +127,15 @@ function gatewayArguments(rawArgs: readonly string[]): { readonly token?: string
       host = value;
       continue;
     }
+    if (argument === "--gateway-workspace") {
+      const value = rawArgs[++index];
+      if (!value?.trim()) throw new Error("--gateway-workspace must be a non-empty path.");
+      workspaceRoots.push(value);
+      continue;
+    }
     rest.push(argument);
   }
-  return { token, host, port, rest };
+  return { token, host, port, workspaceRoots, rest };
 }
 
 async function waitForShutdown(): Promise<void> {
@@ -298,21 +306,30 @@ async function main(): Promise<void> {
     const gateway = gatewayArguments(rawArgs);
     if (!gateway.token || gateway.token.length < 24) throw new Error("Set --gateway-token to a random value with at least 24 characters.");
     const { overrides } = parseConfigurationOverrides([...gateway.rest]);
-    const configuration = await resolveConfiguration({ workspaceRoot: cwd(), overrides });
-    const clients = new Map<"chat" | "plan" | "edit", { readonly client: ClientRuntime; readonly approval: ProtocolToolApproval }>();
+    const workspaceRoots = gateway.workspaceRoots.length ? gateway.workspaceRoots.map((path) => resolvePath(cwd(), path)) : [cwd()];
+    const clients = new Map<string, { readonly client: ClientRuntime; readonly approval: ProtocolToolApproval }>();
+    const workspaces = await Promise.all(workspaceRoots.map(async (workspaceRoot, index) => {
+      const configuration = await resolveConfiguration({ workspaceRoot, overrides });
+      const id = `workspace-${index + 1}`;
+      return {
+        id,
+        displayName: basename(workspaceRoot),
+        createRuntime: async (mode: "chat" | "plan" | "edit") => {
+          const key = `${id}:${mode}`;
+          const current = clients.get(key);
+          if (current) return { runtime: current.client.runtime, events: current.client.events, approval: current.approval };
+          const approval = new ProtocolToolApproval(configuration.permission);
+          const client = await createClientRuntime({ ...configuration, mode, approval });
+          clients.set(key, { client, approval });
+          return { runtime: client.runtime, events: client.events, approval };
+        }
+      };
+    }));
     const server = await startRemoteGateway({
       token: gateway.token,
       port: gateway.port,
       host: gateway.host,
-      workspace: { id: "workspace", displayName: basename(cwd()) },
-      createRuntime: async (mode) => {
-        const current = clients.get(mode);
-        if (current) return { runtime: current.client.runtime, events: current.client.events, approval: current.approval };
-        const approval = new ProtocolToolApproval(configuration.permission);
-        const client = await createClientRuntime({ ...configuration, mode, approval });
-        clients.set(mode, { client, approval });
-        return { runtime: client.runtime, events: client.events, approval };
-      }
+      workspaces
     });
     process.stdout.write(`Truss mobile gateway listening at ${server.url}\n`);
     process.stdout.write("It binds to loopback by default. A non-loopback host is for a trusted LAN or secure tunnel only; do not expose it to the public internet without TLS and device-pairing support.\n");
