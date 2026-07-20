@@ -1,6 +1,5 @@
-import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, FlatList, Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, FlatList, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, TextInput, View } from "react-native";
 
 type ChatItem = { readonly id: string; readonly role: "user" | "assistant" | "system"; readonly content: string };
 type RemoteEvent = { readonly type: string; readonly sessionId: string; readonly text?: string; readonly message?: string; readonly callId?: string; readonly tool?: string; readonly input?: Record<string, unknown> };
@@ -109,7 +108,7 @@ export default function App() {
   useEffect(() => () => eventAbort.current?.abort(), []);
 
   return <SafeAreaView style={styles.page}>
-    <StatusBar style="light" />
+    <StatusBar barStyle="light-content" />
     <Text style={styles.title}>Truss Remote</Text>
     {!sessionId && <View style={styles.connection}>
       <TextInput style={styles.input} autoCapitalize="none" autoCorrect={false} value={gatewayUrl} onChangeText={setGatewayUrl} placeholder="Gateway URL" placeholderTextColor="#8a93a8" />
