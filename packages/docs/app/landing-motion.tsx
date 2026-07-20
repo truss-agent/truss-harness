@@ -18,10 +18,8 @@ export function LandingMotion({ children }: { readonly children: ReactNode }) {
       const gsap = gsapModule.gsap;
       gsap.registerPlugin(scrollTriggerModule.ScrollTrigger);
 
-      let removePointerInteraction: (() => void) | undefined;
       let clearSessionDelay: (() => void) | undefined;
       const context = gsap.context(() => {
-        const hero = root.current?.querySelector<HTMLElement>(".site-hero");
         const terminal = root.current?.querySelector<HTMLElement>(".site-terminal");
         const terminalLines = root.current?.querySelectorAll<HTMLElement>(".site-terminal-body p");
         const command = root.current?.querySelector<HTMLElement>("[data-terminal-command]");
@@ -109,27 +107,9 @@ export function LandingMotion({ children }: { readonly children: ReactNode }) {
           });
         });
 
-        if (hero && terminal && window.matchMedia("(min-width: 900px)").matches) {
-          const moveTerminal = (event: PointerEvent): void => {
-            const bounds = hero.getBoundingClientRect();
-            const x = (event.clientX - bounds.left) / bounds.width - .5;
-            const y = (event.clientY - bounds.top) / bounds.height - .5;
-            gsap.to(terminal, { duration: .65, ease: "power3.out", rotateX: -y * 2.6, rotateY: x * 3.8, x: x * 8, overwrite: "auto" });
-          };
-          const resetTerminal = (): void => {
-            gsap.to(terminal, { duration: .8, ease: "power3.out", rotateX: 0, rotateY: 0, x: 0, overwrite: "auto" });
-          };
-          hero.addEventListener("pointermove", moveTerminal);
-          hero.addEventListener("pointerleave", resetTerminal);
-          removePointerInteraction = () => {
-            hero.removeEventListener("pointermove", moveTerminal);
-            hero.removeEventListener("pointerleave", resetTerminal);
-          };
-        }
       }, root);
 
       revert = () => {
-        removePointerInteraction?.();
         clearSessionDelay?.();
         context.revert();
       };

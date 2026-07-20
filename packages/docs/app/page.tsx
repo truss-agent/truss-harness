@@ -15,11 +15,11 @@ export default function HomePage() {
         <section className="site-hero">
           <div className="site-hero-copy">
             <p className="site-eyebrow">Local-first coding agents</p>
-            <h1>{brand.productName}</h1>
+            <h1>A coding agent that works your way.</h1>
             <p className="site-lede">
-              A modular coding-agent runtime for local models with a CLI,
-              full-screen TUI, VS Code extension, and desktop app built on the
-              same tools, safeguards, and workspace state.
+              Plan, edit, and review code with local models from the shell,
+              terminal, VS Code, or desktop—with the same tools, workspace
+              state, and approval controls everywhere.
             </p>
             <div className="site-actions">
               <Link
@@ -80,63 +80,53 @@ export default function HomePage() {
               Choose the interface, not a different agent.
             </h2>
             <p className="site-section-subtitle">
-              One shared runtime across your shell, terminal, editor, and desktop workspace.
+              One agent across your shell, terminal, editor, and desktop workspace.
             </p>
           </div>
           <div className="site-client-grid" data-stagger>
             <article>
               <span>CLI</span>
-              <h3>Automate from the shell</h3>
+                <h3>Automate from your shell</h3>
               <p>
-                Run chat, model discovery, profiles, and durable workspace
-                commands from scripts or your normal terminal.
+                Run coding tasks, discover local models, and reuse workspace
+                profiles from scripts or your normal terminal.
               </p>
-              <Link className="site-text-link" href="/clients/cli">
+              <Link className="site-button site-button-secondary" href="/clients/cli">
                 Explore CLI
               </Link>
             </article>
             <article>
               <span>TUI</span>
-              <h3>Stay in the terminal</h3>
+                <h3>Keep your flow in the terminal</h3>
               <p>
                 Use a full-screen workspace with files, editor, Git diff
                 preview, chat, shell output, approvals, and model controls.
               </p>
-              <Link className="site-text-link" href="/clients/tui">
+              <Link className="site-button site-button-secondary" href="/clients/tui">
                 Explore TUI
               </Link>
             </article>
             <article>
               <span>VS CODE</span>
-              <h3>Work inside the editor</h3>
+                <h3>Work where you edit</h3>
               <p>
                 Get streaming chat, file context, inline completions, agent
                 modes, approvals, and Git commit-message help in VS Code.
               </p>
-              <div className="site-card-links">
-                <a className="site-text-link" href="https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode" target="_blank" rel="noreferrer">
-                  Get extension
-                </a>
-                <Link className="site-text-link" href="/clients/vscode">
-                  Explore VS Code
-                </Link>
-              </div>
+              <Link className="site-button site-button-secondary" href="/clients/vscode">
+                Explore VS Code
+              </Link>
             </article>
             <article>
               <span>DESKTOP</span>
-              <h3>Open a focused workspace</h3>
+                <h3>Open a dedicated workspace</h3>
               <p>
                 Use the standalone Electron app for file browsing, diffs,
                 terminal commands, chat, approvals, and a built-in Git workflow.
               </p>
-              <div className="site-card-links">
-                <Link className="site-text-link" href="/download">
-                  Download desktop
-                </Link>
-                <Link className="site-text-link" href="/clients/desktop">
-                  Explore desktop
-                </Link>
-              </div>
+              <Link className="site-button site-button-secondary" href="/clients/desktop">
+                Explore desktop
+              </Link>
             </article>
           </div>
         </section>
@@ -144,10 +134,10 @@ export default function HomePage() {
           <div className="site-foundations-inner">
             <header className="site-foundations-intro">
               <p className="site-eyebrow">Built for real work</p>
-              <h2>Everything stays under your control.</h2>
+              <h2>Powerful coding help. Clear control.</h2>
               <p>
-                Local models are more useful when tools, context, and
-                permissions are designed to work together.
+                Bring your own model, keep workspace context close, and review
+                what the agent can do before it acts.
               </p>
             </header>
             <div className="site-principles" data-stagger>

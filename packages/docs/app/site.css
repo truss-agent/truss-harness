@@ -403,7 +403,7 @@ body {
     color: #52675e;
     font-size: 16px;
     line-height: 1.6;
-    margin: 14px 0 0;
+    margin: 18px 0 0;
     max-width: 620px;
 }
 
@@ -1959,6 +1959,7 @@ body {
 .site h3,
 .site p { text-wrap: pretty; }
 .site h1 { font-size: clamp(3rem, 5.6vw, 5.25rem); letter-spacing: -.065em; }
+.site-hero h1 { font-size: clamp(2.75rem, 4.1vw, 4rem); line-height: .98; }
 .site h2 { letter-spacing: -.045em; }
 .site h3 { letter-spacing: -.025em; }
 .site-eyebrow { letter-spacing: .14em; }
@@ -1968,6 +1969,7 @@ body {
 .site-button { border-radius: 999px; min-height: 46px; padding-inline: 19px; transition: transform .2s ease, box-shadow .2s ease, background .2s ease; }
 .site-button:hover { transform: translateY(-2px); }
 .site-button-primary { box-shadow: 0 10px 24px rgba(11, 121, 101, .17); }
+.site-theme-toggle { border-radius: 999px; }
 
 .site-terminal,
 .site-client-grid article,
@@ -1999,6 +2001,7 @@ body {
 .site-feature,
 .clients-index-grid article { border-radius: 16px; padding: 27px; }
 .site-client-grid article:hover { box-shadow: 0 18px 38px rgba(25, 50, 41, .12); }
+.site-client-grid article > .site-button { align-self: flex-start; margin-top: auto; }
 .site-foundations-inner { padding-block: 96px; }
 
 .site-page { padding-top: 0; }
@@ -2019,6 +2022,7 @@ body {
 }
 .site-page:not(.download-page):not(.changelog-page):not(.roadmap-page) .site-page-intro>p:last-child {
     margin-inline: auto;
+    text-align: justify;
 }
 .client-page,
 .truss-go-page { padding-top: 0; }
@@ -2158,10 +2162,34 @@ body {
 .site-clients { padding-bottom: 112px; padding-top: 112px; }
 .site-foundations { margin-top: 34px; }
 
+/* Use one consistent 80% content rail across the site. */
+.site-header-inner,
+.site-hero,
+.site-page,
+.client-page,
+.truss-go-page,
+.site-footer,
+.site-band,
+.site-foundations {
+    max-width: none;
+    width: 80%;
+}
+
 @media (max-width: 780px) {
+    .site-header-inner,
+    .site-hero,
+    .site-page,
+    .client-page,
+    .truss-go-page,
+    .site-footer,
+    .site-band,
+    .site-foundations {
+        width: calc(100% - 36px);
+    }
     .site-band,
     .site-foundations { margin-top: 22px; }
     .site-clients { padding-bottom: 72px; padding-top: 72px; }
+    .site-hero h1 { font-size: clamp(2.65rem, 12vw, 3.5rem); }
 }
 
 @media (max-width: 780px) {
