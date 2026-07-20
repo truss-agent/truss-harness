@@ -20,8 +20,8 @@ export const clientContent: Record<ClientId, ClientContent> = {
   cli: {
     id: "cli",
     eyebrow: "Truss CLI",
-    title: "The coding agent that fits your shell.",
-    description: "Run local-model agent tasks from a terminal, automate them in scripts, or host the JSON-lines runtime service that powers other clients.",
+    title: "Automate coding work from your shell.",
+    description: "Run local-model tasks in a terminal, automate repeatable work in scripts, or host the JSON-lines service behind other clients.",
     screenshotSrc: "/screenshots/cli.png",
     screenshotAlt: "Truss CLI streaming a local-model chat response in a terminal.",
     installLabel: "Install with npm",
@@ -39,8 +39,8 @@ export const clientContent: Record<ClientId, ClientContent> = {
   tui: {
     id: "tui",
     eyebrow: "Truss Terminal UI",
-    title: "A full coding workspace without leaving the terminal.",
-    description: "Use a keyboard-first workspace for files, editor and Git diff inspection, agent chat, tool approvals, and shell output.",
+    title: "A full coding workspace in your terminal.",
+    description: "Keep files, Git diffs, agent chat, tool approvals, and shell output together in a keyboard-first workspace.",
     screenshotSrc: "/screenshots/tui.png",
     screenshotAlt: "Truss Terminal UI with files, editor, agent response, and terminal panes.",
     installLabel: "Install with npm",
@@ -58,8 +58,8 @@ export const clientContent: Record<ClientId, ClientContent> = {
   vscode: {
     id: "vscode",
     eyebrow: "Truss for VS Code",
-    title: "Local coding agents, right where you edit.",
-    description: "Bring streaming chat, context attachments, inline completions, approvals, and Git-aware editor actions into a dedicated VS Code side panel.",
+    title: "A local coding agent where you edit.",
+    description: "Bring streaming chat, focused file context, inline completions, approvals, and Git-aware actions into a VS Code side panel.",
     screenshotSrc: "/screenshots/vscode.png",
     screenshotAlt: "Truss running in VS Code beside the editor and integrated terminal.",
     installLabel: "Install from the Marketplace",
@@ -76,8 +76,8 @@ export const clientContent: Record<ClientId, ClientContent> = {
   desktop: {
     id: "desktop",
     eyebrow: "Truss Desktop",
-    title: "A dedicated workspace for local coding agents.",
-    description: "Open a standalone desktop app for files, Git diffs, terminal work, persistent agent conversations, model controls, and safe tool approvals.",
+    title: "A focused desktop workspace for coding agents.",
+    description: "Keep files, Git diffs, terminal work, persistent conversations, model controls, and tool approvals in one desktop app.",
     screenshotSrc: "/screenshots/desktop.png",
     screenshotAlt: "Truss Desktop with Git, files, editor, terminal, and agent chat panels.",
     installLabel: "Download for your platform",
