@@ -1,10 +1,13 @@
 import { execFile as execFileCallback, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { createInterface } from "node:readline";
 import { detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, listLocalModels, normalizeLocalBaseUrl, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import { brand } from "@truss-harness/branding";
 import { executeWorkspaceCommand, type ChatAttachment, type ContextBlock, type WorkspacePlan } from "@truss-harness/runtime";
+import { createPairingUri, detectLanAddress } from "@truss-harness/gateway";
+import QRCode from "qrcode";
 import * as vscode from "vscode";
 
 const execFile = promisify(execFileCallback);
@@ -162,7 +165,8 @@ type WebviewRequest =
   | { readonly type: "selectConversation"; readonly conversationId: string }
   | { readonly type: "deleteConversation"; readonly conversationId: string }
   | { readonly type: "saveConversations"; readonly state: StoredConversationState }
-  | { readonly type: "toolApproval"; readonly callId: string; readonly approved: boolean };
+  | { readonly type: "toolApproval"; readonly callId: string; readonly approved: boolean }
+  | { readonly type: "connectTrussGo" };
 
 interface HostState {
   readonly configuration: ModelConfiguration;
@@ -361,6 +365,34 @@ export function activate(context: vscode.ExtensionContext): void {
   const inlineBuffers = new Map<string, string>();
   let configuration = normalizeConfiguration(context.workspaceState.get("modelConfiguration"));
   let conversations = normalizeConversationState(context.workspaceState.get("conversations"));
+  let trussGoProcess: ChildProcessWithoutNullStreams | undefined;
+
+  const stopTrussGo = (): void => { trussGoProcess?.kill(); trussGoProcess = undefined; };
+  const connectTrussGo = async (): Promise<void> => {
+    if (!configuration.model) throw new Error("Choose a local model before connecting Truss Go.");
+    const address = detectLanAddress(); if (!address) throw new Error("Could not find a private Wi-Fi address for this computer.");
+    stopTrussGo();
+    const settings = vscode.workspace.getConfiguration("trussHarness");
+    const configuredCommand = settings.get<string>("command", "").trim();
+    const developmentCli = resolve(context.extensionPath, "../cli/dist/bin.js"); const bundledCli = resolve(context.extensionPath, "dist/truss-service.cjs");
+    const command = configuredCommand || process.execPath;
+    const commandArguments = configuredCommand ? [] : context.extensionMode === vscode.ExtensionMode.Development ? [developmentCli] : [bundledCli];
+    const token = randomBytes(32).toString("hex");
+    trussGoProcess = spawn(command, [...commandArguments, "gateway", "--gateway-host", address, "--gateway-port", "4787", "--gateway-token", token], { cwd: workspaceRoot(), windowsHide: true, env: { ...process.env, TRUSS_HARNESS_PROVIDER: configuration.provider, TRUSS_HARNESS_BASE_URL: configuration.baseUrl, TRUSS_HARNESS_MODEL: configuration.model, TRUSS_HARNESS_PERMISSION_MODE: configuration.permission, TRUSS_HARNESS_INTERNET_ACCESS: configuration.internetAccess ? "true" : "false", TRUSS_HARNESS_MCP_SERVERS: JSON.stringify(configuration.mcpServers) } });
+    await new Promise<void>((resolveReady, rejectReady) => {
+      const child = trussGoProcess as ChildProcessWithoutNullStreams;
+      const timeout = setTimeout(() => rejectReady(new Error("Truss Go gateway did not start in time.")), 8_000);
+      child.once("error", (error) => { clearTimeout(timeout); rejectReady(error); });
+      child.once("exit", (code) => { clearTimeout(timeout); rejectReady(new Error(`Truss Go gateway exited (${code ?? "unknown"}).`)); });
+      child.stdout.on("data", (data: Buffer) => { if (data.toString().includes("mobile gateway listening")) { clearTimeout(timeout); resolveReady(); } });
+    }).catch((error) => { stopTrussGo(); throw error; });
+    const pairingUri = createPairingUri({ gatewayUrl: `http://${address}:4787`, token, workspaceName: vscode.workspace.name ?? "Workspace" });
+    const qrDataUrl = await QRCode.toDataURL(pairingUri, { margin: 2, width: 320 });
+    const panel = vscode.window.createWebviewPanel("trussHarnessGo", "Connect Truss Go", vscode.ViewColumn.Beside, { enableScripts: true });
+    panel.webview.html = `<!doctype html><body style="font-family:system-ui;text-align:center;padding:24px"><h2>Connect Truss Go</h2><p>Scan in the Truss Go app on the same Wi-Fi.</p><img style="width:320px;max-width:100%" src="${qrDataUrl}"><p>${vscode.workspace.name ?? "Workspace"}</p><button id="disconnect">Disconnect</button><script>const v=acquireVsCodeApi();document.querySelector('#disconnect').onclick=()=>v.postMessage('disconnect')</script></body>`;
+    panel.webview.onDidReceiveMessage((message) => { if (message === "disconnect") { stopTrussGo(); panel.dispose(); } }, undefined, context.subscriptions);
+    panel.onDidDispose(stopTrussGo, undefined, context.subscriptions);
+  };
 
   const post = (message: unknown): void => {
     void view?.webview.postMessage(message).then(undefined, () => undefined);
@@ -595,6 +627,9 @@ ${diff}`);
         case "toolApproval":
           if (activeChatRequest) service?.approve(activeChatRequest, message.callId, message.approved);
           break;
+        case "connectTrussGo":
+          await connectTrussGo().catch((error: unknown) => post({ type: "error", message: error instanceof Error ? error.message : String(error) }));
+          break;
       }
     }, undefined, context.subscriptions);
   };
@@ -607,6 +642,7 @@ ${diff}`);
     }
   }));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.openChat", () => vscode.commands.executeCommand("workbench.view.extension.trussHarness")));
+  context.subscriptions.push(vscode.commands.registerCommand("trussHarness.connectTrussGo", () => connectTrussGo().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.generateCommitMessage", async () => {
     try {
       const message = await generateCommitMessage();
@@ -765,6 +801,7 @@ function webviewHtml(webview: vscode.Webview): string {
   const toAttachment = async (file) => { if (!file.name) throw new Error('The selected file has no name.'); if (file.size > 4 * 1024 * 1024) throw new Error(file.name + ' exceeds the 4 MB attachment limit.'); if (file.type.startsWith('image/')) { if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) throw new Error(file.name + ' uses an unsupported image type.'); const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Unable to read ' + file.name)); reader.onerror = () => reject(new Error('Unable to read ' + file.name)); reader.readAsDataURL(file); }); return { id: 'attachment-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), kind: 'image', name: file.name, mediaType: file.type, data, size: file.size }; } if (!(file.type.startsWith('text/') || /\.(md|mdx|txt|json|jsonc|ya?ml|toml|ini|cfg|conf|csv|ts|tsx|js|jsx|mjs|cjs|css|html?|xml|svg|py|go|rs|java|php|rb|sh|sql)$/i.test(file.name))) throw new Error(file.name + ' is not a supported text file.'); const text = await file.text(); if (text.includes('\u0000')) throw new Error(file.name + ' appears to be binary.'); return { id: 'attachment-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), kind: 'file', name: file.name, mediaType: file.type || 'text/plain', text: text.slice(0, 120000), size: file.size }; };
   const addFiles = async (files) => { const selected = [...files]; if (!selected.length) return; if (pendingAttachments.length + selected.length > 5) { status.textContent = 'Attach up to five files.'; return; } if (pendingAttachments.reduce((total, item) => total + item.size, 0) + selected.reduce((total, item) => total + item.size, 0) > 12 * 1024 * 1024) { status.textContent = 'Attachments exceed the 12 MB total limit.'; return; } try { pendingAttachments = [...pendingAttachments, ...await Promise.all(selected.map(toAttachment))]; renderAttachments(); } catch (error) { status.textContent = error && error.message ? error.message : String(error); } };
   const sendChat = (text) => { const conversation = current(); const history = conversation.messages.map((message) => ({ role: message.role, content: message.content, ...(message.attachments ? { attachments: message.attachments } : {}) })); const attachments = pendingAttachments; addMessage('user', text, attachments); addMessage('assistant', ''); prompt.value = ''; attachmentInput.value = ''; pendingAttachments = []; renderAttachments(); slashMenu.hidden = true; beginStream(); document.body.classList.add('streaming'); vscode.postMessage({ type: 'send', prompt: text, conversationId: conversation.id, history, attachments, attachedPaths: attachedPaths(text) }); };
+  const connectGo = document.createElement('button'); connectGo.textContent = 'Truss Go'; connectGo.title = 'Connect this workspace to Truss Go on the same Wi-Fi'; connectGo.onclick = () => vscode.postMessage({ type: 'connectTrussGo' }); document.querySelector('.brand-row').prepend(connectGo);
   document.getElementById('settingsButton').onclick = () => settings.classList.toggle('open'); document.getElementById('new').onclick = () => { addConversation(); renderHistory(); renderChat(); vscode.postMessage({ type: 'newConversation' }); }; document.getElementById('help').onclick = () => sendChat('/help');
   document.getElementById('refresh').onclick = () => { try { vscode.postMessage({ type: 'discover', configuration: configurationValue() }); } catch (error) { mcpStatus.textContent = error.message || String(error); } }; document.getElementById('apply').onclick = () => { try { mcpStatus.textContent = 'MCP connections restart when the agent runs.'; postConfigure(); } catch (error) { mcpStatus.textContent = error.message || String(error); } };
   contextWindow.oninput = renderTelemetry;

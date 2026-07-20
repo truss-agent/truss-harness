@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { WebSocket, WebSocketServer } from "ws";
 import type { AgentRuntime, RemoteCommandResult, RemoteHostCapabilities, RemoteToolApprovalMode, RemoteWorkspace, RuntimeEvent, ToolApproval } from "@truss-harness/runtime";
 import { toRemoteSessionEvent } from "@truss-harness/runtime";
+export { createPairingUri, detectLanAddress } from "./pairing.js";
 
 export interface GatewayRuntime {
   readonly runtime: AgentRuntime;

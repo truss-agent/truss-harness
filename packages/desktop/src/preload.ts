@@ -32,6 +32,8 @@ const bridge: DesktopBridge = {
   startDevServer: (command: string) => ipcRenderer.invoke("truss:start-dev-server", command),
   stopDevServer: () => ipcRenderer.invoke("truss:stop-dev-server"),
   openExternal: (url: string) => ipcRenderer.invoke("truss:open-external", url),
+  connectTrussGo: () => ipcRenderer.invoke("truss:connect-truss-go"),
+  disconnectTrussGo: () => ipcRenderer.invoke("truss:disconnect-truss-go"),
   onEvent: (listener: (event: DesktopEvent) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, event: DesktopEvent): void => listener(event);
     ipcRenderer.on("truss:event", handler);

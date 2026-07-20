@@ -109,6 +109,8 @@ export interface DesktopBridge {
   startDevServer(command: string): Promise<string>;
   stopDevServer(): Promise<void>;
   openExternal(url: string): Promise<void>;
+  connectTrussGo(): Promise<{ readonly workspaceName: string; readonly qrDataUrl: string }>;
+  disconnectTrussGo(): Promise<void>;
   onEvent(listener: (event: DesktopEvent) => void): () => void;
 }
 import type { WorkspacePlan } from "@truss-harness/runtime";

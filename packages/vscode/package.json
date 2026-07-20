@@ -22,6 +22,7 @@
   "activationEvents": [
     "onView:trussHarness.chat",
     "onCommand:trussHarness.openChat",
+    "onCommand:trussHarness.connectTrussGo",
     "onCommand:trussHarness.generateCommitMessage",
     "onCommand:trussHarness.initializeWorkspace",
     "onCommand:trussHarness.updateWorkspaceMemory",
@@ -55,6 +56,10 @@
       {
         "command": "trussHarness.openChat",
         "title": "Truss: Open Chat"
+      },
+      {
+        "command": "trussHarness.connectTrussGo",
+        "title": "Truss: Connect Truss Go"
       },
       {
         "command": "trussHarness.generateCommitMessage",
@@ -114,6 +119,9 @@
     "prepublishOnly": "npm run package"
   },
   "dependencies": {
+    "@truss-harness/gateway": "^0.1.0",
+    "@types/qrcode": "^1.5.6",
+    "qrcode": "^1.5.4",
     "@truss-harness/branding": "0.1.0",
     "@truss-harness/provider-openai-compatible": "0.1.0",
     "@truss-harness/runtime": "0.1.0"

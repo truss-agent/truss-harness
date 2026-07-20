@@ -1622,3 +1622,6 @@ body.resizing * {
     font-family: "Segoe UI", sans-serif;
     font-size: 12px;
 }
+
+.qr-pairing { display: grid; justify-items: center; gap: 12px; padding: 20px; }
+.qr-pairing img { width: min(320px, 70vw); border-radius: 10px; background: white; padding: 10px; }
