@@ -8,7 +8,8 @@ policy.
 npm --workspace @truss-harness/mobile run start
 ```
 
-Enter the gateway's URL and its token, choose Chat, Plan, or Edit mode, and
-connect. In Edit mode, the app presents host-requested tool approvals. For a
-physical device, use a trusted LAN URL or a secure user-managed tunnel; do not
-expose the current gateway directly to the public internet.
+Enter the gateway's URL and its token, choose a host-configured workspace and
+Chat, Plan, or Edit mode, then connect. In Edit mode, the app presents
+host-requested tool approvals. For a physical device, use a trusted LAN URL or
+a secure user-managed tunnel; do not expose the current gateway directly to
+the public internet.

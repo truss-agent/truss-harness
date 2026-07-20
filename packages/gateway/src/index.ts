@@ -1,5 +1,6 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { WebSocket, WebSocketServer } from "ws";
 import type { AgentRuntime, RemoteCommandResult, RemoteHostCapabilities, RemoteWorkspace, RuntimeEvent, ToolApproval } from "@truss-harness/runtime";
 import { toRemoteSessionEvent } from "@truss-harness/runtime";
 
@@ -10,11 +11,18 @@ export interface GatewayRuntime {
   dispose?(): Promise<void>;
 }
 
+/** A host-configured workspace. The root path remains private to the host. */
+export interface GatewayWorkspace {
+  readonly id: string;
+  readonly displayName: string;
+  readonly capabilities?: RemoteHostCapabilities;
+  readonly createRuntime: (mode: "chat" | "plan" | "edit") => Promise<GatewayRuntime>;
+}
+
 export interface RemoteGatewayOptions {
   /** A high-entropy token configured by the workspace host. Do not expose this server publicly without TLS and pairing. */
   readonly token: string;
-  readonly workspace: Omit<RemoteWorkspace, "capabilities"> & { readonly capabilities?: RemoteHostCapabilities };
-  readonly createRuntime: (mode: "chat" | "plan" | "edit") => Promise<GatewayRuntime>;
+  readonly workspaces: readonly GatewayWorkspace[];
   /** Loopback by default. Binding beyond loopback is intentionally explicit and remains suitable only for trusted networks. */
   readonly host?: string;
   readonly port?: number;
@@ -30,6 +38,11 @@ interface SessionContext {
   controller?: AbortController;
 }
 
+interface ConfiguredWorkspace {
+  readonly remote: RemoteWorkspace;
+  readonly createRuntime: GatewayWorkspace["createRuntime"];
+}
+
 const defaultCapabilities: RemoteHostCapabilities = {
   modes: ["chat", "plan", "edit"],
   supportsAttachments: false,
@@ -37,31 +50,45 @@ const defaultCapabilities: RemoteHostCapabilities = {
   supportsToolApproval: true
 };
 
+function hasToken(candidate: string, expectedToken: string): boolean {
+  const actual = Buffer.from(candidate);
+  const expected = Buffer.from(expectedToken);
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
 /**
- * Starts a deliberately small HTTP/SSE adapter for the remote-session contract.
- * It is intended for loopback development or a user-managed secure tunnel; it
- * does not claim to provide internet-facing device pairing or TLS termination.
+ * Starts a small HTTP/WebSocket adapter for the remote-session contract. It is
+ * intended for loopback development or a user-managed secure tunnel; it does
+ * not claim to provide internet-facing device pairing or TLS termination.
  */
 export async function startRemoteGateway(options: RemoteGatewayOptions): Promise<RunningRemoteGateway> {
   if (options.token.length < 24) throw new Error("Gateway token must contain at least 24 characters.");
-  const workspace: RemoteWorkspace = { ...options.workspace, capabilities: options.workspace.capabilities ?? defaultCapabilities };
+  if (!options.workspaces.length) throw new Error("Configure at least one gateway workspace.");
+  const workspaces = new Map<string, ConfiguredWorkspace>();
+  for (const workspace of options.workspaces) {
+    if (!workspace.id || workspaces.has(workspace.id)) throw new Error("Each gateway workspace needs a unique non-empty id.");
+    workspaces.set(workspace.id, {
+      remote: { id: workspace.id, displayName: workspace.displayName, capabilities: workspace.capabilities ?? defaultCapabilities },
+      createRuntime: workspace.createRuntime
+    });
+  }
+
   const sessions = new Map<string, SessionContext>();
-  const clients = new Set<ServerResponse>();
+  const sseClients = new Set<ServerResponse>();
+  const webSocketClients = new Set<WebSocket>();
   const cleanups = new Set<() => void>();
   const runtimes = new Set<GatewayRuntime>();
   let sequence = 0;
 
   const broadcast = (event: RuntimeEvent): void => {
     const payload = JSON.stringify(toRemoteSessionEvent(event, ++sequence));
-    for (const client of clients) client.write(`event: remote-session\ndata: ${payload}\n\n`);
+    for (const client of sseClients) client.write(`event: remote-session\ndata: ${payload}\n\n`);
+    for (const client of webSocketClients) if (client.readyState === WebSocket.OPEN) client.send(payload);
   };
 
   const authorize = (request: IncomingMessage): boolean => {
     const authorization = request.headers.authorization;
-    if (!authorization?.startsWith("Bearer ")) return false;
-    const candidate = Buffer.from(authorization.slice("Bearer ".length));
-    const expected = Buffer.from(options.token);
-    return candidate.length === expected.length && timingSafeEqual(candidate, expected);
+    return authorization?.startsWith("Bearer ") === true && hasToken(authorization.slice("Bearer ".length), options.token);
   };
 
   const reply = (response: ServerResponse, status: number, body: unknown): void => {
@@ -90,10 +117,11 @@ export async function startRemoteGateway(options: RemoteGatewayOptions): Promise
     if (input.version !== 1 || typeof input.type !== "string") return reject(requestId, "invalid_command", "Unsupported remote-session command.");
 
     if (input.type === "create_session") {
-      if (typeof input.workspaceId !== "string" || input.workspaceId !== workspace.id || (input.mode !== "chat" && input.mode !== "plan" && input.mode !== "edit") || !workspace.capabilities.modes.includes(input.mode)) {
+      const workspace = typeof input.workspaceId === "string" ? workspaces.get(input.workspaceId) : undefined;
+      if (!workspace || (input.mode !== "chat" && input.mode !== "plan" && input.mode !== "edit") || !workspace.remote.capabilities.modes.includes(input.mode)) {
         return reject(requestId, "not_authorized", "The requested workspace or mode is unavailable.");
       }
-      const runtime = await options.createRuntime(input.mode);
+      const runtime = await workspace.createRuntime(input.mode);
       const session = await runtime.runtime.createSession();
       if (!runtimes.has(runtime)) {
         runtimes.add(runtime);
@@ -136,17 +164,19 @@ export async function startRemoteGateway(options: RemoteGatewayOptions): Promise
 
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
-    if (request.method === "GET" && url.pathname === "/health") return reply(response, 200, { ok: true, workspace: { id: workspace.id, displayName: workspace.displayName, capabilities: workspace.capabilities } });
+    if (request.method === "GET" && url.pathname === "/health") return reply(response, 200, { ok: true });
     if (!authorize(request)) return reply(response, 401, { error: "Unauthorized" });
 
+    if (request.method === "GET" && url.pathname === "/v1/workspaces") {
+      return reply(response, 200, { workspaces: [...workspaces.values()].map(({ remote }) => remote) });
+    }
     if (request.method === "GET" && url.pathname === "/v1/events") {
       response.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache, no-transform", connection: "keep-alive" });
       response.write(": connected\n\n");
-      clients.add(response);
-      request.on("close", () => clients.delete(response));
+      sseClients.add(response);
+      request.on("close", () => sseClients.delete(response));
       return;
     }
-
     if (request.method === "POST" && url.pathname === "/v1/commands") {
       try {
         const result = await command(await readCommand(request));
@@ -155,8 +185,29 @@ export async function startRemoteGateway(options: RemoteGatewayOptions): Promise
         return reply(response, 400, reject("unknown", "invalid_command", error instanceof Error ? error.message : "Invalid command."));
       }
     }
-
     return reply(response, 404, { error: "Not found" });
+  });
+
+  const webSockets = new WebSocketServer({ noServer: true });
+  server.on("upgrade", (request, socket, head) => {
+    const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+    if (url.pathname !== "/v1/events") return socket.destroy();
+    webSockets.handleUpgrade(request, socket, head, (client) => {
+      const timeout = setTimeout(() => client.close(1008, "Authentication timed out."), 5_000);
+      client.once("message", (data) => {
+        let handshake: unknown;
+        try { handshake = JSON.parse(data.toString()) as unknown; } catch { client.close(1008, "Invalid authentication payload."); return; }
+        const input = handshake && typeof handshake === "object" ? handshake as Record<string, unknown> : undefined;
+        if (input?.type !== "authenticate" || typeof input.token !== "string" || !hasToken(input.token, options.token)) {
+          client.close(1008, "Unauthorized.");
+          return;
+        }
+        clearTimeout(timeout);
+        webSocketClients.add(client);
+        client.send(JSON.stringify({ type: "connected" }));
+        client.once("close", () => webSocketClients.delete(client));
+      });
+    });
   });
 
   await new Promise<void>((resolve, rejectListen) => {
@@ -172,9 +223,11 @@ export async function startRemoteGateway(options: RemoteGatewayOptions): Promise
   return {
     url: `http://${address.address.includes(":") ? `[${address.address}]` : address.address}:${address.port}`,
     async close(): Promise<void> {
-      for (const client of clients) client.end();
+      for (const client of sseClients) client.end();
+      for (const client of webSocketClients) client.close(1001, "Gateway stopped.");
       for (const cleanup of cleanups) cleanup();
       await Promise.all([...runtimes].map(async (runtime) => runtime.dispose?.()));
+      webSockets.close();
       await new Promise<void>((resolve, rejectClose) => server.close((error) => error ? rejectClose(error) : resolve()));
     }
   };

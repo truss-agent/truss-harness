@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { EventBus, type AgentRuntime, type RuntimeEvent } from "@truss-harness/runtime";
+import WebSocket from "ws";
 import { startRemoteGateway, type RunningRemoteGateway } from "./index.js";
 
 describe("remote gateway", () => {
@@ -22,8 +23,7 @@ describe("remote gateway", () => {
     gateway = await startRemoteGateway({
       token,
       port: 0,
-      workspace: { id: "workspace", displayName: "Test workspace" },
-      createRuntime: async () => ({ runtime, events })
+      workspaces: [{ id: "workspace", displayName: "Test workspace", createRuntime: async () => ({ runtime, events }) }]
     });
 
     expect((await fetch(`${gateway.url}/v1/commands`, { method: "POST" })).status).toBe(401);
@@ -34,11 +34,26 @@ describe("remote gateway", () => {
     });
     expect(await created.json()).toEqual({ requestId: "create-1", type: "session_created", sessionId: "session-1" });
 
+    const socket = new WebSocket(`${gateway.url.replace(/^http/, "ws")}/v1/events`);
+    await new Promise<void>((resolve, reject) => {
+      socket.once("error", reject);
+      socket.once("open", () => socket.send(JSON.stringify({ type: "authenticate", token })));
+      socket.on("message", (payload) => {
+        const event = JSON.parse(payload.toString()) as { type: string };
+        if (event.type === "connected") resolve();
+      });
+    });
+    const completed = new Promise<void>((resolve) => socket.on("message", (payload) => {
+      if ((JSON.parse(payload.toString()) as { type: string }).type === "run_completed") resolve();
+    }));
+
     const sent = await fetch(`${gateway.url}/v1/commands`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       body: JSON.stringify({ version: 1, requestId: "message-1", type: "send_message", sessionId: "session-1", prompt: "Hello" })
     });
     expect(await sent.json()).toEqual({ requestId: "message-1", type: "accepted" });
+    await completed;
+    socket.close();
   });
 });

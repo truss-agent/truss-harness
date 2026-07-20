@@ -1,7 +1,7 @@
 # Truss remote gateway
 
 `@truss-harness/gateway` exposes the versioned remote-session contract over an
-authenticated HTTP command endpoint and a Server-Sent Events stream. It is a
+authenticated HTTP command endpoint and a WebSocket event stream. It is a
 host-side adapter; it does not contain model-provider credentials or a mobile
 UI.
 
@@ -17,6 +17,14 @@ app:
 
 ```sh
 truss-cli gateway --gateway-host 0.0.0.0 --gateway-token "replace-with-a-random-24-character-minimum-token"
+```
+
+The current directory is shared by default. To offer a picker with more than
+one host-configured workspace, repeat `--gateway-workspace`:
+
+```sh
+truss-cli gateway --gateway-token "replace-with-a-random-24-character-minimum-token" \
+  --gateway-workspace /projects/api --gateway-workspace /projects/mobile
 ```
 
 Do not expose this initial gateway to the public internet. TLS, device pairing,

@@ -23,6 +23,8 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@truss-harness/runtime": "0.1.0"
+    "@truss-harness/runtime": "0.1.0",
+    "@types/ws": "^8.18.1",
+    "ws": "^8.21.1"
   }
 }
