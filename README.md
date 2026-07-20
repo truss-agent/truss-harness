@@ -242,6 +242,8 @@ When no model is configured, the CLI, TUI, and VS Code panel automatically probe
 
 ### CLI
 
+![Truss CLI running in a terminal](packages/docs/public/screenshots/cli.png)
+
 The CLI needs a provider, endpoint, and model. Ollama is the default provider and uses its native `/api/chat` endpoint.
 
 ```powershell
@@ -270,6 +272,17 @@ Optional environment variables:
 | `TRUSS_HARNESS_API_KEY`       | Optional token for a protected local endpoint.         |
 | `TRUSS_HARNESS_SYSTEM_PROMPT` | Optional system prompt.                                |
 | `TRUSS_HARNESS_MCP_SERVERS`   | Optional JSON object containing local MCP servers.     |
+
+### Terminal UI
+
+![Truss Terminal UI with files, editor, agent, and terminal panes](packages/docs/public/screenshots/tui.png)
+
+The full-screen terminal workspace shares the CLI's profiles and local-model discovery while adding file browsing, editor and diff inspection, agent chat, tool approvals, and shell output in one keyboard-first interface.
+
+```sh
+npm install -g @truss-harness/tui
+truss-tui
+```
 
 ### Configuration Files and Profiles
 
@@ -352,6 +365,8 @@ The current implementation supports MCP tool discovery and invocation over local
 
 ### Desktop Client
 
+![Truss Desktop workspace with Git, files, editor, terminal, and chat](packages/docs/public/screenshots/desktop.png)
+
 The Electron desktop client provides a standalone workspace with a file tree, editor and Git diff preview, terminal pane, persistent chat history, model controls, tool approvals, and the same local-first runtime used by the other clients.
 
 ```powershell
@@ -432,6 +447,8 @@ remain separate release processes. Unsigned desktop builds require no
 repository secrets; Windows code signing can be configured later.
 
 ### VS Code Extension
+
+![Truss running inside VS Code](packages/docs/public/screenshots/vscode.png)
 
 1. Run `npm.cmd run build` from the repository root.
 2. Open this repository in VS Code.
