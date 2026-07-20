@@ -1,0 +1,36 @@
+name: Change request
+description: Propose a scoped improvement or maintenance change.
+title: "[Change]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Open this issue before starting implementation. The pull request must link this issue and identify the same client scope.
+  - type: checkboxes
+    id: clients
+    attributes:
+      label: Affected client(s)
+      description: Select every client this work affects. Shared-package work should select all impacted clients.
+      options:
+        - label: VS Code
+        - label: Desktop
+        - label: CLI
+        - label: TUI
+        - label: Documentation site
+        - label: Repository infrastructure (no client)
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or goal
+      description: Explain the user or maintainer need this change addresses.
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-change
+    attributes:
+      label: Proposed change
+      description: Describe the expected behavior and any shared-runtime impact.
+    validations:
+      required: true

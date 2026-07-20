@@ -1,0 +1,49 @@
+name: Bug report
+description: Report a reproducible problem in a Truss client.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please search existing issues first. A pull request that fixes this report must link this issue.
+  - type: checkboxes
+    id: clients
+    attributes:
+      label: Affected client(s)
+      description: Select every client where this problem occurs. Shared runtime changes should list every affected client.
+      options:
+        - label: VS Code
+        - label: Desktop
+        - label: CLI
+        - label: TUI
+        - label: Documentation site
+        - label: Repository infrastructure (no client)
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened?
+      description: Describe the actual behavior and the expected behavior.
+      placeholder: I expected ... but instead ...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include OS, Truss version or commit, and relevant provider/model details.
+    validations:
+      required: true

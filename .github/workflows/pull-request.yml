@@ -1,0 +1,90 @@
+name: Pull request checks
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pull-request-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  submission:
+    name: Validate submission requirements
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require client scope, linked issue, and feature branch
+        shell: bash
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          node <<'NODE'
+          const body = process.env.PR_BODY ?? '';
+          const branch = process.env.HEAD_REF ?? '';
+          const hasClient = /-\s*\[[xX]\]\s*(VS Code|Desktop|CLI|TUI|Documentation site|Repository infrastructure \(no client\))\b/.test(body);
+          const hasIssue = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#\d+\b/i.test(body);
+          const errors = [];
+
+          if (!hasClient) errors.push('Select at least one affected client in the pull-request template.');
+          if (!hasIssue) errors.push('Link an issue with a closing reference, for example: Closes #123.');
+          if (/^(main|master)$/i.test(branch)) errors.push('Open the pull request from a dedicated branch, not master or main.');
+
+          if (errors.length > 0) {
+            console.error(errors.map((error) => `- ${error}`).join('\n'));
+            process.exit(1);
+          }
+          NODE
+
+  verify:
+    name: Build and test pull request
+    needs: submission
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build workspace
+        run: npm run build
+      - name: Run tests
+        run: npm test
+      - name: Build affected clients
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed_files="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+
+          affects() {
+            printf '%s\n' "$changed_files" | grep -Eq "$1"
+          }
+
+          shared_client_code='^(package(-lock)?\.json|tsconfig\.json|scripts/|packages/(runtime|mcp|provider-openai-compatible|branding)/)'
+
+          if affects "^packages/vscode/" || affects "$shared_client_code"; then
+            npm --workspace truss-harness-vscode run build
+          fi
+
+          if affects "^packages/desktop/" || affects "$shared_client_code" || affects "^packages/cli/"; then
+            npm --workspace @truss-harness/desktop run build
+          fi
+
+          if affects "^packages/cli/" || affects "$shared_client_code"; then
+            npm --workspace @truss-harness/cli run build
+          fi
+
+          if affects "^packages/tui/" || affects "$shared_client_code" || affects "^packages/cli/"; then
+            npm --workspace @truss-harness/tui run build
+          fi
+
+          if affects "^packages/docs/" || affects "^(package(-lock)?\.json|scripts/|packages/branding/)"; then
+            npm --workspace @truss-harness/docs run build
+          fi
