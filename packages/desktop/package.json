@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Standalone desktop client for the Truss runtime.",
   "author": "Truss Contributors",
   "type": "module",
@@ -10,6 +10,7 @@
     "dev": "npm run build && node ./scripts/start-electron.mjs",
     "start": "node ./scripts/start-electron.mjs",
     "package": "npm run build && electron-builder --publish never",
+    "package:win:all": "npm run build && electron-builder --publish never --win nsis --x64 --arm64",
     "package:win:x64": "npm run build && electron-builder --publish never --win nsis --x64",
     "package:win:arm64": "npm run build && electron-builder --publish never --win nsis --arm64",
     "package:linux:x64": "npm run build && electron-builder --publish never --linux AppImage deb rpm pacman --x64",
@@ -27,6 +28,13 @@
       "package.json"
     ],
     "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "truss-agent",
+        "repo": "truss-harness"
+      }
+    ],
     "win": {
       "icon": "./assets/brand-logo.ico",
       "target": [
@@ -91,6 +99,7 @@
     "url": "git+https://github.com/truss-agent/truss-harness.git"
   },
   "dependencies": {
+    "electron-updater": "^6.3.9",
     "@truss-harness/branding": "0.1.0",
     "@truss-harness/cli": "0.1.0",
     "@truss-harness/mcp": "0.1.0",

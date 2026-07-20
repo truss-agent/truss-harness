@@ -188,6 +188,25 @@ button:focus-visible {
     margin-block: 3px;
 }
 
+.file-filter {
+    display: flex;
+    gap: 5px;
+    padding: 5px 6px;
+    border-bottom: 1px solid #2b383f;
+}
+
+.file-filter input {
+    min-width: 0;
+    flex: 1;
+    padding: 5px 7px;
+    font-size: 12px;
+}
+
+.file-filter button {
+    padding-inline: 6px;
+    font-size: 11px;
+}
+
 .file-tree,
 .conversation-list {
     min-height: 0;
@@ -871,6 +890,29 @@ dialog::backdrop {
     font-size: 11px;
 }
 
+.update-settings {
+    display: grid;
+    grid-column: 1 / -1;
+    gap: 8px;
+    padding-top: 4px;
+    border-top: 1px solid #2b383f;
+    color: #d8e5e8;
+    font-size: 12px;
+}
+
+.update-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.update-actions span {
+    flex: 1 1 180px;
+    color: #9cadb4;
+    font-size: 11px;
+}
+
 .mcp-status .connected {
     color: #69d6b5;
 }
@@ -938,6 +980,10 @@ dialog::backdrop {
 
 .tree-row.file button {
     color: #c6d1d6;
+}
+
+.tree-row.file.filtered button {
+    padding-left: 6px;
 }
 
 .tree-arrow {

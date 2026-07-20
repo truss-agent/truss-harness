@@ -23,7 +23,7 @@
         </div>
       </section>
       <div id="gitSplitter" class="pane-splitter horizontal" role="separator" aria-label="Resize Git panel"></div>
-      <section class="side-section files-section"><div class="section-heading"><span>Files</span><button id="refreshFiles" title="Refresh files">Refresh</button></div><div id="fileTree" class="file-tree"></div></section>
+      <section class="side-section files-section"><div class="section-heading"><span>Files</span><button id="refreshFiles" title="Refresh files">Refresh</button></div><div class="file-filter"><input id="fileSearch" type="search" autocomplete="off" spellcheck="false" placeholder="Filter files" aria-label="Filter files"><button id="clearFileSearch" type="button" title="Clear file filter" aria-label="Clear file filter" hidden>Clear</button></div><div id="fileTree" class="file-tree"></div></section>
       <div id="historySplitter" class="pane-splitter horizontal" role="separator" aria-label="Resize chat history"></div>
       <section class="side-section history-section"><div class="section-heading"><span>Chats</span><button id="newChat" title="New chat">New</button></div><div id="conversationList" class="conversation-list"></div></section>
     </aside>
@@ -70,6 +70,12 @@
       <label class="checkbox-setting"><input id="internetAccessInput" type="checkbox"><span>Allow public internet research</span></label>
       <label class="mcp-setting">MCP servers (JSON)<textarea id="mcpServersInput" rows="8" spellcheck="false" placeholder='{"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]}}'></textarea></label>
       <div id="mcpStatus" class="mcp-status">No MCP servers configured.</div>
+      <section class="update-settings" aria-label="Desktop updates">
+        <strong>Desktop updates</strong>
+        <label class="checkbox-setting"><input id="checkUpdatesOnLaunch" type="checkbox"><span>Check for updates when Truss starts</span></label>
+        <label class="checkbox-setting"><input id="autoDownloadUpdates" type="checkbox"><span>Automatically download available updates</span></label>
+        <div class="update-actions"><span id="updateStatus">Updates have not been checked.</span><button id="checkUpdates" type="button">Check now</button><button id="downloadUpdate" type="button" hidden>Download</button><button id="installUpdate" class="primary" type="button" hidden>Restart to update</button></div>
+      </section>
       <div class="dialog-actions"><button id="dialogRefresh" type="button">Refresh</button><button id="applySettings" class="primary" value="default">Apply</button></div>
     </form>
   </dialog>

@@ -61,6 +61,7 @@ export interface DesktopGitStatus {
 export interface DesktopState {
   readonly workspaceRoot: string;
   readonly configuration?: DesktopConfiguration;
+  readonly updates: { readonly checkOnLaunch: boolean; readonly autoDownload: boolean };
   readonly conversations: readonly DesktopConversation[];
   readonly activeConversationId?: string;
   readonly mcpStatuses?: readonly McpServerStatus[];
@@ -73,6 +74,7 @@ export type DesktopEvent =
   | { readonly type: "chat-error"; readonly conversationId: string; readonly message: string }
   | { readonly type: "approval"; readonly callId: string; readonly tool: string; readonly input: Record<string, unknown> }
   | { readonly type: "dev-server"; readonly status: "starting" | "running" | "stopped" | "failed"; readonly command?: string; readonly url?: string; readonly message?: string }
+  | { readonly type: "update"; readonly status: "checking" | "available" | "not-available" | "downloading" | "downloaded" | "error"; readonly version?: string; readonly percent?: number; readonly message?: string }
   | { readonly type: "terminal-output"; readonly commandId: string; readonly text: string };
 
 export interface DesktopBridge {
@@ -81,6 +83,10 @@ export interface DesktopBridge {
   saveConversations(conversations: readonly DesktopConversation[], activeConversationId?: string): Promise<void>;
   discoverModels(configuration?: Partial<DesktopConfiguration>): Promise<{ readonly endpoints: readonly DesktopEndpoint[]; readonly models: readonly string[] }>;
   configure(configuration: DesktopConfiguration): Promise<DesktopState>;
+  configureUpdates(updates: { readonly checkOnLaunch: boolean; readonly autoDownload: boolean }): Promise<DesktopState>;
+  checkForUpdates(): Promise<void>;
+  downloadUpdate(): Promise<void>;
+  installUpdate(): Promise<void>;
   sendChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[]; readonly openFilePaths?: readonly string[] }): Promise<void>;
   stopChat(): Promise<void>;
   resolveApproval(callId: string, approved: boolean): Promise<void>;

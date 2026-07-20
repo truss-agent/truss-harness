@@ -27,12 +27,6 @@ jobs:
 
   windows:
     needs: verify
-    strategy:
-      fail-fast: false
-      matrix:
-        arch:
-          - x64
-          - arm64
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@v4
@@ -42,12 +36,14 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: npm run desktop:package:win:${{ matrix.arch }}
+      - run: npm run desktop:package:win:all
       - uses: actions/upload-artifact@v4
         with:
-          name: desktop-windows-${{ matrix.arch }}
+          name: desktop-windows
           path: |
             packages/desktop/release/*.exe
+            packages/desktop/release/*.blockmap
+            packages/desktop/release/latest*.yml
           if-no-files-found: error
 
   linux:
@@ -81,6 +77,12 @@ jobs:
             packages/desktop/release/*.rpm
             packages/desktop/release/*.pacman
             packages/desktop/release/*.pkg.tar.zst
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: matrix.arch == 'x64'
+        with:
+          name: desktop-linux-updater
+          path: packages/desktop/release/latest*.yml
           if-no-files-found: error
 
   release:

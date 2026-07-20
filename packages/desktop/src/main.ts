@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol, shell, type OpenDialogOptions } from "electron";
+import { autoUpdater } from "electron-updater";
 import { spawn } from "node:child_process";
 import { execFile as execFileCallback } from "node:child_process";
 import { createReadStream } from "node:fs";
@@ -34,7 +35,7 @@ protocol.registerSchemesAsPrivileged([{
 interface PersistedState extends DesktopState {}
 
 let mainWindow: BrowserWindow | undefined;
-let persisted: PersistedState = { workspaceRoot: process.cwd(), conversations: [] };
+let persisted: PersistedState = { workspaceRoot: process.cwd(), updates: { checkOnLaunch: true, autoDownload: false }, conversations: [] };
 let runtimeClient: Awaited<ReturnType<typeof createClientRuntime>> | undefined;
 let unsubscribeEvents: (() => void) | undefined;
 let activeSessionId: string | undefined;
@@ -42,11 +43,37 @@ let activeConversationId: string | undefined;
 let activeAbort: AbortController | undefined;
 let activeRun: Promise<void> | undefined;
 let devServerProcess: ReturnType<typeof spawn> | undefined;
+let updaterConfigured = false;
 const approvalResolvers = new Map<string, (approved: boolean) => void>();
 const sessionConversationIds = new Map<string, string>();
 
 function send(event: DesktopEvent): void {
   mainWindow?.webContents.send("truss:event", event);
+}
+
+function updaterError(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  send({ type: "update", status: "error", message });
+}
+
+function updaterSupported(): boolean {
+  return app.isPackaged && (process.platform === "win32" || (process.platform === "linux" && process.arch === "x64" && Boolean(process.env.APPIMAGE)));
+}
+
+function configureUpdater(): void {
+  if (!updaterSupported() || updaterConfigured) return;
+  updaterConfigured = true;
+  autoUpdater.autoDownload = persisted.updates.autoDownload;
+  autoUpdater.autoInstallOnAppQuit = false;
+  autoUpdater.on("checking-for-update", () => send({ type: "update", status: "checking" }));
+  autoUpdater.on("update-available", (info) => send({ type: "update", status: "available", version: info.version }));
+  autoUpdater.on("update-not-available", (info) => send({ type: "update", status: "not-available", version: info.version }));
+  autoUpdater.on("download-progress", (progress) => send({ type: "update", status: "downloading", percent: progress.percent }));
+  autoUpdater.on("update-downloaded", (info) => send({ type: "update", status: "downloaded", version: info.version }));
+  autoUpdater.on("error", updaterError);
+  if (persisted.updates.checkOnLaunch) {
+    setTimeout(() => { void autoUpdater.checkForUpdates().catch(updaterError); }, 1_500);
+  }
 }
 
 function detectedPreviewUrl(output: string): string | undefined {
@@ -97,11 +124,14 @@ async function loadPersistedState(): Promise<void> {
     persisted = {
       workspaceRoot: typeof parsed.workspaceRoot === "string" ? parsed.workspaceRoot : process.cwd(),
       configuration: isConfiguration(parsed.configuration) ? normalizeConfiguration(parsed.configuration) : undefined,
+      updates: parsed.updates && typeof parsed.updates === "object"
+        ? { checkOnLaunch: (parsed.updates as { checkOnLaunch?: unknown }).checkOnLaunch !== false, autoDownload: (parsed.updates as { autoDownload?: unknown }).autoDownload === true }
+        : { checkOnLaunch: true, autoDownload: false },
       conversations: Array.isArray(parsed.conversations) ? parsed.conversations.slice(0, 30) : [],
       activeConversationId: typeof parsed.activeConversationId === "string" ? parsed.activeConversationId : undefined
     };
   } catch {
-    persisted = { workspaceRoot: process.cwd(), conversations: [] };
+    persisted = { workspaceRoot: process.cwd(), updates: { checkOnLaunch: true, autoDownload: false }, conversations: [] };
   }
 }
 
@@ -504,6 +534,7 @@ app.whenReady().then(async () => {
   protocol.handle("truss-media", workspaceMediaResponse);
   if (persisted.configuration) await configureRuntime(persisted.configuration);
   await createMainWindow();
+  configureUpdater();
   app.on("activate", () => { if (!mainWindow) void createMainWindow(); });
 });
 
@@ -514,6 +545,30 @@ app.on("before-quit", () => {
 });
 
 ipcMain.handle("truss:initial-state", (): DesktopState => persisted);
+ipcMain.handle("truss:configure-updates", async (_event, updates: { readonly checkOnLaunch: boolean; readonly autoDownload: boolean }): Promise<DesktopState> => {
+  persisted = {
+    ...persisted,
+    updates: {
+      checkOnLaunch: updates.checkOnLaunch !== false,
+      autoDownload: updates.autoDownload === true
+    }
+  };
+  autoUpdater.autoDownload = persisted.updates.autoDownload;
+  await persistState();
+  return persisted;
+});
+ipcMain.handle("truss:check-for-updates", async (): Promise<void> => {
+  if (!updaterSupported()) throw new Error("In-app updates are available in installed Windows and Linux AppImage builds. Update this package through its installer or package manager.");
+  await autoUpdater.checkForUpdates();
+});
+ipcMain.handle("truss:download-update", async (): Promise<void> => {
+  if (!updaterSupported()) throw new Error("In-app updates are available in installed Windows and Linux AppImage builds. Update this package through its installer or package manager.");
+  await autoUpdater.downloadUpdate();
+});
+ipcMain.handle("truss:install-update", (): void => {
+  if (!updaterSupported()) throw new Error("In-app updates are available in installed Windows and Linux AppImage builds. Update this package through its installer or package manager.");
+  autoUpdater.quitAndInstall(false, true);
+});
 ipcMain.handle("truss:choose-workspace", async (): Promise<DesktopState | undefined> => {
   const options: OpenDialogOptions = { properties: ["openDirectory"] };
   const selection = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);

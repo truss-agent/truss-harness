@@ -31,6 +31,12 @@ The three-pane workspace supports a hierarchical file tree, multiple editor tabs
 
 The terminal accepts both ordinary shell commands and Truss workspace commands. Enter `/help`, `/status`, `/init`, `/update [note]`, or `/clear-memory` directly; slash commands run locally through Truss rather than being sent to the operating-system shell.
 
+## Updates
+
+Installed Windows and Linux x64 AppImage builds check the latest stable GitHub release when **Check for updates when Truss starts** is enabled in Settings. This preference is on by default. Enable **Automatically download available updates** for background downloads, or use **Check now** and **Download** manually. Choose **Restart to update** when the update is ready.
+
+Debian, RPM, pacman, and Linux ARM64 packages are updated through their installer or package manager. Development builds intentionally do not check for updates.
+
 ## Security model
 
 The renderer runs with `contextIsolation` enabled and `nodeIntegration` disabled. Filesystem, terminal, Git, provider, and runtime operations are exposed only through explicit IPC handlers in `src/main.ts`.

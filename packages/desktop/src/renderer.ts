@@ -31,6 +31,8 @@ const defaultConfiguration: DesktopConfiguration = {
 
 const element = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
 const fileTree = element<HTMLDivElement>("fileTree");
+const fileSearch = element<HTMLInputElement>("fileSearch");
+const clearFileSearch = element<HTMLButtonElement>("clearFileSearch");
 const conversations = element<HTMLDivElement>("conversationList");
 const workbench = document.querySelector<HTMLElement>(".workbench") as HTMLElement;
 const sidebar = document.querySelector<HTMLElement>(".sidebar") as HTMLElement;
@@ -87,12 +89,19 @@ const permissionSelect = element<HTMLSelectElement>("permissionSelect");
 const internetAccessInput = element<HTMLInputElement>("internetAccessInput");
 const mcpServersInput = element<HTMLTextAreaElement>("mcpServersInput");
 const mcpStatus = element<HTMLDivElement>("mcpStatus");
+const checkUpdatesOnLaunch = element<HTMLInputElement>("checkUpdatesOnLaunch");
+const autoDownloadUpdates = element<HTMLInputElement>("autoDownloadUpdates");
+const updateStatus = element<HTMLSpanElement>("updateStatus");
+const checkUpdates = element<HTMLButtonElement>("checkUpdates");
+const downloadUpdate = element<HTMLButtonElement>("downloadUpdate");
+const installUpdate = element<HTMLButtonElement>("installUpdate");
 const toast = element<HTMLDivElement>("toast");
 
-let desktopState: DesktopState = { workspaceRoot: "", conversations: [] };
+let desktopState: DesktopState = { workspaceRoot: "", updates: { checkOnLaunch: true, autoDownload: false }, conversations: [] };
 let endpoints: readonly DesktopEndpoint[] = [];
 let models: readonly string[] = [];
 let files: readonly DesktopFile[] = [];
+let fileSearchQuery = "";
 let activeFile: string | undefined;
 let showingDiff = false;
 type EditorTabMode = "file" | "diff";
@@ -361,6 +370,35 @@ function renderFiles(): void {
     empty.className = "empty-chat";
     empty.textContent = "No files loaded.";
     fileTree.append(empty);
+    return;
+  }
+  const query = fileSearchQuery.trim();
+  clearFileSearch.hidden = !query;
+  if (query) {
+    const matches = files
+      .flatMap((file) => {
+        const score = fuzzyScore(file.path, query);
+        return score === undefined ? [] : [{ file, score }];
+      })
+      .sort((left, right) => left.score - right.score || left.file.path.localeCompare(right.file.path));
+    if (!matches.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-chat";
+      empty.textContent = `No files match “${query}”.`;
+      fileTree.append(empty);
+      return;
+    }
+    for (const { file } of matches) {
+      const row = document.createElement("div");
+      row.className = "tree-row file filtered";
+      const button = document.createElement("button");
+      button.textContent = file.path;
+      button.title = file.path;
+      if (file.path === activeFile) button.classList.add("active");
+      button.onclick = () => void openFile(file.path, false);
+      row.append(button);
+      fileTree.append(row);
+    }
     return;
   }
   interface TreeNode { readonly directories: Map<string, TreeNode>; readonly files: DesktopFile[]; }
@@ -929,6 +967,20 @@ function renderMcpStatus(): void {
   }));
 }
 
+function renderUpdate(status: Extract<DesktopEvent, { readonly type: "update" }>): void {
+  const version = status.version ? ` ${status.version}` : "";
+  updateStatus.textContent = status.status === "checking" ? "Checking for updates..."
+    : status.status === "available" ? `Version${version} is available.`
+      : status.status === "not-available" ? "Truss is up to date."
+        : status.status === "downloading" ? `Downloading update${status.percent === undefined ? "..." : ` (${Math.round(status.percent)}%)`}`
+          : status.status === "downloaded" ? `Version${version} is ready to install.`
+            : status.message ?? "Unable to check for updates.";
+  downloadUpdate.hidden = status.status !== "available";
+  installUpdate.hidden = status.status !== "downloaded";
+  checkUpdates.disabled = status.status === "checking" || status.status === "downloading";
+  downloadUpdate.disabled = status.status === "downloading";
+}
+
 function populateSettings(): void {
   const current = configuration();
   providerSelect.value = current.provider;
@@ -938,6 +990,8 @@ function populateSettings(): void {
   permissionSelect.value = current.permission;
   internetAccessInput.checked = current.internetAccess;
   mcpServersInput.value = Object.keys(current.mcpServers).length ? JSON.stringify(current.mcpServers, null, 2) : "";
+  checkUpdatesOnLaunch.checked = desktopState.updates.checkOnLaunch;
+  autoDownloadUpdates.checked = desktopState.updates.autoDownload;
   renderMcpStatus();
 }
 
@@ -1063,6 +1117,7 @@ function appendTerminal(text: string): void {
 }
 
 function handleEvent(message: DesktopEvent): void {
+  if (message.type === "update") { renderUpdate(message); return; }
   if (message.type === "chat-start") {
     runningConversationId = message.conversationId;
     updateConversation(message.conversationId, (current) => ({ ...current, lastRun: { status: "running", modifiedFiles: [] } }));
@@ -1230,6 +1285,16 @@ element<HTMLButtonElement>("chooseWorkspace").onclick = async () => {
 };
 element<HTMLButtonElement>("refreshModels").onclick = () => void discover({ provider: providerSelect.value === "openai-compatible" ? "openai-compatible" : "ollama", baseUrl: baseUrlInput.value || configuration().baseUrl });
 element<HTMLButtonElement>("refreshFiles").onclick = () => void loadFiles();
+fileSearch.oninput = () => { fileSearchQuery = fileSearch.value; renderFiles(); };
+fileSearch.onkeydown = (event) => {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    fileSearch.value = "";
+    fileSearchQuery = "";
+    renderFiles();
+  }
+};
+clearFileSearch.onclick = () => { fileSearch.value = ""; fileSearchQuery = ""; renderFiles(); fileSearch.focus(); };
 element<HTMLButtonElement>("refreshGit").onclick = () => void refreshGit();
 element<HTMLButtonElement>("toggleGit").onclick = () => setGitCollapsed(!gitCollapsed);
 element<HTMLButtonElement>("stageAll").onclick = () => {
@@ -1281,11 +1346,17 @@ element<HTMLButtonElement>("applySettings").onclick = (event) => {
   event.preventDefault();
   try {
     const next = settingsConfiguration();
-    void applyConfiguration(next).then(() => settingsDialog.close()).catch((error) => notify(error instanceof Error ? error.message : String(error)));
+    void applyConfiguration(next)
+      .then(() => window.trussDesktop.configureUpdates({ checkOnLaunch: checkUpdatesOnLaunch.checked, autoDownload: autoDownloadUpdates.checked }))
+      .then((returned) => { desktopState = returned; settingsDialog.close(); })
+      .catch((error) => notify(error instanceof Error ? error.message : String(error)));
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error));
   }
 };
+checkUpdates.onclick = () => void window.trussDesktop.checkForUpdates().catch((error) => renderUpdate({ type: "update", status: "error", message: error instanceof Error ? error.message : String(error) }));
+downloadUpdate.onclick = () => void window.trussDesktop.downloadUpdate().catch((error) => renderUpdate({ type: "update", status: "error", message: error instanceof Error ? error.message : String(error) }));
+installUpdate.onclick = () => { void window.trussDesktop.installUpdate().catch((error) => renderUpdate({ type: "update", status: "error", message: error instanceof Error ? error.message : String(error) })); };
 endpointSelect.onchange = () => { if (!endpointSelect.value) return; const selected = JSON.parse(endpointSelect.value) as DesktopEndpoint; providerSelect.value = selected.kind; baseUrlInput.value = selected.baseUrl; void discover({ provider: selected.kind, baseUrl: selected.baseUrl }); };
 quickModel.onchange = () => { const next = quickModel.value; if (!next || next === configuration().model) return; void applyConfiguration({ ...configuration(), model: next }).catch((error) => notify(error instanceof Error ? error.message : String(error))); };
 document.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((button) => button.onclick = () => void applyConfiguration({ ...configuration(), mode: button.dataset.mode as DesktopConfiguration["mode"] }).catch((error) => notify(error instanceof Error ? error.message : String(error))));
