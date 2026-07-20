@@ -19,7 +19,7 @@ export function LandingMotion({ children }: { readonly children: ReactNode }) {
       gsap.registerPlugin(scrollTriggerModule.ScrollTrigger);
 
       let removePointerInteraction: (() => void) | undefined;
-      let removeSessionScrollListener: (() => void) | undefined;
+      let clearSessionDelay: (() => void) | undefined;
       const context = gsap.context(() => {
         const hero = root.current?.querySelector<HTMLElement>(".site-hero");
         const terminal = root.current?.querySelector<HTMLElement>(".site-terminal");
@@ -33,7 +33,7 @@ export function LandingMotion({ children }: { readonly children: ReactNode }) {
         const outputLines = terminalLines ? Array.from(terminalLines).slice(1) : [];
 
         if (command) command.textContent = "";
-        if (outputLines.length > 0) gsap.set(outputLines, { autoAlpha: 0, display: "none", x: -10 });
+        if (outputLines.length > 0) gsap.set(outputLines, { autoAlpha: 0, x: -10 });
 
         const intro = gsap.timeline({ defaults: { ease: "power3.out" } });
         intro
@@ -74,26 +74,19 @@ export function LandingMotion({ children }: { readonly children: ReactNode }) {
             session.to(enterKey, { autoAlpha: 1, duration: .1, scale: 1.08 })
               .to(enterKey, { autoAlpha: .35, duration: .2, scale: 1 });
           }
-          if (outputLines[0]) session.set(outputLines[0], { display: "block" }).to(outputLines[0], { autoAlpha: 1, duration: .4, x: 0 }, "+=.16");
-          if (outputLines[1]) session.set(outputLines[1], { display: "block" }).to(outputLines[1], { autoAlpha: 1, duration: .45, x: 0 }, "+=.26");
-          if (outputLines[2]) session.set(outputLines[2], { display: "block" }).to(outputLines[2], { autoAlpha: 1, duration: .4, x: 0 }, "+=.2");
+          if (outputLines[0]) session.to(outputLines[0], { autoAlpha: 1, duration: .4, x: 0 }, "+=.16");
+          if (outputLines[1]) session.to(outputLines[1], { autoAlpha: 1, duration: .45, x: 0 }, "+=.26");
+          if (outputLines[2]) session.to(outputLines[2], { autoAlpha: 1, duration: .4, x: 0 }, "+=.2");
           if (outputLines[3]) {
-            session.set(outputLines[3], { display: "block" }).to(outputLines[3], { autoAlpha: 1, duration: .4, x: 0 }, "+=.24")
+            session.to(outputLines[3], { autoAlpha: 1, duration: .4, x: 0 }, "+=.24")
               .call(() => {
                 if (successLine) gsap.to(successLine, { color: "#d8ffea", duration: 1.35, repeat: -1, yoyo: true });
               });
           }
         };
 
-        const startOnScroll = (): void => {
-          startSession();
-          window.removeEventListener("scroll", startOnScroll);
-        };
-        if (window.scrollY > 12) startSession();
-        else {
-          window.addEventListener("scroll", startOnScroll, { passive: true });
-          removeSessionScrollListener = () => window.removeEventListener("scroll", startOnScroll);
-        }
+        const sessionDelay = window.setTimeout(startSession, 2_000);
+        clearSessionDelay = () => window.clearTimeout(sessionDelay);
 
         root.current?.querySelectorAll<HTMLElement>("[data-reveal]").forEach((section) => {
           gsap.from(section, {
@@ -137,7 +130,7 @@ export function LandingMotion({ children }: { readonly children: ReactNode }) {
 
       revert = () => {
         removePointerInteraction?.();
-        removeSessionScrollListener?.();
+        clearSessionDelay?.();
         context.revert();
       };
     });

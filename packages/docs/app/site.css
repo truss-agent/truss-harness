@@ -271,6 +271,7 @@ body {
 
 .site-terminal-body p {
     margin-bottom: 8px;
+    min-height: 1.65em;
 }
 
 .site-terminal-body b {
@@ -1106,6 +1107,23 @@ body {
 @keyframes download-pulse {
     50% {
         opacity: .35;
+    }
+}
+
+@media (max-width: 1000px) {
+    .site-client-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 1080px) {
+    .site-foundations-inner,
+    .site-foundations .site-principles {
+        grid-template-columns: 1fr;
+    }
+
+    .site-foundations-inner {
+        gap: 42px;
     }
 }
 

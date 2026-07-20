@@ -178,6 +178,33 @@ export default function HomePage() {
                   Git-aware status, and deterministic commands keep work moving.
                 </p>
               </article>
+              <article>
+                <span>04</span>
+                <h3>Context with intent</h3>
+                <p>
+                  Open files, recent edits, Git changes, plans, and workspace
+                  memory give the agent useful context without sending the
+                  whole repository.
+                </p>
+              </article>
+              <article>
+                <span>05</span>
+                <h3>Approvals stay visible</h3>
+                <p>
+                  Choose the permission policy that fits the task, then review
+                  requested reads, writes, terminal commands, and network work
+                  before it runs.
+                </p>
+              </article>
+              <article>
+                <span>06</span>
+                <h3>Built to be replaced</h3>
+                <p>
+                  Providers, tools, context sources, memory, and clients are
+                  separate interfaces—so new capabilities do not rewrite the
+                  agent runtime.
+                </p>
+              </article>
             </div>
           </div>
         </section>
