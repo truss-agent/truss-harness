@@ -5,7 +5,8 @@ export type ClientContent = {
   readonly eyebrow: string;
   readonly title: string;
   readonly description: string;
-  readonly screenshotHint: string;
+  readonly screenshotSrc: string;
+  readonly screenshotAlt: string;
   readonly installLabel: string;
   readonly installDescription: string;
   readonly commands?: readonly string[];
@@ -21,7 +22,8 @@ export const clientContent: Record<ClientId, ClientContent> = {
     eyebrow: "Truss CLI",
     title: "The coding agent that fits your shell.",
     description: "Run local-model agent tasks from a terminal, automate them in scripts, or host the JSON-lines runtime service that powers other clients.",
-    screenshotHint: "Terminal session showing a streamed task, tool activity, and a local model profile.",
+    screenshotSrc: "/screenshots/cli.png",
+    screenshotAlt: "Truss CLI streaming a local-model chat response in a terminal.",
     installLabel: "Install with npm",
     installDescription: "Requires Node.js 20 or newer. The same workspace profiles work across the CLI and TUI.",
     commands: ["npm install -g @truss-harness/cli", "truss-cli models", "truss-cli config init", "truss-cli chat \"Review the current diff\""],
@@ -39,7 +41,8 @@ export const clientContent: Record<ClientId, ClientContent> = {
     eyebrow: "Truss Terminal UI",
     title: "A full coding workspace without leaving the terminal.",
     description: "Use a keyboard-first workspace for files, editor and Git diff inspection, agent chat, tool approvals, and shell output.",
-    screenshotHint: "Four-pane terminal workspace with file tree, editor, agent chat, and terminal output.",
+    screenshotSrc: "/screenshots/tui.png",
+    screenshotAlt: "Truss Terminal UI with files, editor, agent response, and terminal panes.",
     installLabel: "Install with npm",
     installDescription: "Requires Node.js 20 or newer and shares the CLI's local-model profiles and workspace state.",
     commands: ["npm install -g @truss-harness/tui", "truss-tui"],
@@ -57,7 +60,8 @@ export const clientContent: Record<ClientId, ClientContent> = {
     eyebrow: "Truss for VS Code",
     title: "Local coding agents, right where you edit.",
     description: "Bring streaming chat, context attachments, inline completions, approvals, and Git-aware editor actions into a dedicated VS Code side panel.",
-    screenshotHint: "VS Code window with the Truss side panel, a model selector, and a tool approval prompt.",
+    screenshotSrc: "/screenshots/vscode.png",
+    screenshotAlt: "Truss running in VS Code beside the editor and integrated terminal.",
     installLabel: "Install from the Marketplace",
     installDescription: "Install the Truss extension, open the Activity Bar icon, then select a local server and model from Settings.",
     primaryAction: { label: "Get the VS Code extension", href: "https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode", external: true },
@@ -74,7 +78,8 @@ export const clientContent: Record<ClientId, ClientContent> = {
     eyebrow: "Truss Desktop",
     title: "A dedicated workspace for local coding agents.",
     description: "Open a standalone desktop app for files, Git diffs, terminal work, persistent agent conversations, model controls, and safe tool approvals.",
-    screenshotHint: "Three-pane desktop workspace with file tree, diff editor, agent chat, and Git status.",
+    screenshotSrc: "/screenshots/desktop.png",
+    screenshotAlt: "Truss Desktop with Git, files, editor, terminal, and agent chat panels.",
     installLabel: "Download for your platform",
     installDescription: "Windows installers and Linux AppImage, deb, rpm, and pacman packages are resolved from the latest stable release.",
     primaryAction: { label: "Download desktop", href: "/download" },

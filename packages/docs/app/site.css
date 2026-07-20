@@ -663,58 +663,33 @@ body {
     justify-content: flex-start;
 }
 
-.client-screenshot-slot {
-    background: linear-gradient(145deg, #13211d, #1c332a);
+.client-screenshot {
+    background: #10201a;
     border: 1px solid #345645;
     border-radius: 12px;
     box-shadow: 0 20px 42px rgba(20, 45, 36, .16);
-    color: #eaf6ee;
-    display: flex;
-    flex-direction: column;
-    min-height: 356px;
+    margin: 0;
     overflow: hidden;
-    padding: 34px;
     position: relative;
 }
 
-.client-screenshot-slot::after {
-    background: repeating-linear-gradient(90deg, transparent 0, transparent 40px, rgba(142, 211, 174, .08) 41px), repeating-linear-gradient(0deg, transparent 0, transparent 40px, rgba(142, 211, 174, .08) 41px);
-    content: "";
-    inset: 0;
-    pointer-events: none;
-    position: absolute;
+.client-screenshot img {
+    display: block;
+    height: auto;
+    width: 100%;
 }
 
-.client-screenshot-slot>* {
-    position: relative;
-    z-index: 1;
-}
-
-.client-screenshot-slot>span {
-    color: #9be4bb;
+.client-screenshot figcaption {
+    background: linear-gradient(90deg, rgba(8, 23, 17, .94), rgba(8, 23, 17, .66));
+    bottom: 0;
+    color: #d5eadc;
     font-size: 12px;
     font-weight: 800;
     letter-spacing: .06em;
+    padding: 9px 13px;
+    position: absolute;
+    right: 0;
     text-transform: uppercase;
-}
-
-.client-screenshot-slot strong {
-    font-size: 27px;
-    margin-top: auto;
-}
-
-.client-screenshot-slot p {
-    color: #c0d6c8;
-    line-height: 1.55;
-    margin: 12px 0 26px;
-    max-width: 390px;
-}
-
-.client-screenshot-slot small {
-    border-top: 1px solid #416452;
-    color: #a9c0b1;
-    font-size: 12px;
-    padding-top: 14px;
 }
 
 .client-highlights {
@@ -1469,11 +1444,6 @@ body {
 
     .client-hero-copy h1 {
         font-size: 43px;
-    }
-
-    .client-screenshot-slot {
-        min-height: 290px;
-        padding: 26px;
     }
 
     .client-highlights {
