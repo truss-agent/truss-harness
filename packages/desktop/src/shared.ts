@@ -82,6 +82,7 @@ export interface DesktopBridge {
   chooseWorkspace(): Promise<DesktopState | undefined>;
   saveConversations(conversations: readonly DesktopConversation[], activeConversationId?: string): Promise<void>;
   discoverModels(configuration?: Partial<DesktopConfiguration>): Promise<{ readonly endpoints: readonly DesktopEndpoint[]; readonly models: readonly string[] }>;
+  refreshLocalModel(): Promise<DesktopState>;
   configure(configuration: DesktopConfiguration): Promise<DesktopState>;
   configureUpdates(updates: { readonly checkOnLaunch: boolean; readonly autoDownload: boolean }): Promise<DesktopState>;
   checkForUpdates(): Promise<void>;
@@ -92,11 +93,13 @@ export interface DesktopBridge {
   resolveApproval(callId: string, approved: boolean): Promise<void>;
   listFiles(): Promise<readonly DesktopFile[]>;
   readFile(path: string): Promise<string>;
+  writeFile(path: string, content: string): Promise<void>;
   diffFile(path: string): Promise<string>;
   getPlan(): Promise<WorkspacePlan | undefined>;
   gitStatus(): Promise<DesktopGitStatus>;
   gitStage(paths: readonly string[]): Promise<string>;
   gitUnstage(paths: readonly string[]): Promise<string>;
+  gitDiscard(paths: readonly string[]): Promise<string>;
   gitGenerateCommitMessage(): Promise<string>;
   gitCommit(message: string): Promise<string>;
   gitPull(): Promise<string>;

@@ -396,18 +396,45 @@ export async function detectLocalContextWindow(endpoint: LocalModelEndpoint, mod
   try { base = new URL(endpoint.baseUrl); } catch { return undefined; }
   const response = await (options.fetch ?? globalThis.fetch)(new URL("/api/v1/models", base.origin), { signal: options.signal });
   if (!response.ok) return undefined;
-  const payload = await response.json() as {
-    readonly data?: readonly {
-      readonly id?: string;
-      readonly key?: string;
-      readonly model?: string;
-      readonly loaded_instances?: readonly { readonly id?: string; readonly config?: { readonly context_length?: number } }[];
-    }[];
+  type ContextConfig = {
+    readonly context_length?: number;
+    readonly contextLength?: number;
+    readonly context_window?: number;
+    readonly n_ctx?: number;
   };
-  const item = payload.data?.find((candidate) => [candidate.id, candidate.key, candidate.model, ...(candidate.loaded_instances?.map((instance) => instance.id) ?? [])].includes(model));
-  const value = item?.loaded_instances?.find((instance) => instance.id === model)?.config?.context_length
-    ?? item?.loaded_instances?.[0]?.config?.context_length;
-  return typeof value === "number" && Number.isFinite(value) && value >= 512 ? Math.floor(value) : undefined;
+  type ModelInstance = {
+    readonly id?: string;
+    readonly config?: ContextConfig;
+  };
+  type LocalModel = ContextConfig & {
+    readonly id?: string;
+    readonly key?: string;
+    readonly model?: string;
+    readonly name?: string;
+    readonly display_name?: string;
+    readonly config?: ContextConfig;
+    readonly loaded_instances?: readonly ModelInstance[];
+  };
+  const payload = await response.json() as { readonly data?: readonly LocalModel[]; readonly models?: readonly LocalModel[] };
+  const models = payload.models ?? payload.data ?? [];
+  const item = models.find((candidate) => [
+    candidate.id,
+    candidate.key,
+    candidate.model,
+    candidate.name,
+    candidate.display_name,
+    ...(candidate.loaded_instances?.map((instance) => instance.id) ?? [])
+  ].includes(model));
+  if (!item) return undefined;
+
+  const values = [
+    item.loaded_instances?.find((instance) => instance.id === model)?.config,
+    item.loaded_instances?.[0]?.config,
+    item.config,
+    item
+  ].flatMap((source) => source ? [source.context_length, source.contextLength, source.context_window, source.n_ctx] : []);
+  const value = values.find((candidate) => typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 512);
+  return typeof value === "number" ? Math.floor(value) : undefined;
 }
 
 export function createLocalModelProvider(configuration: LocalModelConfiguration): ModelProvider {

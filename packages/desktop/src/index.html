@@ -9,7 +9,7 @@
 <body>
   <header class="topbar">
     <div class="brand-lockup"><img class="brand-mark" src="./assets/brand-logo.png" alt="Truss"><strong>Truss</strong><span class="status-dot" id="statusDot"></span><span id="runtimeStatus">No model selected</span></div>
-    <div class="top-actions"><button id="chooseWorkspace">Open workspace</button><button id="refreshModels">Refresh models</button><button id="settingsButton">Settings</button></div>
+    <div class="top-actions"><button id="chooseWorkspace">Open workspace</button><button id="refreshModels" title="Redetect the active local provider, model, and context window">Refresh local model</button><button id="settingsButton">Settings</button></div>
   </header>
   <main class="workbench">
     <aside class="sidebar">
@@ -17,7 +17,7 @@
         <div class="section-heading"><span>Git</span><div><button id="refreshGit" title="Refresh Git status">Refresh</button><button id="toggleGit" title="Collapse Git panel" aria-expanded="true">Hide</button></div></div>
         <div id="gitBody" class="git-body">
           <div class="git-summary"><span id="gitBranch">Checking repository...</span><span id="gitCounts"></span></div>
-          <div class="git-actions"><button id="stageAll" title="Stage all changed files">Stage all</button><button id="pullGit" title="Pull from the configured remote">Pull</button><button id="pushGit" title="Push to the configured remote">Push</button></div>
+          <div class="git-actions"><button id="stageAll" title="Stage all changed files">Stage all</button><button id="discardAll" title="Discard all uncommitted file changes">Discard all</button><button id="pullGit" title="Pull from the configured remote">Pull</button><button id="pushGit" title="Push to the configured remote">Push</button></div>
           <div id="gitFiles" class="git-files"></div>
           <form id="commitForm" class="commit-form"><input id="commitMessage" autocomplete="off" placeholder="Commit message"><button id="generateCommitMessage" type="button" title="Generate a commit message from your changes">Generate</button><button class="primary" type="submit">Commit</button></form>
         </div>
@@ -29,9 +29,9 @@
     </aside>
     <div id="sidebarSplitter" class="pane-splitter vertical" role="separator" aria-label="Resize sidebar"></div>
     <section class="editor-area">
-      <div class="editor-toolbar"><div id="editorTabs" class="editor-tabs" role="tablist" aria-label="Open files"><span id="editorTitle" class="editor-empty-title">Workspace</span></div><div class="editor-toolbar-actions"><div class="center-tabs" aria-label="Center view"><button class="active" data-center-view="editor">Editor</button><button data-center-view="preview">Preview</button></div><button id="fileButton">File</button><button id="diffButton">Diff</button></div></div>
+      <div class="editor-toolbar"><div id="editorTabs" class="editor-tabs" role="tablist" aria-label="Open files"><span id="editorTitle" class="editor-empty-title">Workspace</span></div><div class="editor-toolbar-actions"><div class="center-tabs" aria-label="Center view"><button class="active" data-center-view="editor">Editor</button><button data-center-view="preview">Preview</button></div><button id="saveFileButton" title="Save current file (Ctrl+S)" disabled>Save</button><button id="fileButton">File</button><button id="diffButton">Diff</button></div></div>
       <div id="centerSurface" class="center-surface">
-        <pre id="editor" class="editor-content">Open a workspace to browse its files.</pre>
+        <div id="editor" class="editor-content">Open a workspace to browse its files.</div>
         <section id="browserPanel" class="browser-panel" hidden>
           <form id="browserForm" class="browser-toolbar">
             <div class="browser-nav"><button id="browserBack" type="button" title="Back" aria-label="Back" disabled>&#8592;</button><button id="browserForward" type="button" title="Forward" aria-label="Forward" disabled>&#8594;</button><button id="browserReload" type="button" title="Reload" aria-label="Reload">&#8635;</button></div>

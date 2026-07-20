@@ -10,12 +10,12 @@ The project is in active development. The recommended way to use it today is fro
 
 Truss has four independently shipped products:
 
-| Product | Distribution | Release trigger |
-| --- | --- | --- |
-| CLI and TUI | Public npm packages | Manual `npm publish` |
-| Desktop app | GitHub Release installers | Pushed `v*` Git tag |
-| VS Code extension | VS Code Marketplace or `.vsix` | Manual `vsce publish` |
-| Website and docs | Next.js hosting provider | Manual or provider deployment |
+| Product           | Distribution                   | Release trigger               |
+| ----------------- | ------------------------------ | ----------------------------- |
+| CLI and TUI       | Public npm packages            | Manual `npm publish`          |
+| Desktop app       | GitHub Release installers      | Pushed `v*` Git tag           |
+| VS Code extension | VS Code Marketplace or `.vsix` | Manual `vsce publish`         |
+| Website and docs  | Next.js hosting provider       | Manual or provider deployment |
 
 The reusable npm dependencies must also be published because the CLI and TUI
 reference them as normal package dependencies.
@@ -141,15 +141,15 @@ desktop release workflow.
 
 For Vercel, import `truss-agent/truss-harness` and use:
 
-| Vercel setting | Value |
-| --- | --- |
-| Framework Preset | Next.js |
-| Root Directory | `packages/docs` |
-| Include source files outside Root Directory | Enabled |
-| Production Branch | `master` |
-| Node.js Version | 20.x |
-| Output Directory | Leave at the Next.js default |
-| Environment Variable | `NEXT_PUBLIC_SITE_URL=https://truss-agent.hookerhillstudios.com` |
+| Vercel setting                              | Value                                                            |
+| ------------------------------------------- | ---------------------------------------------------------------- |
+| Framework Preset                            | Next.js                                                          |
+| Root Directory                              | `packages/docs`                                                  |
+| Include source files outside Root Directory | Enabled                                                          |
+| Production Branch                           | `master`                                                         |
+| Node.js Version                             | 20.x                                                             |
+| Output Directory                            | Leave at the Next.js default                                     |
+| Environment Variable                        | `NEXT_PUBLIC_SITE_URL=https://truss-agent.hookerhillstudios.com` |
 
 `packages/docs/vercel.json` supplies the monorepo-aware install and build
 commands. After the GitHub repository is connected, a push to `master`
@@ -479,10 +479,3 @@ The conversation rail stores bounded user and assistant transcripts in VS Code w
 ## Implementation Plans
 
 Plan mode creates a short, durable implementation checklist after read-only workspace inspection. The active plan is saved locally at `.truss-harness/plans/active.json`, which is covered by the repository's `.truss-harness/` Git-ignore rule.
-'hello' 
-'hello' 
-'hello' 
-'hello' 
-'hello' 
-'hello' 
-'hello' 

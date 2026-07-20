@@ -49,7 +49,8 @@ const gitCounts = element<HTMLSpanElement>("gitCounts");
 const gitFiles = element<HTMLDivElement>("gitFiles");
 const commitMessage = element<HTMLInputElement>("commitMessage");
 const generateCommitMessage = element<HTMLButtonElement>("generateCommitMessage");
-const editor = element<HTMLPreElement>("editor");
+const editor = element<HTMLElement>("editor");
+const saveFileButton = element<HTMLButtonElement>("saveFileButton");
 const editorTabsElement = element<HTMLDivElement>("editorTabs");
 const editorTitle = element<HTMLSpanElement>("editorTitle");
 const browserPanel = element<HTMLElement>("browserPanel");
@@ -111,6 +112,7 @@ interface EditorTab {
   mode: EditorTabMode;
   state: EditorTabState;
   content: string;
+  dirty: boolean;
   scrollTop: number;
   revision: number;
 }
@@ -311,6 +313,12 @@ function renderGit(): void {
   }
   gitBranch.textContent = gitStatus.branch || "No branch yet";
   gitCounts.textContent = [gitStatus.ahead ? `up ${gitStatus.ahead}` : "", gitStatus.behind ? `down ${gitStatus.behind}` : "", `${gitStatus.files.length} changed`].filter(Boolean).join(" | ");
+  const staged = gitStatus.files.filter((file) => file.indexStatus !== " " && file.indexStatus !== "?");
+  const stageAll = element<HTMLButtonElement>("stageAll");
+  stageAll.textContent = staged.length ? "Unstage all" : "Stage all";
+  stageAll.title = staged.length ? "Unstage every staged file" : "Stage all changed files";
+  stageAll.disabled = gitStatus.files.length === 0;
+  element<HTMLButtonElement>("discardAll").disabled = gitStatus.files.length === 0;
   gitFiles.replaceChildren(...gitStatus.files.map((file) => {
     const row = document.createElement("div");
     row.className = "git-file-row";
@@ -341,6 +349,15 @@ function renderGit(): void {
       stage.onclick = () => void runGitAction("stage", () => window.trussDesktop.gitStage([file.path]));
       row.append(stage);
     }
+    const discard = document.createElement("button");
+    discard.className = "git-row-action danger";
+    discard.textContent = "x";
+    discard.title = `Discard all uncommitted changes in ${file.path}`;
+    discard.setAttribute("aria-label", `Discard ${file.path}`);
+    discard.onclick = () => {
+      if (window.confirm(`Discard all uncommitted changes in ${file.path}? This cannot be undone.`)) void runGitAction("discard", () => window.trussDesktop.gitDiscard([file.path]));
+    };
+    row.append(discard);
     return row;
   }));
 }
@@ -394,7 +411,7 @@ function renderFiles(): void {
       const button = document.createElement("button");
       button.textContent = file.path;
       button.title = file.path;
-      if (file.path === activeFile) button.classList.add("active");
+      if (editorPath(file.path) === activeFile) button.classList.add("active");
       button.onclick = () => void openFile(file.path, false);
       row.append(button);
       fileTree.append(row);
@@ -456,7 +473,7 @@ function renderFiles(): void {
       const button = document.createElement("button");
       button.textContent = file.path.split(/[\\/]/).at(-1) ?? file.path;
       button.title = file.path;
-      if (file.path === activeFile) button.classList.add("active");
+      if (editorPath(file.path) === activeFile) button.classList.add("active");
       button.onclick = () => void openFile(file.path, false);
       row.append(button);
       fileTree.append(row);
@@ -735,19 +752,25 @@ function workspaceMediaUrl(path: string): string {
   return `truss-media://workspace/${encodeURIComponent(path.replaceAll("\\", "/"))}`;
 }
 
+function editorPath(path: string): string {
+  return path.replaceAll("\\", "/");
+}
+
 function activeEditorTab(): EditorTab | undefined {
   return activeFile ? openEditorTabs.find((tab) => tab.path === activeFile) : undefined;
 }
 
 function preserveEditorScroll(): void {
   const tab = activeEditorTab();
-  if (tab) tab.scrollTop = editor.scrollTop;
+  const input = editor.querySelector<HTMLTextAreaElement>("textarea");
+  if (tab) tab.scrollTop = input?.scrollTop ?? editor.scrollTop;
 }
 
 function renderEditorContent(tab: EditorTab | undefined): void {
   editor.className = "editor-content";
   editor.replaceChildren();
   if (!tab) {
+    saveFileButton.disabled = true;
     editor.append(document.createTextNode("Open a workspace file to inspect it."));
     editor.scrollTop = 0;
     return;
@@ -806,9 +829,33 @@ function renderEditorContent(tab: EditorTab | undefined): void {
       editor.append(row);
     }
   } else {
-    appendHighlightedCode(editor, tab.content, languageForPath(tab.path));
+    const input = document.createElement("textarea");
+    input.className = "editor-input";
+    input.value = tab.content;
+    input.spellcheck = false;
+    input.setAttribute("aria-label", `Edit ${tab.path}`);
+    input.oninput = () => {
+      tab.content = input.value;
+      tab.dirty = true;
+      renderEditorTabs();
+    };
+    input.onkeydown = (event) => {
+      if (event.key !== "Tab") return;
+      event.preventDefault();
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      input.setRangeText("  ", start, end, "end");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    };
+    input.onscroll = () => { tab.scrollTop = input.scrollTop; };
+    editor.classList.add("editable");
+    editor.append(input);
   }
-  window.requestAnimationFrame(() => { editor.scrollTop = tab.scrollTop; });
+  window.requestAnimationFrame(() => {
+    const input = editor.querySelector<HTMLTextAreaElement>("textarea");
+    if (input) input.scrollTop = tab.scrollTop;
+    else editor.scrollTop = tab.scrollTop;
+  });
 }
 
 function selectEditorTab(tab: EditorTab): void {
@@ -824,6 +871,7 @@ function selectEditorTab(tab: EditorTab): void {
 function closeEditorTab(path: string): void {
   const index = openEditorTabs.findIndex((tab) => tab.path === path);
   if (index < 0) return;
+  if (openEditorTabs[index].dirty && !window.confirm(`Close ${path} without saving your edits?`)) return;
   const wasActive = activeFile === path;
   if (wasActive) preserveEditorScroll();
   openEditorTabs.splice(index, 1);
@@ -853,7 +901,7 @@ function renderEditorTabs(): void {
     select.type = "button";
     select.setAttribute("role", "tab");
     select.setAttribute("aria-selected", String(tab.path === activeFile));
-    select.textContent = tab.path.split(/[\\/]/).at(-1) ?? tab.path;
+    select.textContent = `${tab.dirty ? "* " : ""}${tab.path.split(/[\\/]/).at(-1) ?? tab.path}`;
     select.title = `${tab.mode === "diff" ? "Diff: " : ""}${tab.path}`;
     select.onclick = () => selectEditorTab(tab);
     const close = document.createElement("button");
@@ -867,6 +915,8 @@ function renderEditorTabs(): void {
     return container;
   });
   editorTabsElement.replaceChildren(editorTitle, ...tabs);
+  const active = activeEditorTab();
+  saveFileButton.disabled = !active || active.mode !== "file" || Boolean(mediaKindForPath(active.path)) || !active.dirty;
 }
 
 async function loadEditorTab(tab: EditorTab): Promise<void> {
@@ -879,6 +929,7 @@ async function loadEditorTab(tab: EditorTab): Promise<void> {
       : tab.mode === "diff" ? await window.trussDesktop.diffFile(tab.path) : await window.trussDesktop.readFile(tab.path);
     if (revision !== tab.revision) return;
     tab.content = content;
+    tab.dirty = false;
     tab.state = "ready";
   } catch (error) {
     if (revision !== tab.revision) return;
@@ -888,14 +939,19 @@ async function loadEditorTab(tab: EditorTab): Promise<void> {
   if (tab.path === activeFile) renderEditorContent(tab);
 }
 
-async function openFile(path: string, diff: boolean): Promise<void> {
-  let tab = openEditorTabs.find((candidate) => candidate.path === path);
+async function openFile(path: string, diff: boolean, switchMode = false): Promise<void> {
+  const normalizedPath = editorPath(path);
+  let tab = openEditorTabs.find((candidate) => candidate.path === normalizedPath);
   if (!tab) {
-    tab = { path, mode: diff ? "diff" : "file", state: "loading", content: "", scrollTop: 0, revision: 0 };
+    tab = { path: normalizedPath, mode: diff ? "diff" : "file", state: "loading", content: "", dirty: false, scrollTop: 0, revision: 0 };
     openEditorTabs.push(tab);
-  } else if (tab.mode !== (diff ? "diff" : "file")) {
+  } else if (switchMode && tab.mode !== (diff ? "diff" : "file")) {
+    if (tab.dirty) { notify("Save or discard your edits before switching to the diff view."); return; }
     tab.mode = diff ? "diff" : "file";
     tab.scrollTop = 0;
+  } else {
+    selectEditorTab(tab);
+    return;
   }
   selectEditorTab(tab);
   await loadEditorTab(tab);
@@ -907,6 +963,22 @@ async function loadFiles(): Promise<void> {
     renderFiles();
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error));
+  }
+}
+
+async function saveActiveFile(): Promise<void> {
+  const tab = activeEditorTab();
+  if (!tab || tab.mode !== "file" || mediaKindForPath(tab.path) || !tab.dirty) return;
+  saveFileButton.disabled = true;
+  try {
+    await window.trussDesktop.writeFile(tab.path, tab.content);
+    tab.dirty = false;
+    renderEditorTabs();
+    await Promise.all([loadFiles(), refreshGit()]);
+    notify(`Saved ${tab.path}`);
+  } catch (error) {
+    notify(error instanceof Error ? error.message : String(error));
+    renderEditorTabs();
   }
 }
 
@@ -1184,7 +1256,12 @@ function handleEvent(message: DesktopEvent): void {
     }
     const modified = new Set((event.modifiedFiles ?? []).map((path) => path.replaceAll("\\", "/")));
     for (const tab of openEditorTabs) {
-      if (modified.has(tab.path.replaceAll("\\", "/"))) void loadEditorTab(tab);
+      if (!modified.has(tab.path.replaceAll("\\", "/"))) continue;
+      if (tab.dirty) {
+        notify(`${tab.path} changed on disk while you have unsaved edits.`);
+        continue;
+      }
+      void loadEditorTab(tab);
     }
     if (centerView === "preview" && browserView.getURL() !== "about:blank") browserView.reload();
     return;
@@ -1283,7 +1360,17 @@ element<HTMLButtonElement>("chooseWorkspace").onclick = async () => {
   renderChat();
   renderRuntime();
 };
-element<HTMLButtonElement>("refreshModels").onclick = () => void discover({ provider: providerSelect.value === "openai-compatible" ? "openai-compatible" : "ollama", baseUrl: baseUrlInput.value || configuration().baseUrl });
+element<HTMLButtonElement>("refreshModels").onclick = () => {
+  void window.trussDesktop.refreshLocalModel()
+    .then(async (returned) => {
+      desktopState = returned;
+      populateSettings();
+      await discover(returned.configuration);
+      renderRuntime();
+      notify(`Detected ${returned.configuration?.provider ?? "local provider"} / ${returned.configuration?.model ?? "model"}`);
+    })
+    .catch((error) => notify(error instanceof Error ? error.message : String(error)));
+};
 element<HTMLButtonElement>("refreshFiles").onclick = () => void loadFiles();
 fileSearch.oninput = () => { fileSearchQuery = fileSearch.value; renderFiles(); };
 fileSearch.onkeydown = (event) => {
@@ -1298,8 +1385,19 @@ clearFileSearch.onclick = () => { fileSearch.value = ""; fileSearchQuery = ""; r
 element<HTMLButtonElement>("refreshGit").onclick = () => void refreshGit();
 element<HTMLButtonElement>("toggleGit").onclick = () => setGitCollapsed(!gitCollapsed);
 element<HTMLButtonElement>("stageAll").onclick = () => {
+  const staged = gitStatus.files.filter((file) => file.indexStatus !== " " && file.indexStatus !== "?");
+  if (staged.length) {
+    void runGitAction("unstage", () => window.trussDesktop.gitUnstage(staged.map((file) => file.path)));
+    return;
+  }
   if (!gitStatus.files.length) { notify("No changed files to stage."); return; }
   void runGitAction("stage", () => window.trussDesktop.gitStage(gitStatus.files.map((file) => file.path)));
+};
+element<HTMLButtonElement>("discardAll").onclick = () => {
+  if (!gitStatus.files.length) { notify("No uncommitted changes to discard."); return; }
+  if (window.confirm("Discard every uncommitted change in this workspace? This also removes untracked files and cannot be undone.")) {
+    void runGitAction("discard all", () => window.trussDesktop.gitDiscard(gitStatus.files.map((file) => file.path)));
+  }
 };
 element<HTMLButtonElement>("pullGit").onclick = () => void runGitAction("pull", () => window.trussDesktop.gitPull());
 element<HTMLButtonElement>("pushGit").onclick = () => void runGitAction("push", () => window.trussDesktop.gitPush());
@@ -1338,8 +1436,9 @@ element<HTMLFormElement>("commitForm").onsubmit = (event) => {
   });
 };
 element<HTMLButtonElement>("newChat").onclick = () => { cancelActiveRunForNavigation(); createConversation(); renderConversations(); renderChat(); renderRuntime(); saveConversations(); };
-element<HTMLButtonElement>("fileButton").onclick = () => { setCenterView("editor"); if (activeFile) void openFile(activeFile, false); };
-element<HTMLButtonElement>("diffButton").onclick = () => { setCenterView("editor"); if (activeFile) void openFile(activeFile, !showingDiff); };
+element<HTMLButtonElement>("fileButton").onclick = () => { setCenterView("editor"); if (activeFile) void openFile(activeFile, false, true); };
+element<HTMLButtonElement>("diffButton").onclick = () => { setCenterView("editor"); if (activeFile) void openFile(activeFile, !showingDiff, true); };
+saveFileButton.onclick = () => void saveActiveFile();
 element<HTMLButtonElement>("settingsButton").onclick = () => { populateSettings(); settingsDialog.showModal(); };
 element<HTMLButtonElement>("dialogRefresh").onclick = () => void discover({ provider: providerSelect.value === "openai-compatible" ? "openai-compatible" : "ollama", baseUrl: baseUrlInput.value });
 element<HTMLButtonElement>("applySettings").onclick = (event) => {
@@ -1398,6 +1497,11 @@ browserView.addEventListener("did-fail-load", (event) => {
   notify(detail.errorDescription ? `Preview failed: ${detail.errorDescription}` : "Preview failed to load.");
 });
 window.addEventListener("keydown", (event) => {
+  if (event.ctrlKey && event.key.toLowerCase() === "s") {
+    event.preventDefault();
+    void saveActiveFile();
+    return;
+  }
   if (centerView === "editor" && event.ctrlKey && event.key.toLowerCase() === "w" && activeFile) {
     event.preventDefault();
     closeEditorTab(activeFile);

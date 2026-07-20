@@ -126,6 +126,17 @@ describe("local context discovery", () => {
 
     expect(contextWindow).toBe(32768);
   });
+
+  it("reads the current LM Studio models response shape", async () => {
+    const endpoint = { id: "lm-studio", label: "LM Studio", kind: "openai-compatible" as const, baseUrl: "http://localhost:1234/v1" };
+    const contextWindow = await detectLocalContextWindow(endpoint, "loaded-model", {
+      fetch: async () => new Response(JSON.stringify({
+        models: [{ key: "stored-model", loaded_instances: [{ id: "loaded-model", config: { context_length: 32768 } }] }]
+      }))
+    });
+
+    expect(contextWindow).toBe(32768);
+  });
 });
 
 describe("OllamaProvider", () => {

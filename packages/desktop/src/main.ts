@@ -10,7 +10,7 @@ import { promisify } from "node:util";
 import { brand } from "@truss-harness/branding";
 import { createClientRuntime, type ClientConfiguration } from "@truss-harness/cli/runtime";
 import { parseMcpServerConfigurations } from "@truss-harness/mcp";
-import { detectLocalContextWindow, detectLocalEndpoints, generateLocalText, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
+import { detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, generateLocalText, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import { executeWorkspaceCommand, FileWorkspacePlanStore, type ContextBlock, type ToolApproval, type ToolCall } from "@truss-harness/runtime";
 import type { DesktopConfiguration, DesktopConversation, DesktopEndpoint, DesktopEvent, DesktopFile, DesktopGitStatus, DesktopMessage, DesktopState } from "./shared.js";
 
@@ -372,6 +372,15 @@ async function gitCommand(args: readonly string[]): Promise<string> {
   }
 }
 
+async function gitPathExistsAtHead(path: string): Promise<boolean> {
+  try {
+    await execFile("git", ["cat-file", "-e", `HEAD:${path}`], { cwd: persisted.workspaceRoot, maxBuffer: 1_000_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function gitPaths(paths: readonly string[]): string[] {
   if (!Array.isArray(paths) || !paths.length) throw new Error("Select at least one file.");
   return paths.map((path) => relative(persisted.workspaceRoot, ensurePathInsideWorkspace(path)));
@@ -596,6 +605,29 @@ ipcMain.handle("truss:discover-models", async (_event, partial?: Partial<Desktop
   }
   return { endpoints: endpoints as readonly DesktopEndpoint[], models };
 });
+ipcMain.handle("truss:refresh-local-model", async (): Promise<DesktopState> => {
+  const endpoints = await detectLocalEndpoints();
+  const current = persisted.configuration;
+  const matchingEndpoint = current && endpoints.find((endpoint) => endpoint.kind === current.provider && endpoint.baseUrl === current.baseUrl);
+  const selected = matchingEndpoint
+    ? { endpoint: matchingEndpoint, model: (await listLocalModels(matchingEndpoint))[0] }
+    : await detectActiveLocalModel({ endpoints });
+  if (!selected?.model) throw new Error("No loaded local model was detected. Start a local server and load a model, then refresh.");
+  let next = normalizeConfiguration({
+    ...(current ?? { mode: "chat" as const, permission: "ask" as const, contextWindow: 8_192, internetAccess: false, mcpServers: {} }),
+    provider: selected.endpoint.kind,
+    baseUrl: selected.endpoint.baseUrl,
+    model: selected.model.name
+  });
+  const contextWindow = await detectLocalContextWindow(selected.endpoint, selected.model.name).catch(() => undefined);
+  if (contextWindow) next = { ...next, contextWindow };
+  const previous = persisted.configuration;
+  persisted = { ...persisted, configuration: next };
+  await configureRuntime(next);
+  if (previous?.model !== next.model || previous?.baseUrl !== next.baseUrl || previous?.provider !== next.provider) void releaseOllamaModel(previous);
+  await persistState();
+  return persisted;
+});
 ipcMain.handle("truss:configure", async (_event, input: DesktopConfiguration): Promise<DesktopState> => {
   let next = normalizeConfiguration(input);
   if (!next.baseUrl || !next.model) throw new Error("A local endpoint and model are required.");
@@ -616,6 +648,11 @@ ipcMain.handle("truss:resolve-approval", (_event, callId: string, approved: bool
 });
 ipcMain.handle("truss:list-files", () => collectFiles());
 ipcMain.handle("truss:read-file", async (_event, path: string): Promise<string> => readFile(ensurePathInsideWorkspace(path), "utf8"));
+ipcMain.handle("truss:write-file", async (_event, path: string, content: string): Promise<void> => {
+  if (typeof content !== "string") throw new Error("File content must be text.");
+  if (content.length > 5_000_000) throw new Error("Files larger than 5 MB cannot be edited in Truss.");
+  await writeFile(ensurePathInsideWorkspace(path), content, "utf8");
+});
 ipcMain.handle("truss:diff-file", async (_event, path: string): Promise<string> => {
   const target = ensurePathInsideWorkspace(path);
   const relativePath = relative(persisted.workspaceRoot, target);
@@ -641,6 +678,33 @@ ipcMain.handle("truss:git-unstage", async (_event, paths: readonly string[]): Pr
   } catch {
     return gitCommand(["rm", "--cached", "--", ...selected]);
   }
+});
+ipcMain.handle("truss:git-discard", async (_event, paths: readonly string[]): Promise<string> => {
+  const selected = gitPaths(paths);
+  const tracked: string[] = [];
+  const stagedNew: string[] = [];
+  const untracked: string[] = [];
+  for (const path of selected) {
+    if (await gitPathExistsAtHead(path)) {
+      tracked.push(path);
+    } else if ((await gitOutput(["diff", "--cached", "--name-only", "--", path])).trim()) {
+      stagedNew.push(path);
+    } else {
+      untracked.push(path);
+    }
+  }
+  const output: string[] = [];
+  if (tracked.length) output.push(await gitCommand(["restore", "--source=HEAD", "--staged", "--worktree", "--", ...tracked]));
+  if (stagedNew.length) {
+    try {
+      output.push(await gitCommand(["restore", "--staged", "--", ...stagedNew]));
+    } catch {
+      output.push(await gitCommand(["rm", "--cached", "--", ...stagedNew]));
+    }
+  }
+  const removable = [...stagedNew, ...untracked];
+  if (removable.length) output.push(await gitCommand(["clean", "-f", "-d", "--", ...removable]));
+  return output.filter(Boolean).join("\n") || "Discarded selected changes.";
 });
 ipcMain.handle("truss:git-generate-commit-message", () => generateCommitMessage());
 ipcMain.handle("truss:git-commit", async (_event, message: string): Promise<string> => {
