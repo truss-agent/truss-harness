@@ -6,7 +6,7 @@ type AgentMode = "chat" | "plan" | "edit";
 type ApprovalMode = "ask" | "auto-read" | "auto-all";
 type Screen = "home" | "settings" | "session";
 type Workspace = { readonly id: string; readonly displayName: string; readonly capabilities: { readonly modes: readonly AgentMode[]; readonly toolApprovalModes?: readonly ApprovalMode[] } };
-type RemoteEvent = { readonly type: string; readonly sessionId?: string; readonly text?: string; readonly message?: string; readonly callId?: string; readonly tool?: string; readonly input?: Record<string, unknown> };
+type RemoteEvent = { readonly type: string; readonly sessionId?: string; readonly text?: string; readonly message?: string; readonly callId?: string; readonly tool?: string; readonly input?: Record<string, unknown>; readonly result?: { readonly content: string; readonly isError?: boolean }; readonly modifiedFiles?: readonly string[] };
 type ToolApproval = { readonly callId: string; readonly tool: string; readonly input: Record<string, unknown> };
 
 const approvalCopy: Record<ApprovalMode, { readonly title: string; readonly detail: string }> = {
@@ -56,10 +56,18 @@ export default function App() {
     });
   }, []);
 
+  const appendSystem = useCallback((content: string) => {
+    setMessages((current) => [...current, { id: nextId(), role: "system", content }]);
+  }, []);
+
   const handleEvent = useCallback((event: RemoteEvent) => {
     if (event.type === "text_delta" && event.text) appendAssistant(event.text);
     if (event.type === "run_started") { setRunning(true); setStatus("Agent is working."); }
-    if (event.type === "run_completed") { setRunning(false); setStatus("Run completed."); }
+    if (event.type === "run_completed") {
+      setRunning(false);
+      setStatus("Run completed.");
+      if (mode === "edit") appendSystem(event.modifiedFiles?.length ? `Verified workspace changes: ${event.modifiedFiles.join(", ")}` : "Run completed. No workspace files were changed.");
+    }
     if (event.type === "run_failed") { setRunning(false); setStatus(event.message ?? "Run failed."); }
     if (event.type === "tool_call_requested" && event.tool && (approvalMode === "auto-all" || (approvalMode === "auto-read" && readOnlyTools.has(event.tool)))) {
       setStatus(`Running ${event.tool.replaceAll("_", " ")}...`);
@@ -67,7 +75,12 @@ export default function App() {
       setApproval({ callId: event.callId, tool: event.tool, input: event.input });
       setStatus("Tool approval required.");
     }
-  }, [appendAssistant, approvalMode]);
+    if (event.type === "tool_completed" && event.tool && event.result?.isError) {
+      const detail = event.result.content.length > 360 ? `${event.result.content.slice(0, 357)}...` : event.result.content;
+      setStatus(`${event.tool.replaceAll("_", " ")} failed.`);
+      appendSystem(`${event.tool} failed: ${detail}`);
+    }
+  }, [appendAssistant, appendSystem, approvalMode, mode]);
 
   const connectEvents = useCallback(() => new Promise<void>((resolve, reject) => {
     eventSocket.current?.close();
@@ -179,7 +192,7 @@ export default function App() {
 
     {screen === "settings" && <View style={styles.settings}><Text style={styles.sectionLabel}>Tool approvals</Text><Text style={styles.settingsHelp}>This changes how the currently connected trusted gateway handles tools. You can still stop an active run.</Text>{availableApprovalModes.map((candidate) => <Pressable key={candidate} style={[styles.setting, approvalMode === candidate && styles.settingSelected]} onPress={() => setApprovalMode(candidate)}><Text style={styles.settingTitle}>{approvalCopy[candidate].title}</Text><Text style={styles.settingDetail}>{approvalCopy[candidate].detail}</Text></Pressable>)}<Pressable style={styles.button} onPress={() => void applySettings().catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to apply settings."))}><Text style={styles.buttonText}>{sessionId ? "Apply to this session" : "Save settings"}</Text></Pressable></View>}
 
-    {screen === "session" && <><Text style={styles.sectionLabel}>Mode</Text>{modeSelector((candidate) => void changeMode(candidate).catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to switch modes.")))}<Text style={styles.status}>{running && <ActivityIndicator color="#85b4ff" />} {status}</Text>{approval && <View style={styles.approval}><Text style={styles.approvalTitle}>Allow {approval.tool}?</Text><Text style={styles.approvalInput}>{JSON.stringify(approval.input, null, 2)}</Text><View style={styles.approvalActions}><Pressable style={styles.secondaryButton} onPress={() => void decideTool(false).catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to deny tool."))}><Text style={styles.buttonText}>Deny</Text></Pressable><Pressable style={styles.button} onPress={() => void decideTool(true).catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to approve tool."))}><Text style={styles.buttonText}>Allow</Text></Pressable></View></View>}<FlatList style={styles.messages} contentContainerStyle={styles.messageContent} data={messages} keyExtractor={(item) => item.id} renderItem={({ item }) => <View style={[styles.message, item.role === "user" ? styles.userMessage : styles.agentMessage]}><Text style={styles.role}>{item.role === "user" ? "You" : "Truss"}</Text><Text style={styles.messageText}>{item.content}</Text></View>} /><View style={styles.composer}><TextInput style={[styles.input, styles.prompt]} multiline value={prompt} onChangeText={setPrompt} placeholder="Ask Truss to help..." placeholderTextColor="#8a93a8" /><Pressable style={[styles.button, (!prompt.trim() || running) && styles.disabled]} disabled={!prompt.trim() || running} onPress={() => void send()}><Text style={styles.buttonText}>Send</Text></Pressable>{running && <Pressable style={styles.secondaryButton} onPress={() => void interrupt().catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to interrupt."))}><Text style={styles.buttonText}>Stop</Text></Pressable>}</View></>}
+    {screen === "session" && <><Text style={styles.sectionLabel}>Mode</Text>{modeSelector((candidate) => void changeMode(candidate).catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to switch modes.")))}<Text style={styles.status}>{running && <ActivityIndicator color="#85b4ff" />} {status}</Text>{approval && <View style={styles.approval}><Text style={styles.approvalTitle}>Allow {approval.tool}?</Text><Text style={styles.approvalInput}>{JSON.stringify(approval.input, null, 2)}</Text><View style={styles.approvalActions}><Pressable style={styles.secondaryButton} onPress={() => void decideTool(false).catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to deny tool."))}><Text style={styles.buttonText}>Deny</Text></Pressable><Pressable style={styles.button} onPress={() => void decideTool(true).catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to approve tool."))}><Text style={styles.buttonText}>Allow</Text></Pressable></View></View>}<FlatList style={styles.messages} contentContainerStyle={styles.messageContent} data={messages} keyExtractor={(item) => item.id} renderItem={({ item }) => <View style={[styles.message, item.role === "user" ? styles.userMessage : styles.agentMessage]}><Text style={styles.role}>{item.role === "user" ? "You" : item.role === "assistant" ? "Truss" : "System"}</Text><Text style={styles.messageText}>{item.content}</Text></View>} /><View style={styles.composer}><TextInput style={[styles.input, styles.prompt]} multiline value={prompt} onChangeText={setPrompt} placeholder="Ask Truss to help..." placeholderTextColor="#8a93a8" /><Pressable style={[styles.button, (!prompt.trim() || running) && styles.disabled]} disabled={!prompt.trim() || running} onPress={() => void send()}><Text style={styles.buttonText}>Send</Text></Pressable>{running && <Pressable style={styles.secondaryButton} onPress={() => void interrupt().catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to interrupt."))}><Text style={styles.buttonText}>Stop</Text></Pressable>}</View></>}
     {screen !== "session" && <Text style={styles.status}>{status}</Text>}
   </SafeAreaView>;
 }
