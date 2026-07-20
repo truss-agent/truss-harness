@@ -4,6 +4,7 @@
     "slug": "truss-go",
     "scheme": "truss",
     "version": "0.1.0",
+    "owner": "jrh89s-team",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "android": {
@@ -14,6 +15,11 @@
     "plugins": [
       ["expo-camera", { "cameraPermission": "Allow Truss Go to scan a workspace pairing QR code." }],
       "expo-secure-store"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "bb2bed19-fde8-4b0f-8f82-645d6d62a62a"
+      }
+    }
   }
 }
