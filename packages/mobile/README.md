@@ -27,3 +27,15 @@ Console submission:
 ```sh
 npx eas-cli build --profile production --platform android
 ```
+
+## GitHub Release automation
+
+Before the first automated Android release, an Expo account owner must run one
+interactive preview build from `packages/mobile`. This initializes the EAS
+project and writes its `projectId` to the app configuration. Commit that change
+and add the account's Expo access token to the repository as `EXPO_TOKEN`.
+
+Tag a committed mobile version as `truss-go-v<version>` (for example,
+`truss-go-v0.1.0`). The **Truss Go Android release** workflow creates the
+installable APK and its `SHA256SUMS.txt` file on the corresponding GitHub
+Release. The production `.aab` remains the artifact for Google Play Console.

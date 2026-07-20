@@ -16,6 +16,7 @@ export function SiteHeader() {
           </a>
         </div>
         <nav className="site-nav" aria-label="Primary navigation">
+          <Link href="/truss-go">Truss Go</Link>
           <Link href="/clients">Clients</Link>
           <Link href="/features">Features</Link>
           <Link href="/about">About</Link>
@@ -44,6 +45,7 @@ export function SiteFooter() {
       <div className="site-footer-links">
         <nav aria-label="Product links">
           <Link href="/download">Download</Link>
+          <Link href="/truss-go">Truss Go</Link>
           <Link href="/clients">Clients</Link>
           <Link href="/features">Features</Link>
           <Link href="/roadmap">Roadmap</Link>

@@ -1,0 +1,52 @@
+name: Truss Go Android release
+
+on:
+  push:
+    tags:
+      - "truss-go-v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Verify tag matches Truss Go version
+        run: node -e "const p=require('./packages/mobile/app.json'); const expected='truss-go-v'+p.expo.version; if(process.env.GITHUB_REF_NAME!==expected){throw new Error('Tag '+process.env.GITHUB_REF_NAME+' does not match Truss Go version '+p.expo.version)}"
+      - run: npm ci
+      - name: Configure Expo Application Services
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Build installable Android APK
+        id: build
+        working-directory: packages/mobile
+        run: |
+          eas build --platform android --profile preview --non-interactive --json > build.json
+          artifact_url="$(jq -r 'if type == "array" then .[0].artifacts.buildUrl else .artifacts.buildUrl end' build.json)"
+          test -n "$artifact_url" && test "$artifact_url" != "null"
+          echo "artifact_url=$artifact_url" >> "$GITHUB_OUTPUT"
+      - name: Download APK and create checksum
+        env:
+          ARTIFACT_URL: ${{ steps.build.outputs.artifact_url }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mkdir -p release
+          version="${TAG#truss-go-v}"
+          curl --fail --location --retry 3 --output "release/Truss-Go-${version}.apk" "$ARTIFACT_URL"
+          (cd release && sha256sum *.apk > SHA256SUMS.txt)
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "Truss Go ${TAG#truss-go-v}" --generate-notes
+          gh release upload "$TAG" release/* --clobber

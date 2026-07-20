@@ -1102,6 +1102,204 @@ body {
     max-width: 650px;
 }
 
+.truss-go-page {
+    margin: 0 auto;
+    max-width: 1180px;
+    padding: 78px 28px 88px;
+}
+
+.truss-go-hero {
+    align-items: center;
+    display: grid;
+    gap: 62px;
+    grid-template-columns: minmax(0, 1fr) minmax(360px, .9fr);
+    padding-bottom: 86px;
+}
+
+.truss-go-hero h1 {
+    font-size: 56px;
+    line-height: 1.02;
+    margin-bottom: 20px;
+    max-width: 590px;
+}
+
+.truss-go-hero > div > p:last-of-type,
+.truss-go-distribution > div > p:last-child,
+.truss-go-safety > p:last-child {
+    color: #4d6259;
+    font-size: 18px;
+    line-height: 1.65;
+    margin-bottom: 0;
+}
+
+.truss-go-pairing {
+    align-items: center;
+    background: linear-gradient(145deg, #10221b, #1d4738);
+    border: 1px solid #315e4a;
+    border-radius: 14px;
+    box-shadow: 0 22px 44px rgba(20, 45, 36, .17);
+    display: flex;
+    gap: 18px;
+    justify-content: center;
+    min-height: 292px;
+    padding: 32px;
+}
+
+.truss-go-desktop,
+.truss-go-phone {
+    color: #eaf7ee;
+    display: grid;
+    gap: 15px;
+    padding: 18px;
+}
+
+.truss-go-desktop {
+    background: #18352a;
+    border: 1px solid #477b64;
+    border-radius: 8px;
+    min-height: 152px;
+    width: 220px;
+}
+
+.truss-go-phone {
+    background: #0b1713;
+    border: 5px solid #79a991;
+    border-radius: 23px;
+    min-height: 192px;
+    padding-top: 31px;
+    width: 130px;
+}
+
+.truss-go-desktop span,
+.truss-go-phone span {
+    color: #a8e4cc;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .08em;
+}
+
+.truss-go-desktop strong,
+.truss-go-phone strong {
+    font-size: 15px;
+}
+
+.truss-go-desktop i,
+.truss-go-phone i {
+    color: #b6c8be;
+    font-size: 11px;
+    font-style: normal;
+}
+
+.truss-go-connector {
+    color: #a8e4cc;
+    font-size: 28px;
+}
+
+.truss-go-steps {
+    border-top: 1px solid #b7cabe;
+    padding: 76px 0;
+}
+
+.truss-go-steps header {
+    max-width: 570px;
+}
+
+.truss-go-steps header h2,
+.truss-go-distribution h2,
+.truss-go-safety h2 {
+    font-size: 37px;
+    margin-bottom: 0;
+}
+
+.truss-go-steps ol {
+    counter-reset: steps;
+    display: grid;
+    gap: 26px;
+    grid-template-columns: repeat(3, 1fr);
+    list-style: none;
+    margin: 38px 0 0;
+    padding: 0;
+}
+
+.truss-go-steps li {
+    border-top: 2px solid #7ea895;
+    padding-top: 17px;
+}
+
+.truss-go-steps span,
+.truss-go-distribution-cards article > span:first-child {
+    color: #0b7965;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.truss-go-steps h3 {
+    font-size: 21px;
+    margin: 9px 0;
+}
+
+.truss-go-steps p,
+.truss-go-distribution-cards p {
+    color: #52675e;
+    line-height: 1.65;
+    margin-bottom: 0;
+}
+
+.truss-go-distribution {
+    align-items: start;
+    background: #dce8df;
+    display: grid;
+    gap: 58px;
+    grid-template-columns: .85fr 1.15fr;
+    padding: 48px;
+}
+
+.truss-go-distribution > div > p:last-child {
+    font-size: 16px;
+    margin-top: 16px;
+}
+
+.truss-go-distribution-cards {
+    display: grid;
+    gap: 14px;
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.truss-go-distribution-cards article {
+    background: #fbfdf9;
+    border: 1px solid #c4d3c8;
+    display: flex;
+    flex-direction: column;
+    min-height: 240px;
+    padding: 23px;
+}
+
+.truss-go-distribution-cards h3 {
+    margin: 24px 0 10px;
+}
+
+.truss-go-distribution-cards .site-button {
+    align-self: flex-start;
+    margin-top: auto;
+}
+
+.truss-go-safety {
+    border-bottom: 1px solid #b7cabe;
+    border-top: 1px solid #b7cabe;
+    margin-top: 76px;
+    padding: 66px 0;
+}
+
+.truss-go-safety h2 {
+    max-width: 780px;
+}
+
+.truss-go-safety > p:last-child {
+    font-size: 16px;
+    margin-top: 17px;
+    max-width: 800px;
+}
+
 .site-infographic {
     text-align: center;
     display: flex;
@@ -1162,7 +1360,7 @@ body {
         font-size: 13px;
     }
 
-    .site-nav a:first-child {
+    .site-nav a:nth-child(2) {
         display: none;
     }
 
@@ -1247,6 +1445,48 @@ body {
         padding: 58px 18px 20px;
     }
 
+    .truss-go-page {
+        padding: 58px 18px 60px;
+    }
+
+    .truss-go-hero,
+    .truss-go-distribution {
+        gap: 38px;
+        grid-template-columns: 1fr;
+    }
+
+    .truss-go-hero {
+        padding-bottom: 56px;
+    }
+
+    .truss-go-hero h1 {
+        font-size: 43px;
+    }
+
+    .truss-go-steps {
+        padding: 54px 0;
+    }
+
+    .truss-go-steps header h2,
+    .truss-go-distribution h2,
+    .truss-go-safety h2 {
+        font-size: 30px;
+    }
+
+    .truss-go-steps ol,
+    .truss-go-distribution-cards {
+        grid-template-columns: 1fr;
+    }
+
+    .truss-go-distribution {
+        padding: 28px;
+    }
+
+    .truss-go-safety {
+        margin-top: 54px;
+        padding: 54px 0;
+    }
+
     .site-page-intro {
         padding-bottom: 36px;
     }
@@ -1314,6 +1554,22 @@ body {
         gap: 13px;
         grid-template-columns: 1fr auto;
         padding: 16px;
+    }
+
+    .truss-go-pairing {
+        gap: 9px;
+        min-height: 250px;
+        padding: 17px;
+    }
+
+    .truss-go-desktop {
+        min-height: 136px;
+        width: 174px;
+    }
+
+    .truss-go-phone {
+        min-height: 164px;
+        width: 112px;
     }
 
     .download-build-meta {
@@ -1557,6 +1813,28 @@ body {
 
 :root[data-truss-theme="dark"] .client-setup {
     background: #14261f;
+}
+
+:root[data-truss-theme="dark"] .truss-go-hero > div > p:last-of-type,
+:root[data-truss-theme="dark"] .truss-go-distribution > div > p:last-child,
+:root[data-truss-theme="dark"] .truss-go-safety > p:last-child,
+:root[data-truss-theme="dark"] .truss-go-steps p,
+:root[data-truss-theme="dark"] .truss-go-distribution-cards p {
+    color: #b5c9bf;
+}
+
+:root[data-truss-theme="dark"] .truss-go-steps,
+:root[data-truss-theme="dark"] .truss-go-safety {
+    border-color: #365a4a;
+}
+
+:root[data-truss-theme="dark"] .truss-go-distribution {
+    background: #14261f;
+}
+
+:root[data-truss-theme="dark"] .truss-go-distribution-cards article {
+    background: #13231d;
+    border-color: #365a4a;
 }
 
 @media (max-width: 780px) {

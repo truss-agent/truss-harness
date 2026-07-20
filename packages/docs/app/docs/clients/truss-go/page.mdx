@@ -1,0 +1,55 @@
+# <Brand /> Go for Android
+
+Truss Go is the Android companion for a Truss workspace already open in Truss
+Desktop or the Truss VS Code extension. It is for continuing a conversation or
+agent task from your phone on the same Wi-Fi network. It does not require a
+Truss account, manual IP address entry, or a copied gateway token in normal
+use.
+
+## Install
+
+The preferred installation method will be Google Play. Until the Play listing
+is available, install the signed testing APK from the [Truss Go page](/truss-go).
+
+Android may ask you to allow the browser or file manager that downloaded the
+APK to install unknown apps. Only use APKs attached to this project's official
+GitHub Releases.
+
+## Pair a phone
+
+1. Open the workspace on the computer where you run Truss Desktop or VS Code.
+2. Select **Connect Truss Go**.
+3. Open Truss Go on your phone and scan the displayed QR code.
+4. Select the workspace and Chat, Plan, or Edit mode, then send a message.
+
+Both devices must be connected to the same trusted Wi-Fi network. The pairing
+QR starts a temporary local connection; closing the pairing panel on the
+computer ends it. Scan again when you want to reconnect.
+
+## Approvals and settings
+
+Truss Go follows the approval policy selected in the mobile app. **Ask every
+time** shows each requested tool action, while **Auto-allow all tools** lets an
+agent proceed without individual prompts. Use automatic approvals only for
+workspaces and tasks you trust.
+
+The mobile app talks to the Truss computer, which retains the workspace,
+provider configuration, and agent tools. Your phone does not need your model
+provider credentials.
+
+## Maintainer release process
+
+The first release needs an Expo account to initialize the EAS project
+interactively. From `packages/mobile`, run:
+
+```sh
+npx eas-cli login
+npx eas-cli build --platform android --profile preview
+```
+
+Commit the EAS `projectId` that the initialization adds to the app config, then
+add an `EXPO_TOKEN` repository secret. Tag the committed mobile version as
+`truss-go-v<version>` (for example, `truss-go-v0.1.0`). The Android release
+workflow builds an APK and attaches it with `SHA256SUMS.txt` to the matching
+GitHub Release. The production EAS profile creates the `.aab` uploaded to
+Google Play Console.
