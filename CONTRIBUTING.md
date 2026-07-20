@@ -26,6 +26,7 @@ Every issue and pull request must name one or more affected clients:
 | Desktop | `packages/desktop` |
 | CLI | `packages/cli` |
 | TUI | `packages/tui` |
+| Mobile | `packages/mobile` |
 | Documentation site | `packages/docs` |
 
 Use **Repository infrastructure** only for CI, templates, or other repository-maintenance work that does not change a client. Client fixes must name the client they affect.
@@ -51,6 +52,7 @@ npm --workspace truss-harness-vscode run build
 npm --workspace @truss-harness/desktop run build
 npm --workspace @truss-harness/cli run build
 npm --workspace @truss-harness/tui run build
+npm --workspace @truss-harness/mobile run typecheck
 npm --workspace @truss-harness/docs run build
 ```
 

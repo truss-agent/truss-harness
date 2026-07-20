@@ -16,6 +16,7 @@ body:
         - label: Desktop
         - label: CLI
         - label: TUI
+        - label: Mobile
         - label: Documentation site
         - label: Repository infrastructure (no client)
     validations:
