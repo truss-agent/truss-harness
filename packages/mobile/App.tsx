@@ -35,6 +35,8 @@ export default function App() {
   const [status, setStatus] = useState("Enter a trusted gateway URL and token.");
   const [running, setRunning] = useState(false);
   const eventSocket = useRef<WebSocket | undefined>(undefined);
+  const approvalModeRef = useRef<ApprovalMode>(approvalMode);
+  const modeRef = useRef<AgentMode>(mode);
 
   const command = useCallback(async (body: Record<string, unknown>) => {
     const response = await fetch(gatewayPath(gatewayUrl, "/v1/commands"), {
@@ -60,16 +62,20 @@ export default function App() {
     setMessages((current) => [...current, { id: nextId(), role: "system", content }]);
   }, []);
 
+  useEffect(() => { approvalModeRef.current = approvalMode; }, [approvalMode]);
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+
   const handleEvent = useCallback((event: RemoteEvent) => {
     if (event.type === "text_delta" && event.text) appendAssistant(event.text);
     if (event.type === "run_started") { setRunning(true); setStatus("Agent is working."); }
     if (event.type === "run_completed") {
       setRunning(false);
       setStatus("Run completed.");
-      if (mode === "edit") appendSystem(event.modifiedFiles?.length ? `Verified workspace changes: ${event.modifiedFiles.join(", ")}` : "Run completed. No workspace files were changed.");
+      if (modeRef.current === "edit") appendSystem(event.modifiedFiles?.length ? `Verified workspace changes: ${event.modifiedFiles.join(", ")}` : "Run completed. No workspace files were changed.");
     }
     if (event.type === "run_failed") { setRunning(false); setStatus(event.message ?? "Run failed."); }
-    if (event.type === "tool_call_requested" && event.tool && (approvalMode === "auto-all" || (approvalMode === "auto-read" && readOnlyTools.has(event.tool)))) {
+    const activeApprovalMode = approvalModeRef.current;
+    if (event.type === "tool_call_requested" && event.tool && (activeApprovalMode === "auto-all" || (activeApprovalMode === "auto-read" && readOnlyTools.has(event.tool)))) {
       setStatus(`Running ${event.tool.replaceAll("_", " ")}...`);
     } else if (event.type === "tool_call_requested" && event.callId && event.tool && event.input) {
       setApproval({ callId: event.callId, tool: event.tool, input: event.input });
@@ -80,7 +86,7 @@ export default function App() {
       setStatus(`${event.tool.replaceAll("_", " ")} failed.`);
       appendSystem(`${event.tool} failed: ${detail}`);
     }
-  }, [appendAssistant, appendSystem, approvalMode, mode]);
+  }, [appendAssistant, appendSystem]);
 
   const connectEvents = useCallback(() => new Promise<void>((resolve, reject) => {
     eventSocket.current?.close();
