@@ -108,4 +108,12 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --generate-notes
-          gh release upload "$TAG" release/* --clobber
+          for attempt in 1 2 3 4 5; do
+            if gh release upload "$TAG" release/* --clobber; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 5 ]; then
+              exit 1
+            fi
+            sleep "$((attempt * 15))"
+          done
