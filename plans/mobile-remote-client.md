@@ -128,3 +128,14 @@ tool implementations.
   auto-read, or auto-approve all tools for the currently connected host.
 - Verify gateway validation, session switching, mobile typechecking, and the
   repository build before merging.
+
+## Next follow-up: QR pairing and saved gateways (#16)
+
+- Have the trusted gateway produce a short-lived, signed pairing payload that
+  contains only its reachable URL, a pairing credential, and expiry metadata.
+- Let the mobile client scan the payload with device permissions and retain a
+  paired host locally for convenient reconnects and explicit removal.
+- Keep manual URL/token entry as a developer fallback; never place workspace
+  paths or provider credentials in a pairing payload.
+- Add gateway contract tests for invalid, expired, and unauthenticated pairing
+  requests before enabling the mobile UI.

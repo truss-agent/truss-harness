@@ -9,7 +9,7 @@
 <body>
   <header class="topbar">
     <div class="brand-lockup"><img class="brand-mark" src="./assets/brand-logo.png" alt="Truss"><strong>Truss</strong><span class="status-dot" id="statusDot"></span><span id="runtimeStatus">No model selected</span></div>
-    <div class="top-actions"><button id="chooseWorkspace">Open workspace</button><button id="refreshModels" title="Redetect the active local provider, model, and context window">Refresh local model</button><button id="settingsButton">Settings</button></div>
+    <div class="top-actions"><button id="chooseWorkspace">Open workspace</button><button id="connectTrussGo" title="Connect this workspace to Truss Go on the same Wi-Fi">Connect Truss Go</button><button id="refreshModels" title="Redetect the active local provider, model, and context window">Refresh local model</button><button id="settingsButton">Settings</button></div>
   </header>
   <main class="workbench">
     <aside class="sidebar">
@@ -79,6 +79,7 @@
       <div class="dialog-actions"><button id="dialogRefresh" type="button">Refresh</button><button id="applySettings" class="primary" value="default">Apply</button></div>
     </form>
   </dialog>
+  <dialog id="trussGoDialog"><div class="dialog-heading"><div><strong>Connect Truss Go</strong><span>Scan this QR in the Truss Go phone app while on the same Wi-Fi.</span></div><button id="closeTrussGo" value="cancel" aria-label="Close">x</button></div><div class="qr-pairing"><img id="trussGoQr" alt="Truss Go pairing QR code"><strong id="trussGoWorkspace"></strong><button id="disconnectTrussGo" type="button">Disconnect</button></div></dialog>
   <div id="toast" class="toast" role="status"></div>
   <script type="module" src="./renderer.js"></script>
 </body>

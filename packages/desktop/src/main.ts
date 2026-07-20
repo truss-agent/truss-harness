@@ -1,18 +1,21 @@
 import { app, BrowserWindow, dialog, ipcMain, protocol, shell, type OpenDialogOptions } from "electron";
 import { autoUpdater } from "electron-updater";
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { execFile as execFileCallback } from "node:child_process";
 import { createReadStream } from "node:fs";
 import { readFile, readdir, stat, writeFile } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 import { promisify } from "node:util";
 import { brand } from "@truss-harness/branding";
 import { createClientRuntime, type ClientConfiguration } from "@truss-harness/cli/runtime";
+import { createPairingUri, detectLanAddress, startRemoteGateway, type RunningRemoteGateway } from "@truss-harness/gateway";
 import { parseMcpServerConfigurations } from "@truss-harness/mcp";
 import { detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, generateLocalText, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import { executeWorkspaceCommand, FileWorkspacePlanStore, type ChatAttachment, type ContextBlock, type ToolApproval, type ToolCall } from "@truss-harness/runtime";
 import type { DesktopConfiguration, DesktopConversation, DesktopEndpoint, DesktopEvent, DesktopFile, DesktopGitStatus, DesktopMessage, DesktopState } from "./shared.js";
+import QRCode from "qrcode";
 
 const execFile = promisify(execFileCallback);
 const ignoredDirectories = new Set([".git", "node_modules", "dist", "coverage", ".next"]);
@@ -43,6 +46,8 @@ let activeConversationId: string | undefined;
 let activeAbort: AbortController | undefined;
 let activeRun: Promise<void> | undefined;
 let devServerProcess: ReturnType<typeof spawn> | undefined;
+let trussGoGateway: RunningRemoteGateway | undefined;
+const trussGoClients: Array<Awaited<ReturnType<typeof createClientRuntime>>> = [];
 let updaterConfigured = false;
 const approvalResolvers = new Map<string, (approved: boolean) => void>();
 const sessionConversationIds = new Map<string, string>();
@@ -187,6 +192,40 @@ function clientConfiguration(configuration: DesktopConfiguration): ClientConfigu
     mcpServers: configuration.mcpServers,
     approval
   };
+}
+
+function mobileApproval(): ToolApproval & { resolve(callId: string, approved: boolean): boolean; denyAll(): void } {
+  const pending = new Map<string, (approved: boolean) => void>();
+  return {
+    approve(call: ToolCall): Promise<boolean> { return new Promise((resolveApproval) => pending.set(call.id, resolveApproval)); },
+    resolve(callId: string, approved: boolean): boolean { const resolveApproval = pending.get(callId); if (!resolveApproval) return false; pending.delete(callId); resolveApproval(approved); return true; },
+    denyAll(): void { for (const resolveApproval of pending.values()) resolveApproval(false); pending.clear(); }
+  };
+}
+
+async function stopTrussGo(): Promise<void> {
+  await trussGoGateway?.close(); trussGoGateway = undefined;
+  await Promise.all(trussGoClients.splice(0).map((client) => client.dispose()));
+}
+
+async function connectTrussGo(): Promise<{ readonly workspaceName: string; readonly qrDataUrl: string }> {
+  const configuration = persisted.configuration;
+  if (!configuration?.model) throw new Error("Choose a local model before connecting Truss Go.");
+  const address = detectLanAddress();
+  if (!address) throw new Error("Could not find a private Wi-Fi address for this computer.");
+  await stopTrussGo();
+  const token = randomBytes(32).toString("hex");
+  trussGoGateway = await startRemoteGateway({
+    token, host: address, port: 0,
+    workspaces: [{ id: "active-workspace", displayName: basename(persisted.workspaceRoot), createRuntime: async (mode) => {
+      const approval = mobileApproval();
+      const client = await createClientRuntime({ ...clientConfiguration(configuration), mode, approval });
+      trussGoClients.push(client);
+      return { runtime: client.runtime, events: client.events, approval, dispose: client.dispose };
+    } }]
+  });
+  const pairingUri = createPairingUri({ gatewayUrl: trussGoGateway.url, token, workspaceName: basename(persisted.workspaceRoot) });
+  return { workspaceName: basename(persisted.workspaceRoot), qrDataUrl: await QRCode.toDataURL(pairingUri, { margin: 2, width: 320 }) };
 }
 
 async function releaseOllamaModel(configuration: DesktopConfiguration | undefined): Promise<void> {
@@ -550,6 +589,7 @@ app.whenReady().then(async () => {
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("before-quit", () => {
   stopManagedDevServer();
+  void stopTrussGo();
   void disposeRuntime();
 });
 
@@ -784,3 +824,5 @@ ipcMain.handle("truss:stop-dev-server", (): void => stopManagedDevServer());
 ipcMain.handle("truss:open-external", async (_event, value: string): Promise<void> => {
   await shell.openExternal(validatedPreviewUrl(value));
 });
+ipcMain.handle("truss:connect-truss-go", () => connectTrussGo());
+ipcMain.handle("truss:disconnect-truss-go", () => stopTrussGo());

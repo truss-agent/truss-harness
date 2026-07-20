@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, FlatList, Pressable, SafeAreaView, StatusBar, StyleSheet, Text, TextInput, View } from "react-native";
+import { CameraView, useCameraPermissions } from "expo-camera";
+import * as SecureStore from "expo-secure-store";
 
 type ChatItem = { readonly id: string; readonly role: "user" | "assistant" | "system"; readonly content: string };
 type AgentMode = "chat" | "plan" | "edit";
 type ApprovalMode = "ask" | "auto-read" | "auto-all";
-type Screen = "home" | "settings" | "session";
+type Screen = "home" | "settings" | "session" | "scanner";
+type SavedGateway = { readonly id: string; readonly name: string; readonly url: string; readonly token: string };
 type Workspace = { readonly id: string; readonly displayName: string; readonly capabilities: { readonly modes: readonly AgentMode[]; readonly toolApprovalModes?: readonly ApprovalMode[] } };
 type RemoteEvent = { readonly type: string; readonly sessionId?: string; readonly text?: string; readonly message?: string; readonly callId?: string; readonly tool?: string; readonly input?: Record<string, unknown>; readonly result?: { readonly content: string; readonly isError?: boolean }; readonly modifiedFiles?: readonly string[] };
 type ToolApproval = { readonly callId: string; readonly tool: string; readonly input: Record<string, unknown> };
@@ -15,10 +18,18 @@ const approvalCopy: Record<ApprovalMode, { readonly title: string; readonly deta
   "auto-all": { title: "Auto-approve all", detail: "Allow all registered tools for this trusted gateway." }
 };
 const readOnlyTools = new Set(["read_file", "list_directory", "search_files", "grep"]);
+const savedGatewaysKey = "truss.remote.saved-gateways.v1";
 
 function nextId(): string { return `${Date.now()}-${Math.random().toString(36).slice(2)}`; }
 function gatewayPath(url: string, path: string): string { return `${url.replace(/\/$/, "")}${path}`; }
 function eventUrl(url: string): string { return gatewayPath(url.replace(/^http/i, "ws"), "/v1/events"); }
+function parsePairing(value: string): SavedGateway {
+  const uri = new URL(value);
+  if (uri.protocol !== "truss:" || uri.hostname !== "pair") throw new Error("This is not a Truss pairing QR code.");
+  const url = uri.searchParams.get("gateway"); const token = uri.searchParams.get("token");
+  if (!url || !token || token.length < 24 || !/^https?:\/\//.test(url)) throw new Error("The pairing QR code is incomplete.");
+  return { id: url, name: uri.searchParams.get("name") ?? new URL(url).host, url, token };
+}
 
 export default function App() {
   const [gatewayUrl, setGatewayUrl] = useState("http://127.0.0.1:4787");
@@ -34,9 +45,18 @@ export default function App() {
   const [messages, setMessages] = useState<readonly ChatItem[]>([]);
   const [status, setStatus] = useState("Enter a trusted gateway URL and token.");
   const [running, setRunning] = useState(false);
+  const [savedGateways, setSavedGateways] = useState<readonly SavedGateway[]>([]);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const eventSocket = useRef<WebSocket | undefined>(undefined);
   const approvalModeRef = useRef<ApprovalMode>(approvalMode);
   const modeRef = useRef<AgentMode>(mode);
+
+  useEffect(() => { void SecureStore.getItemAsync(savedGatewaysKey).then((value) => { if (value) setSavedGateways(JSON.parse(value) as SavedGateway[]); }).catch(() => undefined); }, []);
+  const saveGateway = useCallback(async (gateway: SavedGateway) => {
+    const next = [gateway, ...savedGateways.filter((item) => item.id !== gateway.id)];
+    setSavedGateways(next); await SecureStore.setItemAsync(savedGatewaysKey, JSON.stringify(next));
+  }, [savedGateways]);
+  const pair = useCallback(async (value: string) => { const gateway = parsePairing(value); await saveGateway(gateway); setGatewayUrl(gateway.url); setToken(gateway.token); setScreen("home"); setStatus(`Paired with ${gateway.name}. Connect to continue.`); }, [saveGateway]);
 
   const command = useCallback(async (body: Record<string, unknown>) => {
     const response = await fetch(gatewayPath(gatewayUrl, "/v1/commands"), {
@@ -192,9 +212,11 @@ export default function App() {
     <View style={styles.header}><Text style={styles.title}>Truss Remote</Text>{screen !== "home" && <Pressable style={styles.headerButton} disabled={running} onPress={goHome}><Text style={styles.headerButtonText}>Home</Text></Pressable>}{screen !== "settings" && <Pressable style={styles.headerButton} onPress={() => setScreen("settings")}><Text style={styles.headerButtonText}>Settings</Text></Pressable>}</View>
 
     {screen === "home" && <View style={styles.connection}>
-      {!workspaces.length && <><TextInput style={styles.input} autoCapitalize="none" autoCorrect={false} value={gatewayUrl} onChangeText={setGatewayUrl} placeholder="Gateway URL" placeholderTextColor="#8a93a8" /><TextInput style={styles.input} autoCapitalize="none" autoCorrect={false} secureTextEntry value={token} onChangeText={setToken} placeholder="Gateway token" placeholderTextColor="#8a93a8" /><Pressable style={styles.button} onPress={() => void connectGateway().catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Connection failed."))}><Text style={styles.buttonText}>Connect</Text></Pressable></>}
+      {!workspaces.length && <><Pressable style={styles.button} onPress={() => void requestCameraPermission().then((granted) => { if (granted.granted) setScreen("scanner"); else setStatus("Camera permission is required to scan a pairing QR code."); })}><Text style={styles.buttonText}>Scan pairing QR</Text></Pressable>{savedGateways.map((gateway) => <Pressable key={gateway.id} style={styles.setting} onPress={() => { setGatewayUrl(gateway.url); setToken(gateway.token); setStatus(`Selected ${gateway.name}.`); }}><Text style={styles.settingTitle}>{gateway.name}</Text><Text style={styles.settingDetail}>{gateway.url}</Text></Pressable>)}<TextInput style={styles.input} autoCapitalize="none" autoCorrect={false} value={gatewayUrl} onChangeText={setGatewayUrl} placeholder="Gateway URL" placeholderTextColor="#8a93a8" /><TextInput style={styles.input} autoCapitalize="none" autoCorrect={false} secureTextEntry value={token} onChangeText={setToken} placeholder="Gateway token" placeholderTextColor="#8a93a8" /><Pressable style={styles.button} onPress={() => void connectGateway().catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Connection failed."))}><Text style={styles.buttonText}>Connect</Text></Pressable></>}
       {workspaces.length > 0 && <><Text style={styles.sectionLabel}>Workspace</Text><View style={styles.choices}>{workspaces.map((workspace) => <Pressable key={workspace.id} style={[styles.choice, workspaceId === workspace.id && styles.choiceSelected]} onPress={() => setWorkspaceId(workspace.id)}><Text style={styles.buttonText}>{workspace.displayName}</Text></Pressable>)}</View><Text style={styles.sectionLabel}>Mode</Text>{modeSelector(setMode)}<Pressable style={styles.button} onPress={() => void beginSession().catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to open session."))}><Text style={styles.buttonText}>Open workspace</Text></Pressable></>}
     </View>}
+
+    {screen === "scanner" && <View style={{ flex: 1, gap: 12 }}>{cameraPermission?.granted ? <CameraView style={{ flex: 1, borderRadius: 12, overflow: "hidden" }} barcodeScannerSettings={{ barcodeTypes: ["qr"] }} onBarcodeScanned={({ data }) => void pair(data).catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to pair."))} /> : <Text style={styles.status}>Camera permission is required.</Text>}<Pressable style={styles.secondaryButton} onPress={() => setScreen("home")}><Text style={styles.buttonText}>Cancel</Text></Pressable></View>}
 
     {screen === "settings" && <View style={styles.settings}><Text style={styles.sectionLabel}>Tool approvals</Text><Text style={styles.settingsHelp}>This changes how the currently connected trusted gateway handles tools. You can still stop an active run.</Text>{availableApprovalModes.map((candidate) => <Pressable key={candidate} style={[styles.setting, approvalMode === candidate && styles.settingSelected]} onPress={() => setApprovalMode(candidate)}><Text style={styles.settingTitle}>{approvalCopy[candidate].title}</Text><Text style={styles.settingDetail}>{approvalCopy[candidate].detail}</Text></Pressable>)}<Pressable style={styles.button} onPress={() => void applySettings().catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to apply settings."))}><Text style={styles.buttonText}>{sessionId ? "Apply to this session" : "Save settings"}</Text></Pressable></View>}
 

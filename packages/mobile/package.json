@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "expo": "~54.0.36",
+    "expo-camera": "^57.0.3",
+    "expo-secure-store": "^57.0.1",
     "react": "19.1.4",
     "react-native": "0.81.6"
   },
