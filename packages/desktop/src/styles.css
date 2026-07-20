@@ -755,6 +755,61 @@ button:focus-visible {
     border-top: 1px solid #2b383f;
 }
 
+.attachment-list {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.pending-attachment,
+.message-attachment {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 220px;
+    padding: 4px 6px;
+    border: 1px solid #38514d;
+    background: #172521;
+    color: #c5d6d1;
+    font-size: 11px;
+}
+
+.pending-attachment span,
+.message-attachment span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pending-attachment img,
+.message-attachment img {
+    width: 28px;
+    height: 28px;
+    object-fit: cover;
+}
+
+.pending-attachment button {
+    min-width: 22px;
+    padding: 1px 4px;
+}
+
+.message-attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.message-attachment {
+    max-width: 260px;
+}
+
+.message-attachment img {
+    width: 96px;
+    height: 64px;
+}
+
 .composer textarea {
     min-height: 58px;
     max-height: 160px;

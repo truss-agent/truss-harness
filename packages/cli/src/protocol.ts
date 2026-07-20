@@ -1,9 +1,9 @@
 import { createInterface } from "node:readline";
 import { stdin, stdout } from "node:process";
-import type { AgentRuntime, ChatMessage, ContextBlock, RuntimeEvent, ToolApproval, ToolCall, Session } from "@truss-harness/runtime";
+import type { AgentRuntime, ChatAttachment, ChatMessage, ContextBlock, RuntimeEvent, ToolApproval, ToolCall, Session } from "@truss-harness/runtime";
 
 export type RuntimeServiceRequest =
-  | { readonly type: "run"; readonly requestId: string; readonly prompt: string; readonly sessionId?: string; readonly context?: readonly ContextBlock[] }
+  | { readonly type: "run"; readonly requestId: string; readonly prompt: string; readonly sessionId?: string; readonly context?: readonly ContextBlock[]; readonly attachments?: readonly ChatAttachment[] }
   | { readonly type: "create_session"; readonly requestId: string; readonly messages?: readonly ChatMessage[] }
   | { readonly type: "abort"; readonly requestId: string }
   | { readonly type: "tool_approval"; readonly requestId: string; readonly callId: string; readonly approved: boolean };
@@ -109,7 +109,18 @@ export async function runService(runtime: AgentRuntime, events: { subscribe(list
         && typeof block.content === "string"
         && (block.priority === undefined || typeof block.priority === "number"))
       : [];
-    void runtime.run(session.id, request.prompt, controller.signal, requestContext)
+    const attachments = Array.isArray(request.attachments)
+      ? request.attachments.filter((attachment): attachment is ChatAttachment => Boolean(attachment)
+        && typeof attachment === "object"
+        && (attachment.kind === "image" || attachment.kind === "file")
+        && typeof attachment.id === "string"
+        && typeof attachment.name === "string"
+        && typeof attachment.mediaType === "string"
+        && typeof attachment.size === "number"
+        && (attachment.data === undefined || typeof attachment.data === "string")
+        && (attachment.text === undefined || typeof attachment.text === "string"))
+      : [];
+    void runtime.run(session.id, request.prompt, controller.signal, requestContext, attachments)
       .then(() => write({ type: "response", requestId: request.requestId, result: { sessionId: session.id } }))
       .catch((error: unknown) => write({ type: "error", requestId: request.requestId, message: error instanceof Error ? error.message : String(error) }))
       .finally(() => {

@@ -104,7 +104,24 @@ function toOpenAIMessage(message: ChatMessage): JsonObject {
     return { role: "tool", tool_call_id: message.toolCallId ?? "", content: message.content };
   }
 
-  return { role: message.role, content: message.content };
+  const fileContext = (message.attachments ?? [])
+    .filter((attachment) => attachment.kind === "file")
+    .map((attachment) => `Attached file: ${attachment.name} (${attachment.mediaType}, ${attachment.size} bytes)${attachment.text ? `\n\n${attachment.text}` : ""}`)
+    .join("\n\n");
+  const text = [message.content, fileContext].filter(Boolean).join("\n\n");
+  const imageParts = (message.attachments ?? []).flatMap((attachment) => attachment.kind === "image" && attachment.data
+    ? [{ type: "image_url", image_url: { url: attachment.data } }]
+    : []);
+  if (imageParts.length) {
+    return {
+      role: message.role,
+      content: [
+        { type: "text", text },
+        ...imageParts
+      ]
+    };
+  }
+  return { role: message.role, content: text };
 }
 
 function toOpenAITool(tool: ToolDefinition): JsonObject {
@@ -127,7 +144,18 @@ function toOllamaMessage(message: ChatMessage): JsonObject {
     };
   }
   if (message.role === "tool") return { role: "tool", content: message.content };
-  return { role: message.role, content: message.content };
+  const fileContext = (message.attachments ?? [])
+    .filter((attachment) => attachment.kind === "file")
+    .map((attachment) => `Attached file: ${attachment.name} (${attachment.mediaType}, ${attachment.size} bytes)${attachment.text ? `\n\n${attachment.text}` : ""}`)
+    .join("\n\n");
+  const images = (message.attachments ?? [])
+    .filter((attachment) => attachment.kind === "image" && attachment.data)
+    .flatMap((attachment) => attachment.data?.match(/^data:[^;,]+;base64,(.+)$/)?.[1] ?? []);
+  return {
+    role: message.role,
+    content: [message.content, fileContext].filter(Boolean).join("\n\n"),
+    ...(images.length ? { images } : {})
+  };
 }
 
 function finishReason(reason: OpenAIChunk["choices"] extends readonly (infer T)[] | undefined
