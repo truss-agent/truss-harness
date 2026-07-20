@@ -9,6 +9,7 @@ import { createClientRuntime, type ClientRuntime } from "./runtime.js";
 import { configurationPaths, initializeWorkspaceConfiguration, parseConfigurationOverrides, resolveConfiguration, saveUserProfile, type ResolvedConfiguration } from "./config.js";
 import { ProtocolToolApproval, runService, type PermissionMode } from "./protocol.js";
 import { startRemoteGateway } from "@truss-harness/gateway";
+import qrcode from "qrcode-terminal";
 
 const help = `${brand.productName} CLI
 
@@ -332,6 +333,10 @@ async function main(): Promise<void> {
       workspaces
     });
     process.stdout.write(`Truss mobile gateway listening at ${server.url}\n`);
+    const advertisedUrl = gateway.host && gateway.host !== "0.0.0.0" ? `http://${gateway.host}:${gateway.port}` : server.url;
+    const pairingUri = `truss://pair?gateway=${encodeURIComponent(advertisedUrl)}&token=${encodeURIComponent(gateway.token)}&name=${encodeURIComponent(basename(cwd()))}`;
+    process.stdout.write("Scan this trusted-LAN pairing QR code in Truss Remote:\n");
+    qrcode.generate(pairingUri, { small: true });
     process.stdout.write("It binds to loopback by default. A non-loopback host is for a trusted LAN or secure tunnel only; do not expose it to the public internet without TLS and device-pairing support.\n");
     try {
       await waitForShutdown();

@@ -52,10 +52,12 @@
     "local-first"
   ],
   "dependencies": {
-    "@truss-harness/gateway": "0.1.0",
     "@truss-harness/branding": "0.1.0",
+    "@truss-harness/gateway": "0.1.0",
     "@truss-harness/mcp": "0.1.0",
     "@truss-harness/provider-openai-compatible": "0.1.0",
-    "@truss-harness/runtime": "0.1.0"
+    "@truss-harness/runtime": "0.1.0",
+    "@types/qrcode-terminal": "^0.12.2",
+    "qrcode-terminal": "^0.11.0"
   }
 }
