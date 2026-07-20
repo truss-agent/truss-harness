@@ -1,11 +1,19 @@
 {
   "expo": {
-    "name": "Truss",
-    "slug": "truss-harness",
+    "name": "Truss Go",
+    "slug": "truss-go",
     "scheme": "truss",
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "plugins": ["expo-camera", "expo-secure-store"]
+    "android": {
+      "package": "com.trussagent.trussgo",
+      "permissions": ["CAMERA"],
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
+    },
+    "plugins": [
+      ["expo-camera", { "cameraPermission": "Allow Truss Go to scan a workspace pairing QR code." }],
+      "expo-secure-store"
+    ]
   }
 }
