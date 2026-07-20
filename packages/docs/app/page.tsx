@@ -34,12 +34,6 @@ export default function HomePage() {
               >
                 Get started
               </Link>
-              <Link
-                className="site-button site-button-secondary"
-                href="/features"
-              >
-                Explore features
-              </Link>
             </div>
           </div>
           <div className="site-terminal" aria-label="Truss CLI preview">
