@@ -81,7 +81,7 @@ export interface DesktopBridge {
   saveConversations(conversations: readonly DesktopConversation[], activeConversationId?: string): Promise<void>;
   discoverModels(configuration?: Partial<DesktopConfiguration>): Promise<{ readonly endpoints: readonly DesktopEndpoint[]; readonly models: readonly string[] }>;
   configure(configuration: DesktopConfiguration): Promise<DesktopState>;
-  sendChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[] }): Promise<void>;
+  sendChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[]; readonly openFilePaths?: readonly string[] }): Promise<void>;
   stopChat(): Promise<void>;
   resolveApproval(callId: string, approved: boolean): Promise<void>;
   listFiles(): Promise<readonly DesktopFile[]>;

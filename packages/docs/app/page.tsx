@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { brand } from "@truss-harness/branding";
 import { SiteFooter, SiteHeader } from "./site-chrome";
+import { LandingMotion } from "./landing-motion";
 import { createPageMetadata } from "./site-metadata";
 
 export const metadata = createPageMetadata({ title: brand.productName, description: "A modular, local-first coding-agent runtime for CLI, terminal, VS Code, and desktop workflows.", path: "/" });
@@ -10,6 +11,7 @@ export default function HomePage() {
     <div className="site">
       <SiteHeader />
       <main>
+        <LandingMotion>
         <section className="site-hero">
           <div className="site-hero-copy">
             <p className="site-eyebrow">Local-first coding agents</p>
@@ -47,7 +49,7 @@ export default function HomePage() {
             </div>
             <div className="site-terminal-body">
               <p>
-                <b>$</b> truss-harness chat "Review the current diff"
+                <b>$</b><span data-terminal-command> truss-harness chat "Review the current diff"</span><span className="site-terminal-cursor" data-terminal-cursor aria-hidden="true">▋</span><span className="site-terminal-enter" data-terminal-enter aria-hidden="true">↵</span>
               </p>
               <p className="site-terminal-muted">
                 model: qwen3-coder | mode: edit | permissions: ask
@@ -63,7 +65,7 @@ export default function HomePage() {
             </div>
           </div>
         </section>
-        <section className="site-band">
+        <section className="site-band" data-reveal>
           <div className="site-band-title">
             <p className="site-eyebrow">One runtime, four ways to work</p>
             <h2>Bring the agent to your workflow.</h2>
@@ -77,14 +79,14 @@ export default function HomePage() {
             Meet the clients
           </Link>
         </section>
-        <section className="site-clients" aria-labelledby="clients-heading">
+        <section className="site-clients" aria-labelledby="clients-heading" data-reveal>
           <div className="site-section-heading">
             <p className="site-eyebrow">Client surfaces</p>
             <h2 id="clients-heading">
               Choose the interface, not a different agent.
             </h2>
           </div>
-          <div className="site-client-grid">
+          <div className="site-client-grid" data-stagger>
             <article>
               <span>CLI</span>
               <h3>Automate from the shell</h3>
@@ -141,7 +143,7 @@ export default function HomePage() {
             </article>
           </div>
         </section>
-        <section className="site-foundations">
+        <section className="site-foundations" data-reveal>
           <div className="site-foundations-inner">
             <header className="site-foundations-intro">
               <p className="site-eyebrow">Built for real work</p>
@@ -151,7 +153,7 @@ export default function HomePage() {
                 permissions are designed to work together.
               </p>
             </header>
-            <div className="site-principles">
+            <div className="site-principles" data-stagger>
               <article>
                 <span>01</span>
                 <h3>Local by default</h3>
@@ -179,6 +181,7 @@ export default function HomePage() {
             </div>
           </div>
         </section>
+        </LandingMotion>
       </main>
       <SiteFooter />
     </div>

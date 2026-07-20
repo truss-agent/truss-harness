@@ -178,6 +178,16 @@ button:focus-visible {
     letter-spacing: 0;
 }
 
+.files-section .section-heading {
+    height: auto;
+    min-height: 38px;
+    padding-block: 4px;
+}
+
+.files-section .section-heading #refreshFiles {
+    margin-block: 3px;
+}
+
 .file-tree,
 .conversation-list {
     min-height: 0;

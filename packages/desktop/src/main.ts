@@ -374,8 +374,10 @@ async function getGitStatus(): Promise<DesktopGitStatus> {
   }
 }
 
-async function fileContext(activeFilePath: string | undefined, attachedPaths: readonly string[] | undefined): Promise<readonly ContextBlock[]> {
-  const paths = [...new Set([activeFilePath, ...(attachedPaths ?? [])].filter((path): path is string => Boolean(path)))].slice(0, 8);
+async function fileContext(activeFilePath: string | undefined, attachedPaths: readonly string[] | undefined, openFilePaths: readonly string[] | undefined): Promise<readonly ContextBlock[]> {
+  const attached = new Set(attachedPaths ?? []);
+  const openFiles = new Set(openFilePaths ?? []);
+  const paths = [...new Set([activeFilePath, ...(attachedPaths ?? []), ...(openFilePaths ?? [])].filter((path): path is string => Boolean(path)))].slice(0, 8);
   const blocks: ContextBlock[] = [];
   const primaryBudget = Math.max(2_000, Math.min(20_000, persisted.configuration?.contextWindow ?? 8_192));
   let remaining = 80_000;
@@ -383,23 +385,28 @@ async function fileContext(activeFilePath: string | undefined, attachedPaths: re
     if (remaining <= 0) break;
     try {
       const isPrimary = path === activeFilePath;
+      const isAttached = attached.has(path);
+      const source = isPrimary ? "active-file" : isAttached ? "attached-file" : "open-file";
+      const priority = isPrimary ? 1_000 : isAttached ? 400 : 100;
       const contentType = mediaType(path);
       if (contentType && contentType !== "image/svg+xml") {
         blocks.push({
-          source: `${isPrimary ? "active-file" : "attached-file"}:${path}`,
+          source: `${source}:${path}`,
           content: `This ${contentType.startsWith("video/") ? "video" : "image"} file is open in the desktop viewer. Binary content is not included in text model context.`,
-          priority: isPrimary ? 1_000 : 100
+          priority
         });
         continue;
       }
       const content = await readFile(ensurePathInsideWorkspace(path), "utf8");
       const clipped = content.slice(0, Math.min(isPrimary ? primaryBudget : 30_000, remaining));
       blocks.push({
-        source: `${isPrimary ? "active-file" : "attached-file"}:${path}`,
+        source: `${source}:${path}`,
         content: isPrimary
           ? `This is the currently open workspace file and the primary context for this request. Tool results produced later in the run take precedence over this request-start snapshot.\n\n${clipped}`
-          : clipped,
-        priority: isPrimary ? 1_000 : 100
+          : !isAttached && openFiles.has(path)
+            ? `This workspace file is currently open in another editor tab.\n\n${clipped}`
+            : clipped,
+        priority
       });
       remaining -= clipped.length;
     } catch {
@@ -409,7 +416,7 @@ async function fileContext(activeFilePath: string | undefined, attachedPaths: re
   return blocks;
 }
 
-async function executeChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[] }): Promise<void> {
+async function executeChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[]; readonly openFilePaths?: readonly string[] }): Promise<void> {
   const configuration = persisted.configuration;
   if (!configuration || !configuration.model) throw new Error("Choose a local model before starting the agent.");
   if (!runtimeClient) await configureRuntime(configuration);
@@ -424,7 +431,7 @@ async function executeChat(input: { readonly prompt: string; readonly conversati
   activeAbort = controller;
   send({ type: "chat-start", conversationId: input.conversationId });
   try {
-    await client.runtime.run(activeSessionId, input.prompt, controller.signal, await fileContext(input.activeFilePath, input.attachedPaths));
+    await client.runtime.run(activeSessionId, input.prompt, controller.signal, await fileContext(input.activeFilePath, input.attachedPaths, input.openFilePaths));
     send({ type: "chat-end", conversationId: input.conversationId, aborted: controller.signal.aborted });
   } catch (error) {
     if (!controller.signal.aborted) send({ type: "chat-error", conversationId: input.conversationId, message: error instanceof Error ? error.message : String(error) });
@@ -434,7 +441,7 @@ async function executeChat(input: { readonly prompt: string; readonly conversati
   }
 }
 
-async function runChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[] }): Promise<void> {
+async function runChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[]; readonly openFilePaths?: readonly string[] }): Promise<void> {
   const previousRun = activeRun;
   if (previousRun) {
     activeAbort?.abort();

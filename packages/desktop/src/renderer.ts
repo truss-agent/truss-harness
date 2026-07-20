@@ -1042,7 +1042,14 @@ async function sendChat(): Promise<void> {
   try {
     runningConversationId = conversation.id;
     setBusy(true);
-    await window.trussDesktop.sendChat({ prompt, conversationId: conversation.id, history, activeFilePath: activeFile, attachedPaths: attachedPaths(prompt) });
+    await window.trussDesktop.sendChat({
+      prompt,
+      conversationId: conversation.id,
+      history,
+      activeFilePath: activeFile,
+      attachedPaths: attachedPaths(prompt),
+      openFilePaths: openEditorTabs.map((tab) => tab.path)
+    });
   } catch (error) {
     updateConversation(conversation.id, (current) => ({ ...current, messages: [...current.messages.slice(0, -1), { role: "assistant", content: `Error: ${error instanceof Error ? error.message : String(error)}` }] }));
     setBusy(false);
