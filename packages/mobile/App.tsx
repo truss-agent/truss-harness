@@ -14,6 +14,7 @@ const approvalCopy: Record<ApprovalMode, { readonly title: string; readonly deta
   "auto-read": { title: "Auto-approve reads", detail: "Read-only file tools run automatically; changes and commands still ask." },
   "auto-all": { title: "Auto-approve all", detail: "Allow all registered tools for this trusted gateway." }
 };
+const readOnlyTools = new Set(["read_file", "list_directory", "search_files", "grep"]);
 
 function nextId(): string { return `${Date.now()}-${Math.random().toString(36).slice(2)}`; }
 function gatewayPath(url: string, path: string): string { return `${url.replace(/\/$/, "")}${path}`; }
@@ -60,11 +61,13 @@ export default function App() {
     if (event.type === "run_started") { setRunning(true); setStatus("Agent is working."); }
     if (event.type === "run_completed") { setRunning(false); setStatus("Run completed."); }
     if (event.type === "run_failed") { setRunning(false); setStatus(event.message ?? "Run failed."); }
-    if (event.type === "tool_call_requested" && event.callId && event.tool && event.input) {
+    if (event.type === "tool_call_requested" && event.tool && (approvalMode === "auto-all" || (approvalMode === "auto-read" && readOnlyTools.has(event.tool)))) {
+      setStatus(`Running ${event.tool.replaceAll("_", " ")}...`);
+    } else if (event.type === "tool_call_requested" && event.callId && event.tool && event.input) {
       setApproval({ callId: event.callId, tool: event.tool, input: event.input });
       setStatus("Tool approval required.");
     }
-  }, [appendAssistant]);
+  }, [appendAssistant, approvalMode]);
 
   const connectEvents = useCallback(() => new Promise<void>((resolve, reject) => {
     eventSocket.current?.close();
