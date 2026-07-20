@@ -117,6 +117,10 @@ body {
 }
 
 .site-hero {
+    align-items: center;
+    display: grid;
+    gap: 62px;
+    grid-template-columns: minmax(0, .96fr) minmax(380px, 1.04fr);
     margin: 0 auto;
     max-width: 1180px;
     min-height: min(640px, calc(100vh - 140px));
@@ -150,11 +154,16 @@ body {
 }
 
 .site-hero-copy {
-    margin: 0 auto 42px;
-    max-width: 760px;
+    margin: 0;
+    max-width: 590px;
     position: relative;
-    text-align: center;
     z-index: 1;
+}
+
+.site-hero h1 {
+    font-size: 56px;
+    line-height: 1.02;
+    margin-bottom: 20px;
 }
 
 .site-eyebrow {
@@ -196,7 +205,7 @@ body {
     color: #4d6259;
     font-size: 18px;
     line-height: 1.6;
-    margin: 0 auto;
+    margin: 0;
     max-width: 670px;
 }
 
@@ -204,7 +213,7 @@ body {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    justify-content: center;
+    justify-content: flex-start;
     margin-top: 28px;
 }
 
@@ -244,8 +253,8 @@ body {
     border-radius: 8px;
     box-shadow: 0 18px 34px rgba(25, 50, 41, .16);
     color: #edf7ef;
-    margin: 0 auto;
-    max-width: 900px;
+    margin: 0;
+    max-width: none;
     overflow: hidden;
     text-align: left;
     transform-style: preserve-3d;
@@ -1158,12 +1167,14 @@ body {
     }
 
     .site-hero {
+        gap: 38px;
+        grid-template-columns: 1fr;
         min-height: 0;
         padding: 59px 18px 42px;
     }
 
     .site-hero-copy {
-        margin-bottom: 34px;
+        margin-bottom: 0;
     }
 
     .site h1,
