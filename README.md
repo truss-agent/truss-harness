@@ -67,6 +67,7 @@ npm publish --workspace @truss-harness/branding --access public
 npm publish --workspace @truss-harness/runtime --access public
 npm publish --workspace @truss-harness/mcp --access public
 npm publish --workspace @truss-harness/provider-openai-compatible --access public
+npm publish --workspace @truss-harness/gateway --access public
 npm publish --workspace @truss-harness/cli --access public
 npm publish --workspace @truss-harness/tui --access public
 ```

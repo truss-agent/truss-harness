@@ -11,11 +11,5 @@
     "skipLibCheck": true
   },
   "include": ["src"],
-  "references": [
-    { "path": "../branding" },
-    { "path": "../gateway" },
-    { "path": "../runtime" },
-    { "path": "../mcp" },
-    { "path": "../provider-openai-compatible" }
-  ]
+  "references": [{ "path": "../runtime" }]
 }

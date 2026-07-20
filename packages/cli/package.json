@@ -52,6 +52,7 @@
     "local-first"
   ],
   "dependencies": {
+    "@truss-harness/gateway": "0.1.0",
     "@truss-harness/branding": "0.1.0",
     "@truss-harness/mcp": "0.1.0",
     "@truss-harness/provider-openai-compatible": "0.1.0",

@@ -12,6 +12,7 @@ Select every client this fix is for. For a shared-package change, select every c
 - [ ] Desktop
 - [ ] CLI
 - [ ] TUI
+- [ ] Mobile
 - [ ] Documentation site
 - [ ] Repository infrastructure (no client)
 

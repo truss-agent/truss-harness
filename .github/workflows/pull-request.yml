@@ -24,7 +24,7 @@ jobs:
           node <<'NODE'
           const body = process.env.PR_BODY ?? '';
           const branch = process.env.HEAD_REF ?? '';
-          const hasClient = /-\s*\[[xX]\]\s*(?:VS Code|Desktop|CLI|TUI|Documentation site|Repository infrastructure \(no client\))(?=\s|$)/m.test(body);
+          const hasClient = /-\s*\[[xX]\]\s*(?:VS Code|Desktop|CLI|TUI|Mobile|Documentation site|Repository infrastructure \(no client\))(?=\s|$)/m.test(body);
           const hasIssue = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#\d+\b/i.test(body);
           const errors = [];
 
@@ -83,6 +83,11 @@ jobs:
 
           if affects "^packages/tui/" || affects "$shared_client_code" || affects "^packages/cli/"; then
             npm --workspace @truss-harness/tui run build
+          fi
+
+          if affects "^packages/gateway/" || affects "^packages/mobile/" || affects "^(package(-lock)?\.json|scripts/|packages/(runtime|branding)/)"; then
+            npm --workspace @truss-harness/gateway run build
+            npm --workspace @truss-harness/mobile run typecheck
           fi
 
           if affects "^packages/docs/" || affects "^(package(-lock)?\.json|scripts/|packages/branding/)"; then

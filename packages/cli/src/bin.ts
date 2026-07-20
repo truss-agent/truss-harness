@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { cwd } from "node:process";
+import { basename } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { detectLocalEndpoints, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import { brand } from "@truss-harness/branding";
@@ -7,6 +8,7 @@ import { executeWorkspaceCommand, workspaceCommandHelp } from "@truss-harness/ru
 import { createClientRuntime, type ClientRuntime } from "./runtime.js";
 import { configurationPaths, initializeWorkspaceConfiguration, parseConfigurationOverrides, resolveConfiguration, saveUserProfile, type ResolvedConfiguration } from "./config.js";
 import { ProtocolToolApproval, runService } from "./protocol.js";
+import { startRemoteGateway } from "@truss-harness/gateway";
 
 const help = `${brand.productName} CLI
 
@@ -35,6 +37,7 @@ Commands:
   clear-memory          Delete this workspace's durable agent memory
   commands              Print slash commands shared by interactive clients
   serve                 Start the JSONL runtime service for editor clients
+  gateway               Start a loopback HTTP/SSE gateway for the mobile client
   help                  Show this reference
 
 Options:
@@ -46,6 +49,9 @@ Options:
   --permission <name>    ask, auto-read, or auto-all
   --internet-access      Enable public web search and page fetching
   --no-internet-access   Disable internet tools
+  --gateway-token <token>  Required 24+ character token for gateway clients
+  --gateway-port <port>    Gateway port (default: 4787)
+  --gateway-host <host>    Bind address (default: 127.0.0.1; use a trusted LAN only)
 
 Modes:
   chat                   Conversation only; optional internet tools
@@ -94,6 +100,41 @@ function subscribeToRuntimeEvents(events: ClientRuntime["events"]): void {
 function inlineMode(input: string): { readonly mode?: "chat" | "plan" | "edit"; readonly prompt: string } {
   const match = input.trim().match(/^--mode\s+(chat|plan|edit)(?:\s+([\s\S]*))?$/);
   return match ? { mode: match[1] as "chat" | "plan" | "edit", prompt: match[2]?.trim() ?? "" } : { prompt: input.trim() };
+}
+
+function gatewayArguments(rawArgs: readonly string[]): { readonly token?: string; readonly host?: string; readonly port: number; readonly rest: readonly string[] } {
+  let token: string | undefined;
+  let host: string | undefined;
+  let port = 4787;
+  const rest: string[] = [];
+  for (let index = 0; index < rawArgs.length; index++) {
+    const argument = rawArgs[index];
+    if (argument === "--gateway-token") {
+      token = rawArgs[++index];
+      continue;
+    }
+    if (argument === "--gateway-port") {
+      const value = Number.parseInt(rawArgs[++index] ?? "", 10);
+      if (!Number.isSafeInteger(value) || value < 1 || value > 65_535) throw new Error("--gateway-port must be a port between 1 and 65535.");
+      port = value;
+      continue;
+    }
+    if (argument === "--gateway-host") {
+      const value = rawArgs[++index];
+      if (!value?.trim()) throw new Error("--gateway-host must be a non-empty hostname or address.");
+      host = value;
+      continue;
+    }
+    rest.push(argument);
+  }
+  return { token, host, port, rest };
+}
+
+async function waitForShutdown(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    process.once("SIGINT", resolve);
+    process.once("SIGTERM", resolve);
+  });
 }
 
 async function runInteractiveChat(initialConfiguration: ResolvedConfiguration): Promise<void> {
@@ -251,6 +292,37 @@ async function main(): Promise<void> {
       return;
     }
     throw new Error(`Use ${brand.cliCommand} config path or ${brand.cliCommand} config init`);
+  }
+
+  if (command === "gateway") {
+    const gateway = gatewayArguments(rawArgs);
+    if (!gateway.token || gateway.token.length < 24) throw new Error("Set --gateway-token to a random value with at least 24 characters.");
+    const { overrides } = parseConfigurationOverrides([...gateway.rest]);
+    const configuration = await resolveConfiguration({ workspaceRoot: cwd(), overrides });
+    const clients = new Map<"chat" | "plan" | "edit", { readonly client: ClientRuntime; readonly approval: ProtocolToolApproval }>();
+    const server = await startRemoteGateway({
+      token: gateway.token,
+      port: gateway.port,
+      host: gateway.host,
+      workspace: { id: "workspace", displayName: basename(cwd()) },
+      createRuntime: async (mode) => {
+        const current = clients.get(mode);
+        if (current) return { runtime: current.client.runtime, events: current.client.events, approval: current.approval };
+        const approval = new ProtocolToolApproval(configuration.permission);
+        const client = await createClientRuntime({ ...configuration, mode, approval });
+        clients.set(mode, { client, approval });
+        return { runtime: client.runtime, events: client.events, approval };
+      }
+    });
+    process.stdout.write(`Truss mobile gateway listening at ${server.url}\n`);
+    process.stdout.write("It binds to loopback by default. A non-loopback host is for a trusted LAN or secure tunnel only; do not expose it to the public internet without TLS and device-pairing support.\n");
+    try {
+      await waitForShutdown();
+    } finally {
+      await server.close();
+      await Promise.all([...clients.values()].map(async ({ client }) => client.dispose()));
+    }
+    return;
   }
 
   const { overrides, rest: args } = parseConfigurationOverrides(rawArgs);

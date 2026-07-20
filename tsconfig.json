@@ -5,6 +5,7 @@
     { "path": "./packages/runtime" },
     { "path": "./packages/mcp" },
     { "path": "./packages/provider-openai-compatible" },
+    { "path": "./packages/gateway" },
     { "path": "./packages/cli" },
     { "path": "./packages/tui" },
     { "path": "./packages/vscode" },
