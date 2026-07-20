@@ -10,3 +10,4 @@ export * from "./agent.js";
 export * from "./workspace.js";
 export * from "./commands.js";
 export * from "./web.js";
+export * from "./remote.js";
