@@ -7,7 +7,7 @@ import { brand } from "@truss-harness/branding";
 import { executeWorkspaceCommand, workspaceCommandHelp } from "@truss-harness/runtime";
 import { createClientRuntime, type ClientRuntime } from "./runtime.js";
 import { configurationPaths, initializeWorkspaceConfiguration, parseConfigurationOverrides, resolveConfiguration, saveUserProfile, type ResolvedConfiguration } from "./config.js";
-import { ProtocolToolApproval, runService } from "./protocol.js";
+import { ProtocolToolApproval, runService, type PermissionMode } from "./protocol.js";
 import { startRemoteGateway } from "@truss-harness/gateway";
 
 const help = `${brand.productName} CLI
@@ -314,11 +314,11 @@ async function main(): Promise<void> {
       return {
         id,
         displayName: basename(workspaceRoot),
-        createRuntime: async (mode: "chat" | "plan" | "edit") => {
-          const key = `${id}:${mode}`;
+        createRuntime: async (mode: "chat" | "plan" | "edit", toolApprovalMode?: PermissionMode) => {
+          const key = `${id}:${mode}:${toolApprovalMode ?? configuration.permission}`;
           const current = clients.get(key);
           if (current) return { runtime: current.client.runtime, events: current.client.events, approval: current.approval };
-          const approval = new ProtocolToolApproval(configuration.permission);
+          const approval = new ProtocolToolApproval(toolApprovalMode ?? configuration.permission);
           const client = await createClientRuntime({ ...configuration, mode, approval });
           clients.set(key, { client, approval });
           return { runtime: client.runtime, events: client.events, approval };

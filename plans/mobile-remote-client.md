@@ -118,3 +118,13 @@ tool implementations.
   credentials, and execution.
 - All wire events are JSON-safe and versioned.
 - Tests cover remote-event conversion and a rejected or malformed client command.
+
+## Active follow-up: navigation and approval defaults (#14)
+
+- Keep a user in the conversation while they switch between Chat, Plan, and
+  Edit by creating a host-authorized replacement session with copied history.
+- Provide a Home route to return to the trusted gateway's workspace picker.
+- Expose only host-advertised tool approval choices in mobile settings: ask,
+  auto-read, or auto-approve all tools for the currently connected host.
+- Verify gateway validation, session switching, mobile typechecking, and the
+  repository build before merging.

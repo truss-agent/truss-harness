@@ -4,6 +4,9 @@ import type { WorkspacePlan } from "./plans.js";
 /** The first version of the provider-neutral protocol used by remote Truss clients. */
 export const REMOTE_SESSION_PROTOCOL_VERSION = 1 as const;
 
+/** Host-controlled policy for handling remote agent tool requests. */
+export type RemoteToolApprovalMode = "ask" | "auto-read" | "auto-all";
+
 /** An opaque workspace identifier. Remote clients must never supply a host filesystem path. */
 export interface RemoteWorkspace {
   readonly id: string;
@@ -14,6 +17,8 @@ export interface RemoteWorkspace {
 /** Features a host is willing to expose to a connected client. */
 export interface RemoteHostCapabilities {
   readonly modes: readonly ("chat" | "plan" | "edit")[];
+  /** Approval policies the host allows the connected client to select. */
+  readonly toolApprovalModes: readonly RemoteToolApprovalMode[];
   readonly supportsAttachments: boolean;
   readonly supportsDiffs: boolean;
   readonly supportsToolApproval: boolean;
@@ -33,7 +38,8 @@ interface RemoteCommandEnvelope {
 
 /** Commands a remote client may request. The host authorizes every command against its own policy. */
 export type RemoteClientCommand =
-  | (RemoteCommandEnvelope & { readonly type: "create_session"; readonly workspaceId: string; readonly mode: "chat" | "plan" | "edit" })
+  | (RemoteCommandEnvelope & { readonly type: "create_session"; readonly workspaceId: string; readonly mode: "chat" | "plan" | "edit"; readonly toolApprovalMode?: RemoteToolApprovalMode })
+  | (RemoteCommandEnvelope & { readonly type: "change_session_mode"; readonly sessionId: string; readonly mode: "chat" | "plan" | "edit"; readonly toolApprovalMode?: RemoteToolApprovalMode })
   | (RemoteCommandEnvelope & { readonly type: "send_message"; readonly sessionId: string; readonly prompt: string; readonly attachments?: readonly ChatAttachment[] })
   | (RemoteCommandEnvelope & { readonly type: "approve_tool"; readonly sessionId: string; readonly callId: string; readonly approved: boolean })
   | (RemoteCommandEnvelope & { readonly type: "interrupt"; readonly sessionId: string });
