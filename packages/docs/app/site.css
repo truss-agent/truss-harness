@@ -2015,12 +2015,12 @@ body {
 }
 .site-page-intro h1 { max-width: 850px; }
 .site-page-intro>p:last-child { max-width: 690px; }
-.site-page:not(.download-page):not(.changelog-page):not(.roadmap-page) .site-page-intro {
+.site-page .site-page-intro {
     align-items: center;
     margin-inline: auto;
     text-align: center;
 }
-.site-page:not(.download-page):not(.changelog-page):not(.roadmap-page) .site-page-intro>p:last-child {
+.site-page .site-page-intro>p:last-child {
     margin-inline: auto;
     text-align: justify;
 }
