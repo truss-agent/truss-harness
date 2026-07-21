@@ -2015,12 +2015,12 @@ body {
 }
 .site-page-intro h1 { max-width: 850px; }
 .site-page-intro>p:last-child { max-width: 690px; }
-.site-page:not(.download-page):not(.changelog-page):not(.roadmap-page) .site-page-intro {
+.site-page .site-page-intro {
     align-items: center;
     margin-inline: auto;
     text-align: center;
 }
-.site-page:not(.download-page):not(.changelog-page):not(.roadmap-page) .site-page-intro>p:last-child {
+.site-page .site-page-intro>p:last-child {
     margin-inline: auto;
     text-align: justify;
 }
@@ -2388,6 +2388,9 @@ body {
 }
 .download-build:last-child { border-bottom: 0; }
 .download-recommended { border-radius: 999px; }
+.roadmap-page .site-callout,
+.changelog-page .site-callout,
+.download-page .download-help { margin-top: 64px; }
 
 :root[data-truss-theme="dark"] .download-android > div > p:last-child { color: #b5c9bf; }
 
@@ -2396,4 +2399,7 @@ body {
     .download-help,
     .download-android { padding: 30px 24px; }
     .download-android { align-items: flex-start; flex-direction: column; gap: 24px; }
+    .roadmap-page .site-callout,
+    .changelog-page .site-callout,
+    .download-page .download-help { margin-top: 44px; }
 }
