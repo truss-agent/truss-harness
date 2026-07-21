@@ -44,6 +44,21 @@ export default function DownloadPage() {
             </Link>
           </div>
         </section>
+
+        <section className="download-android">
+          <div>
+            <p className="site-eyebrow">Android companion</p>
+            <h2>Keep your Truss workspace within reach.</h2>
+            <p>
+              Pair Truss Go with Truss Desktop or VS Code over your trusted
+              Wi-Fi network, then continue the conversation from your Android
+              phone without moving provider credentials to the device.
+            </p>
+          </div>
+          <Link className="site-button site-button-secondary" href="/truss-go">
+            Explore Truss Go
+          </Link>
+        </section>
       </main>
       <SiteFooter />
     </div>
