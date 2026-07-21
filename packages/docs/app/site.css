@@ -2379,6 +2379,15 @@ body {
 .download-android h2 { font-size: 27px; margin-bottom: 10px; }
 .download-android > div > p:last-child { color: #52675e; line-height: 1.65; margin-bottom: 0; max-width: 720px; }
 .download-android .site-button { flex: 0 0 auto; }
+.download-release-bar { border-radius: 16px; }
+.download-platform-mark { border-radius: 10px; }
+.download-build-list {
+    border-bottom: 1px solid var(--site-line);
+    border-radius: 18px;
+    overflow: hidden;
+}
+.download-build:last-child { border-bottom: 0; }
+.download-recommended { border-radius: 999px; }
 
 :root[data-truss-theme="dark"] .download-android > div > p:last-child { color: #b5c9bf; }
 
