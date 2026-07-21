@@ -5,11 +5,13 @@ import { createPageMetadata } from "../site-metadata";
 const entries = [
   {
     version: "Unreleased",
-    label: "What is landing next",
+    label: "Recently completed",
     changes: [
-      "Dedicated client pages for the CLI, terminal UI, VS Code extension, and desktop app, each with an in-product screenshot, setup path, and documentation link.",
-      "A refined landing page with optional light and dark themes, a scroll-initiated terminal session, and clearer client navigation.",
-      "Desktop chat now includes the active editor plus other open tabs as bounded request context, while preserving explicit file attachments as the higher-priority context."
+      "Added Truss Go for Android, with signed APK releases, setup guidance, and a dedicated product page.",
+      "Added trusted same-Wi-Fi QR pairing from Truss Desktop and VS Code so Truss Go can continue a workspace conversation without receiving model-provider credentials.",
+      "Added MCP stdio tool discovery and invocation across the shared runtime, with connection diagnostics, approval policies, and explicit trust for workspace-defined servers.",
+      "Shipped dedicated pages for the CLI, terminal UI, VS Code extension, desktop app, and Truss Go, plus a clearer responsive website and download experience.",
+      "Improved desktop request context with the active editor and other open tabs while keeping explicitly attached files at the highest priority."
     ]
   },
   {
@@ -23,8 +25,50 @@ const entries = [
   }
 ] as const;
 
-export const metadata = createPageMetadata({ title: "Changelog", description: "Product updates for Truss: the local-first coding-agent runtime and its CLI, terminal, VS Code, and desktop clients.", path: "/changelog" });
+export const metadata = createPageMetadata({
+  title: "Changelog",
+  description: "Product updates for Truss, including its shared runtime, desktop and editor clients, terminal tools, and Truss Go for Android.",
+  path: "/changelog"
+});
 
 export default function ChangelogPage() {
-  return <div className="site"><SiteHeader /><main className="site-page changelog-page"><header className="site-page-intro"><p className="site-eyebrow">Changelog</p><h1>What’s new in Truss.</h1><p>Follow the evolution of the shared runtime and the clients built on it. For implementation detail, browse the documentation or the project on GitHub.</p></header><section className="changelog-list" aria-label="Product updates">{entries.map((entry) => <article key={entry.version}><header><span>{entry.version}</span><p>{entry.label}</p></header><ul>{entry.changes.map((change) => <li key={change}>{change}</li>)}</ul></article>)}</section><section className="site-callout"><div><p className="site-eyebrow">Stay close</p><h2>Follow the work as it ships.</h2></div><Link className="site-button site-button-primary" href="/download">Download desktop</Link></section></main><SiteFooter /></div>;
+  return (
+    <div className="site">
+      <SiteHeader />
+      <main className="site-page changelog-page">
+        <header className="site-page-intro">
+          <p className="site-eyebrow">Changelog</p>
+          <h1>What&apos;s new in Truss.</h1>
+          <p>
+            Follow the runtime, clients, and integrations as they ship. Each
+            update moves Truss toward one consistent agent experience across
+            your computer, editor, terminal, and phone.
+          </p>
+        </header>
+
+        <section className="changelog-list" aria-label="Product updates">
+          {entries.map((entry) => (
+            <article key={entry.version}>
+              <header>
+                <span>{entry.version}</span>
+                <p>{entry.label}</p>
+              </header>
+              <ul>
+                {entry.changes.map((change) => <li key={change}>{change}</li>)}
+              </ul>
+            </article>
+          ))}
+        </section>
+
+        <section className="site-callout">
+          <div>
+            <p className="site-eyebrow">Available now</p>
+            <h2>Try the latest Truss clients.</h2>
+          </div>
+          <Link className="site-button site-button-primary" href="/download">View downloads</Link>
+        </section>
+      </main>
+      <SiteFooter />
+    </div>
+  );
 }
