@@ -150,7 +150,7 @@ For Vercel, import `truss-agent/truss-harness` and use:
 | Production Branch                           | `master`                                                         |
 | Node.js Version                             | 20.x                                                             |
 | Output Directory                            | Leave at the Next.js default                                     |
-| Environment Variable                        | `NEXT_PUBLIC_SITE_URL=https://truss-agent.hookerhillstudios.com` |
+| Environment Variable                        | `NEXT_PUBLIC_SITE_URL=https://truss-agent.com`                  |
 
 `packages/docs/vercel.json` supplies the monorepo-aware install and build
 commands. After the GitHub repository is connected, a push to `master`

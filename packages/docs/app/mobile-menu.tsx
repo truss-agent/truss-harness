@@ -8,8 +8,8 @@ const links = [
   ["About", "/about"],
   ["Features", "/features"],
   ["Clients", "/clients"],
-  ["Docs", "/docs"],
   ["Truss Go", "/truss-go"],
+  ["Docs", "/docs"],
   ["Download", "/download"]
 ] as const;
 
