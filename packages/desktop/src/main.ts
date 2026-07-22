@@ -1,6 +1,6 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol, safeStorage, shell, type OpenDialogOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, protocol, safeStorage, shell, webContents, type OpenDialogOptions } from "electron";
 import { autoUpdater } from "electron-updater";
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { execFile as execFileCallback } from "node:child_process";
 import { createReadStream } from "node:fs";
@@ -46,6 +46,7 @@ let activeConversationId: string | undefined;
 let activeAbort: AbortController | undefined;
 let activeRun: Promise<void> | undefined;
 let devServerProcess: ReturnType<typeof spawn> | undefined;
+const terminalProcesses = new Set<ChildProcess>();
 let trussGoGateway: RunningRemoteGateway | undefined;
 const trussGoClients: Array<Awaited<ReturnType<typeof createClientRuntime>>> = [];
 let updaterConfigured = false;
@@ -103,16 +104,34 @@ function isAllowedPreviewUrl(value: string): boolean {
   }
 }
 
-function stopManagedDevServer(): void {
-  const child = devServerProcess;
-  devServerProcess = undefined;
+function stopProcessTree(child: ChildProcess | undefined): void {
   if (!child || child.killed) return;
   if (process.platform === "win32" && child.pid) {
     void execFile("taskkill", ["/PID", String(child.pid), "/T", "/F"]).catch(() => child.kill());
   } else {
     child.kill();
   }
+}
+
+function stopManagedDevServer(): void {
+  const child = devServerProcess;
+  devServerProcess = undefined;
+  stopProcessTree(child);
   send({ type: "dev-server", status: "stopped" });
+}
+
+function stopManagedTerminalProcesses(): void {
+  for (const child of terminalProcesses) stopProcessTree(child);
+  terminalProcesses.clear();
+}
+
+function shutdownDesktopWork(): void {
+  activeAbort?.abort();
+  stopManagedDevServer();
+  stopManagedTerminalProcesses();
+  for (const contents of webContents.getAllWebContents()) {
+    if (contents.getType() === "webview") contents.close();
+  }
 }
 
 function distDirectory(): string {
@@ -209,6 +228,8 @@ function normalizeConfiguration(value: DesktopConfiguration): DesktopConfigurati
     model: value.model.trim(),
     contextWindow: Math.max(512, Math.min(1_000_000, Math.floor(value.contextWindow || 8_192))),
     internetAccess: value.internetAccess ?? false,
+    autocomplete: { enabled: value.autocomplete?.enabled ?? false, model: value.autocomplete?.model?.trim() || undefined },
+    formatOnSave: value.formatOnSave === true,
     mcpServers: parseMcpServerConfigurations(value.mcpServers)
   };
 }
@@ -707,7 +728,7 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
 app.on("before-quit", () => {
-  stopManagedDevServer();
+  shutdownDesktopWork();
   void stopTrussGo();
   void disposeRuntime();
 });
@@ -934,10 +955,14 @@ ipcMain.handle("truss:run-terminal", async (_event, command: string): Promise<st
     return commandId;
   }
   const child = spawn(normalized, { cwd: persisted.workspaceRoot, shell: true, windowsHide: true });
+  terminalProcesses.add(child);
   child.stdout.on("data", (data: Buffer) => send({ type: "terminal-output", commandId, text: data.toString() }));
   child.stderr.on("data", (data: Buffer) => send({ type: "terminal-output", commandId, text: data.toString() }));
   child.on("error", (error) => send({ type: "terminal-output", commandId, text: `\n[terminal error] ${error.message}\n` }));
-  child.on("close", (code) => send({ type: "terminal-output", commandId, text: `\n[process exited: ${code ?? "unknown"}]\n` }));
+  child.on("close", (code) => {
+    terminalProcesses.delete(child);
+    send({ type: "terminal-output", commandId, text: `\n[process exited: ${code ?? "unknown"}]\n` });
+  });
   return commandId;
 });
 ipcMain.handle("truss:start-dev-server", (_event, command: string): string => {
@@ -992,3 +1017,38 @@ ipcMain.handle("truss:open-external", async (_event, value: string): Promise<voi
 });
 ipcMain.handle("truss:connect-truss-go", () => connectTrussGo());
 ipcMain.handle("truss:disconnect-truss-go", () => stopTrussGo());
+ipcMain.handle("truss:complete", async (_event, input: { prefix?: unknown; suffix?: unknown; path?: unknown }): Promise<string> => {
+  const configuration = persisted.configuration;
+  if (!configuration?.autocomplete?.enabled || !isLocalConfiguration(configuration)) return "";
+  const prefix = typeof input.prefix === "string" ? input.prefix.slice(-6_000) : "";
+  const suffix = typeof input.suffix === "string" ? input.suffix.slice(0, 1_500) : "";
+  if (!prefix.trim()) return "";
+  const model = configuration.autocomplete.model || configuration.model;
+  const prompt = `Complete the code at the cursor. Return ONLY the text to insert, with no Markdown, explanation, or repeated context.\n\nFile: ${typeof input.path === "string" ? input.path : "unknown"}\n\nBefore cursor:\n${prefix}\n\nAfter cursor:\n${suffix}`;
+  const completion = await generateLocalText({ kind: configuration.provider, baseUrl: configuration.baseUrl, model }, prompt);
+  return completion.replace(/^```[\w-]*\s*/i, "").replace(/\s*```$/, "").replace(/\r\n/g, "\n").slice(0, 4_000);
+});
+ipcMain.handle("truss:format-file", async (_event, path: string, content: string): Promise<string> => {
+  ensurePathInsideWorkspace(path);
+  if (typeof content !== "string" || content.length > 5_000_000) throw new Error("File content is invalid or too large to format.");
+  try {
+    const prettier = await import("prettier");
+    return prettier.format(content, { filepath: path });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(message.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, ""));
+  }
+});
+ipcMain.handle("truss:check-syntax", async (_event, path: string, content: string): Promise<readonly { readonly line: number; readonly message: string }[]> => {
+  ensurePathInsideWorkspace(path);
+  if (typeof content !== "string") return [];
+  try {
+    const prettier = await import("prettier");
+    await prettier.format(content, { filepath: path });
+    return [];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const line = Number(message.match(/\((\d+):(\d+)\)/)?.[1] ?? "1");
+    return [{ line, message: message.replace(/\s*\(\d+:\d+\).*$/s, "").trim() }];
+  }
+});

@@ -38,6 +38,26 @@ describe("AgentRuntime", () => {
     expect(await runtime.listSessions()).toHaveLength(1);
   });
 
+  it("allows a multi-step tool workflow to continue beyond 24 turns by default", async () => {
+    let turns = 0;
+    const provider: ModelProvider = { id: "fake", async *stream() {
+      if (turns++ < 25) {
+        yield { type: "tool_call", id: `step-${turns}`, name: "echo", input: { value: turns } } as const;
+        yield { type: "finish", reason: "tool_calls" } as const;
+        return;
+      }
+      yield { type: "text_delta", text: "Completed the workflow." } as const;
+      yield { type: "finish", reason: "stop" } as const;
+    }};
+    const tools = new ToolRegistry();
+    tools.register({ name: "echo", description: "echoes", inputSchema: { type: "object" }, async execute(input) { return { content: String(input.value) }; } });
+    const runtime = new AgentRuntime({ provider, tools, sessions: new InMemorySessionStore(), context: new RecentHistoryContextManager(), events: new EventBus<RuntimeEvent>(), workspaceRoot: process.cwd() });
+
+    const session = await runtime.createSession();
+    await expect(runtime.run(session.id, "Complete the workflow")).resolves.toBeUndefined();
+    expect(turns).toBe(26);
+  });
+
   it("rejects an edit-intent run that ends without a successful file write", async () => {
     const provider: ModelProvider = { id: "fake", async *stream() {
       yield { type: "text_delta", text: "Updated README.md." } as const;

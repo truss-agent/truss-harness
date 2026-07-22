@@ -44,6 +44,9 @@ const bridge: DesktopBridge = {
   openExternal: (url: string) => ipcRenderer.invoke("truss:open-external", url),
   connectTrussGo: () => ipcRenderer.invoke("truss:connect-truss-go"),
   disconnectTrussGo: () => ipcRenderer.invoke("truss:disconnect-truss-go"),
+  complete: (input) => ipcRenderer.invoke("truss:complete", input),
+  formatFile: (path, content) => ipcRenderer.invoke("truss:format-file", path, content),
+  checkSyntax: (path, content) => ipcRenderer.invoke("truss:check-syntax", path, content),
   onEvent: (listener: (event: DesktopEvent) => void) => {
     const handler = (_event: Electron.IpcRendererEvent, event: DesktopEvent): void => listener(event);
     ipcRenderer.on("truss:event", handler);
