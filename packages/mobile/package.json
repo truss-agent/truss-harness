@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/mobile",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "main": "index.ts",
   "scripts": {
@@ -11,13 +11,13 @@
   },
   "dependencies": {
     "expo": "~54.0.36",
-    "expo-camera": "~17.0.10",
-    "expo-secure-store": "~15.0.8",
-    "react": "19.1.4",
-    "react-native": "0.81.6"
+    "expo-camera": "17.0.10",
+    "expo-secure-store": "15.0.8",
+    "react": "19.1.0",
+    "react-native": "0.81.5"
   },
   "devDependencies": {
-    "@types/react": "^19.1.4",
+    "@types/react": "19.1.17",
     "typescript": "^5.7.2"
   }
 }
