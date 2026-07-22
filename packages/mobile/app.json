@@ -3,12 +3,25 @@
     "name": "Truss Go",
     "slug": "truss-go",
     "scheme": "truss",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "owner": "jrh89s-team",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "backgroundColor": "#101522",
+    "splash": {
+      "image": "./assets/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#101522"
+    },
     "android": {
       "package": "com.trussagent.trussgo",
+      "versionCode": 2,
+      "icon": "./assets/icon.png",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#101522"
+      },
       "permissions": ["CAMERA"],
       "blockedPermissions": ["android.permission.RECORD_AUDIO"]
     },

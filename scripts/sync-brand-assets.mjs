@@ -202,10 +202,12 @@ await copyFile(
 );
 await mkdir(resolve(root, "packages/docs/public"), { recursive: true });
 await mkdir(resolve(root, "packages/desktop/assets"), { recursive: true });
+await mkdir(resolve(root, "packages/mobile/assets"), { recursive: true });
 await Promise.all([
   copyFile(logoSourcePath, resolve(root, "packages/docs/public/brand-logo.svg")),
   writeFile(resolve(root, "packages/docs/public/brand-logo.png"), logoPng),
   writeFile(resolve(root, "packages/docs/app/icon.png"), logoPng),
+  writeFile(resolve(root, "packages/mobile/assets/icon.png"), logoPng),
   writeFile(resolve(root, "packages/vscode/media/truss-harness.png"), logoPng),
   writeFile(resolve(root, "packages/desktop/assets/brand-logo.png"), logoPng),
   writeFile(resolve(root, "packages/desktop/assets/brand-logo.ico"), createWindowsIcon(logoPng)),
