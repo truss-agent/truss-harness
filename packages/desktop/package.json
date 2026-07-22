@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/desktop",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Standalone desktop client for the Truss runtime.",
   "author": "Truss Contributors",
   "type": "module",
