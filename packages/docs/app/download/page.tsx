@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { brand } from "@truss-harness/branding";
 import { SiteFooter, SiteHeader } from "../site-chrome";
 import { createPageMetadata } from "../site-metadata";
@@ -18,14 +19,26 @@ export default function DownloadPage() {
     <div className="site">
       <SiteHeader />
       <main className="site-page download-page">
-        <header className="site-page-intro download-intro">
-          <p className="site-eyebrow">Truss Desktop</p>
-          <h1>Download your local coding workspace.</h1>
-          <p>
-            Run Truss with Ollama, LM Studio, llama.cpp, or another compatible
-            local endpoint. No cloud account is required.
-          </p>
-        </header>
+        <section className="download-hero">
+          <header className="site-page-intro download-intro">
+            <p className="site-eyebrow">Truss Desktop</p>
+            <h1>Download your local coding workspace.</h1>
+            <p>
+              Run Truss with Ollama, LM Studio, llama.cpp, or another compatible
+              local endpoint. No cloud account is required.
+            </p>
+          </header>
+          <figure className="download-hero-screenshot">
+            <Image
+              src="/screenshots/desktop.png"
+              alt="Truss Desktop workspace showing an agent conversation, files, and tool activity"
+              width={1600}
+              height={900}
+              priority
+              sizes="(max-width: 1200px) calc(100vw - 36px), 44vw"
+            />
+          </figure>
+        </section>
 
         <DownloadClient apiUrl={apiUrl} />
 

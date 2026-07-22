@@ -24,6 +24,24 @@ describe("filesystem edit tools", () => {
     await expect(readFile(join(root, "README.md"), "utf8")).resolves.toBe("# Project\n\nCLI local test\n");
   });
 
+  it("matches a unique replacement across LF and CRLF line-ending differences", async () => {
+    const root = await workspace();
+    await writeFile(join(root, "README.md"), "# Project\r\n\r\nOld note\r\n", "utf8");
+
+    await replaceInFileTool.execute({ path: "README.md", oldText: "# Project\n\nOld note", newText: "# Project\n\nNew note" }, { workspaceRoot: root });
+
+    await expect(readFile(join(root, "README.md"), "utf8")).resolves.toBe("# Project\r\n\r\nNew note\r\n");
+  });
+
+  it("matches a unique replacement when only indentation differs", async () => {
+    const root = await workspace();
+    await writeFile(join(root, "example.ts"), "function run() {\n    return true;\n}\n", "utf8");
+
+    await replaceInFileTool.execute({ path: "example.ts", oldText: "function run() {\n  return true;\n}", newText: "function run() {\n  return false;\n}" }, { workspaceRoot: root });
+
+    await expect(readFile(join(root, "example.ts"), "utf8")).resolves.toBe("function run() {\n  return false;\n}\n");
+  });
+
   it("rejects suspicious truncation of a large existing file", async () => {
     const root = await workspace();
     await writeFile(join(root, "README.md"), "x".repeat(5_000), "utf8");

@@ -430,7 +430,7 @@ button:focus-visible {
     min-height: 0;
     margin: 0;
     overflow: auto;
-    padding: 14px;
+    padding: 14px 14px 14px 62px;
     color: #c6d1d6;
     font-family: Consolas, "Cascadia Code", monospace;
     font-size: 12px;
@@ -455,6 +455,8 @@ button:focus-visible {
 }
 
 .editor-edit-surface {
+    --editor-line-height: 18px;
+    --editor-padding-y: 12px;
     position: relative;
     width: 100%;
     height: 100%;
@@ -469,9 +471,11 @@ button:focus-visible {
     width: 100%;
     height: 100%;
     min-height: 0;
-    padding: 14px;
-    font: inherit;
-    line-height: inherit;
+    box-sizing: border-box;
+    padding: var(--editor-padding-y) 14px var(--editor-padding-y) 62px;
+    font-family: Consolas, "Cascadia Code", monospace;
+    font-size: 12px;
+    line-height: var(--editor-line-height);
     tab-size: 2;
     white-space: pre;
 }
@@ -484,8 +488,29 @@ button:focus-visible {
     pointer-events: none;
 }
 
+.editor-line-numbers {
+    position: absolute;
+    z-index: 2;
+    inset: 0 auto 0 0;
+    width: 48px;
+    box-sizing: border-box;
+    margin: 0;
+    padding: var(--editor-padding-y) 10px var(--editor-padding-y) 0;
+    overflow: hidden;
+    color: #858585;
+    border-right: 1px solid #2b3138;
+    background: #11161a;
+    font-family: Consolas, "Cascadia Code", monospace;
+    font-size: 12px;
+    line-height: var(--editor-line-height);
+    text-align: right;
+    user-select: none;
+    pointer-events: none;
+    white-space: pre;
+}
+
 .editor-input {
-    z-index: 1;
+    z-index: 3;
     display: block;
     resize: none;
     border: 0;
@@ -530,18 +555,6 @@ button:focus-visible {
     width: 13px;
     color: #82949c;
     user-select: none;
-}
-
-.token-tag {
-    color: #73b8e6;
-}
-
-.token-property {
-    color: #9fcaec;
-}
-
-.token-operator {
-    color: #aebfc5;
 }
 
 .editor-content[hidden],
@@ -1177,6 +1190,19 @@ dialog::backdrop {
     padding-top: 4px;
 }
 
+.file-entry-form {
+    display: grid;
+    gap: 13px;
+    padding: 15px;
+}
+
+.file-entry-form label {
+    display: grid;
+    gap: 5px;
+    color: #aebfc5;
+    font-size: 12px;
+}
+
 .toast {
     position: fixed;
     right: 16px;
@@ -1477,12 +1503,110 @@ dialog::backdrop {
     word-break: break-word;
 }
 
+.editor-highlight {
+    /* Keep the overlay's fixed editor geometry. Themes do not recolor code. */
+    color: #d4d4d4;
+}
+
+.file-context-menu {
+    position: fixed;
+    z-index: 20;
+    display: grid;
+    min-width: 178px;
+    padding: 4px;
+    border: 1px solid #40515a;
+    border-radius: 5px;
+    background: #172126;
+    box-shadow: 0 12px 30px #0009;
+}
+
+.file-context-menu[hidden] {
+    display: none;
+}
+
+.file-context-menu button {
+    min-height: 28px;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: 3px;
+    background: transparent;
+    color: #dce6e8;
+    text-align: left;
+    font-size: 12px;
+}
+
+.file-context-menu button:hover {
+    background: #294049;
+}
+
+.file-context-menu button.danger:hover {
+    background: #542c31;
+    color: #ffe1dd;
+}
+
+.file-context-menu .context-separator {
+    height: 1px;
+    margin: 4px 2px;
+    background: #33414a;
+}
+
+.tool-activity {
+    overflow: hidden;
+    border: 1px solid #33414a;
+    border-radius: 4px;
+    background: #11171b;
+    color: #b9c8cd;
+    font-size: 11px;
+}
+
+.tool-activity summary {
+    min-height: 28px;
+    padding: 7px 9px;
+    cursor: pointer;
+    color: #d2dfe2;
+    font-weight: 700;
+    list-style-position: inside;
+}
+
+.tool-activity-list {
+    display: grid;
+    gap: 1px;
+    padding: 0 7px 7px;
+}
+
+.tool-activity-row {
+    overflow: hidden;
+    padding: 5px 6px;
+    border-left: 2px solid #627880;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tool-activity-row.running {
+    border-color: #d7bd68;
+    color: #e8d48e;
+}
+
+.tool-activity-row.progress {
+    border-color: #7aa4d8;
+    color: #b8d0eb;
+}
+
+.tool-activity-row.completed {
+    border-color: #54b98d;
+}
+
+.tool-activity-row.failed {
+    border-color: #dc7d78;
+    color: #efaaa4;
+}
+
 .code-block code {
     display: block;
     min-width: 0;
     padding: 0;
     background: transparent;
-    color: #d8e3e5;
+    color: #d4d4d4;
     font-size: 12px;
     line-height: 1.55;
     white-space: inherit;
@@ -1490,20 +1614,79 @@ dialog::backdrop {
     word-break: inherit;
 }
 
-.token-comment {
-    color: #7c929b;
+.editor-highlight .hljs-comment,
+.code-block .hljs-comment,
+.editor-highlight .hljs-quote,
+.code-block .hljs-quote {
+    color: #6a9955;
 }
 
-.token-string {
-    color: #d9b981;
+.editor-highlight .hljs-string,
+.code-block .hljs-string,
+.editor-highlight .hljs-regexp,
+.code-block .hljs-regexp,
+.editor-highlight .hljs-template-variable,
+.code-block .hljs-template-variable {
+    color: #ce9178;
 }
 
-.token-keyword {
-    color: #7ab5e8;
+.editor-highlight .hljs-keyword,
+.code-block .hljs-keyword,
+.editor-highlight .hljs-selector-tag,
+.code-block .hljs-selector-tag {
+    color: #c586c0;
 }
 
-.token-number {
-    color: #c99ce9;
+.editor-highlight .hljs-number,
+.code-block .hljs-number,
+.editor-highlight .hljs-literal,
+.code-block .hljs-literal {
+    color: #b5cea8;
+}
+
+.editor-highlight .hljs-title.function_,
+.code-block .hljs-title.function_,
+.editor-highlight .hljs-function .hljs-title,
+.code-block .hljs-function .hljs-title {
+    color: #dcdcaa;
+}
+
+.editor-highlight .hljs-title.class_,
+.code-block .hljs-title.class_,
+.editor-highlight .hljs-type,
+.code-block .hljs-type,
+.editor-highlight .hljs-built_in,
+.code-block .hljs-built_in {
+    color: #4ec9b0;
+}
+
+.editor-highlight .hljs-tag,
+.code-block .hljs-tag,
+.editor-highlight .hljs-name,
+.code-block .hljs-name,
+.editor-highlight .hljs-selector-id,
+.code-block .hljs-selector-id {
+    color: #569cd6;
+}
+
+.editor-highlight .hljs-attr,
+.code-block .hljs-attr,
+.editor-highlight .hljs-attribute,
+.code-block .hljs-attribute,
+.editor-highlight .hljs-property,
+.code-block .hljs-property,
+.editor-highlight .hljs-params,
+.code-block .hljs-params {
+    color: #9cdcfe;
+}
+
+.editor-highlight .hljs-punctuation,
+.code-block .hljs-punctuation,
+.editor-highlight .hljs-operator,
+.code-block .hljs-operator,
+.editor-highlight .hljs-subst,
+.code-block .hljs-subst {
+    color: #d4d4d4;
 }
 
 .markdown a {
@@ -1619,10 +1802,18 @@ dialog::backdrop {
 
 .git-file-row {
     display: grid;
-    grid-template-columns: 28px minmax(0, 1fr) 24px 24px;
+    grid-template-columns: 28px minmax(0, 1fr) auto;
     align-items: center;
     min-height: 26px;
     gap: 2px;
+}
+
+.git-row-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+    min-width: 24px;
 }
 
 .git-file-status {

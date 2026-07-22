@@ -88,6 +88,8 @@ export interface SessionCheckpoint {
 
 export type RuntimeEvent =
   | { readonly type: "run_started"; readonly sessionId: string }
+  /** Short user-visible execution note, never hidden chain-of-thought. */
+  | { readonly type: "progress_delta"; readonly sessionId: string; readonly text: string }
   | { readonly type: "text_delta"; readonly sessionId: string; readonly text: string }
   | { readonly type: "tool_call_requested"; readonly sessionId: string; readonly callId: string; readonly tool: string; readonly input: JsonObject }
   | { readonly type: "tool_completed"; readonly sessionId: string; readonly callId: string; readonly tool: string; readonly result: ToolResult }

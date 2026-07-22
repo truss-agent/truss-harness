@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { execFile as execFileCallback } from "node:child_process";
 import { createReadStream } from "node:fs";
-import { readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 import { promisify } from "node:util";
@@ -831,6 +831,30 @@ ipcMain.handle("truss:write-file", async (_event, path: string, content: string)
   if (content.length > 5_000_000) throw new Error("Files larger than 5 MB cannot be edited in Truss.");
   await writeFile(ensurePathInsideWorkspace(path), content, "utf8");
 });
+ipcMain.handle("truss:create-workspace-file", async (_event, path: string): Promise<void> => {
+  const target = ensurePathInsideWorkspace(path);
+  await mkdir(dirname(target), { recursive: true });
+  await writeFile(target, "", { encoding: "utf8", flag: "wx" });
+});
+ipcMain.handle("truss:create-workspace-folder", async (_event, path: string): Promise<void> => {
+  await mkdir(ensurePathInsideWorkspace(path));
+});
+ipcMain.handle("truss:rename-workspace-entry", async (_event, path: string, nextPath: string): Promise<void> => {
+  await rename(ensurePathInsideWorkspace(path), ensurePathInsideWorkspace(nextPath));
+});
+ipcMain.handle("truss:copy-workspace-entry", async (_event, path: string, destinationPath: string): Promise<void> => {
+  const source = ensurePathInsideWorkspace(path);
+  const destination = ensurePathInsideWorkspace(destinationPath);
+  if ((await stat(source)).isDirectory()) throw new Error("Copying folders is not supported yet. Create a folder and copy its files instead.");
+  await mkdir(dirname(destination), { recursive: true });
+  await copyFile(source, destination, 1);
+});
+ipcMain.handle("truss:delete-workspace-entry", async (_event, path: string): Promise<void> => {
+  const target = ensurePathInsideWorkspace(path);
+  if (resolve(target) === resolve(persisted.workspaceRoot)) throw new Error("The workspace root cannot be deleted.");
+  await rm(target, { recursive: true, force: false });
+});
+ipcMain.handle("truss:reveal-workspace-entry", (_event, path: string): void => { shell.showItemInFolder(ensurePathInsideWorkspace(path)); });
 ipcMain.handle("truss:diff-file", async (_event, path: string): Promise<string> => {
   const target = ensurePathInsideWorkspace(path);
   const relativePath = relative(persisted.workspaceRoot, target);

@@ -21,7 +21,62 @@ function isFileWrite(call: ToolCall): boolean {
 }
 
 function hasEditIntent(prompt: string): boolean {
-  return /\b(?:add|change|create|delete|edit|fix|implement|modify|refactor|remove|rename|replace|update|write)\b/i.test(prompt);
+  return /\b(?:add|change|create|delete|edit|fix|implement|modify|overhaul|refactor|remove|rename|replace|rewrite|rework|update|write)\b/i.test(prompt);
+}
+
+class ProgressStreamParser {
+  private buffer = "";
+  private inProgress = false;
+
+  push(chunk: string): { readonly content: string; readonly progress: string } {
+    this.buffer += chunk;
+    let content = "";
+    let progress = "";
+    while (this.buffer) {
+      if (!this.inProgress) {
+        const start = this.buffer.toLowerCase().indexOf("<progress>");
+        if (start >= 0) {
+          content += this.buffer.slice(0, start);
+          this.buffer = this.buffer.slice(start + "<progress>".length);
+          this.inProgress = true;
+          continue;
+        }
+        const keep = trailingTagPrefixLength(this.buffer, "<progress>");
+        const safeLength = this.buffer.length - keep;
+        if (safeLength <= 0) break;
+        content += this.buffer.slice(0, safeLength);
+        this.buffer = this.buffer.slice(safeLength);
+        continue;
+      }
+      const end = this.buffer.toLowerCase().indexOf("</progress>");
+      if (end >= 0) {
+        progress += this.buffer.slice(0, end);
+        this.buffer = this.buffer.slice(end + "</progress>".length);
+        this.inProgress = false;
+        continue;
+      }
+      const keep = trailingTagPrefixLength(this.buffer, "</progress>");
+      const safeLength = this.buffer.length - keep;
+      if (safeLength <= 0) break;
+      progress += this.buffer.slice(0, safeLength);
+      this.buffer = this.buffer.slice(safeLength);
+    }
+    return { content, progress };
+  }
+
+  finish(): { readonly content: string; readonly progress: string } {
+    const tail = this.buffer;
+    this.buffer = "";
+    return this.inProgress ? { content: "", progress: tail } : { content: tail, progress: "" };
+  }
+}
+
+function trailingTagPrefixLength(value: string, tag: string): number {
+  const normalized = value.toLowerCase();
+  for (let length = Math.min(tag.length - 1, normalized.length); length > 0; length--) {
+    if (normalized.endsWith(tag.slice(0, length))) return length;
+  }
+  return 0;
 }
 
 /** Provider-neutral iterative agent loop. UI clients interact only via sessions, events, and approval. */
@@ -43,6 +98,8 @@ export class AgentRuntime {
     const completedTerminalCommands = new Set<string>();
     const filesNeedingVerification = new Set<string>();
     let assistantText = "";
+    let recoveryReason: "no_tools" | "write_failed" | undefined;
+    let recoveryAttempts = 0;
     await this.recordMemory({ id: taskId, sessionId, objective: prompt, status: "running", startedAt, tools: [], modifiedFiles: [] });
     session.messages.push({ role: "user", content: prompt, ...(attachments.length ? { attachments } : {}) }); session.checkpoint = checkpoint(session); await this.options.sessions.save(session);
     await this.emit({ type: "run_started", sessionId });
@@ -50,23 +107,44 @@ export class AgentRuntime {
       for (let turn = 0; turn < this.maxTurns; turn++) {
         const calls: ToolCall[] = [];
         let text = "";
-        for await (const event of this.options.provider.stream({ messages: await this.options.context.build(session, this.options.systemPrompt, requestContext), tools: this.options.tools.definitions(), signal })) {
+        const progressParser = new ProgressStreamParser();
+        const recoveryInstruction = recoveryReason === "write_failed"
+          ? "WRITE RECOVERY: A previous file write failed. The current file contents are in the tool history. Do not stop after reading. Call read_file if needed, then retry one focused write using an exact contiguous excerpt. Verify the write with read_file before responding."
+          : recoveryReason === "no_tools"
+            ? "EXECUTION RECOVERY: Your previous response described work but did not call any tools. This is Edit mode. Do not explain or propose a plan. Immediately call one relevant workspace inspection tool, then make the requested file change with write_file or replace_in_file and read the changed file to verify it."
+            : undefined;
+        const systemPrompt = [this.options.systemPrompt, recoveryInstruction].filter(Boolean).join("\n\n") || undefined;
+        for await (const event of this.options.provider.stream({ messages: await this.options.context.build(session, systemPrompt, requestContext), tools: this.options.tools.definitions(), signal })) {
           if (event.type === "text_delta") {
-            text += event.text;
-            if (!this.options.deferTextUntilToolDecision) {
-              assistantText += event.text;
-              await this.emit({ type: "text_delta", sessionId, text: event.text });
+            const parsed = progressParser.push(event.text);
+            if (parsed.progress) await this.emit({ type: "progress_delta", sessionId, text: parsed.progress });
+            text += parsed.content;
+            if (parsed.content && !this.options.deferTextUntilToolDecision) {
+              assistantText += parsed.content;
+              await this.emit({ type: "text_delta", sessionId, text: parsed.content });
             }
           }
           else if (event.type === "tool_call") calls.push(event);
           else if (event.type === "error") throw event.error;
+        }
+        const finalProgress = progressParser.finish();
+        if (finalProgress.progress) await this.emit({ type: "progress_delta", sessionId, text: finalProgress.progress });
+        text += finalProgress.content;
+        if (finalProgress.content && !this.options.deferTextUntilToolDecision) {
+          assistantText += finalProgress.content;
+          await this.emit({ type: "text_delta", sessionId, text: finalProgress.content });
         }
         // Preserve the provider-independent tool-call record so the next turn can
         // reconstruct the native provider conversation accurately.
         if (text || calls.length) session.messages.push({ role: "assistant", content: text, toolCalls: calls });
         if (!calls.length) {
           if (this.options.requireWriteForEditIntent && hasEditIntent(prompt) && !modifiedFiles.size) {
-            throw new Error("Agent ended without a successful file write. No workspace changes were made.");
+            if (recoveryAttempts < 2) {
+              recoveryReason ??= "no_tools";
+              recoveryAttempts += 1;
+              continue;
+            }
+            throw new Error("Agent did not complete a verified file write after recovery attempts. No workspace changes were made.");
           }
           if (text && this.options.deferTextUntilToolDecision) {
             assistantText += text;
@@ -107,6 +185,7 @@ export class AgentRuntime {
             modifiedFiles.add(path);
             filesNeedingVerification.add(path);
           }
+          if (!execution.succeeded && isFileWrite(call)) recoveryReason = "write_failed";
         }
         await this.options.sessions.save(session);
       }

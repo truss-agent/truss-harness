@@ -1,12 +1,12 @@
 {
   "name": "@truss-harness/desktop",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Standalone desktop client for the Truss runtime.",
   "author": "Truss Contributors",
   "type": "module",
   "main": "./dist/main.cjs",
   "scripts": {
-    "build": "tsc -p tsconfig.json && esbuild ./dist/main.js --bundle --platform=node --format=cjs --external:electron --outfile=./dist/main.cjs && esbuild ./dist/preload.js --bundle --platform=node --format=cjs --external:electron --outfile=./dist/preload.cjs && node ./scripts/copy-static.mjs",
+    "build": "tsc -p tsconfig.json && esbuild ./dist/main.js --bundle --platform=node --format=cjs --external:electron --outfile=./dist/main.cjs && esbuild ./dist/preload.js --bundle --platform=node --format=cjs --external:electron --outfile=./dist/preload.cjs && esbuild ./dist/renderer.js --bundle --platform=browser --format=esm --outfile=./dist/renderer.bundle.js && node ./scripts/copy-static.mjs",
     "dev": "npm run build && node ./scripts/start-electron.mjs",
     "start": "node ./scripts/start-electron.mjs",
     "package": "npm run build && electron-builder --publish never",
@@ -102,6 +102,7 @@
     "@truss-harness/gateway": "0.1.2",
     "@types/qrcode": "^1.5.6",
     "electron-updater": "^6.3.9",
+    "highlight.js": "11.11.1",
     "qrcode": "^1.5.4",
     "@truss-harness/branding": "0.1.0",
     "@truss-harness/cli": "0.1.5",

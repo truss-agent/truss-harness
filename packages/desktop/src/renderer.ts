@@ -1,4 +1,5 @@
 import type { ChatAttachment, WorkspacePlan } from "@truss-harness/runtime";
+import hljs from "highlight.js/lib/common";
 import { desktopThemeNames, type DesktopConfiguration, type DesktopConversation, type DesktopEndpoint, type DesktopEvent, type DesktopFile, type DesktopGitStatus, type DesktopMessage, type DesktopProvider, type DesktopState, type DesktopThemePalette, type DesktopThemePreference, type DesktopWorkspaceUiState } from "./shared.js";
 
 declare global {
@@ -33,6 +34,7 @@ const element = <T extends HTMLElement>(id: string): T => document.getElementByI
 const fileTree = element<HTMLDivElement>("fileTree");
 const fileSearch = element<HTMLInputElement>("fileSearch");
 const clearFileSearch = element<HTMLButtonElement>("clearFileSearch");
+const fileContextMenu = element<HTMLDivElement>("fileContextMenu");
 const conversations = element<HTMLDivElement>("conversationList");
 const workbench = document.querySelector<HTMLElement>(".workbench") as HTMLElement;
 const sidebar = document.querySelector<HTMLElement>(".sidebar") as HTMLElement;
@@ -82,6 +84,12 @@ const connectTrussGo = element<HTMLButtonElement>("connectTrussGo");
 const trussGoDialog = element<HTMLDialogElement>("trussGoDialog");
 const trussGoQr = element<HTMLImageElement>("trussGoQr");
 const trussGoWorkspace = element<HTMLElement>("trussGoWorkspace");
+const fileEntryDialog = element<HTMLDialogElement>("fileEntryDialog");
+const fileEntryForm = element<HTMLFormElement>("fileEntryForm");
+const fileEntryTitle = element<HTMLElement>("fileEntryTitle");
+const fileEntryDescription = element<HTMLElement>("fileEntryDescription");
+const fileEntryInput = element<HTMLInputElement>("fileEntryInput");
+const confirmFileEntry = element<HTMLButtonElement>("confirmFileEntry");
 const quickModel = element<HTMLSelectElement>("quickModel");
 const contextMeter = element<HTMLSpanElement>("contextMeter");
 // Keep older packaged HTML usable when only the renderer bundle has been refreshed.
@@ -121,6 +129,10 @@ let endpoints: readonly DesktopEndpoint[] = [];
 let models: readonly string[] = [];
 let files: readonly DesktopFile[] = [];
 let fileSearchQuery = "";
+type FileContextTarget = { readonly kind: "root" | "directory" | "file"; readonly path: string };
+let fileContextTarget: FileContextTarget | undefined;
+let copiedWorkspaceFile: string | undefined;
+let resolveFileEntry: ((value: string | undefined) => void) | undefined;
 let activeFile: string | undefined;
 let showingDiff = false;
 type EditorTabMode = "file" | "diff";
@@ -134,7 +146,14 @@ interface EditorTab {
   scrollTop: number;
   revision: number;
 }
+interface ToolActivity {
+  readonly callId: string;
+  readonly tool: string;
+  readonly status: "progress" | "running" | "completed" | "failed";
+  readonly detail?: string;
+}
 const openEditorTabs: EditorTab[] = [];
+const toolActivityByConversation = new Map<string, ToolActivity[]>();
 let busy = false;
 let persistTimer: number | undefined;
 let workspaceUiPersistTimer: number | undefined;
@@ -147,7 +166,8 @@ let gitCollapsed = false;
 let gitPanelHeight = 220;
 let activePlan: WorkspacePlan | undefined;
 let streamStartedAt = 0;
-let streamedTokenEstimate = 0;
+let streamedTextCharacters = 0;
+let agentActivity = "Ready";
 let runningConversationId: string | undefined;
 let centerView: "editor" | "preview" = "editor";
 let pendingAttachments: ChatAttachment[] = [];
@@ -158,6 +178,7 @@ const maxAttachmentCount = 5;
 const maxAttachmentBytes = 4 * 1024 * 1024;
 const maxAttachmentTotalBytes = 12 * 1024 * 1024;
 const maxFileTextCharacters = 120_000;
+const longPasteAttachmentThreshold = 12_000;
 
 function configuration(): DesktopConfiguration {
   return desktopState.configuration ?? defaultConfiguration;
@@ -266,6 +287,11 @@ function tokenEstimate(messages: readonly DesktopMessage[]): number {
   return messages.reduce((total, message) => total + Math.ceil(message.content.trim().length / 4), 400);
 }
 
+function isDirectWorkspaceChangeRequest(prompt: string): boolean {
+  const action = "(?:add|change|create|delete|edit|fix|implement|modify|overhaul|refactor|remove|rename|replace|rewrite|rework|update|write)";
+  return new RegExp(`^\\s*(?:(?:please|can you|could you|would you)\\s+)?${action}\\b|^\\s*(?:i am going to|i'm going to|we need to|let's)\\s+${action}\\b`, "i").test(prompt);
+}
+
 function formatTokens(value: number): string {
   return value >= 1_000 ? `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1).replace(/\.0$/, "")}k` : String(Math.round(value));
 }
@@ -355,14 +381,18 @@ function saveWorkspaceUiState(): void {
 
 function setBusy(next: boolean): void {
   if (next && !busy) {
-    streamStartedAt = performance.now();
-    streamedTokenEstimate = 0;
+    // Generation latency and tool time are not part of output throughput. Start
+    // the timer only on the first text chunk and estimate from all characters.
+    streamStartedAt = 0;
+    streamedTextCharacters = 0;
+    agentActivity = "Thinking";
   }
+  if (!next) agentActivity = "Ready";
   busy = next;
   stopChat.disabled = !next;
   sendChatButton.hidden = next;
   cancelChatButton.hidden = !next;
-  chatStatus.textContent = next ? "Streaming" : "Ready";
+  chatStatus.textContent = agentActivity;
   statusDot.className = `status-dot ${next ? "busy" : desktopState.configuration?.model ? "ready" : ""}`;
   renderRuntime();
 }
@@ -393,8 +423,14 @@ function renderRuntime(): void {
   quickModel.value = config?.model ?? "";
   const used = tokenEstimate(activeConversation()?.messages ?? []);
   contextMeter.textContent = `Context ${formatTokens(used)} / ${formatTokens(configuration().contextWindow)} est.`;
+  chatStatus.textContent = busy ? agentActivity : "Ready";
   const elapsed = streamStartedAt ? (performance.now() - streamStartedAt) / 1_000 : 0;
-  if (rateMeter) rateMeter.textContent = streamedTokenEstimate && elapsed > 0 ? `Speed ${(streamedTokenEstimate / elapsed).toFixed(1)} tok/s` : "Speed -- tok/s";
+  const estimatedTokens = streamedTextCharacters / 4;
+  if (rateMeter) {
+    rateMeter.textContent = estimatedTokens && elapsed > 0
+      ? `Output ${(estimatedTokens / elapsed).toFixed(1)} est. tok/s`
+      : busy ? `Working · ${agentActivity}` : "Output -- tok/s";
+  }
 }
 
 function statusLabel(file: DesktopGitStatus["files"][number]): string {
@@ -464,7 +500,9 @@ function renderGit(): void {
     open.textContent = file.path;
     open.title = file.path;
     open.onclick = () => void openFile(file.path, false);
-    row.append(status, open);
+    const actions = document.createElement("div");
+    actions.className = "git-row-actions";
+    row.append(status, open, actions);
     if (file.indexStatus !== " " && file.indexStatus !== "?") {
       const unstage = document.createElement("button");
       unstage.className = "git-row-action";
@@ -472,7 +510,7 @@ function renderGit(): void {
       unstage.title = `Unstage ${file.path}`;
       unstage.setAttribute("aria-label", `Unstage ${file.path}`);
       unstage.onclick = () => void runGitAction("unstage", () => window.trussDesktop.gitUnstage([file.path]));
-      row.append(unstage);
+      actions.append(unstage);
     }
     if (file.workTreeStatus !== " " || file.indexStatus === "?") {
       const stage = document.createElement("button");
@@ -481,7 +519,7 @@ function renderGit(): void {
       stage.title = `Stage ${file.path}`;
       stage.setAttribute("aria-label", `Stage ${file.path}`);
       stage.onclick = () => void runGitAction("stage", () => window.trussDesktop.gitStage([file.path]));
-      row.append(stage);
+      actions.append(stage);
     }
     const discard = document.createElement("button");
     discard.className = "git-row-action danger";
@@ -491,7 +529,7 @@ function renderGit(): void {
     discard.onclick = () => {
       if (window.confirm(`Discard all uncommitted changes in ${file.path}? This cannot be undone.`)) void runGitAction("discard", () => window.trussDesktop.gitDiscard([file.path]));
     };
-    row.append(discard);
+    actions.append(discard);
     return row;
   }));
 }
@@ -582,6 +620,7 @@ function renderFiles(): void {
       const button = document.createElement("button");
       const expanded = expandedDirectories.has(directoryPath);
       button.className = "folder-button";
+      button.dataset.path = editorPath(directoryPath);
       button.dataset.expanded = String(expanded);
       const arrow = document.createElement("span");
       arrow.className = "tree-arrow";
@@ -720,34 +759,16 @@ function appendInlineMarkdown(parent: HTMLElement, text: string): void {
 }
 
 function appendHighlightedCode(parent: HTMLElement, code: string, language = ""): void {
-  if (/^(?:html|xml|svg|vue|svelte)$/i.test(language)) {
-    const markupToken = /(<!--[\s\S]*?-->)|(<\/?[A-Za-z][^>]*>)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g;
-    let markupCursor = 0;
-    for (const match of code.matchAll(markupToken)) {
-      const index = match.index ?? 0;
-      if (index > markupCursor) parent.append(document.createTextNode(code.slice(markupCursor, index)));
-      const span = document.createElement("span");
-      span.className = match[1] ? "token-comment" : match[2] ? "token-tag" : "token-string";
-      span.textContent = match[0];
-      parent.append(span);
-      markupCursor = index + match[0].length;
-    }
-    if (markupCursor < code.length) parent.append(document.createTextNode(code.slice(markupCursor)));
+  const aliases: Readonly<Record<string, string>> = { html: "xml", shell: "bash", sh: "bash", tsx: "typescript", jsx: "javascript", vue: "xml", svelte: "xml", svg: "xml", yml: "yaml" };
+  const resolvedLanguage = aliases[language.toLowerCase()] ?? language.toLowerCase();
+  if (!resolvedLanguage || resolvedLanguage === "text" || !hljs.getLanguage(resolvedLanguage)) {
+    parent.textContent = code;
     return;
   }
-
-  const token = /(\/\*[\s\S]*?\*\/|\/\/[^\n]*|#[^\n]*)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(\b(?:as|async|await|break|case|catch|class|const|continue|def|default|delete|do|else|enum|export|extends|false|finally|fn|for|from|function|if|implements|import|in|instanceof|interface|let|match|new|null|package|private|protected|public|return|static|super|switch|this|throw|true|try|type|typeof|undefined|use|var|while|yield)\b)|(\b(?:0x[\da-f]+|\d+(?:\.\d+)?)\b)|([{}()[\].,:;=+\-*/<>!?&|]+)/gi;
-  let cursor = 0;
-  for (const match of code.matchAll(token)) {
-    const index = match.index ?? 0;
-    if (index > cursor) parent.append(document.createTextNode(code.slice(cursor, index)));
-    const span = document.createElement("span");
-    span.className = match[1] ? "token-comment" : match[2] ? "token-string" : match[3] ? "token-keyword" : match[4] ? "token-number" : "token-operator";
-    span.textContent = match[0];
-    parent.append(span);
-    cursor = index + match[0].length;
-  }
-  if (cursor < code.length) parent.append(document.createTextNode(code.slice(cursor)));
+  // highlight.js escapes source before producing its token spans.
+  const template = document.createElement("template");
+  template.innerHTML = hljs.highlight(code, { language: resolvedLanguage, ignoreIllegals: true }).value;
+  parent.replaceChildren(template.content);
 }
 
 function renderMarkdown(container: HTMLElement, content: string): void {
@@ -812,7 +833,7 @@ function renderMarkdown(container: HTMLElement, content: string): void {
   }
 }
 
-function messageView(message: DesktopMessage): HTMLElement {
+function messageView(message: DesktopMessage, activePlaceholder = false): HTMLElement {
   const view = document.createElement("div");
   view.className = `message ${message.role}`;
   const role = document.createElement("span");
@@ -820,7 +841,7 @@ function messageView(message: DesktopMessage): HTMLElement {
   role.textContent = message.role === "user" ? "YOU" : "AGENT";
   const content = document.createElement("div");
   content.className = "markdown";
-  if (!message.content && busy && message.role === "assistant") {
+  if (!message.content && activePlaceholder && message.role === "assistant") {
     content.className = "thinking";
     content.textContent = "Thinking...";
   } else {
@@ -859,12 +880,20 @@ function renderChat(): void {
     chatMessages.append(empty);
     return;
   }
-  conversation.messages.forEach((message) => chatMessages.append(messageView(message)));
+  const activities = toolActivityByConversation.get(conversation.id) ?? [];
+  const lastAssistantIndex = conversation.messages.map((message) => message.role).lastIndexOf("assistant");
+  const showActivePlaceholder = busy && conversation.id === runningConversationId;
+  conversation.messages.forEach((message, index) => {
+    if (index === lastAssistantIndex && activities.length) chatMessages.append(toolActivityView(activities));
+    chatMessages.append(messageView(message, showActivePlaceholder && index === lastAssistantIndex));
+  });
   if (conversation.lastRun) {
     const result = document.createElement("div");
     result.className = `run-result ${conversation.lastRun.status}`;
     if (conversation.lastRun.status === "running") {
-      result.textContent = "Working...";
+      // The assistant placeholder below the activity trace remains the visible
+      // bottom-most state while a run is active.
+      result.hidden = true;
     } else if (conversation.lastRun.status === "failed") {
       result.textContent = "Run did not complete. No file changes are verified.";
     } else if (conversation.lastRun.modifiedFiles.length) {
@@ -1017,6 +1046,8 @@ function renderEditorContent(tab: EditorTab | undefined): void {
   } else {
     const surface = document.createElement("div");
     surface.className = "editor-edit-surface";
+    const lineNumbers = document.createElement("pre");
+    lineNumbers.className = "editor-line-numbers";
     const highlight = document.createElement("pre");
     highlight.className = "editor-highlight";
     const code = document.createElement("code");
@@ -1027,29 +1058,45 @@ function renderEditorContent(tab: EditorTab | undefined): void {
     input.value = tab.content;
     input.spellcheck = false;
     input.setAttribute("aria-label", `Edit ${tab.path}`);
+    const renderLineNumbers = () => {
+      lineNumbers.textContent = Array.from({ length: Math.max(1, tab.content.split("\n").length) }, (_, index) => String(index + 1)).join("\n");
+    };
+    renderLineNumbers();
     input.oninput = () => {
       tab.content = input.value;
       tab.dirty = true;
+      renderLineNumbers();
       code.replaceChildren();
       appendHighlightedCode(code, tab.content, languageForPath(tab.path));
       renderEditorTabs();
     };
     input.onkeydown = (event) => {
-      if (event.key !== "Tab") return;
+      if (event.key === "Tab") {
+        event.preventDefault();
+        const start = input.selectionStart;
+        const end = input.selectionEnd;
+        input.setRangeText("  ", start, end, "end");
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        return;
+      }
+      if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey && !event.shiftKey)) return;
       event.preventDefault();
-      const start = input.selectionStart;
-      const end = input.selectionEnd;
-      input.setRangeText("  ", start, end, "end");
+      const selection = event.shiftKey ? input.selectionStart : input.selectionEnd;
+      const lineStart = input.value.lastIndexOf("\n", Math.max(0, selection - 1)) + 1;
+      const nextLine = input.value.indexOf("\n", selection);
+      const insertionPoint = event.shiftKey ? lineStart : nextLine < 0 ? input.value.length : nextLine;
+      input.setRangeText("\n", insertionPoint, insertionPoint, "end");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     };
     input.onscroll = () => {
       tab.scrollTop = input.scrollTop;
       highlight.scrollTop = input.scrollTop;
       highlight.scrollLeft = input.scrollLeft;
+      lineNumbers.scrollTop = input.scrollTop;
       saveWorkspaceUiState();
     };
     editor.classList.add("editable");
-    surface.append(highlight, input);
+    surface.append(lineNumbers, highlight, input);
     editor.append(surface);
   }
   window.requestAnimationFrame(() => {
@@ -1058,6 +1105,8 @@ function renderEditorContent(tab: EditorTab | undefined): void {
       input.scrollTop = tab.scrollTop;
       const highlight = editor.querySelector<HTMLElement>(".editor-highlight");
       if (highlight) highlight.scrollTop = tab.scrollTop;
+      const lineNumbers = editor.querySelector<HTMLElement>(".editor-line-numbers");
+      if (lineNumbers) lineNumbers.scrollTop = tab.scrollTop;
     }
     else editor.scrollTop = tab.scrollTop;
   });
@@ -1462,9 +1511,253 @@ async function addFiles(filesToAdd: Iterable<File>): Promise<void> {
   }
 }
 
+function hideFileContextMenu(): void {
+  fileContextMenu.hidden = true;
+  fileContextTarget = undefined;
+}
+
+function requestWorkspaceEntry(options: { readonly title: string; readonly description: string; readonly initialValue: string; readonly confirmLabel: string }): Promise<string | undefined> {
+  if (resolveFileEntry) return Promise.reject(new Error("Finish the current file action first."));
+  fileEntryTitle.textContent = options.title;
+  fileEntryDescription.textContent = options.description;
+  fileEntryInput.value = options.initialValue;
+  confirmFileEntry.textContent = options.confirmLabel;
+  fileEntryDialog.showModal();
+  window.requestAnimationFrame(() => {
+    fileEntryInput.focus();
+    fileEntryInput.select();
+  });
+  return new Promise((resolve) => { resolveFileEntry = resolve; });
+}
+
+fileEntryForm.addEventListener("submit", (event) => {
+  if ((event as SubmitEvent).submitter !== confirmFileEntry) return;
+  if (!fileEntryInput.value.trim()) {
+    event.preventDefault();
+    fileEntryInput.focus();
+  }
+});
+element<HTMLButtonElement>("closeFileEntry").onclick = () => fileEntryDialog.close("cancel");
+fileEntryDialog.addEventListener("close", () => {
+  const resolve = resolveFileEntry;
+  resolveFileEntry = undefined;
+  resolve?.(fileEntryDialog.returnValue === "confirm" ? fileEntryInput.value : undefined);
+});
+
+function normalizedWorkspaceEntry(value: string): string | undefined {
+  const normalized = value.trim().replaceAll("\\", "/");
+  if (!normalized || normalized.startsWith("/") || /^[a-z]:/i.test(normalized)) return undefined;
+  const parts = normalized.split("/");
+  if (parts.some((part) => !part || part === "." || part === "..")) return undefined;
+  return normalized;
+}
+
+function entryParent(path: string): string {
+  const index = path.lastIndexOf("/");
+  return index < 0 ? "" : path.slice(0, index);
+}
+
+function entryName(path: string): string {
+  return path.split("/").at(-1) ?? path;
+}
+
+function childEntryPath(parent: string, name: string): string | undefined {
+  const normalizedName = normalizedWorkspaceEntry(name);
+  if (!normalizedName) return undefined;
+  return parent ? `${parent}/${normalizedName}` : normalizedName;
+}
+
+function removeOpenEditorEntries(path: string, includeChildren: boolean): void {
+  const prefix = `${path}/`;
+  const removedActive = activeFile === path || (includeChildren && Boolean(activeFile?.startsWith(prefix)));
+  for (let index = openEditorTabs.length - 1; index >= 0; index -= 1) {
+    const tabPath = openEditorTabs[index].path;
+    if (tabPath === path || (includeChildren && tabPath.startsWith(prefix))) openEditorTabs.splice(index, 1);
+  }
+  if (!removedActive) {
+    renderEditorTabs();
+    return;
+  }
+  const next = openEditorTabs.at(-1);
+  activeFile = undefined;
+  showingDiff = false;
+  if (next) selectEditorTab(next);
+  else {
+    editorTitle.textContent = "Workspace";
+    renderEditorTabs();
+    renderEditorContent(undefined);
+  }
+}
+
+async function refreshWorkspaceAfterFileOperation(): Promise<void> {
+  await Promise.all([loadFiles(), refreshGit()]);
+  saveWorkspaceUiState();
+}
+
+function addFileContextAction(label: string, action: () => void | Promise<void>, options: { readonly danger?: boolean; readonly separatorBefore?: boolean } = {}): void {
+  if (options.separatorBefore) {
+    const separator = document.createElement("div");
+    separator.className = "context-separator";
+    fileContextMenu.append(separator);
+  }
+  const button = document.createElement("button");
+  button.type = "button";
+  button.textContent = label;
+  button.setAttribute("role", "menuitem");
+  if (options.danger) button.classList.add("danger");
+  button.onclick = () => {
+    hideFileContextMenu();
+    void Promise.resolve(action()).catch((error) => notify(error instanceof Error ? error.message : String(error)));
+  };
+  fileContextMenu.append(button);
+}
+
+async function createWorkspaceEntry(kind: "file" | "folder", parent: string): Promise<void> {
+  const name = await requestWorkspaceEntry({
+    title: kind === "file" ? "New file" : "New folder",
+    description: "Enter a relative path inside the selected workspace folder.",
+    initialValue: kind === "file" ? "untitled.txt" : "new-folder",
+    confirmLabel: kind === "file" ? "Create file" : "Create folder"
+  });
+  if (name === undefined) return;
+  const path = childEntryPath(parent, name);
+  if (!path) throw new Error("Use a non-empty relative workspace path without '..'.");
+  if (kind === "file") await window.trussDesktop.createWorkspaceFile(path);
+  else await window.trussDesktop.createWorkspaceFolder(path);
+  const parentPath = entryParent(path);
+  if (parentPath) expandedDirectories.add(parentPath);
+  await refreshWorkspaceAfterFileOperation();
+  notify(`${kind === "file" ? "Created file" : "Created folder"}: ${path}`);
+  if (kind === "file") await openFile(path, false);
+}
+
+async function renameWorkspaceEntry(target: FileContextTarget): Promise<void> {
+  const name = await requestWorkspaceEntry({
+    title: "Rename entry",
+    description: "Enter a new name in the same workspace folder.",
+    initialValue: entryName(target.path),
+    confirmLabel: "Rename"
+  });
+  if (name === undefined) return;
+  const nextPath = childEntryPath(entryParent(target.path), name);
+  if (!nextPath) throw new Error("Use a non-empty name without path traversal.");
+  if (nextPath === target.path) return;
+  await window.trussDesktop.renameWorkspaceEntry(target.path, nextPath);
+  removeOpenEditorEntries(target.path, target.kind === "directory");
+  if (target.kind === "directory") {
+    const wasExpanded = expandedDirectories.delete(target.path);
+    loadedDirectoryContents.delete(target.path);
+    if (wasExpanded) expandedDirectories.add(nextPath);
+  }
+  await refreshWorkspaceAfterFileOperation();
+  notify(`Renamed to ${nextPath}`);
+  if (target.kind === "file") await openFile(nextPath, false);
+}
+
+async function pasteWorkspaceFile(target: FileContextTarget): Promise<void> {
+  if (!copiedWorkspaceFile) return;
+  const parent = target.kind === "directory" ? target.path : target.kind === "file" ? entryParent(target.path) : "";
+  const sourceName = entryName(copiedWorkspaceFile);
+  const extensionIndex = sourceName.lastIndexOf(".");
+  const suggested = extensionIndex > 0 ? `${sourceName.slice(0, extensionIndex)} copy${sourceName.slice(extensionIndex)}` : `${sourceName} copy`;
+  const name = await requestWorkspaceEntry({
+    title: "Copy file",
+    description: "Enter the name for the new copy in the selected workspace folder.",
+    initialValue: suggested,
+    confirmLabel: "Copy file"
+  });
+  if (name === undefined) return;
+  const destination = childEntryPath(parent, name);
+  if (!destination) throw new Error("Use a non-empty relative filename without '..'.");
+  await window.trussDesktop.copyWorkspaceEntry(copiedWorkspaceFile, destination);
+  await refreshWorkspaceAfterFileOperation();
+  notify(`Copied to ${destination}`);
+  await openFile(destination, false);
+}
+
+async function deleteWorkspaceEntry(target: FileContextTarget): Promise<void> {
+  const label = target.kind === "directory" ? "folder and all of its contents" : "file";
+  if (!window.confirm(`Delete ${label} "${target.path}"? This cannot be undone.`)) return;
+  await window.trussDesktop.deleteWorkspaceEntry(target.path);
+  removeOpenEditorEntries(target.path, target.kind === "directory");
+  expandedDirectories.delete(target.path);
+  loadedDirectoryContents.delete(target.path);
+  if (copiedWorkspaceFile === target.path || (target.kind === "directory" && copiedWorkspaceFile?.startsWith(`${target.path}/`))) copiedWorkspaceFile = undefined;
+  await refreshWorkspaceAfterFileOperation();
+  notify(`Deleted ${target.path}`);
+}
+
+function showFileContextMenu(event: MouseEvent, target: FileContextTarget): void {
+  event.preventDefault();
+  fileContextTarget = target;
+  fileContextMenu.replaceChildren();
+  const parent = target.kind === "directory" ? target.path : target.kind === "file" ? entryParent(target.path) : "";
+  addFileContextAction("New File...", () => createWorkspaceEntry("file", parent));
+  addFileContextAction("New Folder...", () => createWorkspaceEntry("folder", parent));
+  if (target.kind === "file") {
+    addFileContextAction("Open", () => openFile(target.path, false), { separatorBefore: true });
+    addFileContextAction("Copy", () => { copiedWorkspaceFile = target.path; notify(`Copied ${target.path}`); });
+    addFileContextAction("Copy Relative Path", async () => {
+      await navigator.clipboard.writeText(target.path);
+      notify("Copied relative path.");
+    });
+  }
+  if (copiedWorkspaceFile) addFileContextAction("Paste File...", () => pasteWorkspaceFile(target), { separatorBefore: target.kind !== "file" });
+  if (target.kind !== "root") {
+    addFileContextAction("Rename...", () => renameWorkspaceEntry(target), { separatorBefore: !copiedWorkspaceFile && target.kind !== "file" });
+    addFileContextAction("Reveal in File Manager", () => window.trussDesktop.revealWorkspaceEntry(target.path));
+    addFileContextAction("Delete...", () => deleteWorkspaceEntry(target), { danger: true, separatorBefore: true });
+  }
+  addFileContextAction("Refresh Explorer", refreshWorkspaceAfterFileOperation, { separatorBefore: target.kind === "root" });
+  fileContextMenu.hidden = false;
+  const bounds = fileContextMenu.getBoundingClientRect();
+  fileContextMenu.style.left = `${Math.min(event.clientX, window.innerWidth - bounds.width - 8)}px`;
+  fileContextMenu.style.top = `${Math.min(event.clientY, window.innerHeight - bounds.height - 8)}px`;
+}
+
+function toolActivityView(activities: readonly ToolActivity[]): HTMLElement {
+  const trace = document.createElement("details");
+  trace.className = "tool-activity";
+  trace.open = true;
+  const summary = document.createElement("summary");
+  const running = activities.find((activity) => activity.status === "running");
+  summary.textContent = running ? `Working: ${running.tool}` : `Activity: ${activities.length} tool call${activities.length === 1 ? "" : "s"}`;
+  const list = document.createElement("div");
+  list.className = "tool-activity-list";
+  for (const activity of activities) {
+    const row = document.createElement("div");
+    row.className = `tool-activity-row ${activity.status}`;
+    row.textContent = activity.status === "progress"
+      ? activity.tool
+      : activity.status === "running"
+      ? `${activity.tool} running`
+      : activity.status === "failed"
+        ? `${activity.tool} failed${activity.detail ? `: ${activity.detail}` : ""}`
+        : `${activity.tool} completed`;
+    if (activity.detail) row.title = activity.detail;
+    list.append(row);
+  }
+  trace.append(summary, list);
+  return trace;
+}
+
+function pastedFileName(mimeType: string): string {
+  const extension = mimeType === "image/jpeg" ? "jpg" : mimeType === "image/webp" ? "webp" : mimeType === "image/gif" ? "gif" : "png";
+  return `pasted-image-${Date.now()}.${extension}`;
+}
+
 async function sendChat(): Promise<void> {
   const prompt = chatInput.value.trim() || (pendingAttachments.length ? "Review the attached files." : "");
   if (!prompt || busy) return;
+  if (configuration().mode === "chat" && isDirectWorkspaceChangeRequest(prompt)) {
+    try {
+      await applyConfiguration({ ...configuration(), mode: "edit" });
+      notify("Switched to Agent mode for this workspace change.");
+    } catch (error) {
+      notify(error instanceof Error ? error.message : String(error));
+      return;
+    }
+  }
   if (!configuration().model) {
     settingsDialog.showModal();
     notify("Choose a local model first.");
@@ -1514,6 +1807,7 @@ function handleEvent(message: DesktopEvent): void {
   if (message.type === "update") { renderUpdate(message); return; }
   if (message.type === "chat-start") {
     runningConversationId = message.conversationId;
+    toolActivityByConversation.set(message.conversationId, []);
     updateConversation(message.conversationId, (current) => ({ ...current, lastRun: { status: "running", modifiedFiles: [] } }));
     setBusy(true);
     renderChat();
@@ -1595,16 +1889,48 @@ function handleEvent(message: DesktopEvent): void {
       if (!last || last.role !== "assistant") return current;
       return { ...current, messages: [...current.messages.slice(0, -1), { role: "assistant", content: last.content + (event.text ?? "") }], updatedAt: new Date().toISOString() };
     });
-    streamedTokenEstimate += Math.ceil((event.text ?? "").trim().length / 4);
+    if (!streamStartedAt) streamStartedAt = performance.now();
+    streamedTextCharacters += (event.text ?? "").length;
+    agentActivity = "Generating";
     if (conversation.id === desktopState.activeConversationId) renderChat();
     renderRuntime();
     saveConversations();
   }
-  if (event.type === "tool_call_requested" && conversation?.id === desktopState.activeConversationId) appendToolMessage(`Running tool: ${event.tool ?? "unknown"}`);
+  if (event.type === "progress_delta") {
+    if (!conversation) return;
+    const note = event.text ?? "";
+    if (!note) return;
+    const activities = toolActivityByConversation.get(conversation.id) ?? [];
+    const previous = activities.at(-1);
+    const nextActivities: ToolActivity[] = previous?.status === "progress"
+      ? [...activities.slice(0, -1), { ...previous, tool: `${previous.tool}${note}` }]
+      : [...activities, { callId: createId(), tool: note, status: "progress" }];
+    toolActivityByConversation.set(conversation.id, nextActivities);
+    agentActivity = nextActivities.at(-1)?.tool.trim() || "Thinking";
+    if (conversation.id === desktopState.activeConversationId) renderChat();
+    renderRuntime();
+    return;
+  }
+  if (event.type === "tool_call_requested") {
+    agentActivity = `Running ${event.tool ?? "tool"}`;
+    renderRuntime();
+    if (conversation) {
+      const activities = toolActivityByConversation.get(conversation.id) ?? [];
+      toolActivityByConversation.set(conversation.id, [...activities, { callId: event.callId ?? createId(), tool: event.tool ?? "unknown", status: "running" }]);
+      if (conversation.id === desktopState.activeConversationId) renderChat();
+    }
+  }
   if (event.type === "tool_completed") {
+    agentActivity = "Thinking";
+    renderRuntime();
     const tool = event.tool ?? "tool";
     const result = event.result?.content ?? "";
-    if (conversation?.id === desktopState.activeConversationId) appendToolMessage(event.result?.isError ? `${tool} failed: ${result.slice(0, 700)}` : `Completed tool: ${tool}`);
+    if (conversation) {
+      const activities = toolActivityByConversation.get(conversation.id) ?? [];
+      const detail = result.replace(/\s+/g, " ").trim().slice(0, 320);
+      toolActivityByConversation.set(conversation.id, activities.map((activity) => activity.callId === event.callId ? { ...activity, status: event.result?.isError ? "failed" : "completed", detail } : activity));
+      if (conversation.id === desktopState.activeConversationId) renderChat();
+    }
   }
 }
 
@@ -1698,6 +2024,24 @@ element<HTMLButtonElement>("refreshModels").onclick = () => {
 };
 element<HTMLButtonElement>("refreshFiles").onclick = () => void loadFiles();
 fileSearch.oninput = () => { fileSearchQuery = fileSearch.value; renderFiles(); };
+fileTree.addEventListener("contextmenu", (event) => {
+  const row = (event.target as HTMLElement).closest<HTMLElement>(".tree-row");
+  const button = row?.querySelector<HTMLButtonElement>("button[data-path]");
+  if (!row || !button?.dataset.path) {
+    showFileContextMenu(event, { kind: "root", path: "" });
+    return;
+  }
+  showFileContextMenu(event, {
+    kind: row.classList.contains("directory") ? "directory" : "file",
+    path: button.dataset.path
+  });
+});
+document.addEventListener("pointerdown", (event) => {
+  if (!fileContextMenu.hidden && !fileContextMenu.contains(event.target as Node)) hideFileContextMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !fileContextMenu.hidden) hideFileContextMenu();
+});
 fileTree.addEventListener("scroll", saveWorkspaceUiState, { passive: true });
 editor.addEventListener("scroll", () => {
   const tab = activeEditorTab();
@@ -1829,7 +2173,26 @@ chatInput.closest<HTMLFormElement>("form")?.addEventListener("drop", (event) => 
   void addFiles(Array.from(event.dataTransfer?.files ?? []));
 });
 chatInput.oninput = () => { slashIndex = 0; renderSlashMenu(); };
+chatInput.addEventListener("paste", (event) => {
+  const clipboard = event.clipboardData;
+  if (!clipboard) return;
+  const imageItem = Array.from(clipboard.items).find((item) => item.type.startsWith("image/"));
+  if (imageItem) {
+    const image = imageItem.getAsFile();
+    if (!image) return;
+    event.preventDefault();
+    const namedImage = image.name ? image : new File([image], pastedFileName(image.type), { type: image.type });
+    void addFiles([namedImage]);
+    return;
+  }
+  const text = clipboard.getData("text/plain");
+  if (text.length < longPasteAttachmentThreshold) return;
+  event.preventDefault();
+  const attachment = new File([text], `pasted-text-${Date.now()}.txt`, { type: "text/plain" });
+  void addFiles([attachment]);
+});
 chatInput.onkeydown = (event) => {
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void sendChat(); return; }
   if (slashMenu.hidden || !slashResults.length) return;
   if (event.key === "ArrowDown") { event.preventDefault(); slashIndex = (slashIndex + 1) % slashResults.length; renderSlashMenu(); }
   if (event.key === "ArrowUp") { event.preventDefault(); slashIndex = (slashIndex - 1 + slashResults.length) % slashResults.length; renderSlashMenu(); }

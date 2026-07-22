@@ -66,7 +66,7 @@ export const writeFileTool: AgentTool = {
 };
 
 export const replaceInFileTool: AgentTool = {
-  name: "replace_in_file", description: "Safely replace one exact unique string in a UTF-8 workspace file. Prefer this for focused edits to existing files. Read the file first to obtain the exact oldText. Absolute paths are not allowed.",
+  name: "replace_in_file", description: "Safely replace one unique contiguous string in a UTF-8 workspace file. Read the file first and copy the exact oldText. Line-ending differences are handled automatically. Absolute paths are not allowed.",
   inputSchema: { type: "object", properties: { path: { type: "string" }, oldText: { type: "string" }, newText: { type: "string" } }, required: ["path", "oldText", "newText"] },
   async execute(input, context) {
     const oldText = stringInput(input, "oldText");
@@ -74,9 +74,36 @@ export const replaceInFileTool: AgentTool = {
     if (newText === undefined) throw new Error("'newText' must be a string");
     const fullPath = resolveWorkspacePath(context.workspaceRoot, stringInput(input, "path"));
     const existing = await readFile(fullPath, "utf8");
-    const occurrences = existing.split(oldText).length - 1;
-    if (occurrences !== 1) throw new Error(`Expected oldText to occur exactly once, found ${occurrences}.`);
-    await writeFile(fullPath, existing.replace(oldText, newText), "utf8");
+    const countOccurrences = (source: string, search: string) => source.split(search).length - 1;
+    let sourceText = oldText;
+    let replacementText = newText;
+    let occurrences = countOccurrences(existing, sourceText);
+    if (occurrences !== 1) {
+      // Models often preserve the text but use LF against a CRLF workspace.
+      // This fallback remains exact and still requires one unique occurrence.
+      const lineEnding = existing.includes("\r\n") ? "\r\n" : "\n";
+      const normalizedOldText = oldText.replace(/\r\n|\r|\n/g, lineEnding);
+      const normalizedOccurrences = countOccurrences(existing, normalizedOldText);
+      if (normalizedOccurrences === 1) {
+        sourceText = normalizedOldText;
+        replacementText = newText.replace(/\r\n|\r|\n/g, lineEnding);
+        occurrences = normalizedOccurrences;
+      }
+    }
+    if (occurrences !== 1 && /\s/.test(oldText)) {
+      // Keep the actual code/text exact but tolerate model drift in indentation
+      // and spacing. It is still only accepted for one unique file match.
+      const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const whitespaceFlexible = new RegExp(oldText.split(/(\s+)/).filter(Boolean).map((part) => /\s/.test(part) ? "\\s+" : escape(part)).join(""), "g");
+      const matches = [...existing.matchAll(whitespaceFlexible)];
+      if (matches.length === 1) {
+        const lineEnding = existing.includes("\r\n") ? "\r\n" : "\n";
+        await writeFile(fullPath, existing.replace(whitespaceFlexible, newText.replace(/\r\n|\r|\n/g, lineEnding)), "utf8");
+        return { content: "File updated (matched with normalized whitespace)." };
+      }
+    }
+    if (occurrences !== 1) throw new Error(`Expected oldText to occur exactly once, found ${occurrences}. Read the file again and retry with one exact contiguous excerpt from its current contents.`);
+    await writeFile(fullPath, existing.replace(sourceText, replacementText), "utf8");
     return { content: "File updated." };
   }
 };
