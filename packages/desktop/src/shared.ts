@@ -35,6 +35,8 @@ export interface DesktopConfiguration {
   readonly contextWindow: number;
   readonly internetAccess: boolean;
   readonly mcpServers: McpServerConfigurations;
+  readonly autocomplete?: { readonly enabled: boolean; readonly model?: string };
+  readonly formatOnSave?: boolean;
 }
 
 export interface DesktopMessage {
@@ -49,12 +51,21 @@ export interface DesktopRunResult {
   readonly completedAt?: string;
 }
 
+export interface DesktopToolActivity {
+  readonly callId: string;
+  readonly tool: string;
+  readonly status: "progress" | "running" | "completed" | "failed";
+  readonly detail?: string;
+}
+
 export interface DesktopConversation {
   readonly id: string;
   readonly title: string;
   readonly messages: readonly DesktopMessage[];
   readonly updatedAt: string;
   readonly lastRun?: DesktopRunResult;
+  /** The most recent agent run's visible tool trace. */
+  readonly toolActivity?: readonly DesktopToolActivity[];
 }
 
 export interface DesktopEndpoint {
@@ -159,6 +170,9 @@ export interface DesktopBridge {
   openExternal(url: string): Promise<void>;
   connectTrussGo(): Promise<{ readonly workspaceName: string; readonly qrDataUrl: string }>;
   disconnectTrussGo(): Promise<void>;
+  complete(input: { readonly prefix: string; readonly suffix: string; readonly path: string }): Promise<string>;
+  formatFile(path: string, content: string): Promise<string>;
+  checkSyntax(path: string, content: string): Promise<readonly { readonly line: number; readonly message: string }[]>;
   onEvent(listener: (event: DesktopEvent) => void): () => void;
 }
 import type { WorkspacePlan } from "@truss-harness/runtime";

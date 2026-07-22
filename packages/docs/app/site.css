@@ -2523,6 +2523,15 @@ body {
     .truss-go-hero .site-actions { justify-content: center; }
 }
 
+/* Keep visual product heroes compact once they reach phone widths. */
+@media (max-width: 780px) {
+    .client-hero,
+    .truss-go-hero,
+    .download-hero {
+        gap: 28px;
+    }
+}
+
 @media (min-width: 781px) and (max-width: 1200px) {
     .site-header-inner,
     .site-hero,

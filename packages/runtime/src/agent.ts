@@ -10,6 +10,8 @@ import { checkpoint } from "./sessions.js";
 
 export interface ToolApproval { approve(call: ToolCall, session: Session): Promise<boolean>; }
 export const allowAllTools: ToolApproval = { approve: async () => true };
+/** A generous safety ceiling for multi-step workspace tasks; callers may still override it. */
+export const defaultAgentMaxTurns = 64;
 export interface AgentRuntimeOptions { readonly provider: ModelProvider; readonly tools: ToolRegistry; readonly sessions: SessionStore; readonly context: ContextManager; readonly events: RuntimeEventBus; readonly workspaceRoot: string; readonly approval?: ToolApproval; readonly systemPrompt?: string; readonly maxTurns?: number; readonly memory?: WorkspaceMemoryStore; readonly plans?: WorkspacePlanStore; readonly savePlanOnCompletion?: boolean; readonly requireWriteForEditIntent?: boolean; readonly deferTextUntilToolDecision?: boolean; }
 
 function workspacePath(call: ToolCall): string | undefined {
@@ -21,7 +23,7 @@ function isFileWrite(call: ToolCall): boolean {
 }
 
 function hasEditIntent(prompt: string): boolean {
-  return /\b(?:add|change|create|delete|edit|fix|implement|modify|overhaul|refactor|remove|rename|replace|rewrite|rework|update|write)\b/i.test(prompt);
+  return /\b(?:add|change|create|delete|edit|fix|implement|modify|overhaul|refactor|remove|rename|replace|rewrite|rework|update|write|error|exception|stack trace|uncaught|referenceerror|typeerror|syntaxerror|not working|doesn['’]t work|broken|failed)\b/i.test(prompt);
 }
 
 class ProgressStreamParser {
@@ -82,7 +84,7 @@ function trailingTagPrefixLength(value: string, tag: string): number {
 /** Provider-neutral iterative agent loop. UI clients interact only via sessions, events, and approval. */
 export class AgentRuntime {
   private readonly maxTurns: number;
-  constructor(private readonly options: AgentRuntimeOptions) { this.maxTurns = options.maxTurns ?? 24; }
+  constructor(private readonly options: AgentRuntimeOptions) { this.maxTurns = options.maxTurns ?? defaultAgentMaxTurns; }
   async createSession(messages: readonly ChatMessage[] = []): Promise<Session> { return this.options.sessions.create(messages); }
   async getSession(sessionId: string): Promise<Session | undefined> { return this.options.sessions.get(sessionId); }
   async listSessions(): Promise<readonly Session[]> { return this.options.sessions.list(); }
@@ -113,7 +115,11 @@ export class AgentRuntime {
           : recoveryReason === "no_tools"
             ? "EXECUTION RECOVERY: Your previous response described work but did not call any tools. This is Edit mode. Do not explain or propose a plan. Immediately call one relevant workspace inspection tool, then make the requested file change with write_file or replace_in_file and read the changed file to verify it."
             : undefined;
-        const systemPrompt = [this.options.systemPrompt, recoveryInstruction].filter(Boolean).join("\n\n") || undefined;
+        const turnsRemaining = this.maxTurns - turn;
+        const turnBudgetInstruction = turnsRemaining <= 6
+          ? `TURN BUDGET: ${turnsRemaining} turns remain. Stop repeated exploration. Complete and verify the requested edits now, then return a concise final result. Do not claim work is complete unless the relevant write tools succeeded.`
+          : undefined;
+        const systemPrompt = [this.options.systemPrompt, recoveryInstruction, turnBudgetInstruction].filter(Boolean).join("\n\n") || undefined;
         for await (const event of this.options.provider.stream({ messages: await this.options.context.build(session, systemPrompt, requestContext), tools: this.options.tools.definitions(), signal })) {
           if (event.type === "text_delta") {
             const parsed = progressParser.push(event.text);

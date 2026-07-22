@@ -1,6 +1,6 @@
 import type { ChatAttachment, WorkspacePlan } from "@truss-harness/runtime";
 import hljs from "highlight.js/lib/common";
-import { desktopThemeNames, type DesktopConfiguration, type DesktopConversation, type DesktopEndpoint, type DesktopEvent, type DesktopFile, type DesktopGitStatus, type DesktopMessage, type DesktopProvider, type DesktopState, type DesktopThemePalette, type DesktopThemePreference, type DesktopWorkspaceUiState } from "./shared.js";
+import { desktopThemeNames, type DesktopConfiguration, type DesktopConversation, type DesktopEndpoint, type DesktopEvent, type DesktopFile, type DesktopGitStatus, type DesktopMessage, type DesktopProvider, type DesktopState, type DesktopThemePalette, type DesktopThemePreference, type DesktopToolActivity, type DesktopWorkspaceUiState } from "./shared.js";
 
 declare global {
   interface Window {
@@ -27,6 +27,8 @@ const defaultConfiguration: DesktopConfiguration = {
   permission: "ask",
   contextWindow: 8_192,
   internetAccess: false,
+  autocomplete: { enabled: false },
+  formatOnSave: false,
   mcpServers: {}
 };
 
@@ -52,7 +54,7 @@ const gitFiles = element<HTMLDivElement>("gitFiles");
 const commitMessage = element<HTMLInputElement>("commitMessage");
 const generateCommitMessage = element<HTMLButtonElement>("generateCommitMessage");
 const editor = element<HTMLElement>("editor");
-const saveFileButton = element<HTMLButtonElement>("saveFileButton");
+const formatFileButton = element<HTMLButtonElement>("formatFileButton");
 const editorTabsElement = element<HTMLDivElement>("editorTabs");
 const editorTitle = element<HTMLSpanElement>("editorTitle");
 const browserPanel = element<HTMLElement>("browserPanel");
@@ -108,6 +110,9 @@ const modelOptions = element<HTMLDataListElement>("modelOptions");
 const contextInput = element<HTMLInputElement>("contextInput");
 const permissionSelect = element<HTMLSelectElement>("permissionSelect");
 const internetAccessInput = element<HTMLInputElement>("internetAccessInput");
+const autocompleteEnabled = element<HTMLInputElement>("autocompleteEnabled");
+const autocompleteModel = element<HTMLInputElement>("autocompleteModel");
+const formatOnSave = element<HTMLInputElement>("formatOnSave");
 const mcpServersInput = element<HTMLTextAreaElement>("mcpServersInput");
 const mcpStatus = element<HTMLDivElement>("mcpStatus");
 const checkUpdatesOnLaunch = element<HTMLInputElement>("checkUpdatesOnLaunch");
@@ -135,6 +140,10 @@ let copiedWorkspaceFile: string | undefined;
 let resolveFileEntry: ((value: string | undefined) => void) | undefined;
 let activeFile: string | undefined;
 let showingDiff = false;
+let inlineCompletion = "";
+let completionTimer: number | undefined;
+let completionRequest = 0;
+let syntaxTimer: number | undefined;
 type EditorTabMode = "file" | "diff";
 type EditorTabState = "loading" | "ready" | "error";
 interface EditorTab {
@@ -146,14 +155,10 @@ interface EditorTab {
   scrollTop: number;
   revision: number;
 }
-interface ToolActivity {
-  readonly callId: string;
-  readonly tool: string;
-  readonly status: "progress" | "running" | "completed" | "failed";
-  readonly detail?: string;
-}
+type ToolActivity = DesktopToolActivity;
 const openEditorTabs: EditorTab[] = [];
 const toolActivityByConversation = new Map<string, ToolActivity[]>();
+const toolActivityExpandedByConversation = new Map<string, boolean>();
 let busy = false;
 let persistTimer: number | undefined;
 let workspaceUiPersistTimer: number | undefined;
@@ -289,7 +294,9 @@ function tokenEstimate(messages: readonly DesktopMessage[]): number {
 
 function isDirectWorkspaceChangeRequest(prompt: string): boolean {
   const action = "(?:add|change|create|delete|edit|fix|implement|modify|overhaul|refactor|remove|rename|replace|rewrite|rework|update|write)";
-  return new RegExp(`^\\s*(?:(?:please|can you|could you|would you)\\s+)?${action}\\b|^\\s*(?:i am going to|i'm going to|we need to|let's)\\s+${action}\\b`, "i").test(prompt);
+  const directRequest = new RegExp(`^\\s*(?:(?:please|can you|could you|would you)\\s+)?${action}\\b|^\\s*(?:i am going to|i'm going to|we need to|let's)\\s+${action}\\b`, "i");
+  const errorReport = /\b(?:error|exception|stack trace|uncaught|referenceerror|typeerror|syntaxerror|not working|doesn['’]t work|broken|failed)\b/i;
+  return directRequest.test(prompt) || errorReport.test(prompt);
 }
 
 function formatTokens(value: number): string {
@@ -584,7 +591,7 @@ function renderFiles(): void {
       const row = document.createElement("div");
       row.className = "tree-row file filtered";
       const button = document.createElement("button");
-      button.textContent = file.path;
+      appendFileLabel(button, file.path, file.path);
       button.title = file.path;
       button.dataset.path = editorPath(file.path);
       if (editorPath(file.path) === activeFile) button.classList.add("active");
@@ -656,7 +663,7 @@ function renderFiles(): void {
       row.className = "tree-row file";
       row.style.setProperty("--depth", String(depth));
       const button = document.createElement("button");
-      button.textContent = file.path.split(/[\\/]/).at(-1) ?? file.path;
+      appendFileLabel(button, file.path, file.path.split(/[\\/]/).at(-1) ?? file.path);
       button.title = file.path;
       button.dataset.path = editorPath(file.path);
       if (editorPath(file.path) === activeFile) button.classList.add("active");
@@ -884,7 +891,9 @@ function renderChat(): void {
   const lastAssistantIndex = conversation.messages.map((message) => message.role).lastIndexOf("assistant");
   const showActivePlaceholder = busy && conversation.id === runningConversationId;
   conversation.messages.forEach((message, index) => {
-    if (index === lastAssistantIndex && activities.length) chatMessages.append(toolActivityView(activities));
+    if (index === lastAssistantIndex && activities.length) {
+      chatMessages.append(toolActivityView(conversation.id, activities));
+    }
     chatMessages.append(messageView(message, showActivePlaceholder && index === lastAssistantIndex));
   });
   if (conversation.lastRun) {
@@ -944,6 +953,12 @@ function updateConversation(conversationId: string, update: (conversation: Deskt
   desktopState = { ...desktopState, conversations: desktopState.conversations.map((conversation) => conversation.id === conversationId ? update(conversation) : conversation) };
 }
 
+function setToolActivity(conversationId: string, activities: readonly ToolActivity[]): void {
+  toolActivityByConversation.set(conversationId, [...activities]);
+  updateConversation(conversationId, (current) => ({ ...current, toolActivity: [...activities] }));
+  saveConversations();
+}
+
 function languageForPath(path: string): string {
   const extension = path.split(".").at(-1)?.toLowerCase() ?? "";
   const languages: Record<string, string> = {
@@ -985,7 +1000,6 @@ function renderEditorContent(tab: EditorTab | undefined): void {
   editor.className = "editor-content";
   editor.replaceChildren();
   if (!tab) {
-    saveFileButton.disabled = true;
     editor.append(document.createTextNode("Open a workspace file to inspect it."));
     editor.scrollTop = 0;
     return;
@@ -1058,6 +1072,44 @@ function renderEditorContent(tab: EditorTab | undefined): void {
     input.value = tab.content;
     input.spellcheck = false;
     input.setAttribute("aria-label", `Edit ${tab.path}`);
+    const suggestion = document.createElement("div");
+    suggestion.className = "inline-completion";
+    suggestion.hidden = true;
+    const diagnostics = document.createElement("div");
+    diagnostics.className = "editor-diagnostics";
+    diagnostics.hidden = true;
+    const refreshDiagnostics = (): void => {
+      window.clearTimeout(syntaxTimer);
+      syntaxTimer = window.setTimeout(() => {
+        void window.trussDesktop.checkSyntax(tab.path, input.value).then((items) => {
+          if (input.value !== tab.content) return;
+          diagnostics.hidden = items.length === 0;
+          diagnostics.textContent = items.map((item) => `Line ${item.line}: ${item.message}`).join("\n");
+        }).catch(() => undefined);
+      }, 250);
+    };
+    const requestCompletion = (): void => {
+      window.clearTimeout(completionTimer);
+      inlineCompletion = "";
+      suggestion.hidden = true;
+      if (!configuration().autocomplete?.enabled || input.selectionStart !== input.selectionEnd) return;
+      const cursor = input.selectionStart;
+      const prefix = input.value.slice(0, cursor);
+      if (prefix.trim().length < 3) return;
+      const request = ++completionRequest;
+      completionTimer = window.setTimeout(() => {
+        void window.trussDesktop.complete({ prefix, suffix: input.value.slice(cursor), path: tab.path }).then((completion) => {
+          if (request !== completionRequest || !completion || input.value !== tab.content) return;
+          inlineCompletion = completion;
+          const currentLine = prefix.slice(prefix.lastIndexOf("\n") + 1);
+          const line = prefix.split("\n").length - 1;
+          suggestion.textContent = completion.split("\n", 1)[0];
+          suggestion.style.left = `${62 + currentLine.length * 7.22 - input.scrollLeft}px`;
+          suggestion.style.top = `${12 + line * 18 - input.scrollTop}px`;
+          suggestion.hidden = false;
+        }).catch(() => undefined);
+      }, 350);
+    };
     const renderLineNumbers = () => {
       lineNumbers.textContent = Array.from({ length: Math.max(1, tab.content.split("\n").length) }, (_, index) => String(index + 1)).join("\n");
     };
@@ -1069,8 +1121,19 @@ function renderEditorContent(tab: EditorTab | undefined): void {
       code.replaceChildren();
       appendHighlightedCode(code, tab.content, languageForPath(tab.path));
       renderEditorTabs();
+      requestCompletion();
+      refreshDiagnostics();
     };
     input.onkeydown = (event) => {
+      if (event.key === "Tab" && inlineCompletion) {
+        event.preventDefault();
+        input.setRangeText(inlineCompletion, input.selectionStart, input.selectionEnd, "end");
+        inlineCompletion = "";
+        suggestion.hidden = true;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        return;
+      }
+      if (event.key === "Escape" && inlineCompletion) { inlineCompletion = ""; suggestion.hidden = true; return; }
       if (event.key === "Tab") {
         event.preventDefault();
         const start = input.selectionStart;
@@ -1096,7 +1159,8 @@ function renderEditorContent(tab: EditorTab | undefined): void {
       saveWorkspaceUiState();
     };
     editor.classList.add("editable");
-    surface.append(lineNumbers, highlight, input);
+    surface.append(lineNumbers, highlight, input, suggestion, diagnostics);
+    refreshDiagnostics();
     editor.append(surface);
   }
   window.requestAnimationFrame(() => {
@@ -1157,7 +1221,7 @@ function renderEditorTabs(): void {
     select.type = "button";
     select.setAttribute("role", "tab");
     select.setAttribute("aria-selected", String(tab.path === activeFile));
-    select.textContent = `${tab.dirty ? "* " : ""}${tab.path.split(/[\\/]/).at(-1) ?? tab.path}`;
+    appendFileLabel(select, tab.path, `${tab.dirty ? "* " : ""}${tab.path.split(/[\\/]/).at(-1) ?? tab.path}`);
     select.title = `${tab.mode === "diff" ? "Diff: " : ""}${tab.path}`;
     select.onclick = () => selectEditorTab(tab);
     const close = document.createElement("button");
@@ -1172,7 +1236,6 @@ function renderEditorTabs(): void {
   });
   editorTabsElement.replaceChildren(editorTitle, ...tabs);
   const active = activeEditorTab();
-  saveFileButton.disabled = !active || active.mode !== "file" || Boolean(mediaKindForPath(active.path)) || !active.dirty;
 }
 
 async function loadEditorTab(tab: EditorTab): Promise<void> {
@@ -1227,8 +1290,8 @@ async function loadFiles(): Promise<void> {
 async function saveActiveFile(): Promise<void> {
   const tab = activeEditorTab();
   if (!tab || tab.mode !== "file" || mediaKindForPath(tab.path) || !tab.dirty) return;
-  saveFileButton.disabled = true;
   try {
+    if (configuration().formatOnSave) tab.content = await window.trussDesktop.formatFile(tab.path, tab.content);
     await window.trussDesktop.writeFile(tab.path, tab.content);
     tab.dirty = false;
     renderEditorTabs();
@@ -1237,6 +1300,47 @@ async function saveActiveFile(): Promise<void> {
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error));
     renderEditorTabs();
+  }
+}
+
+function fileIconKind(path: string): string {
+  const name = path.split(/[\\/]/).at(-1)?.toLowerCase() ?? "";
+  if (["package.json", "tsconfig.json", ".eslintrc", ".prettierrc"].includes(name)) return "config";
+  const extension = name.split(".").at(-1) ?? "";
+  if (["ts", "tsx"].includes(extension)) return "typescript";
+  if (["js", "jsx", "mjs", "cjs"].includes(extension)) return "javascript";
+  if (["json", "yaml", "yml", "toml", "ini"].includes(extension)) return "config";
+  if (["css", "scss", "sass", "less"].includes(extension)) return "style";
+  if (["html", "htm", "svg", "xml"].includes(extension)) return "markup";
+  if (["md", "mdx", "txt"].includes(extension)) return "document";
+  if (["py", "go", "rs", "java", "kt", "c", "cc", "cpp", "h", "hpp", "php", "rb", "sh", "sql"].includes(extension)) return extension;
+  if (["png", "jpg", "jpeg", "webp", "gif", "ico"].includes(extension)) return "image";
+  return "plain";
+}
+
+function appendFileLabel(button: HTMLButtonElement, path: string, label: string): void {
+  const icon = document.createElement("span");
+  icon.className = `file-icon ${fileIconKind(path)}`;
+  icon.setAttribute("aria-hidden", "true");
+  const text = document.createElement("span");
+  text.textContent = label;
+  button.replaceChildren(icon, text);
+}
+
+async function formatActiveFile(): Promise<void> {
+  const tab = activeEditorTab();
+  if (!tab || tab.mode !== "file" || mediaKindForPath(tab.path)) return;
+  formatFileButton.disabled = true;
+  try {
+    tab.content = await window.trussDesktop.formatFile(tab.path, tab.content);
+    tab.dirty = true;
+    renderEditorTabs();
+    renderEditorContent(tab);
+    notify(`Formatted ${tab.path}`);
+  } catch (error) {
+    notify(error instanceof Error ? error.message : String(error));
+  } finally {
+    formatFileButton.disabled = false;
   }
 }
 
@@ -1276,6 +1380,8 @@ function settingsConfiguration(): DesktopConfiguration {
     permission: permissionSelect.value === "auto-read" || permissionSelect.value === "auto-all" ? permissionSelect.value : "ask",
     contextWindow: Math.max(512, Number.parseInt(contextInput.value, 10) || 8_192),
     internetAccess: internetAccessInput.checked,
+    autocomplete: { enabled: autocompleteEnabled.checked, model: autocompleteModel.value.trim() || undefined },
+    formatOnSave: formatOnSave.checked,
     mcpServers
   };
 }
@@ -1328,6 +1434,9 @@ function populateSettings(): void {
   contextInput.value = String(current.contextWindow);
   permissionSelect.value = current.permission;
   internetAccessInput.checked = current.internetAccess;
+  autocompleteEnabled.checked = current.autocomplete?.enabled ?? false;
+  autocompleteModel.value = current.autocomplete?.model ?? "";
+  formatOnSave.checked = current.formatOnSave ?? false;
   mcpServersInput.value = Object.keys(current.mcpServers).length ? JSON.stringify(current.mcpServers, null, 2) : "";
   checkUpdatesOnLaunch.checked = desktopState.updates.checkOnLaunch;
   autoDownloadUpdates.checked = desktopState.updates.autoDownload;
@@ -1715,10 +1824,11 @@ function showFileContextMenu(event: MouseEvent, target: FileContextTarget): void
   fileContextMenu.style.top = `${Math.min(event.clientY, window.innerHeight - bounds.height - 8)}px`;
 }
 
-function toolActivityView(activities: readonly ToolActivity[]): HTMLElement {
+function toolActivityView(conversationId: string, activities: readonly ToolActivity[]): HTMLElement {
   const trace = document.createElement("details");
   trace.className = "tool-activity";
-  trace.open = true;
+  trace.open = toolActivityExpandedByConversation.get(conversationId) ?? true;
+  trace.addEventListener("toggle", () => toolActivityExpandedByConversation.set(conversationId, trace.open));
   const summary = document.createElement("summary");
   const running = activities.find((activity) => activity.status === "running");
   summary.textContent = running ? `Working: ${running.tool}` : `Activity: ${activities.length} tool call${activities.length === 1 ? "" : "s"}`;
@@ -1807,7 +1917,8 @@ function handleEvent(message: DesktopEvent): void {
   if (message.type === "update") { renderUpdate(message); return; }
   if (message.type === "chat-start") {
     runningConversationId = message.conversationId;
-    toolActivityByConversation.set(message.conversationId, []);
+    setToolActivity(message.conversationId, []);
+    toolActivityExpandedByConversation.set(message.conversationId, true);
     updateConversation(message.conversationId, (current) => ({ ...current, lastRun: { status: "running", modifiedFiles: [] } }));
     setBusy(true);
     renderChat();
@@ -1823,13 +1934,19 @@ function handleEvent(message: DesktopEvent): void {
   }
   if (message.type === "chat-error") {
     const conversation = conversationById(message.conversationId);
-    if (conversation) updateConversation(conversation.id, (current) => ({ ...current, lastRun: { status: "failed", modifiedFiles: [], completedAt: new Date().toISOString() } }));
+    if (conversation) updateConversation(conversation.id, (current) => {
+      const last = current.messages.at(-1);
+      const messages = last?.role === "assistant" && !last.content.trim()
+        ? [...current.messages.slice(0, -1), { role: "assistant" as const, content: `The run stopped before completion: ${message.message}` }]
+        : current.messages;
+      return { ...current, messages, lastRun: { status: "failed", modifiedFiles: [], completedAt: new Date().toISOString() }, updatedAt: new Date().toISOString() };
+    });
     if (message.conversationId === runningConversationId) {
       runningConversationId = undefined;
       setBusy(false);
     }
     renderChat();
-    appendToolMessage(`Error: ${message.message}`);
+    saveConversations();
     return;
   }
   if (message.type === "terminal-output") { appendTerminal(message.text); return; }
@@ -1858,7 +1975,7 @@ function handleEvent(message: DesktopEvent): void {
   }
   if (message.type !== "agent") return;
   const event = message.event;
-  const conversation = conversationById(message.conversationId);
+  const conversation = conversationById(message.conversationId) ?? conversationById(runningConversationId);
   if (event.type === "plan_updated" && event.plan) { activePlan = event.plan; renderPlan(); return; }
   if (event.type === "run_completed") {
     if (conversation) {
@@ -1905,7 +2022,7 @@ function handleEvent(message: DesktopEvent): void {
     const nextActivities: ToolActivity[] = previous?.status === "progress"
       ? [...activities.slice(0, -1), { ...previous, tool: `${previous.tool}${note}` }]
       : [...activities, { callId: createId(), tool: note, status: "progress" }];
-    toolActivityByConversation.set(conversation.id, nextActivities);
+    setToolActivity(conversation.id, nextActivities);
     agentActivity = nextActivities.at(-1)?.tool.trim() || "Thinking";
     if (conversation.id === desktopState.activeConversationId) renderChat();
     renderRuntime();
@@ -1916,7 +2033,7 @@ function handleEvent(message: DesktopEvent): void {
     renderRuntime();
     if (conversation) {
       const activities = toolActivityByConversation.get(conversation.id) ?? [];
-      toolActivityByConversation.set(conversation.id, [...activities, { callId: event.callId ?? createId(), tool: event.tool ?? "unknown", status: "running" }]);
+      setToolActivity(conversation.id, [...activities, { callId: event.callId ?? createId(), tool: event.tool ?? "unknown", status: "running" }]);
       if (conversation.id === desktopState.activeConversationId) renderChat();
     }
   }
@@ -1928,7 +2045,7 @@ function handleEvent(message: DesktopEvent): void {
     if (conversation) {
       const activities = toolActivityByConversation.get(conversation.id) ?? [];
       const detail = result.replace(/\s+/g, " ").trim().slice(0, 320);
-      toolActivityByConversation.set(conversation.id, activities.map((activity) => activity.callId === event.callId ? { ...activity, status: event.result?.isError ? "failed" : "completed", detail } : activity));
+      setToolActivity(conversation.id, activities.map((activity) => activity.callId === event.callId ? { ...activity, status: event.result?.isError ? "failed" : "completed", detail } : activity));
       if (conversation.id === desktopState.activeConversationId) renderChat();
     }
   }
@@ -2113,7 +2230,12 @@ element<HTMLFormElement>("commitForm").onsubmit = (event) => {
 element<HTMLButtonElement>("newChat").onclick = () => { cancelActiveRunForNavigation(); createConversation(); renderConversations(); renderChat(); renderRuntime(); saveConversations(); };
 element<HTMLButtonElement>("fileButton").onclick = () => { setCenterView("editor"); if (activeFile) void openFile(activeFile, false, true); };
 element<HTMLButtonElement>("diffButton").onclick = () => { setCenterView("editor"); if (activeFile) void openFile(activeFile, !showingDiff, true); };
-saveFileButton.onclick = () => void saveActiveFile();
+formatFileButton.onclick = () => void formatActiveFile();
+editorTabsElement.addEventListener("wheel", (event) => {
+  if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+  event.preventDefault();
+  editorTabsElement.scrollBy({ left: event.deltaY, behavior: "smooth" });
+}, { passive: false });
 element<HTMLButtonElement>("settingsButton").onclick = () => { populateSettings(); settingsDialog.showModal(); };
 element<HTMLButtonElement>("closeSettings").onclick = () => settingsDialog.close("cancel");
 element<HTMLButtonElement>("dialogRefresh").onclick = () => {
@@ -2262,6 +2384,9 @@ window.addEventListener("keydown", (event) => {
 window.trussDesktop.onEvent(handleEvent);
 void (async () => {
   desktopState = await window.trussDesktop.initialState();
+  for (const conversation of desktopState.conversations) {
+    if (conversation.toolActivity?.length) toolActivityByConversation.set(conversation.id, [...conversation.toolActivity]);
+  }
   applyTheme(desktopState.theme);
   populateSettings();
   await discover(desktopState.configuration);

@@ -124,32 +124,21 @@ button:focus-visible {
 
 .topbar {
     height: 48px;
-    display: flex;
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) auto auto;
     align-items: center;
-    justify-content: space-between;
     gap: 12px;
     padding: 0 14px;
     border-bottom: 1px solid #2b383f;
     background: #151d22;
 }
 
-.brand-lockup,
-.top-actions {
+.runtime-lockup,
+.header-editor-actions {
     display: flex;
     align-items: center;
     gap: 8px;
     min-width: 0;
-}
-
-.brand-lockup strong {
-    font-size: 15px;
-}
-
-.brand-mark {
-    width: 24px;
-    height: 24px;
-    object-fit: contain;
-    border-radius: 4px;
 }
 
 #runtimeStatus {
@@ -159,6 +148,14 @@ button:focus-visible {
     color: #9badb5;
     font-size: 12px;
 }
+
+.top-menu { position: relative; }
+.top-menu summary { display: flex; align-items: center; min-height: 29px; border: 1px solid #33414a; border-radius: 4px; background: #1b252b; padding: 4px 9px; cursor: pointer; list-style: none; }
+.top-menu summary::-webkit-details-marker { display: none; }
+.top-menu summary::after { content: "⌄"; margin-left: 6px; color: #9badb5; font-size: 12px; }
+.top-menu[open] summary { background: #25343c; }
+.top-menu-panel { position: absolute; z-index: 20; top: calc(100% + 7px); right: 0; display: grid; gap: 5px; min-width: 184px; padding: 7px; border: 1px solid #33414a; border-radius: 6px; background: #151d22; box-shadow: 0 14px 30px #05090baa; }
+.top-menu-panel button { width: 100%; text-align: left; }
 
 .status-dot {
     width: 7px;
@@ -316,13 +313,15 @@ button:focus-visible {
 }
 
 .editor-toolbar {
+    display: flex;
     padding-left: 0;
     color: #d4dfe3;
     text-transform: none;
     letter-spacing: 0;
+    overflow: hidden;
 }
 
-.editor-toolbar-actions,
+.header-editor-actions,
 .center-tabs,
 .browser-nav {
     display: flex;
@@ -335,11 +334,14 @@ button:focus-visible {
 .editor-tabs {
     align-self: stretch;
     display: flex;
-    flex: 1 1 auto;
+    flex: 0 1 auto;
     min-width: 0;
     overflow-x: auto;
     overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-color: #54d7b0 transparent;
     scrollbar-width: thin;
+    scroll-behavior: smooth;
 }
 
 .editor-empty-title {
@@ -353,7 +355,7 @@ button:focus-visible {
 
 .editor-tab {
     display: grid;
-    flex: 0 1 190px;
+    flex: 0 0 190px;
     min-width: 92px;
     max-width: 220px;
     grid-template-columns: minmax(0, 1fr) 26px;
@@ -1601,6 +1603,30 @@ dialog::backdrop {
     color: #efaaa4;
 }
 
+.editor-tabs::-webkit-scrollbar { height: 4px; }
+.editor-tabs::-webkit-scrollbar-thumb { border-radius: 999px; background: #54d7b0; }
+.editor-tabs::-webkit-scrollbar-track { background: transparent; }
+:root[data-desktop-theme] .editor-tabs { scrollbar-color: var(--desktop-accent) transparent; }
+:root[data-desktop-theme] .editor-tabs::-webkit-scrollbar-thumb { background: var(--desktop-accent); }
+
+.file-icon { display: inline-grid; flex: 0 0 auto; height: 15px; margin-right: 7px; place-items: center; position: relative; vertical-align: -2px; width: 14px; }
+.file-icon::before { background: currentColor; border-radius: 999px; content: ""; height: 6px; opacity: .74; width: 6px; }
+.file-icon::after { color: currentColor; font: 800 7px/1 Consolas, monospace; position: absolute; }
+.file-icon.typescript { color: #4f9eea; }.file-icon.typescript::before { border-radius: 2px; height: 13px; opacity: .22; width: 13px; }.file-icon.typescript::after { content: "TS"; }
+.file-icon.javascript { color: #e9c94a; }.file-icon.javascript::before { border-radius: 2px; height: 13px; opacity: .22; width: 13px; }.file-icon.javascript::after { content: "JS"; }
+.file-icon.style { color: #c779d0; }.file-icon.style::before { border-radius: 2px; height: 13px; opacity: .22; width: 13px; }.file-icon.style::after { content: "#"; }
+.file-icon.markup { color: #ed8a62; }.file-icon.markup::before { border-radius: 2px; height: 13px; opacity: .22; width: 13px; }.file-icon.markup::after { content: "<>"; font-size: 6px; }
+.file-icon.config { color: #d7bd68; }.file-icon.config::before { border-radius: 2px; height: 13px; opacity: .22; width: 13px; }.file-icon.config::after { content: "{}"; font-size: 6px; }
+.file-icon.document { color: #9badb5; }.file-icon.document::before { border-radius: 2px; height: 13px; opacity: .22; width: 13px; }.file-icon.document::after { content: "·"; font-size: 12px; }
+.file-icon.py { color: #6ea6da; }.file-icon.py::before, .file-icon.go::before, .file-icon.rs::before { border-radius: 2px; height: 13px; opacity: .22; width: 13px; }.file-icon.py::after { content: "Py"; font-size: 6px; }
+.file-icon.go { color: #61c5d6; }.file-icon.go::after { content: "Go"; font-size: 6px; }
+.file-icon.rs { color: #e18b5b; }.file-icon.rs::after { content: "Rs"; font-size: 6px; }
+.file-icon.image { color: #a77dd8; }.file-icon.image::before { border-radius: 3px; height: 11px; opacity: .32; transform: rotate(45deg); width: 11px; }.file-icon.image::after { content: ""; }
+.file-icon.plain { color: #7e9198; }
+
+.inline-completion { max-width: calc(100% - 78px); overflow: hidden; position: absolute; color: #71837b; font: 12px/18px Consolas, "Cascadia Code", monospace; pointer-events: none; text-overflow: ellipsis; white-space: nowrap; z-index: 1; }
+.editor-diagnostics { bottom: 0; left: 48px; margin: 0; max-height: 76px; overflow: auto; padding: 7px 14px; position: absolute; right: 0; background: #2a1719eF; border-top: 1px solid #a75b5b; color: #ffb4ae; font: 12px/1.4 Consolas, "Cascadia Code", monospace; white-space: pre-wrap; z-index: 4; }
+
 .code-block code {
     display: block;
     min-width: 0;
@@ -2008,18 +2034,15 @@ body.resizing * {
     .topbar {
         height: auto;
         min-height: 48px;
-        align-items: flex-start;
-        flex-direction: column;
+        grid-template-columns: minmax(0, 1fr) auto;
         padding: 8px;
     }
 
-    .top-actions {
+    .runtime-lockup {
         width: 100%;
     }
 
-    .top-actions button {
-        flex: 1;
-    }
+    .header-editor-actions { grid-column: 1 / -1; grid-row: 2; overflow-x: auto; padding-bottom: 1px; }
 
     .workbench {
         height: calc(100% - 91px);
