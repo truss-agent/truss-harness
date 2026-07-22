@@ -14,12 +14,11 @@ import { createPairingUri, detectLanAddress, startRemoteGateway, type RunningRem
 import { parseMcpServerConfigurations } from "@truss-harness/mcp";
 import { cloudProviderDefinition, detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, generateLocalText, isCloudProviderId, isLocalEndpointKind, listLocalModels, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import { executeWorkspaceCommand, FileWorkspacePlanStore, type ChatAttachment, type ContextBlock, type ToolApproval, type ToolCall } from "@truss-harness/runtime";
-import { desktopThemeNames, type DesktopConfiguration, type DesktopConversation, type DesktopEndpoint, type DesktopEvent, type DesktopFile, type DesktopGitStatus, type DesktopMessage, type DesktopState, type DesktopProvider, type DesktopThemePalette, type DesktopThemePreference } from "./shared.js";
+import { desktopThemeNames, type DesktopConfiguration, type DesktopConversation, type DesktopEndpoint, type DesktopEvent, type DesktopFile, type DesktopGitStatus, type DesktopMessage, type DesktopState, type DesktopProvider, type DesktopThemePalette, type DesktopThemePreference, type DesktopWorkspaceUiState } from "./shared.js";
 import QRCode from "qrcode";
 
 const execFile = promisify(execFileCallback);
 const ignoredDirectories = new Set([".git", "node_modules", "dist", "coverage", ".next"]);
-const maxFiles = 600;
 const mediaTypes = new Map([
   [".jpg", "image/jpeg"],
   [".jpeg", "image/jpeg"],
@@ -179,7 +178,8 @@ async function loadPersistedState(): Promise<void> {
         : { checkOnLaunch: true, autoDownload: false },
       theme: isThemePreference(parsed.theme) ? parsed.theme : defaultTheme,
       conversations: Array.isArray(parsed.conversations) ? parsed.conversations.slice(0, 30) : [],
-      activeConversationId: typeof parsed.activeConversationId === "string" ? parsed.activeConversationId : undefined
+      activeConversationId: typeof parsed.activeConversationId === "string" ? parsed.activeConversationId : undefined,
+      workspaceUiState: normalizeWorkspaceUiState(parsed.workspaceUiState)
     };
   } catch {
     persisted = { workspaceRoot: process.cwd(), updates: { checkOnLaunch: true, autoDownload: false }, theme: defaultTheme, conversations: [] };
@@ -215,6 +215,26 @@ function normalizeConfiguration(value: DesktopConfiguration): DesktopConfigurati
 
 function isLocalConfiguration(configuration: DesktopConfiguration): configuration is DesktopConfiguration & { readonly provider: "ollama" | "openai-compatible" } {
   return isLocalEndpointKind(configuration.provider);
+}
+
+function normalizeWorkspaceUiState(value: unknown): DesktopWorkspaceUiState | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const candidate = value as Partial<DesktopWorkspaceUiState>;
+  const expandedDirectories = Array.isArray(candidate.expandedDirectories)
+    ? candidate.expandedDirectories.filter((path): path is string => typeof path === "string")
+    : [];
+  const openEditors = Array.isArray(candidate.openEditors)
+    ? candidate.openEditors.flatMap((editor) => editor && typeof editor === "object"
+      && typeof editor.path === "string" && (editor.mode === "file" || editor.mode === "diff")
+      ? [{ path: editor.path, mode: editor.mode, scrollTop: typeof editor.scrollTop === "number" && Number.isFinite(editor.scrollTop) ? Math.max(0, editor.scrollTop) : 0 }]
+      : [])
+    : [];
+  return {
+    expandedDirectories,
+    openEditors,
+    activeFile: typeof candidate.activeFile === "string" ? candidate.activeFile : undefined,
+    fileTreeScrollTop: typeof candidate.fileTreeScrollTop === "number" && Number.isFinite(candidate.fileTreeScrollTop) ? Math.max(0, candidate.fileTreeScrollTop) : 0
+  };
 }
 
 function isColor(value: unknown): value is string {
@@ -390,14 +410,40 @@ async function workspaceMediaResponse(request: Request): Promise<Response> {
   }
 }
 
-async function collectFiles(current = persisted.workspaceRoot, files: DesktopFile[] = []): Promise<DesktopFile[]> {
-  if (files.length >= maxFiles) return files;
-  for (const entry of await readdir(current, { withFileTypes: true })) {
-    if (files.length >= maxFiles) break;
-    if (entry.isDirectory() && !ignoredDirectories.has(entry.name)) await collectFiles(join(current, entry.name), files);
-    if (entry.isFile()) files.push({ path: relative(persisted.workspaceRoot, join(current, entry.name)) });
-  }
+async function collectFiles(): Promise<DesktopFile[]> {
+  const files: DesktopFile[] = [];
+  const visit = async (current: string): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const entryPath = join(current, entry.name);
+      const workspacePath = relative(persisted.workspaceRoot, entryPath);
+      if (entry.isDirectory()) {
+        files.push({ path: workspacePath, type: "directory" });
+        if (!ignoredDirectories.has(entry.name)) await visit(entryPath);
+      } else if (entry.isFile() || entry.isSymbolicLink()) {
+        files.push({ path: workspacePath, type: "file" });
+      }
+    }
+  };
+  await visit(persisted.workspaceRoot);
   return files.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+async function listDirectory(path: string): Promise<DesktopFile[]> {
+  const directory = ensurePathInsideWorkspace(path);
+  const entries = await readdir(directory, { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isDirectory() || entry.isFile() || entry.isSymbolicLink())
+    .map((entry) => ({
+      path: relative(persisted.workspaceRoot, join(directory, entry.name)),
+      type: entry.isDirectory() ? "directory" as const : "file" as const
+    }))
+    .sort((left, right) => left.type === right.type ? left.path.localeCompare(right.path) : left.type === "directory" ? -1 : 1);
 }
 
 async function gitOutput(args: readonly string[]): Promise<string> {
@@ -699,7 +745,8 @@ ipcMain.handle("truss:choose-workspace", async (): Promise<DesktopState | undefi
   const workspaceRoot = selection.filePaths[0];
   if (selection.canceled || !workspaceRoot) return undefined;
   stopManagedDevServer();
-  persisted = { ...persisted, workspaceRoot };
+  const workspaceChanged = resolve(workspaceRoot) !== resolve(persisted.workspaceRoot);
+  persisted = { ...persisted, workspaceRoot, workspaceUiState: workspaceChanged ? undefined : persisted.workspaceUiState };
   if (persisted.configuration) await configureRuntime(persisted.configuration);
   await persistState();
   return persisted;
@@ -761,6 +808,10 @@ ipcMain.handle("truss:configure", async (_event, input: DesktopConfiguration, ap
   await persistState();
   return persisted;
 });
+ipcMain.handle("truss:save-workspace-ui-state", async (_event, state: DesktopWorkspaceUiState): Promise<void> => {
+  persisted = { ...persisted, workspaceUiState: normalizeWorkspaceUiState(state) };
+  await persistState();
+});
 ipcMain.handle("truss:clear-credential", async (_event, provider: DesktopProvider): Promise<void> => {
   if (!isCloudProviderId(provider)) return;
   await removeCredential(provider);
@@ -773,6 +824,7 @@ ipcMain.handle("truss:resolve-approval", (_event, callId: string, approved: bool
   approvalResolvers.delete(callId);
 });
 ipcMain.handle("truss:list-files", () => collectFiles());
+ipcMain.handle("truss:list-directory", (_event, path: string) => listDirectory(path));
 ipcMain.handle("truss:read-file", async (_event, path: string): Promise<string> => readFile(ensurePathInsideWorkspace(path), "utf8"));
 ipcMain.handle("truss:write-file", async (_event, path: string, content: string): Promise<void> => {
   if (typeof content !== "string") throw new Error("File content must be text.");

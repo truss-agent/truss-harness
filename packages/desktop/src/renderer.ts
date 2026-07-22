@@ -1,5 +1,5 @@
 import type { ChatAttachment, WorkspacePlan } from "@truss-harness/runtime";
-import { desktopThemeNames, type DesktopConfiguration, type DesktopConversation, type DesktopEndpoint, type DesktopEvent, type DesktopFile, type DesktopGitStatus, type DesktopMessage, type DesktopProvider, type DesktopState, type DesktopThemePalette, type DesktopThemePreference } from "./shared.js";
+import { desktopThemeNames, type DesktopConfiguration, type DesktopConversation, type DesktopEndpoint, type DesktopEvent, type DesktopFile, type DesktopGitStatus, type DesktopMessage, type DesktopProvider, type DesktopState, type DesktopThemePalette, type DesktopThemePreference, type DesktopWorkspaceUiState } from "./shared.js";
 
 declare global {
   interface Window {
@@ -137,9 +137,11 @@ interface EditorTab {
 const openEditorTabs: EditorTab[] = [];
 let busy = false;
 let persistTimer: number | undefined;
+let workspaceUiPersistTimer: number | undefined;
 let slashResults: readonly DesktopFile[] = [];
 let slashIndex = 0;
-const collapsedDirectories = new Set<string>();
+const expandedDirectories = new Set<string>();
+const loadedDirectoryContents = new Set<string>();
 let gitStatus: DesktopGitStatus = { available: false, ahead: 0, behind: 0, files: [] };
 let gitCollapsed = false;
 let gitPanelHeight = 220;
@@ -332,6 +334,25 @@ function saveConversations(): void {
   }, 220);
 }
 
+function workspaceUiState(): DesktopWorkspaceUiState {
+  preserveEditorScroll();
+  return {
+    expandedDirectories: [...expandedDirectories],
+    openEditors: openEditorTabs.map((tab) => ({ path: tab.path, mode: tab.mode, scrollTop: tab.scrollTop })),
+    activeFile,
+    fileTreeScrollTop: fileTree.scrollTop
+  };
+}
+
+function saveWorkspaceUiState(): void {
+  window.clearTimeout(workspaceUiPersistTimer);
+  workspaceUiPersistTimer = window.setTimeout(() => {
+    const state = workspaceUiState();
+    desktopState = { ...desktopState, workspaceUiState: state };
+    void window.trussDesktop.saveWorkspaceUiState(state);
+  }, 180);
+}
+
 function setBusy(next: boolean): void {
   if (next && !busy) {
     streamStartedAt = performance.now();
@@ -494,7 +515,9 @@ async function runGitAction(action: string, run: () => Promise<string>): Promise
 }
 
 function renderFiles(): void {
+  const scrollTop = fileTree.scrollTop;
   fileTree.replaceChildren();
+  window.requestAnimationFrame(() => { fileTree.scrollTop = scrollTop; });
   if (!files.length) {
     const empty = document.createElement("div");
     empty.className = "empty-chat";
@@ -506,6 +529,7 @@ function renderFiles(): void {
   clearFileSearch.hidden = !query;
   if (query) {
     const matches = files
+      .filter((file) => file.type === "file")
       .flatMap((file) => {
         const score = fuzzyScore(file.path, query);
         return score === undefined ? [] : [{ file, score }];
@@ -524,6 +548,7 @@ function renderFiles(): void {
       const button = document.createElement("button");
       button.textContent = file.path;
       button.title = file.path;
+      button.dataset.path = editorPath(file.path);
       if (editorPath(file.path) === activeFile) button.classList.add("active");
       button.onclick = () => void openFile(file.path, false);
       row.append(button);
@@ -535,8 +560,7 @@ function renderFiles(): void {
   const root: TreeNode = { directories: new Map(), files: [] };
   for (const file of files) {
     const parts = file.path.split(/[\\/]/).filter(Boolean);
-    const fileName = parts.pop();
-    if (!fileName) continue;
+    const fileName = file.type === "file" ? parts.pop() : undefined;
     let node = root;
     for (const part of parts) {
       let child = node.directories.get(part);
@@ -546,7 +570,7 @@ function renderFiles(): void {
       }
       node = child;
     }
-    node.files.push(file);
+    if (fileName) node.files.push(file);
   }
   const renderNode = (node: TreeNode, path: string, depth: number): void => {
     const directories = [...node.directories.entries()].sort(([left], [right]) => left.localeCompare(right));
@@ -556,7 +580,7 @@ function renderFiles(): void {
       row.className = "tree-row directory";
       row.style.setProperty("--depth", String(depth));
       const button = document.createElement("button");
-      const expanded = !collapsedDirectories.has(directoryPath);
+      const expanded = expandedDirectories.has(directoryPath);
       button.className = "folder-button";
       button.dataset.expanded = String(expanded);
       const arrow = document.createElement("span");
@@ -570,10 +594,19 @@ function renderFiles(): void {
       button.append(arrow, icon, label);
       button.title = directoryPath;
       button.setAttribute("aria-expanded", String(expanded));
-      button.onclick = () => {
-        if (expanded) collapsedDirectories.add(directoryPath);
-        else collapsedDirectories.delete(directoryPath);
+      button.onclick = async () => {
+        if (expanded) {
+          expandedDirectories.delete(directoryPath);
+        } else {
+          expandedDirectories.add(directoryPath);
+          try {
+            await loadDirectoryContents(directoryPath);
+          } catch (error) {
+            notify(`Unable to read ${directoryPath}: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
         renderFiles();
+        saveWorkspaceUiState();
       };
       row.append(button);
       fileTree.append(row);
@@ -586,6 +619,7 @@ function renderFiles(): void {
       const button = document.createElement("button");
       button.textContent = file.path.split(/[\\/]/).at(-1) ?? file.path;
       button.title = file.path;
+      button.dataset.path = editorPath(file.path);
       if (editorPath(file.path) === activeFile) button.classList.add("active");
       button.onclick = () => void openFile(file.path, false);
       row.append(button);
@@ -593,6 +627,26 @@ function renderFiles(): void {
     }
   };
   renderNode(root, "", 0);
+  fileTree.scrollTop = scrollTop;
+}
+
+function updateFileSelection(): void {
+  fileTree.querySelectorAll<HTMLButtonElement>(".tree-row.file button").forEach((button) => {
+    button.classList.toggle("active", button.dataset.path === activeFile);
+  });
+}
+
+function mergeFiles(entries: readonly DesktopFile[]): void {
+  const merged = new Map(files.map((file) => [editorPath(file.path), file]));
+  entries.forEach((file) => merged.set(editorPath(file.path), file));
+  files = [...merged.values()].sort((left, right) => left.path.localeCompare(right.path));
+}
+
+async function loadDirectoryContents(path: string): Promise<void> {
+  if (loadedDirectoryContents.has(path)) return;
+  const entries = await window.trussDesktop.listDirectory(path);
+  mergeFiles(entries);
+  loadedDirectoryContents.add(path);
 }
 
 function renderConversations(): void {
@@ -979,7 +1033,7 @@ function renderEditorContent(tab: EditorTab | undefined): void {
       input.setRangeText("  ", start, end, "end");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     };
-    input.onscroll = () => { tab.scrollTop = input.scrollTop; };
+    input.onscroll = () => { tab.scrollTop = input.scrollTop; saveWorkspaceUiState(); };
     editor.classList.add("editable");
     editor.append(input);
   }
@@ -997,7 +1051,8 @@ function selectEditorTab(tab: EditorTab): void {
   setCenterView("editor");
   renderEditorTabs();
   renderEditorContent(tab);
-  renderFiles();
+  updateFileSelection();
+  saveWorkspaceUiState();
 }
 
 function closeEditorTab(path: string): void {
@@ -1017,9 +1072,10 @@ function closeEditorTab(path: string): void {
     }
     editorTitle.textContent = "Workspace";
     renderEditorContent(undefined);
-    renderFiles();
+    updateFileSelection();
   }
   renderEditorTabs();
+  saveWorkspaceUiState();
 }
 
 function renderEditorTabs(): void {
@@ -1092,6 +1148,8 @@ async function openFile(path: string, diff: boolean, switchMode = false): Promis
 async function loadFiles(): Promise<void> {
   try {
     files = await window.trussDesktop.listFiles();
+    loadedDirectoryContents.clear();
+    await Promise.all([...expandedDirectories].map((path) => loadDirectoryContents(path).catch(() => undefined)));
     renderFiles();
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error));
@@ -1213,6 +1271,34 @@ function populateSettings(): void {
   renderMcpStatus();
 }
 
+async function restoreWorkspaceUiState(): Promise<void> {
+  const state = desktopState.workspaceUiState;
+  expandedDirectories.clear();
+  openEditorTabs.splice(0, openEditorTabs.length);
+  activeFile = undefined;
+  showingDiff = false;
+  if (state) {
+    state.expandedDirectories.forEach((path) => expandedDirectories.add(editorPath(path)));
+    for (const path of [...expandedDirectories].sort((left, right) => left.split("/").length - right.split("/").length)) {
+      await loadDirectoryContents(path).catch(() => undefined);
+    }
+    for (const saved of state.openEditors) {
+      const path = editorPath(saved.path);
+      if (openEditorTabs.some((tab) => tab.path === path)) continue;
+      openEditorTabs.push({ path, mode: saved.mode, state: "loading", content: "", dirty: false, scrollTop: saved.scrollTop, revision: 0 });
+    }
+    const savedActiveFile = state.activeFile;
+    const restoredActive = savedActiveFile ? openEditorTabs.find((tab) => tab.path === editorPath(savedActiveFile)) : undefined;
+    activeFile = restoredActive?.path ?? openEditorTabs.at(-1)?.path;
+    showingDiff = openEditorTabs.find((tab) => tab.path === activeFile)?.mode === "diff";
+  }
+  renderFiles();
+  renderEditorTabs();
+  renderEditorContent(activeEditorTab());
+  await Promise.all(openEditorTabs.map(loadEditorTab));
+  window.requestAnimationFrame(() => { fileTree.scrollTop = state?.fileTreeScrollTop ?? 0; });
+}
+
 async function applyConfiguration(next: DesktopConfiguration): Promise<void> {
   const returned = await window.trussDesktop.configure(next, apiKeyInput.value || undefined);
   apiKeyInput.value = "";
@@ -1251,6 +1337,7 @@ function renderSlashMenu(): void {
     return;
   }
   slashResults = files
+    .filter((file) => file.type === "file")
     .flatMap((file) => {
       const score = fuzzyScore(file.path, query.query);
       return score === undefined ? [] : [{ file, score }];
@@ -1288,7 +1375,7 @@ function insertSlashFile(path: string): void {
 }
 
 function attachedPaths(prompt: string): readonly string[] {
-  const available = new Set(files.map((file) => file.path));
+  const available = new Set(files.filter((file) => file.type === "file").map((file) => file.path));
   return [...new Set([...prompt.matchAll(/(?:^|\s)\/([^\s]+)/g)].map((match) => match[1].replaceAll("\\", "/")).filter((path) => available.has(path)))];
 }
 
@@ -1567,11 +1654,14 @@ element<HTMLButtonElement>("chooseWorkspace").onclick = async () => {
   activeFile = undefined;
   showingDiff = false;
   openEditorTabs.splice(0, openEditorTabs.length);
+  expandedDirectories.clear();
+  loadedDirectoryContents.clear();
   setCenterView("editor");
   editorTitle.textContent = "Workspace";
   renderEditorTabs();
   renderEditorContent(undefined);
   await Promise.all([loadFiles(), refreshGit(), window.trussDesktop.getPlan().then((plan) => { activePlan = plan; renderPlan(); })]);
+  await restoreWorkspaceUiState();
   renderConversations();
   renderChat();
   renderRuntime();
@@ -1589,6 +1679,12 @@ element<HTMLButtonElement>("refreshModels").onclick = () => {
 };
 element<HTMLButtonElement>("refreshFiles").onclick = () => void loadFiles();
 fileSearch.oninput = () => { fileSearchQuery = fileSearch.value; renderFiles(); };
+fileTree.addEventListener("scroll", saveWorkspaceUiState, { passive: true });
+editor.addEventListener("scroll", () => {
+  const tab = activeEditorTab();
+  if (tab && !editor.querySelector("textarea")) tab.scrollTop = editor.scrollTop;
+  saveWorkspaceUiState();
+}, { passive: true });
 fileSearch.onkeydown = (event) => {
   if (event.key === "Escape") {
     event.preventDefault();
@@ -1789,6 +1885,7 @@ void (async () => {
   populateSettings();
   await discover(desktopState.configuration);
   await Promise.all([loadFiles(), refreshGit(), window.trussDesktop.getPlan().then((plan) => { activePlan = plan; renderPlan(); })]);
+  await restoreWorkspaceUiState();
   const tracks = sidebarTracks();
   gitPanelHeight = tracks.git;
   applySidebarTracks(tracks.git, tracks.files, tracks.history);
