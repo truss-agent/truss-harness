@@ -10,7 +10,7 @@ import { checkpoint } from "./sessions.js";
 
 export interface ToolApproval { approve(call: ToolCall, session: Session): Promise<boolean>; }
 export const allowAllTools: ToolApproval = { approve: async () => true };
-export interface AgentRuntimeOptions { readonly provider: ModelProvider; readonly tools: ToolRegistry; readonly sessions: SessionStore; readonly context: ContextManager; readonly events: RuntimeEventBus; readonly workspaceRoot: string; readonly approval?: ToolApproval; readonly systemPrompt?: string; readonly maxTurns?: number; readonly memory?: WorkspaceMemoryStore; readonly plans?: WorkspacePlanStore; readonly savePlanOnCompletion?: boolean; }
+export interface AgentRuntimeOptions { readonly provider: ModelProvider; readonly tools: ToolRegistry; readonly sessions: SessionStore; readonly context: ContextManager; readonly events: RuntimeEventBus; readonly workspaceRoot: string; readonly approval?: ToolApproval; readonly systemPrompt?: string; readonly maxTurns?: number; readonly memory?: WorkspaceMemoryStore; readonly plans?: WorkspacePlanStore; readonly savePlanOnCompletion?: boolean; readonly requireWriteForEditIntent?: boolean; readonly deferTextUntilToolDecision?: boolean; }
 
 function workspacePath(call: ToolCall): string | undefined {
   return typeof call.input.path === "string" ? call.input.path : undefined;
@@ -18,6 +18,10 @@ function workspacePath(call: ToolCall): string | undefined {
 
 function isFileWrite(call: ToolCall): boolean {
   return call.name === "write_file" || call.name === "replace_in_file";
+}
+
+function hasEditIntent(prompt: string): boolean {
+  return /\b(?:add|change|create|delete|edit|fix|implement|modify|refactor|remove|rename|replace|update|write)\b/i.test(prompt);
 }
 
 /** Provider-neutral iterative agent loop. UI clients interact only via sessions, events, and approval. */
@@ -47,7 +51,13 @@ export class AgentRuntime {
         const calls: ToolCall[] = [];
         let text = "";
         for await (const event of this.options.provider.stream({ messages: await this.options.context.build(session, this.options.systemPrompt, requestContext), tools: this.options.tools.definitions(), signal })) {
-          if (event.type === "text_delta") { text += event.text; assistantText += event.text; await this.emit({ type: "text_delta", sessionId, text: event.text }); }
+          if (event.type === "text_delta") {
+            text += event.text;
+            if (!this.options.deferTextUntilToolDecision) {
+              assistantText += event.text;
+              await this.emit({ type: "text_delta", sessionId, text: event.text });
+            }
+          }
           else if (event.type === "tool_call") calls.push(event);
           else if (event.type === "error") throw event.error;
         }
@@ -55,6 +65,13 @@ export class AgentRuntime {
         // reconstruct the native provider conversation accurately.
         if (text || calls.length) session.messages.push({ role: "assistant", content: text, toolCalls: calls });
         if (!calls.length) {
+          if (this.options.requireWriteForEditIntent && hasEditIntent(prompt) && !modifiedFiles.size) {
+            throw new Error("Agent ended without a successful file write. No workspace changes were made.");
+          }
+          if (text && this.options.deferTextUntilToolDecision) {
+            assistantText += text;
+            await this.emit({ type: "text_delta", sessionId, text });
+          }
           if (this.options.savePlanOnCompletion && this.options.plans) {
             const parsed = parseAgentPlan(assistantText, prompt);
             if (parsed) await this.emit({ type: "plan_updated", sessionId, plan: await this.options.plans.create({ ...parsed, objective: prompt }) });

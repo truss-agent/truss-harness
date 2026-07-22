@@ -454,22 +454,51 @@ button:focus-visible {
     overflow: hidden;
 }
 
+.editor-edit-surface {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #11161a;
+}
+
+.editor-highlight,
 .editor-input {
-    display: block;
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     min-height: 0;
-    resize: none;
-    border: 0;
-    outline: 0;
     padding: 14px;
-    color: #d5e0e2;
-    background: #11161a;
     font: inherit;
     line-height: inherit;
     tab-size: 2;
     white-space: pre;
+}
+
+.editor-highlight {
+    z-index: 0;
+    margin: 0;
+    overflow: hidden;
+    color: #d5e0e2;
+    pointer-events: none;
+}
+
+.editor-input {
+    z-index: 1;
+    display: block;
+    resize: none;
+    border: 0;
+    outline: 0;
+    color: transparent;
+    caret-color: #e7f8f2;
+    background: transparent;
     overflow: auto;
+}
+
+.editor-input::selection {
+    background: #37645a99;
+    color: transparent;
 }
 
 .editor-input:focus {
@@ -1235,6 +1264,20 @@ dialog::backdrop {
 :root[data-desktop-theme] .editor-tab.active {
     border-color: var(--desktop-accent);
     outline-color: var(--desktop-accent);
+}
+
+:root[data-desktop-theme] .editor-edit-surface {
+    background: var(--desktop-background);
+}
+
+:root[data-desktop-theme] .editor-highlight {
+    color: var(--desktop-text);
+}
+
+:root[data-desktop-theme] .editor-input {
+    color: transparent;
+    background: transparent;
+    caret-color: var(--desktop-text);
 }
 
 :root[data-desktop-theme] .status-dot.ready {
