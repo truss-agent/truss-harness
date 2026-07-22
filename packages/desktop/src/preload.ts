@@ -1,10 +1,11 @@
 import { contextBridge, ipcRenderer } from "electron";
-import type { DesktopBridge, DesktopConfiguration, DesktopConversation, DesktopEvent, DesktopMessage } from "./shared.js";
+import type { DesktopBridge, DesktopConfiguration, DesktopConversation, DesktopEvent, DesktopMessage, DesktopWorkspaceUiState } from "./shared.js";
 
 const bridge: DesktopBridge = {
   initialState: () => ipcRenderer.invoke("truss:initial-state"),
   chooseWorkspace: () => ipcRenderer.invoke("truss:choose-workspace"),
   saveConversations: (conversations: readonly DesktopConversation[], activeConversationId?: string) => ipcRenderer.invoke("truss:save-conversations", conversations, activeConversationId),
+  saveWorkspaceUiState: (state: DesktopWorkspaceUiState) => ipcRenderer.invoke("truss:save-workspace-ui-state", state),
   discoverModels: (configuration?: Partial<DesktopConfiguration>) => ipcRenderer.invoke("truss:discover-models", configuration),
   refreshLocalModel: () => ipcRenderer.invoke("truss:refresh-local-model"),
   configure: (configuration: DesktopConfiguration, apiKey?: string) => ipcRenderer.invoke("truss:configure", configuration, apiKey),
@@ -18,6 +19,7 @@ const bridge: DesktopBridge = {
   stopChat: () => ipcRenderer.invoke("truss:stop-chat"),
   resolveApproval: (callId: string, approved: boolean) => ipcRenderer.invoke("truss:resolve-approval", callId, approved),
   listFiles: () => ipcRenderer.invoke("truss:list-files"),
+  listDirectory: (path: string) => ipcRenderer.invoke("truss:list-directory", path),
   readFile: (path: string) => ipcRenderer.invoke("truss:read-file", path),
   writeFile: (path: string, content: string) => ipcRenderer.invoke("truss:write-file", path, content),
   diffFile: (path: string) => ipcRenderer.invoke("truss:diff-file", path),

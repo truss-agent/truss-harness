@@ -802,7 +802,7 @@ button:focus-visible {
 
 .composer {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
     gap: 7px;
     padding: 10px;
     border-top: 1px solid #2b383f;
@@ -867,6 +867,21 @@ button:focus-visible {
     min-height: 58px;
     max-height: 160px;
     resize: vertical;
+}
+
+.composer-actions {
+    display: flex;
+    width: 100%;
+    gap: 7px;
+}
+
+.composer-actions #addAttachment {
+    flex: 0 0 auto;
+}
+
+.composer-actions #sendChat,
+.composer-actions #cancelChat {
+    flex: 1 1 auto;
 }
 
 .composer button {

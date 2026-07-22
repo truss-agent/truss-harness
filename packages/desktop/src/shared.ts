@@ -66,6 +66,18 @@ export interface DesktopEndpoint {
 
 export interface DesktopFile {
   readonly path: string;
+  readonly type: "file" | "directory";
+}
+
+export interface DesktopWorkspaceUiState {
+  readonly expandedDirectories: readonly string[];
+  readonly openEditors: readonly {
+    readonly path: string;
+    readonly mode: "file" | "diff";
+    readonly scrollTop: number;
+  }[];
+  readonly activeFile?: string;
+  readonly fileTreeScrollTop: number;
 }
 
 export interface DesktopGitFile {
@@ -91,6 +103,7 @@ export interface DesktopState {
   readonly conversations: readonly DesktopConversation[];
   readonly activeConversationId?: string;
   readonly mcpStatuses?: readonly McpServerStatus[];
+  readonly workspaceUiState?: DesktopWorkspaceUiState;
 }
 
 export type DesktopEvent =
@@ -107,6 +120,7 @@ export interface DesktopBridge {
   initialState(): Promise<DesktopState>;
   chooseWorkspace(): Promise<DesktopState | undefined>;
   saveConversations(conversations: readonly DesktopConversation[], activeConversationId?: string): Promise<void>;
+  saveWorkspaceUiState(state: DesktopWorkspaceUiState): Promise<void>;
   discoverModels(configuration?: Partial<DesktopConfiguration>): Promise<{ readonly endpoints: readonly DesktopEndpoint[]; readonly models: readonly string[] }>;
   refreshLocalModel(): Promise<DesktopState>;
   configure(configuration: DesktopConfiguration, apiKey?: string): Promise<DesktopState>;
@@ -120,6 +134,7 @@ export interface DesktopBridge {
   stopChat(): Promise<void>;
   resolveApproval(callId: string, approved: boolean): Promise<void>;
   listFiles(): Promise<readonly DesktopFile[]>;
+  listDirectory(path: string): Promise<readonly DesktopFile[]>;
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;
   diffFile(path: string): Promise<string>;

@@ -2403,3 +2403,98 @@ body {
     .changelog-page .site-callout,
     .download-page .download-help { margin-top: 44px; }
 }
+
+/* Give each client screenshot the same purposeful hero presence as Truss Go. */
+.client-hero {
+    gap: 62px;
+    grid-template-columns: minmax(0, 1fr) minmax(360px, .9fr);
+    padding-bottom: 86px;
+}
+.client-screenshot {
+    align-items: center;
+    background: transparent;
+    border-color: #315e4a;
+    border-radius: 14px;
+    box-shadow: 0 22px 44px rgba(20, 45, 36, .17);
+    display: flex;
+    justify-content: center;
+    min-height: 0;
+    padding: 0;
+}
+.client-screenshot img {
+    border: 0;
+    border-radius: 0;
+    box-shadow: 0 14px 30px rgba(0, 0, 0, .2);
+}
+@media (max-width: 780px) {
+    .client-hero { gap: 38px; padding-bottom: 56px; }
+    .client-screenshot { min-height: 0; padding: 0; }
+}
+
+/* Shared install section polish for every client page. */
+.client-highlights { margin-bottom: 30px; }
+.client-setup {
+    gap: 64px;
+    margin-bottom: 30px;
+}
+.client-setup-panel {
+    border-radius: 14px;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05), 0 14px 30px rgba(6, 22, 16, .16);
+    overflow: hidden;
+}
+.client-setup-actions { margin-inline: -24px; padding-inline: 24px; }
+
+@media (max-width: 780px) {
+    .client-highlights,
+    .client-setup { margin-bottom: 22px; }
+    .client-setup { gap: 30px; }
+    .client-setup-actions { margin-inline: -24px; padding-inline: 24px; }
+}
+
+/* Give visual heroes room to breathe before returning to a two-column layout. */
+@media (max-width: 1200px) {
+    .site-nav { display: none; }
+    .mobile-menu { display: block; }
+    .site-hero,
+    .client-hero,
+    .truss-go-hero {
+        gap: 48px;
+        grid-template-columns: 1fr;
+    }
+    .site-terminal,
+    .client-screenshot,
+    .truss-go-pairing {
+        margin-inline: auto;
+        max-width: 680px;
+        width: 100%;
+    }
+    .site-hero-copy,
+    .client-hero-copy,
+    .truss-go-hero > div:first-child {
+        margin-inline: auto;
+        text-align: center;
+    }
+    .site-hero-copy .site-lede,
+    .client-hero-copy > p:last-of-type,
+    .truss-go-hero > div > p:last-of-type {
+        margin-inline: auto;
+    }
+    .site-hero-copy .site-actions,
+    .client-hero-copy .site-actions,
+    .truss-go-hero .site-actions { justify-content: center; }
+}
+
+@media (min-width: 781px) and (max-width: 1200px) {
+    .site-header-inner,
+    .site-hero,
+    .site-page,
+    .client-page,
+    .truss-go-page,
+    .site-footer,
+    .site-band,
+    .site-foundations,
+    .site-clients,
+    .site-principles {
+        width: 88%;
+    }
+}
