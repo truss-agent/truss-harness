@@ -25,16 +25,40 @@ import {
 describe("AgentRuntime", () => {
   it("streams text, executes a tool, and continues the loop", async () => {
     const provider: ModelProvider = { id: "fake", async *stream(request) {
-      if (!request.messages.some(m => m.role === "tool")) { yield { type: "tool_call", id: "1", name: "echo", input: { value: "hello" } } as const; yield { type: "finish", reason: "tool_calls" } as const; }
+      if (!request.messages.some(m => m.role === "tool")) { yield { type: "text_delta", text: "I already finished. " } as const; yield { type: "tool_call", id: "1", name: "echo", input: { value: "hello" } } as const; yield { type: "finish", reason: "tool_calls" } as const; }
       else { yield { type: "text_delta", text: "Done." } as const; yield { type: "finish", reason: "stop" } as const; }
     }};
     const tools = new ToolRegistry(); tools.register({ name: "echo", description: "echoes", inputSchema: { type: "object" }, async execute(input) { return { content: String(input.value) }; } });
-    const events = new EventBus<RuntimeEvent>(); const seen: string[] = []; events.subscribe(event => { seen.push(event.type); });
-    const runtime = new AgentRuntime({ provider, tools, sessions: new InMemorySessionStore(), context: new RecentHistoryContextManager(), events, workspaceRoot: process.cwd() });
+    const events = new EventBus<RuntimeEvent>(); const seen: string[] = []; const text: string[] = []; events.subscribe(event => { seen.push(event.type); if (event.type === "text_delta") text.push(event.text); });
+    const runtime = new AgentRuntime({ provider, tools, sessions: new InMemorySessionStore(), context: new RecentHistoryContextManager(), events, workspaceRoot: process.cwd(), deferTextUntilToolDecision: true });
     const session = await runtime.createSession(); await runtime.run(session.id, "test");
     expect(seen).toEqual(["run_started", "tool_call_requested", "tool_completed", "text_delta", "run_completed"]);
+    expect(text).toEqual(["Done."]);
     expect(await runtime.getSession(session.id)).toBe(session);
     expect(await runtime.listSessions()).toHaveLength(1);
+  });
+
+  it("rejects an edit-intent run that ends without a successful file write", async () => {
+    const provider: ModelProvider = { id: "fake", async *stream() {
+      yield { type: "text_delta", text: "Updated README.md." } as const;
+      yield { type: "finish", reason: "stop" } as const;
+    }};
+    const events = new EventBus<RuntimeEvent>();
+    const failures: string[] = [];
+    events.subscribe((event) => { if (event.type === "run_failed") failures.push(event.error.message); });
+    const runtime = new AgentRuntime({
+      provider,
+      tools: new ToolRegistry(),
+      sessions: new InMemorySessionStore(),
+      context: new RecentHistoryContextManager(),
+      events,
+      workspaceRoot: process.cwd(),
+      requireWriteForEditIntent: true
+    });
+
+    const session = await runtime.createSession();
+    await expect(runtime.run(session.id, "Update README.md")).rejects.toThrow("without a successful file write");
+    expect(failures).toEqual(["Agent ended without a successful file write. No workspace changes were made."]);
   });
 
   it("records a denied tool result and continues the model loop", async () => {

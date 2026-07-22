@@ -91,12 +91,14 @@ export async function createClientRuntime(options: ClientRuntimeOptions): Promis
       systemPrompt: [
         options.systemPrompt,
         mode === "plan" ? "You are in Plan mode. Inspect the workspace with read-only tools as needed, then finish with a concise Markdown checklist exactly in this form: a heading '# Plan: <title>' followed by 3 to 8 actionable '- [ ] <step>' lines. Do not make changes." : undefined,
-        mode === "edit" ? "You have no direct filesystem access: tools are the only way to inspect or change the workspace. For a request to modify a file, use read_file as needed and then a successful write_file or replace_in_file call. The terminal is for builds, tests, Git, and inspection; never use shell redirection, echo, PowerShell content commands, or any terminal command to write source files. Never simulate tool calls, invent file contents, or claim that a file was created, changed, or verified unless that write tool completed successfully during this run. After a successful file write, read the file to verify it and then finish the task; do not write the same file again unless that verification shows a further focused change is required. If no write succeeds, say plainly that no file was changed and state why. When an active plan is present in context, use update_plan to mark a step in_progress before work and completed after verifying it. Keep the checklist accurate." : undefined
+        mode === "edit" ? "Use tools for every workspace fact and every file change. For a requested code change: inspect the target, make one focused write_file or replace_in_file call, then read it to verify. Never claim a file changed unless that write tool succeeded. If a tool fails, explain the failure and do not claim completion. Do not use the terminal to write files." : undefined
       ].filter(Boolean).join("\n\n"),
       approval: options.approval,
       memory,
       plans,
-      savePlanOnCompletion: mode === "plan"
+      savePlanOnCompletion: mode === "plan",
+      requireWriteForEditIntent: mode === "edit",
+      deferTextUntilToolDecision: mode === "edit"
     })
   };
 }

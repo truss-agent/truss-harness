@@ -1015,6 +1015,13 @@ function renderEditorContent(tab: EditorTab | undefined): void {
       editor.append(row);
     }
   } else {
+    const surface = document.createElement("div");
+    surface.className = "editor-edit-surface";
+    const highlight = document.createElement("pre");
+    highlight.className = "editor-highlight";
+    const code = document.createElement("code");
+    appendHighlightedCode(code, tab.content, languageForPath(tab.path));
+    highlight.append(code);
     const input = document.createElement("textarea");
     input.className = "editor-input";
     input.value = tab.content;
@@ -1023,6 +1030,8 @@ function renderEditorContent(tab: EditorTab | undefined): void {
     input.oninput = () => {
       tab.content = input.value;
       tab.dirty = true;
+      code.replaceChildren();
+      appendHighlightedCode(code, tab.content, languageForPath(tab.path));
       renderEditorTabs();
     };
     input.onkeydown = (event) => {
@@ -1033,13 +1042,23 @@ function renderEditorContent(tab: EditorTab | undefined): void {
       input.setRangeText("  ", start, end, "end");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     };
-    input.onscroll = () => { tab.scrollTop = input.scrollTop; saveWorkspaceUiState(); };
+    input.onscroll = () => {
+      tab.scrollTop = input.scrollTop;
+      highlight.scrollTop = input.scrollTop;
+      highlight.scrollLeft = input.scrollLeft;
+      saveWorkspaceUiState();
+    };
     editor.classList.add("editable");
-    editor.append(input);
+    surface.append(highlight, input);
+    editor.append(surface);
   }
   window.requestAnimationFrame(() => {
     const input = editor.querySelector<HTMLTextAreaElement>("textarea");
-    if (input) input.scrollTop = tab.scrollTop;
+    if (input) {
+      input.scrollTop = tab.scrollTop;
+      const highlight = editor.querySelector<HTMLElement>(".editor-highlight");
+      if (highlight) highlight.scrollTop = tab.scrollTop;
+    }
     else editor.scrollTop = tab.scrollTop;
   });
 }
