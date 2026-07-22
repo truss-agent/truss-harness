@@ -16,7 +16,7 @@ Truss has four independently shipped products:
 | Desktop app       | GitHub Release installers      | Pushed `v*` Git tag           |
 | VS Code extension | VS Code Marketplace or `.vsix` | Manual `vsce publish`         |
 | Website and docs  | Next.js hosting provider       | Manual or provider deployment |
-| Go for Android    | Public npm packages            | Manual `npm publish`          |
+| Go for Android    | EAS and GitHub Release APK      | Pushed `truss-go-v*` tag      |
 
 The reusable npm dependencies must also be published because the CLI and TUI
 reference them as normal package dependencies.

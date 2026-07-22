@@ -1,1 +1,10 @@
 .expo-export-check/
+.expo/
+/android/
+/ios/
+*.log
+/truss-*.png
+/back-*.xml
+/scanner.xml
+/settings.xml
+/window.xml
