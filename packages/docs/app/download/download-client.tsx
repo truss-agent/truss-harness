@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { selectDesktopRelease } from "./release-selection";
 
 type ReleaseAsset = {
   browser_download_url: string;
@@ -10,6 +11,8 @@ type ReleaseAsset = {
 
 type Release = {
   assets: ReleaseAsset[];
+  draft: boolean;
+  prerelease: boolean;
   published_at: string;
   tag_name: string;
 };
@@ -85,10 +88,12 @@ export function DownloadClient({
     })
       .then((response) => {
         if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
-        return response.json() as Promise<Release>;
+        return response.json() as Promise<Release[]>;
       })
-      .then((value) => {
-        setRelease(value);
+      .then((releases) => {
+        const desktopRelease = selectDesktopRelease(releases);
+        if (!desktopRelease) throw new Error("No desktop release was found");
+        setRelease(desktopRelease);
         setStatus("ready");
       })
       .catch((error: unknown) => {

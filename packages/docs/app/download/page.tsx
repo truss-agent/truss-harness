@@ -9,7 +9,7 @@ export const metadata = createPageMetadata({ title: "Download", description: `Do
 
 function getReleaseApiUrl(repositoryUrl: string) {
   const repository = repositoryUrl.replace(/^https:\/\/github\.com\//, "").replace(/\/$/, "");
-  return `https://api.github.com/repos/${repository}/releases/latest`;
+  return `https://api.github.com/repos/${repository}/releases?per_page=100`;
 }
 
 export default function DownloadPage() {
