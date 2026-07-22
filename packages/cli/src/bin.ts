@@ -97,6 +97,7 @@ ${workspaceCommandHelp()}
 function subscribeToRuntimeEvents(events: ClientRuntime["events"]): void {
   events.subscribe((event) => {
     if (event.type === "text_delta") process.stdout.write(event.text);
+    if (event.type === "progress_delta") process.stderr.write("\n[thinking] " + event.text + "\n");
     if (event.type === "tool_call_requested") process.stderr.write("\n[tool] " + event.tool + "\n");
     if (event.type === "plan_updated") {
       const steps = event.plan.steps.map((step) => "  " + (step.status === "completed" ? "[x]" : step.status === "in_progress" ? "[..]" : "[ ]") + " " + step.content).join("\n");

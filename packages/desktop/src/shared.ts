@@ -137,6 +137,12 @@ export interface DesktopBridge {
   listDirectory(path: string): Promise<readonly DesktopFile[]>;
   readFile(path: string): Promise<string>;
   writeFile(path: string, content: string): Promise<void>;
+  createWorkspaceFile(path: string): Promise<void>;
+  createWorkspaceFolder(path: string): Promise<void>;
+  renameWorkspaceEntry(path: string, nextPath: string): Promise<void>;
+  copyWorkspaceEntry(path: string, destinationPath: string): Promise<void>;
+  deleteWorkspaceEntry(path: string): Promise<void>;
+  revealWorkspaceEntry(path: string): Promise<void>;
   diffFile(path: string): Promise<string>;
   getPlan(): Promise<WorkspacePlan | undefined>;
   gitStatus(): Promise<DesktopGitStatus>;

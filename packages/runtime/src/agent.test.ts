@@ -57,8 +57,61 @@ describe("AgentRuntime", () => {
     });
 
     const session = await runtime.createSession();
-    await expect(runtime.run(session.id, "Update README.md")).rejects.toThrow("without a successful file write");
-    expect(failures).toEqual(["Agent ended without a successful file write. No workspace changes were made."]);
+    await expect(runtime.run(session.id, "Update README.md")).rejects.toThrow("after recovery attempts");
+    expect(failures).toEqual(["Agent did not complete a verified file write after recovery attempts. No workspace changes were made."]);
+  });
+
+  it("retries an edit request with an execution recovery prompt when the first turn has no tools", async () => {
+    let attempts = 0;
+    const provider: ModelProvider = { id: "fake", async *stream(request) {
+      attempts += 1;
+      if (attempts === 1) {
+        yield { type: "text_delta", text: "I will update the file." } as const;
+        yield { type: "finish", reason: "stop" } as const;
+        return;
+      }
+      if (attempts === 2) {
+        expect(request.messages[0]?.content).toContain("EXECUTION RECOVERY");
+        yield { type: "tool_call", id: "write-1", name: "write_file", input: { path: "README.md", content: "updated" } } as const;
+        yield { type: "finish", reason: "tool_calls" } as const;
+        return;
+      }
+      yield { type: "text_delta", text: "Updated README.md." } as const;
+      yield { type: "finish", reason: "stop" } as const;
+    }};
+    const tools = new ToolRegistry();
+    tools.register({ name: "write_file", description: "writes", inputSchema: { type: "object" }, async execute() { return { content: "wrote README.md" }; } });
+    const events = new EventBus<RuntimeEvent>();
+    const completed: string[][] = [];
+    events.subscribe((event) => { if (event.type === "run_completed") completed.push([...event.modifiedFiles]); });
+    const runtime = new AgentRuntime({ provider, tools, sessions: new InMemorySessionStore(), context: new RecentHistoryContextManager(), events, workspaceRoot: process.cwd(), requireWriteForEditIntent: true, deferTextUntilToolDecision: true });
+
+    const session = await runtime.createSession();
+    await runtime.run(session.id, "Rewrite README.md");
+    expect(attempts).toBe(3);
+    expect(completed).toEqual([["README.md"]]);
+  });
+
+  it("streams visible progress tags separately from the final response", async () => {
+    const provider: ModelProvider = { id: "fake", async *stream() {
+      yield { type: "text_delta", text: "<pro" } as const;
+      yield { type: "text_delta", text: "gress>Inspecting " } as const;
+      yield { type: "text_delta", text: "README.md</progress>Done." } as const;
+      yield { type: "finish", reason: "stop" } as const;
+    }};
+    const events = new EventBus<RuntimeEvent>();
+    const progress: string[] = [];
+    const response: string[] = [];
+    events.subscribe((event) => {
+      if (event.type === "progress_delta") progress.push(event.text);
+      if (event.type === "text_delta") response.push(event.text);
+    });
+    const runtime = new AgentRuntime({ provider, tools: new ToolRegistry(), sessions: new InMemorySessionStore(), context: new RecentHistoryContextManager(), events, workspaceRoot: process.cwd() });
+
+    const session = await runtime.createSession();
+    await runtime.run(session.id, "Explain the file");
+    expect(progress.join("")).toBe("Inspecting README.md");
+    expect(response.join("")).toBe("Done.");
   });
 
   it("records a denied tool result and continues the model loop", async () => {
