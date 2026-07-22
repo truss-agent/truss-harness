@@ -45,7 +45,7 @@ export default function TrussGoPage() {
           <ol>
             <li><span>01</span><h3>Open your workspace</h3><p>Open the workspace you already trust in Truss Desktop or the Truss VS Code extension.</p></li>
             <li><span>02</span><h3>Choose Connect Truss Go</h3><p>Truss opens a temporary same-Wi-Fi connection and displays a pairing QR code.</p></li>
-            <li><span>03</span><h3>Scan and work</h3><p>Scan with Truss Go. Use Chat, Plan, or Edit and the approval policy selected on your computer.</p></li>
+            <li><span>03</span><h3>Scan and work</h3><p>Scan with Truss Go. Use Chat, Plan, or Edit and choose the approval policy on your phone.</p></li>
           </ol>
         </section>
 
@@ -57,7 +57,7 @@ export default function TrussGoPage() {
           </div>
         </section>
 
-        <section className="truss-go-safety"><p className="site-eyebrow">Designed for your network</p><h2>Your phone connects to the computer where Truss is already open.</h2><p>The connection is started explicitly with <strong>Connect Truss Go</strong>, stays on your local network, and ends when you close the pairing panel. The phone does not receive your model-provider credentials or independent access to the workspace.</p></section>
+        <section className="truss-go-safety"><p className="site-eyebrow">Designed for your network</p><h2>Your phone connects to the computer where Truss is already open.</h2><p>The connection is started explicitly with <strong>Connect Truss Go</strong>, uses the computer&apos;s automatically detected LAN address, and stays active until you disconnect or close the host client. The phone does not receive your model-provider credentials or independent access to the workspace.</p></section>
       </main>
       <SiteFooter />
     </div>

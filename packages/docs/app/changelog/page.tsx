@@ -9,6 +9,7 @@ const entries = [
     changes: [
       "Added Truss Go for Android, with signed APK releases, setup guidance, and a dedicated product page.",
       "Added trusted same-Wi-Fi QR pairing from Truss Desktop and VS Code so Truss Go can continue a workspace conversation without receiving model-provider credentials.",
+      "Stabilized Truss Go pairing with physical LAN-adapter detection, a persistent Desktop gateway, reconnect diagnostics, selectable approval policies, and an Android-safe adaptive icon.",
       "Added MCP stdio tool discovery and invocation across the shared runtime, with connection diagnostics, approval policies, and explicit trust for workspace-defined servers.",
       "Shipped dedicated pages for the CLI, terminal UI, VS Code extension, desktop app, and Truss Go, plus a clearer responsive website and download experience.",
       "Improved desktop request context with the active editor and other open tabs while keeping explicitly attached files at the highest priority."

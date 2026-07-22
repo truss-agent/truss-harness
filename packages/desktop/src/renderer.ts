@@ -2203,9 +2203,8 @@ stopChat.onclick = () => void window.trussDesktop.stopChat();
 cancelChatButton.onclick = () => void window.trussDesktop.stopChat();
 element<HTMLFormElement>("terminalForm").onsubmit = (event) => { event.preventDefault(); const input = element<HTMLInputElement>("terminalInput"); const command = input.value.trim(); if (!command) return; input.value = ""; appendTerminal(`\n> ${command}\n`); void window.trussDesktop.runTerminal(command); };
 connectTrussGo.onclick = () => void window.trussDesktop.connectTrussGo().then((pairing) => { trussGoQr.src = pairing.qrDataUrl; trussGoWorkspace.textContent = pairing.workspaceName; trussGoDialog.showModal(); }).catch((error: unknown) => notify(error instanceof Error ? error.message : String(error)));
-element<HTMLButtonElement>("closeTrussGo").onclick = () => void window.trussDesktop.disconnectTrussGo().finally(() => trussGoDialog.close());
+element<HTMLButtonElement>("closeTrussGo").onclick = () => trussGoDialog.close();
 element<HTMLButtonElement>("disconnectTrussGo").onclick = () => void window.trussDesktop.disconnectTrussGo().then(() => trussGoDialog.close());
-trussGoDialog.addEventListener("close", () => void window.trussDesktop.disconnectTrussGo());
 document.querySelectorAll<HTMLButtonElement>("[data-center-view]").forEach((button) => {
   button.onclick = () => setCenterView(button.dataset.centerView === "preview" ? "preview" : "editor");
 });

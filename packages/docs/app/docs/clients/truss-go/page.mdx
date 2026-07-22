@@ -23,14 +23,22 @@ GitHub Releases.
 4. Select the workspace and Chat, Plan, or Edit mode, then send a message.
 
 Both devices must be connected to the same trusted Wi-Fi network. The pairing
-QR starts a temporary local connection; closing the pairing panel on the
-computer ends it. Scan again when you want to reconnect.
+QR contains the computer's automatically detected LAN address and a temporary
+token, so normal setup does not require entering an IP address. The connection
+continues after you close the QR panel and ends when you select **Disconnect**
+or close the host client. Scan again when you want to reconnect.
+
+If Android reports that HTTP works but the live event stream cannot connect,
+allow Truss through the computer's firewall for private networks and confirm
+that both devices are on the same Wi-Fi network.
 
 ## Approvals and settings
 
 Truss Go follows the approval policy selected in the mobile app. **Ask every
-time** shows each requested tool action, while **Auto-allow all tools** lets an
-agent proceed without individual prompts. Use automatic approvals only for
+time** shows each requested tool action, **Auto-approve reads** allows bounded
+workspace inspection, and **Auto-approve all** lets an agent proceed without
+individual prompts. The preference is saved for future sessions, subject to
+the policies supported by the paired host. Use automatic approvals only for
 workspaces and tasks you trust.
 
 The mobile app talks to the Truss computer, which retains the workspace,

@@ -13,7 +13,7 @@ import { createClientRuntime, type ClientConfiguration } from "@truss-harness/cl
 import { createPairingUri, detectLanAddress, startRemoteGateway, type RunningRemoteGateway } from "@truss-harness/gateway";
 import { parseMcpServerConfigurations } from "@truss-harness/mcp";
 import { cloudProviderDefinition, detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, generateLocalText, isCloudProviderId, isLocalEndpointKind, listLocalModels, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
-import { executeWorkspaceCommand, FileWorkspacePlanStore, type ChatAttachment, type ContextBlock, type ToolApproval, type ToolCall } from "@truss-harness/runtime";
+import { executeWorkspaceCommand, FileWorkspacePlanStore, type ChatAttachment, type ContextBlock, type RemoteToolApprovalMode, type ToolApproval, type ToolCall } from "@truss-harness/runtime";
 import { desktopThemeNames, type DesktopConfiguration, type DesktopConversation, type DesktopEndpoint, type DesktopEvent, type DesktopFile, type DesktopGitStatus, type DesktopMessage, type DesktopState, type DesktopProvider, type DesktopThemePalette, type DesktopThemePreference, type DesktopWorkspaceUiState } from "./shared.js";
 import QRCode from "qrcode";
 
@@ -282,10 +282,14 @@ async function clientConfiguration(configuration: DesktopConfiguration): Promise
   };
 }
 
-function mobileApproval(): ToolApproval & { resolve(callId: string, approved: boolean): boolean; denyAll(): void } {
+function mobileApproval(mode: RemoteToolApprovalMode = "ask"): ToolApproval & { resolve(callId: string, approved: boolean): boolean; denyAll(): void } {
   const pending = new Map<string, (approved: boolean) => void>();
   return {
-    approve(call: ToolCall): Promise<boolean> { return new Promise((resolveApproval) => pending.set(call.id, resolveApproval)); },
+    approve(call: ToolCall): Promise<boolean> {
+      if (mode === "auto-all") return Promise.resolve(true);
+      if (mode === "auto-read" && ["read_file", "list_directory", "search_files", "grep"].includes(call.name)) return Promise.resolve(true);
+      return new Promise((resolveApproval) => pending.set(call.id, resolveApproval));
+    },
     resolve(callId: string, approved: boolean): boolean { const resolveApproval = pending.get(callId); if (!resolveApproval) return false; pending.delete(callId); resolveApproval(approved); return true; },
     denyAll(): void { for (const resolveApproval of pending.values()) resolveApproval(false); pending.clear(); }
   };
@@ -305,8 +309,8 @@ async function connectTrussGo(): Promise<{ readonly workspaceName: string; reado
   const token = randomBytes(32).toString("hex");
   trussGoGateway = await startRemoteGateway({
     token, host: address, port: 0,
-    workspaces: [{ id: "active-workspace", displayName: basename(persisted.workspaceRoot), createRuntime: async (mode) => {
-      const approval = mobileApproval();
+    workspaces: [{ id: "active-workspace", displayName: basename(persisted.workspaceRoot), createRuntime: async (mode, toolApprovalMode) => {
+      const approval = mobileApproval(toolApprovalMode);
       const client = await createClientRuntime({ ...(await clientConfiguration(configuration)), mode, approval });
       trussGoClients.push(client);
       return { runtime: client.runtime, events: client.events, approval, dispose: client.dispose };
