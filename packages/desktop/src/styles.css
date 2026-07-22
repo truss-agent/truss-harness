@@ -3,6 +3,59 @@
     font-family: "Segoe UI", sans-serif;
     color: #e7eef1;
     background: #11161a;
+    --desktop-background: #11161a;
+    --desktop-surface: #151d22;
+    --desktop-panel: #131a1f;
+    --desktop-border: #2b383f;
+    --desktop-control-border: #33414a;
+    --desktop-text: #e7eef1;
+    --desktop-muted: #9badb5;
+    --desktop-accent: #54d7b0;
+    --desktop-accent-text: #07100f;
+    --desktop-warning: #f4c968;
+    --desktop-error: #f0a0a0;
+}
+
+:root[data-desktop-theme="blue"] {
+    --desktop-background: #0d1522;
+    --desktop-surface: #121e30;
+    --desktop-panel: #101a29;
+    --desktop-border: #29445f;
+    --desktop-control-border: #365a7b;
+    --desktop-text: #e4f0ff;
+    --desktop-muted: #9ab7d4;
+    --desktop-accent: #63b3ff;
+    --desktop-accent-text: #061321;
+    --desktop-warning: #f2c56e;
+    --desktop-error: #ff9b9b;
+}
+
+:root[data-desktop-theme="orange"] {
+    --desktop-background: #1b1410;
+    --desktop-surface: #261a13;
+    --desktop-panel: #211711;
+    --desktop-border: #543728;
+    --desktop-control-border: #704831;
+    --desktop-text: #fff0e5;
+    --desktop-muted: #d4ad91;
+    --desktop-accent: #ff9d4d;
+    --desktop-accent-text: #251005;
+    --desktop-warning: #ffd16c;
+    --desktop-error: #ff9a84;
+}
+
+:root[data-desktop-theme="multicolor"] {
+    --desktop-background: #16111e;
+    --desktop-surface: #21172b;
+    --desktop-panel: #1b1425;
+    --desktop-border: #51405f;
+    --desktop-control-border: #69557a;
+    --desktop-text: #f5edff;
+    --desktop-muted: #c2afd4;
+    --desktop-accent: #65dfc9;
+    --desktop-accent-text: #071917;
+    --desktop-warning: #ffd16c;
+    --desktop-error: #ff8db8;
 }
 
 * {
@@ -913,6 +966,8 @@ dialog::backdrop {
 }
 
 .dialog-heading,
+.settings-tabs,
+.settings-panel,
 .dialog-actions {
     grid-column: 1 / -1;
 }
@@ -935,6 +990,67 @@ dialog::backdrop {
 
 .dialog-heading button {
     min-height: 25px;
+}
+
+.settings-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    border: 1px solid #304047;
+    border-radius: 6px;
+    background: #10171b;
+}
+
+.settings-tabs button {
+    flex: 1;
+    border-color: transparent;
+    color: #9badb5;
+    background: transparent;
+}
+
+.settings-tabs button:hover {
+    border-color: #40515a;
+    color: #e7eef1;
+}
+
+.settings-tabs button.active {
+    border-color: #3a8072;
+    color: #d8fff5;
+    background: #1c3a36;
+}
+
+.settings-panel {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    min-width: 0;
+}
+
+.settings-panel[hidden] {
+    display: none;
+}
+
+.settings-panel-intro {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: #9badb5;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.settings-wide,
+.settings-panel-actions {
+    grid-column: 1 / -1;
+}
+
+.settings-panel-actions {
+    display: flex;
+    justify-content: flex-start;
+}
+
+#byokBaseUrl {
+    color: #9badb5;
+    background: #10171b;
 }
 
 .settings-form label {
@@ -1034,6 +1150,129 @@ dialog::backdrop {
 
 .toast.show {
     opacity: 1;
+}
+
+/* Theme tokens deliberately sit after the base rules so presets and custom palettes
+   recolor the entire workbench without changing layout or readability defaults. */
+:root[data-desktop-theme] body,
+:root[data-desktop-theme] .center-surface,
+:root[data-desktop-theme] .editor-content,
+:root[data-desktop-theme] .terminal-output,
+:root[data-desktop-theme] .chat-messages {
+    color: var(--desktop-text);
+    background: var(--desktop-background);
+}
+
+:root[data-desktop-theme] .topbar,
+:root[data-desktop-theme] .editor-toolbar,
+:root[data-desktop-theme] .chat-area,
+:root[data-desktop-theme] .chat-heading,
+:root[data-desktop-theme] .terminal,
+:root[data-desktop-theme] .terminal-heading,
+:root[data-desktop-theme] .composer,
+:root[data-desktop-theme] .browser-toolbar,
+:root[data-desktop-theme] .dev-server-toolbar,
+:root[data-desktop-theme] dialog,
+:root[data-desktop-theme] input,
+:root[data-desktop-theme] select,
+:root[data-desktop-theme] textarea {
+    color: var(--desktop-text);
+    background: var(--desktop-surface);
+}
+
+:root[data-desktop-theme] .sidebar,
+:root[data-desktop-theme] .file-filter,
+:root[data-desktop-theme] .conversation-list,
+:root[data-desktop-theme] .agent-controls,
+:root[data-desktop-theme] .settings-tabs,
+:root[data-desktop-theme] .toast {
+    background: var(--desktop-panel);
+}
+
+:root[data-desktop-theme] button,
+:root[data-desktop-theme] .editor-tab,
+:root[data-desktop-theme] .tree-row button,
+:root[data-desktop-theme] .conversation-row button {
+    color: var(--desktop-text);
+    border-color: var(--desktop-control-border);
+    background: var(--desktop-surface);
+}
+
+:root[data-desktop-theme] button:hover,
+:root[data-desktop-theme] .tree-row button:hover,
+:root[data-desktop-theme] .conversation-row button:hover {
+    background: color-mix(in srgb, var(--desktop-surface) 72%, var(--desktop-accent));
+}
+
+:root[data-desktop-theme] button.primary,
+:root[data-desktop-theme] .mode-control button.active,
+:root[data-desktop-theme] .center-tabs button.active,
+:root[data-desktop-theme] .settings-tabs button.active {
+    color: var(--desktop-accent-text);
+    border-color: var(--desktop-accent);
+    background: var(--desktop-accent);
+}
+
+:root[data-desktop-theme] input:focus,
+:root[data-desktop-theme] select:focus,
+:root[data-desktop-theme] textarea:focus,
+:root[data-desktop-theme] button:focus-visible,
+:root[data-desktop-theme] .editor-tab.active {
+    border-color: var(--desktop-accent);
+    outline-color: var(--desktop-accent);
+}
+
+:root[data-desktop-theme] .status-dot.ready {
+    background-color: var(--desktop-accent);
+}
+
+:root[data-desktop-theme] .mcp-status .connected,
+:root[data-desktop-theme] .dev-server-status.running,
+:root[data-desktop-theme] .run-result.completed {
+    color: var(--desktop-accent);
+    border-color: var(--desktop-accent);
+}
+
+:root[data-desktop-theme] .status-dot.busy,
+:root[data-desktop-theme] .plan-step.in_progress,
+:root[data-desktop-theme] .run-result.running {
+    color: var(--desktop-warning);
+    border-color: var(--desktop-warning);
+}
+
+:root[data-desktop-theme] .mcp-status .failed,
+:root[data-desktop-theme] .dev-server-status.failed,
+:root[data-desktop-theme] .run-result.failed,
+:root[data-desktop-theme] .editor-content.error {
+    color: var(--desktop-error);
+    border-color: var(--desktop-error);
+}
+
+:root[data-desktop-theme] .topbar,
+:root[data-desktop-theme] .sidebar,
+:root[data-desktop-theme] .history-section,
+:root[data-desktop-theme] .section-heading,
+:root[data-desktop-theme] .editor-toolbar,
+:root[data-desktop-theme] .terminal,
+:root[data-desktop-theme] .chat-area,
+:root[data-desktop-theme] .composer,
+:root[data-desktop-theme] .settings-tabs,
+:root[data-desktop-theme] .update-settings,
+:root[data-desktop-theme] dialog,
+:root[data-desktop-theme] .toast {
+    border-color: var(--desktop-border);
+}
+
+:root[data-desktop-theme] #runtimeStatus,
+:root[data-desktop-theme] .section-heading,
+:root[data-desktop-theme] .editor-toolbar,
+:root[data-desktop-theme] .chat-heading,
+:root[data-desktop-theme] .settings-form label,
+:root[data-desktop-theme] .settings-panel-intro,
+:root[data-desktop-theme] .mcp-status,
+:root[data-desktop-theme] #contextMeter,
+:root[data-desktop-theme] #rateMeter {
+    color: var(--desktop-muted);
 }
 
 .tree-row {
@@ -1574,6 +1813,10 @@ body.resizing * {
     }
 
     .settings-form {
+        grid-template-columns: 1fr;
+    }
+
+    .settings-panel {
         grid-template-columns: 1fr;
     }
 }

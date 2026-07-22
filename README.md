@@ -16,6 +16,7 @@ Truss has four independently shipped products:
 | Desktop app       | GitHub Release installers      | Pushed `v*` Git tag           |
 | VS Code extension | VS Code Marketplace or `.vsix` | Manual `vsce publish`         |
 | Website and docs  | Next.js hosting provider       | Manual or provider deployment |
+| Go for Android    | Public npm packages            | Manual `npm publish`          |
 
 The reusable npm dependencies must also be published because the CLI and TUI
 reference them as normal package dependencies.
@@ -142,15 +143,15 @@ desktop release workflow.
 
 For Vercel, import `truss-agent/truss-harness` and use:
 
-| Vercel setting                              | Value                                                            |
-| ------------------------------------------- | ---------------------------------------------------------------- |
-| Framework Preset                            | Next.js                                                          |
-| Root Directory                              | `packages/docs`                                                  |
-| Include source files outside Root Directory | Enabled                                                          |
-| Production Branch                           | `master`                                                         |
-| Node.js Version                             | 20.x                                                             |
-| Output Directory                            | Leave at the Next.js default                                     |
-| Environment Variable                        | `NEXT_PUBLIC_SITE_URL=https://truss-agent.com`                  |
+| Vercel setting                              | Value                                          |
+| ------------------------------------------- | ---------------------------------------------- |
+| Framework Preset                            | Next.js                                        |
+| Root Directory                              | `packages/docs`                                |
+| Include source files outside Root Directory | Enabled                                        |
+| Production Branch                           | `master`                                       |
+| Node.js Version                             | 20.x                                           |
+| Output Directory                            | Leave at the Next.js default                   |
+| Environment Variable                        | `NEXT_PUBLIC_SITE_URL=https://truss-agent.com` |
 
 `packages/docs/vercel.json` supplies the monorepo-aware install and build
 commands. After the GitHub repository is connected, a push to `master`

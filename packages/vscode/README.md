@@ -1,6 +1,10 @@
 # Truss for VS Code
 
-Truss is a local-first coding-agent side panel for VS Code. It connects to Ollama, LM Studio, llama.cpp server, and custom OpenAI-compatible local endpoints through the Truss runtime service. It does not require a cloud provider account.
+Truss is a local-first coding-agent side panel for VS Code. It connects to Ollama, LM Studio, llama.cpp server, custom OpenAI-compatible local endpoints, and optional BYOK cloud providers through the Truss runtime service. It does not require a cloud provider account.
+
+## Bring your own key
+
+Run **Truss: Configure BYOK Provider** from the Command Palette. Choose OpenAI, Anthropic, OpenRouter, Groq, Together AI, Gemini, xAI, Mistral AI, DeepSeek, Perplexity, Fireworks AI, or NVIDIA NIM, then enter a model ID and API key. The extension stores the key in VS Code Secret Storage—not workspace settings, conversations, or Truss configuration files. Use **Truss: Remove BYOK Provider Key** to remove a stored key.
 
 ## Install
 

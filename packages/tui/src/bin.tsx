@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { Box, render, Text, useApp, useInput } from "ink";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { detectLocalEndpoints, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
+import { cloudProviderDefinition, detectLocalEndpoints, isCloudProviderId, isLocalEndpointKind, listLocalModels, type ModelProviderKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import { brand } from "@truss-harness/branding";
 import { resolveConfiguration, type ResolvedConfiguration } from "@truss-harness/cli/config";
 import { createClientRuntime, type ClientConfiguration } from "@truss-harness/cli/runtime";
@@ -262,7 +262,7 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
   const [themeName, setThemeName] = useState<TuiThemeName>(initialConfiguration?.tuiTheme ?? "forest");
   const [endpointInput, setEndpointInput] = useState(initialConfiguration?.baseUrl ?? "http://127.0.0.1:11434");
   const [modelInput, setModelInput] = useState(initialConfiguration?.model ?? "");
-  const [providerKind, setProviderKind] = useState<LocalEndpointKind>(initialConfiguration?.provider ?? "ollama");
+  const [providerKind, setProviderKind] = useState<ModelProviderKind>(initialConfiguration?.provider ?? "ollama");
   const [agentMode] = useState(initialConfiguration?.mode ?? "chat");
   const [permissionMode] = useState(initialConfiguration?.permission ?? "ask");
   const [internetAccess, setInternetAccess] = useState(initialConfiguration?.internetAccess ?? false);
@@ -362,7 +362,7 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
   }, []);
 
   useEffect(() => {
-    if (!selectedEndpoint || !endpointInput) return;
+    if (!selectedEndpoint || !endpointInput || !isLocalEndpointKind(providerKind)) return;
     const endpoint: LocalModelEndpoint = { ...selectedEndpoint, kind: providerKind, baseUrl: endpointInput };
     void listLocalModels(endpoint).then((available) => {
       setModels(available.map((model) => model.name));
@@ -471,7 +471,9 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
       provider: providerKind,
       baseUrl: endpointInput.trim(),
       model: modelInput.trim(),
-      apiKey: process.env.TRUSS_HARNESS_API_KEY,
+      apiKey: initialConfiguration?.provider === providerKind
+        ? initialConfiguration.apiKey
+        : process.env.TRUSS_HARNESS_API_KEY ?? (isCloudProviderId(providerKind) ? process.env[cloudProviderDefinition(providerKind).apiKeyEnvironmentVariable] : undefined),
       systemPrompt: process.env.TRUSS_HARNESS_SYSTEM_PROMPT,
       mode: agentMode,
       internetAccess,
@@ -840,7 +842,7 @@ function App({ initialConfiguration }: { readonly initialConfiguration?: Resolve
       <Text color={settingsField === "internet" ? theme.focus : theme.text}>INTERNET RESEARCH: {internetAccess ? "enabled" : "disabled"} {settingsField === "internet" ? "[Space toggles]" : ""}</Text>
       <Text color={settingsField === "theme" ? theme.focus : theme.text}>THEME: {themeName} {settingsField === "theme" ? "[Left/Right changes]" : ""}</Text>
       <Text color={theme.muted}>Detected models: {models.slice(0, 5).join(", ") || "none; type one manually"}</Text>
-      <Text color={theme.warning}>Provider: {providerKind}. Use the server selector for Ollama or compatible endpoints.</Text>
+      <Text color={theme.warning}>Provider: {providerKind}. Local endpoints use the server selector. Configure cloud BYOK profiles with truss-cli setup, then relaunch the TUI.</Text>
     </Box>}
     {screen === "approval" && <Box position="absolute" flexDirection="column" borderStyle="double" borderColor={theme.warning} paddingX={2} paddingY={1} width={overlayWidth} marginLeft={2} marginTop={8} backgroundColor={theme.overlay}>
       <Text bold color={theme.warning}>TOOL APPROVAL REQUIRED</Text>

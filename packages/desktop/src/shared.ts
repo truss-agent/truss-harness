@@ -1,6 +1,30 @@
-export type DesktopProvider = "ollama" | "openai-compatible";
+import type { ModelProviderKind } from "@truss-harness/provider-openai-compatible";
+
+export type DesktopProvider = ModelProviderKind;
+export type DesktopLocalProvider = "ollama" | "openai-compatible";
 export type DesktopMode = "chat" | "plan" | "edit";
 export type DesktopPermission = "ask" | "auto-read" | "auto-all";
+export const desktopThemeNames = ["default", "blue", "orange", "multicolor", "custom"] as const;
+export type DesktopThemeName = (typeof desktopThemeNames)[number];
+
+/** Palette tokens used by a custom Desktop theme. Omitted values retain the default token. */
+export interface DesktopThemePalette {
+  readonly background?: string;
+  readonly surface?: string;
+  readonly panel?: string;
+  readonly border?: string;
+  readonly text?: string;
+  readonly muted?: string;
+  readonly accent?: string;
+  readonly accentText?: string;
+  readonly warning?: string;
+  readonly error?: string;
+}
+
+export interface DesktopThemePreference {
+  readonly name: DesktopThemeName;
+  readonly custom?: DesktopThemePalette;
+}
 
 export interface DesktopConfiguration {
   readonly provider: DesktopProvider;
@@ -36,7 +60,7 @@ export interface DesktopConversation {
 export interface DesktopEndpoint {
   readonly id: string;
   readonly label: string;
-  readonly kind: DesktopProvider;
+  readonly kind: DesktopLocalProvider;
   readonly baseUrl: string;
 }
 
@@ -63,6 +87,7 @@ export interface DesktopState {
   readonly workspaceRoot: string;
   readonly configuration?: DesktopConfiguration;
   readonly updates: { readonly checkOnLaunch: boolean; readonly autoDownload: boolean };
+  readonly theme: DesktopThemePreference;
   readonly conversations: readonly DesktopConversation[];
   readonly activeConversationId?: string;
   readonly mcpStatuses?: readonly McpServerStatus[];
@@ -84,7 +109,9 @@ export interface DesktopBridge {
   saveConversations(conversations: readonly DesktopConversation[], activeConversationId?: string): Promise<void>;
   discoverModels(configuration?: Partial<DesktopConfiguration>): Promise<{ readonly endpoints: readonly DesktopEndpoint[]; readonly models: readonly string[] }>;
   refreshLocalModel(): Promise<DesktopState>;
-  configure(configuration: DesktopConfiguration): Promise<DesktopState>;
+  configure(configuration: DesktopConfiguration, apiKey?: string): Promise<DesktopState>;
+  clearCredential(provider: DesktopProvider): Promise<void>;
+  configureTheme(theme: DesktopThemePreference): Promise<DesktopState>;
   configureUpdates(updates: { readonly checkOnLaunch: boolean; readonly autoDownload: boolean }): Promise<DesktopState>;
   checkForUpdates(): Promise<void>;
   downloadUpdate(): Promise<void>;

@@ -4,7 +4,7 @@ import { SiteFooter, SiteHeader } from "./site-chrome";
 import { LandingMotion } from "./landing-motion";
 import { createPageMetadata } from "./site-metadata";
 
-export const metadata = createPageMetadata({ title: brand.productName, description: "A modular, local-first coding-agent runtime for CLI, terminal, VS Code, and desktop workflows.", path: "/" });
+export const metadata = createPageMetadata({ title: brand.productName, description: "A modular, local-first coding-agent runtime with optional BYOK cloud models for CLI, terminal, VS Code, and desktop workflows.", path: "/" });
 
 export default function HomePage() {
   return (
@@ -151,10 +151,10 @@ export default function HomePage() {
               </article>
               <article>
                 <span>02</span>
-                <h3>Tools with boundaries</h3>
+                <h3>Cloud on your terms</h3>
                 <p>
-                  Read, write, search, grep, and terminal tools run through
-                  agent modes and an explicit approval policy.
+                  Add a supported provider through an API key you control. Truss
+                  does not require a hosted control plane or proxy model requests.
                 </p>
               </article>
               <article>

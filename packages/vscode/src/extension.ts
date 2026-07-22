@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { createInterface } from "node:readline";
-import { detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, listLocalModels, normalizeLocalBaseUrl, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
+import { cloudProviderDefinition, cloudProviderDefinitions, detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, isCloudProviderId, isLocalEndpointKind, listLocalModels, normalizeLocalBaseUrl, type ModelProviderKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import { brand } from "@truss-harness/branding";
 import { executeWorkspaceCommand, type ChatAttachment, type ContextBlock, type WorkspacePlan } from "@truss-harness/runtime";
 import { createPairingUri, detectLanAddress } from "@truss-harness/gateway";
@@ -24,7 +24,7 @@ type McpServerConfigurations = Readonly<Record<string, {
 }>>;
 
 interface ModelConfiguration {
-  readonly provider: LocalEndpointKind;
+  readonly provider: ModelProviderKind;
   readonly baseUrl: string;
   readonly model: string;
   readonly mode: AgentMode;
@@ -294,14 +294,18 @@ async function workspaceFileContext(attachedPaths: readonly string[] | undefined
   return blocks;
 }
 
-function localEndpoint(configuration: ModelConfiguration): LocalModelEndpoint {
+function localEndpoint(configuration: ModelConfiguration & { readonly provider: "ollama" | "openai-compatible" }): LocalModelEndpoint {
   return { id: "configured", label: "Configured endpoint", kind: configuration.provider, baseUrl: configuration.baseUrl };
+}
+
+function isLocalConfiguration(configuration: ModelConfiguration): configuration is ModelConfiguration & { readonly provider: "ollama" | "openai-compatible" } {
+  return isLocalEndpointKind(configuration.provider);
 }
 
 function isConfiguration(value: unknown): value is Omit<ModelConfiguration, "mode" | "permission" | "contextWindow" | "internetAccess" | "mcpServers"> & Partial<Pick<ModelConfiguration, "mode" | "permission" | "contextWindow" | "internetAccess" | "mcpServers">> {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<ModelConfiguration>;
-  return (candidate.provider === "ollama" || candidate.provider === "openai-compatible")
+  return (isLocalEndpointKind(candidate.provider) || isCloudProviderId(candidate.provider))
     && typeof candidate.baseUrl === "string"
     && typeof candidate.model === "string";
 }
@@ -310,7 +314,7 @@ function normalizeConfiguration(value: unknown): ModelConfiguration {
   if (!isConfiguration(value)) return defaultConfiguration;
   return {
     provider: value.provider,
-    baseUrl: normalizeLocalBaseUrl(value.provider, value.baseUrl),
+    baseUrl: isLocalEndpointKind(value.provider) ? normalizeLocalBaseUrl(value.provider, value.baseUrl) : cloudProviderDefinition(value.provider).baseUrl,
     model: value.model,
     mode: value.mode === "plan" || value.mode === "edit" ? value.mode : "chat",
     permission: value.permission === "auto-read" || value.permission === "auto-all" ? value.permission : "ask",
@@ -367,6 +371,29 @@ export function activate(context: vscode.ExtensionContext): void {
   let conversations = normalizeConversationState(context.workspaceState.get("conversations"));
   let trussGoProcess: ChildProcessWithoutNullStreams | undefined;
 
+  const credentialKey = (provider: ModelProviderKind): string => `model-provider-api-key:${provider}`;
+  const providerApiKey = async (provider = configuration.provider): Promise<string | undefined> => {
+    return isCloudProviderId(provider) ? context.secrets.get(credentialKey(provider)) : undefined;
+  };
+  const runtimeEnvironment = async (): Promise<NodeJS.ProcessEnv> => {
+    const environment: NodeJS.ProcessEnv = {
+      ...process.env,
+      TRUSS_HARNESS_PROVIDER: configuration.provider,
+      TRUSS_HARNESS_BASE_URL: configuration.baseUrl,
+      TRUSS_HARNESS_MODEL: configuration.model,
+      TRUSS_HARNESS_AGENT_MODE: configuration.mode,
+      TRUSS_HARNESS_PERMISSION_MODE: configuration.permission,
+      TRUSS_HARNESS_INTERNET_ACCESS: configuration.internetAccess ? "true" : "false",
+      TRUSS_HARNESS_MCP_SERVERS: JSON.stringify(configuration.mcpServers)
+    };
+    if (isCloudProviderId(configuration.provider)) {
+      const apiKey = await providerApiKey();
+      if (!apiKey) throw new Error(`No API key is stored for ${cloudProviderDefinition(configuration.provider).label}. Run 'Truss: Configure BYOK Provider'.`);
+      environment.TRUSS_HARNESS_API_KEY = apiKey;
+    }
+    return environment;
+  };
+
   const stopTrussGo = (): void => { trussGoProcess?.kill(); trussGoProcess = undefined; };
   const connectTrussGo = async (): Promise<void> => {
     if (!configuration.model) throw new Error("Choose a local model before connecting Truss Go.");
@@ -378,7 +405,7 @@ export function activate(context: vscode.ExtensionContext): void {
     const command = configuredCommand || process.execPath;
     const commandArguments = configuredCommand ? [] : context.extensionMode === vscode.ExtensionMode.Development ? [developmentCli] : [bundledCli];
     const token = randomBytes(32).toString("hex");
-    trussGoProcess = spawn(command, [...commandArguments, "gateway", "--gateway-host", address, "--gateway-port", "4787", "--gateway-token", token], { cwd: workspaceRoot(), windowsHide: true, env: { ...process.env, TRUSS_HARNESS_PROVIDER: configuration.provider, TRUSS_HARNESS_BASE_URL: configuration.baseUrl, TRUSS_HARNESS_MODEL: configuration.model, TRUSS_HARNESS_PERMISSION_MODE: configuration.permission, TRUSS_HARNESS_INTERNET_ACCESS: configuration.internetAccess ? "true" : "false", TRUSS_HARNESS_MCP_SERVERS: JSON.stringify(configuration.mcpServers) } });
+    trussGoProcess = spawn(command, [...commandArguments, "gateway", "--gateway-host", address, "--gateway-port", "4787", "--gateway-token", token], { cwd: workspaceRoot(), windowsHide: true, env: await runtimeEnvironment() });
     await new Promise<void>((resolveReady, rejectReady) => {
       const child = trussGoProcess as ChildProcessWithoutNullStreams;
       const timeout = setTimeout(() => rejectReady(new Error("Truss Go gateway did not start in time.")), 8_000);
@@ -405,7 +432,7 @@ export function activate(context: vscode.ExtensionContext): void {
     activeChatConversationId = undefined;
     liveSessionIds.clear();
   };
-  const startService = (): RuntimeService => {
+  const startService = async (): Promise<RuntimeService> => {
     if (service) return service;
     if (!configuration.model) throw new Error("Choose a local model before starting the agent.");
     const settings = vscode.workspace.getConfiguration("trussHarness");
@@ -417,15 +444,8 @@ export function activate(context: vscode.ExtensionContext): void {
     const command = configuredCommand || process.execPath;
     const commandArguments = useWorkspaceCli ? [developmentCli] : useBundledCli ? [bundledCli] : [];
     service = new RuntimeService(command, commandArguments, workspaceRoot(), {
-      ...process.env,
-      ...(configuredCommand ? {} : { ELECTRON_RUN_AS_NODE: "1" }),
-      TRUSS_HARNESS_PROVIDER: configuration.provider,
-      TRUSS_HARNESS_BASE_URL: configuration.baseUrl,
-      TRUSS_HARNESS_MODEL: configuration.model,
-      TRUSS_HARNESS_AGENT_MODE: configuration.mode,
-      TRUSS_HARNESS_PERMISSION_MODE: configuration.permission,
-      TRUSS_HARNESS_INTERNET_ACCESS: configuration.internetAccess ? "true" : "false",
-      TRUSS_HARNESS_MCP_SERVERS: JSON.stringify(configuration.mcpServers)
+      ...(await runtimeEnvironment()),
+      ...(configuredCommand ? {} : { ELECTRON_RUN_AS_NODE: "1" })
     }, (message) => {
       if (message.event.type === "plan_updated" && message.event.plan) post({ type: "plan", plan: message.event.plan });
       if (message.requestId === activeChatRequest) {
@@ -456,7 +476,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const state = async (selectedConfiguration = configuration): Promise<HostState> => {
     if (!selectedConfiguration.model) {
       const isCurrentConfiguration = selectedConfiguration === configuration;
-      const detected = await detectActiveLocalModel();
+      const detected = isLocalConfiguration(selectedConfiguration) ? await detectActiveLocalModel() : undefined;
       if (detected) {
         selectedConfiguration = {
           ...selectedConfiguration,
@@ -471,7 +491,9 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }
     let models: readonly string[] = [];
-    try { models = (await listLocalModels(localEndpoint(selectedConfiguration))).map((model) => model.name); } catch { /* Manual names remain valid for custom endpoints. */ }
+    if (isLocalConfiguration(selectedConfiguration)) {
+      try { models = (await listLocalModels(localEndpoint(selectedConfiguration))).map((model) => model.name); } catch { /* Manual names remain valid for custom endpoints. */ }
+    }
     const endpoints = await detectLocalEndpoints();
     return { configuration: selectedConfiguration, endpoints, models };
   };
@@ -490,7 +512,7 @@ export function activate(context: vscode.ExtensionContext): void {
       post({ type: "assistantEnd", conversationId });
       return;
     }
-    const current = startService();
+    const current = await startService();
     sessionId = liveSessionIds.get(conversationId) ?? await current.createSession(normalizeHistory(history));
     liveSessionIds.set(conversationId, sessionId);
     post({ type: "assistantStart", conversationId });
@@ -526,7 +548,7 @@ export function activate(context: vscode.ExtensionContext): void {
       title: `${brand.productName}: Generating commit message`,
       cancellable: true
     }, async (_progress, cancellationToken) => {
-      const current = startService();
+      const current = await startService();
       const run = current.run(`You write accurate, production-quality Git commit messages. Analyze the diff and return only one Conventional Commit message.
 
 Requirements:
@@ -585,7 +607,9 @@ ${diff}`);
           }
           const previousConfiguration = configuration;
           configuration = normalizeConfiguration(message.configuration);
-          const detectedContextWindow = await detectLocalContextWindow(localEndpoint(configuration), configuration.model).catch(() => undefined);
+          const detectedContextWindow = isLocalConfiguration(configuration)
+            ? await detectLocalContextWindow(localEndpoint(configuration), configuration.model).catch(() => undefined)
+            : undefined;
           if (detectedContextWindow) configuration = { ...configuration, contextWindow: detectedContextWindow };
           await context.workspaceState.update("modelConfiguration", configuration);
           disposeService();
@@ -643,6 +667,48 @@ ${diff}`);
   }));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.openChat", () => vscode.commands.executeCommand("workbench.view.extension.trussHarness")));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.connectTrussGo", () => connectTrussGo().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
+  context.subscriptions.push(vscode.commands.registerCommand("trussHarness.configureByokProvider", async () => {
+    const selected = await vscode.window.showQuickPick(cloudProviderDefinitions.map((provider) => ({
+      label: provider.label,
+      description: provider.id,
+      detail: provider.productionNote,
+      provider
+    })), { placeHolder: "Choose a cloud model provider" });
+    if (!selected) return;
+    const model = await vscode.window.showInputBox({
+      prompt: `Model ID for ${selected.label}`,
+      value: configuration.provider === selected.provider.id ? configuration.model : "",
+      validateInput: (value) => value.trim() ? undefined : "A model ID is required."
+    });
+    if (!model?.trim()) return;
+    const apiKey = await vscode.window.showInputBox({
+      prompt: `${selected.label} API key`,
+      password: true,
+      ignoreFocusOut: true,
+      validateInput: (value) => value.trim() ? undefined : "An API key is required."
+    });
+    if (!apiKey?.trim()) return;
+
+    await context.secrets.store(credentialKey(selected.provider.id), apiKey.trim());
+    configuration = {
+      ...configuration,
+      provider: selected.provider.id,
+      baseUrl: selected.provider.baseUrl,
+      model: model.trim()
+    };
+    await context.workspaceState.update("modelConfiguration", configuration);
+    disposeService();
+    post({ type: "runtimeReset" });
+    await sendState();
+    void vscode.window.showInformationMessage(`${brand.productName} is configured for ${selected.label}. Its API key is stored in VS Code Secret Storage.`);
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand("trussHarness.removeByokCredential", async () => {
+    const selected = await vscode.window.showQuickPick(cloudProviderDefinitions.map((provider) => ({ label: provider.label, description: provider.id, provider })), { placeHolder: "Remove a stored provider key" });
+    if (!selected) return;
+    await context.secrets.delete(credentialKey(selected.provider.id));
+    if (configuration.provider === selected.provider.id) disposeService();
+    void vscode.window.showInformationMessage(`${brand.productName} removed the stored ${selected.label} API key.`);
+  }));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.generateCommitMessage", async () => {
     try {
       const message = await generateCommitMessage();
@@ -679,7 +745,8 @@ ${diff}`);
       const prompt = `Complete the code at <cursor>. Return only code to insert, with no markdown or explanation.\n\n${prefix}<cursor>${suffix}`;
       let requestId: string | undefined;
       try {
-        const run = startService().run(prompt);
+        const current = await startService();
+        const run = current.run(prompt);
         requestId = run.requestId;
         inlineBuffers.set(run.requestId, "");
         await run.result;
@@ -716,7 +783,7 @@ function legacyWebviewHtml(webview: vscode.Webview): string {
   #settings.open { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 8px; align-items: end; } label { display: grid; gap: 4px; font-size: .85em; } input, select { padding: 6px; min-width: 0; } #status { font-size: .85em; opacity: .8; }
 </style></head><body>
 <header><strong>Truss</strong><span id="status">Choose a local model</span><button id="new" title="New conversation">New</button><button id="commit" title="Generate a commit message from the current Git diff">Commit message</button><button id="settingsButton" title="Configure local model server">Model</button></header>
-<section id="settings"><label>Detected server<select id="server"><option value="">Custom / manual</option></select></label><label>Provider<select id="provider"><option value="ollama">Ollama</option><option value="openai-compatible">LM Studio / compatible</option></select></label><label>Endpoint<input id="endpoint" placeholder="http://127.0.0.1:11434"></label><label>Model<input id="model" list="models" placeholder="Refresh to discover models"><datalist id="models"></datalist></label><button id="refresh">Refresh</button><button id="apply" class="primary">Use model</button></section>
+<section id="settings"><label>Detected server<select id="server"><option value="">Custom / manual</option></select></label><label>Provider<select id="provider"><option value="ollama">Ollama</option><option value="openai-compatible">LM Studio / compatible</option><option value="openai">OpenAI (use Configure BYOK Provider)</option><option value="anthropic">Anthropic (use Configure BYOK Provider)</option><option value="openrouter">OpenRouter (use Configure BYOK Provider)</option><option value="groq">Groq (use Configure BYOK Provider)</option><option value="together">Together AI (use Configure BYOK Provider)</option><option value="gemini">Gemini (use Configure BYOK Provider)</option><option value="xai">xAI (use Configure BYOK Provider)</option><option value="mistral">Mistral AI (use Configure BYOK Provider)</option><option value="deepseek">DeepSeek (use Configure BYOK Provider)</option><option value="perplexity">Perplexity (use Configure BYOK Provider)</option><option value="fireworks">Fireworks AI (use Configure BYOK Provider)</option><option value="nvidia-nim">NVIDIA NIM (use Configure BYOK Provider)</option></select></label><label>Endpoint<input id="endpoint" placeholder="http://127.0.0.1:11434"></label><label>Model<input id="model" list="models" placeholder="Refresh to discover models"><datalist id="models"></datalist></label><button id="refresh">Refresh</button><button id="apply" class="primary">Use model</button></section>
 <main id="chat"></main><form id="composer"><textarea id="prompt" placeholder="Ask about this workspace" rows="2"></textarea><button id="stop" type="button">Stop</button><button class="primary" type="submit">Send</button></form>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi(); const chat = document.getElementById('chat'); const settings = document.getElementById('settings'); const status = document.getElementById('status');
@@ -765,7 +832,7 @@ function webviewHtml(webview: vscode.Webview): string {
   @media (max-width: 700px) { #settings.open { grid-template-columns: repeat(2, minmax(0, 1fr)); } } @media (max-width: 560px) { header { padding: 8px; } .brand-row { flex-wrap: wrap; } #telemetry { width: 100%; } #workspace { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } #history { display: flex; gap: 4px; overflow-x: auto; overflow-y: hidden; padding: 5px; border-right: 0; border-bottom: 1px solid var(--vscode-panel-border); } .history-title { display: none; } .conversation-row { display: flex; min-width: 122px; } .conversation { width: auto; min-width: 96px; } #settings.open { grid-template-columns: 1fr; } #composer { grid-template-columns: minmax(0, 1fr) auto; } #stop, #send { grid-column: 2; } #agentControls { grid-template-columns: 1fr; } .quick-model { grid-template-columns: auto minmax(0, 1fr); } }
 </style></head><body>
 <header><div class="brand-row"><span class="brand">${brand.productName}</span><button id="new" title="New conversation">New</button><button id="help" title="Show local workspace commands">Help</button><button id="settingsButton" title="Model and agent settings">Settings</button></div><div id="telemetry"><div class="telemetry-context" title="Estimated from the active conversation. Local model servers do not consistently report prompt-token usage."><span class="telemetry-label">CONTEXT</span><span id="contextValue">0 / 8.2k</span><div class="meter"><span id="contextMeter"></span></div></div><div title="Estimated from streamed response text"><span class="telemetry-label">SPEED </span><span id="rateValue">-- tok/s</span></div></div></header>
-<section id="settings"><label>Detected server<select id="server"><option value="">Custom / manual</option></select></label><label>Provider<select id="provider"><option value="ollama">Ollama</option><option value="openai-compatible">Compatible API</option></select></label><label>Endpoint<input id="endpoint" placeholder="http://127.0.0.1:11434"></label><label>Model<input id="model" list="models" placeholder="Refresh to discover models"><datalist id="models"></datalist></label><label>Context window<input id="contextWindow" type="number" min="512" max="1000000" step="512" value="8192"></label><label>Tool permissions<select id="permission"><option value="ask">Ask every time</option><option value="auto-read">Auto-allow read-only</option><option value="auto-all">Auto-allow all tools</option></select></label><label>Internet research<select id="internetAccess"><option value="false">Disabled</option><option value="true">Enabled</option></select></label><label class="mcp-setting">MCP servers (JSON)<textarea id="mcpServers" rows="7" spellcheck="false" placeholder='{"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]}}'></textarea></label><div id="mcpStatus">No MCP servers configured.</div><div class="actions"><button id="refresh">Refresh</button><button id="apply" class="primary">Apply</button></div></section>
+<section id="settings"><label>Detected server<select id="server"><option value="">Custom / manual</option></select></label><label>Provider<select id="provider"><option value="ollama">Ollama</option><option value="openai-compatible">Compatible API</option><option value="openai">OpenAI (use Configure BYOK Provider)</option><option value="anthropic">Anthropic (use Configure BYOK Provider)</option><option value="openrouter">OpenRouter (use Configure BYOK Provider)</option><option value="groq">Groq (use Configure BYOK Provider)</option><option value="together">Together AI (use Configure BYOK Provider)</option><option value="gemini">Gemini (use Configure BYOK Provider)</option><option value="xai">xAI (use Configure BYOK Provider)</option><option value="mistral">Mistral AI (use Configure BYOK Provider)</option><option value="deepseek">DeepSeek (use Configure BYOK Provider)</option><option value="perplexity">Perplexity (use Configure BYOK Provider)</option><option value="fireworks">Fireworks AI (use Configure BYOK Provider)</option><option value="nvidia-nim">NVIDIA NIM (use Configure BYOK Provider)</option></select></label><label>Endpoint<input id="endpoint" placeholder="http://127.0.0.1:11434"></label><label>Model<input id="model" list="models" placeholder="Refresh to discover models"><datalist id="models"></datalist></label><label>Context window<input id="contextWindow" type="number" min="512" max="1000000" step="512" value="8192"></label><label>Tool permissions<select id="permission"><option value="ask">Ask every time</option><option value="auto-read">Auto-allow read-only</option><option value="auto-all">Auto-allow all tools</option></select></label><label>Internet research<select id="internetAccess"><option value="false">Disabled</option><option value="true">Enabled</option></select></label><label class="mcp-setting">MCP servers (JSON)<textarea id="mcpServers" rows="7" spellcheck="false" placeholder='{"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]}}'></textarea></label><div id="mcpStatus">No MCP servers configured.</div><div class="actions"><button id="refresh">Refresh</button><button id="apply" class="primary">Apply</button></div></section>
 <main id="workspace"><aside id="history"><div class="history-title">Conversations</div></aside><section id="chat"><div class="empty">Select a local model in Settings, then ask about the workspace. Use Plan for read-only investigation and Agent when you want the agent to change files or run commands.</div></section></main>
 <form id="composer"><div id="slashMenu" role="listbox" hidden></div><div id="attachments" hidden></div><textarea id="prompt" placeholder="Ask about this workspace. Type @/ to attach a file; /help for commands." rows="2"></textarea><input id="attachmentInput" type="file" multiple hidden><button id="attach" type="button" title="Attach images or text files">Attach</button><button id="stop" type="button">Cancel</button><button id="send" class="primary" type="submit">Send</button></form>
 <section id="agentControls" aria-label="Agent controls"><div class="segmented" aria-label="Agent mode"><button data-mode="chat">Chat</button><button data-mode="plan">Plan</button><button data-mode="edit">Agent</button></div><label class="quick-model"><span>MODEL</span><select id="quickModel" title="Switch local model"></select></label><span id="modelStatus">Choose a local model</span></section>

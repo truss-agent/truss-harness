@@ -4,18 +4,19 @@ import { createPageMetadata } from "../site-metadata";
 
 const sections = [
   {
-    label: "Next up",
+    label: "Available now",
     title: "Cloud providers, on your terms.",
     items: [
-      "Bring your own API key for cloud providers, starting with OpenAI, Anthropic, OpenRouter, and Gemini.",
+      "Bring your own API key for OpenAI, Anthropic, OpenRouter, Groq, Together AI, Gemini, xAI, Mistral AI, DeepSeek, Perplexity, Fireworks AI, or NVIDIA NIM.",
       "Keep provider selection, model routing, tools, and safety policies behind the same provider-neutral runtime interfaces.",
       "Store keys locally in the client or environment you control; Truss will not require a hosted control plane or proxy your requests."
     ]
   },
   {
-    label: "In exploration",
+    label: "Next up",
     title: "More places to work.",
     items: [
+      "Native provider adapters and account flows where an API-key compatibility endpoint is not the right integration.",
       "A Neovim and LazyVim plugin that brings the same runtime into a keyboard-native editor workflow.",
       "Richer context selection through editor symbols, diagnostics, recent changes, and relationships between workspace files.",
       "A more capable MCP experience with clearer connection controls, discovery, and portable workspace configuration."

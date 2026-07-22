@@ -1,3 +1,4 @@
+import { ApiKeyCredential } from "@truss-harness/runtime";
 import type {
   ChatMessage,
   JsonObject,
@@ -5,13 +6,17 @@ import type {
   ModelRequest,
   ModelStreamEvent,
   ToolCall,
-  ToolDefinition
+  ToolDefinition,
+  CredentialProvider,
+  ResolvedCredential
 } from "@truss-harness/runtime";
 
 export interface OpenAICompatibleProviderOptions {
   readonly baseUrl: string;
   readonly model: string;
   readonly apiKey?: string;
+  /** Preferred over apiKey so credentials can be refreshed or backed by secure storage. */
+  readonly credential?: CredentialProvider;
   readonly id?: string;
   readonly headers?: Readonly<Record<string, string>>;
   readonly fetch?: typeof globalThis.fetch;
@@ -43,11 +48,67 @@ export interface LocalModelConfiguration {
   readonly baseUrl: string;
   readonly model: string;
   readonly apiKey?: string;
+  readonly credential?: CredentialProvider;
 }
 
 export interface LocalTextGenerationOptions {
   readonly fetch?: typeof globalThis.fetch;
   readonly signal?: AbortSignal;
+}
+
+export type CloudProviderId =
+  | "openai"
+  | "anthropic"
+  | "openrouter"
+  | "groq"
+  | "together"
+  | "gemini"
+  | "xai"
+  | "mistral"
+  | "deepseek"
+  | "perplexity"
+  | "fireworks"
+  | "nvidia-nim";
+export type ModelProviderKind = LocalEndpointKind | CloudProviderId;
+
+export interface CloudProviderDefinition {
+  readonly id: CloudProviderId;
+  readonly label: string;
+  readonly baseUrl: string;
+  readonly apiKeyEnvironmentVariable: string;
+  readonly compatibility: "openai-chat-completions";
+  readonly productionNote?: string;
+}
+
+export const cloudProviderDefinitions: readonly CloudProviderDefinition[] = [
+  { id: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1", apiKeyEnvironmentVariable: "OPENAI_API_KEY", compatibility: "openai-chat-completions" },
+  { id: "anthropic", label: "Anthropic", baseUrl: "https://api.anthropic.com/v1", apiKeyEnvironmentVariable: "ANTHROPIC_API_KEY", compatibility: "openai-chat-completions", productionNote: "Uses Anthropic's evaluation-oriented OpenAI compatibility layer; a native adapter remains the preferred long-term integration." },
+  { id: "openrouter", label: "OpenRouter", baseUrl: "https://openrouter.ai/api/v1", apiKeyEnvironmentVariable: "OPENROUTER_API_KEY", compatibility: "openai-chat-completions" },
+  { id: "groq", label: "Groq", baseUrl: "https://api.groq.com/openai/v1", apiKeyEnvironmentVariable: "GROQ_API_KEY", compatibility: "openai-chat-completions" },
+  { id: "together", label: "Together AI", baseUrl: "https://api.together.ai/v1", apiKeyEnvironmentVariable: "TOGETHER_API_KEY", compatibility: "openai-chat-completions" },
+  { id: "gemini", label: "Google Gemini", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", apiKeyEnvironmentVariable: "GEMINI_API_KEY", compatibility: "openai-chat-completions" },
+  { id: "xai", label: "xAI", baseUrl: "https://api.x.ai/v1", apiKeyEnvironmentVariable: "XAI_API_KEY", compatibility: "openai-chat-completions" },
+  { id: "mistral", label: "Mistral AI", baseUrl: "https://api.mistral.ai/v1", apiKeyEnvironmentVariable: "MISTRAL_API_KEY", compatibility: "openai-chat-completions" },
+  { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com", apiKeyEnvironmentVariable: "DEEPSEEK_API_KEY", compatibility: "openai-chat-completions" },
+  { id: "perplexity", label: "Perplexity", baseUrl: "https://api.perplexity.ai", apiKeyEnvironmentVariable: "PERPLEXITY_API_KEY", compatibility: "openai-chat-completions" },
+  { id: "fireworks", label: "Fireworks AI", baseUrl: "https://api.fireworks.ai/inference/v1", apiKeyEnvironmentVariable: "FIREWORKS_API_KEY", compatibility: "openai-chat-completions" },
+  { id: "nvidia-nim", label: "NVIDIA NIM", baseUrl: "https://integrate.api.nvidia.com/v1", apiKeyEnvironmentVariable: "NVIDIA_API_KEY", compatibility: "openai-chat-completions" }
+];
+
+export function isCloudProviderId(value: unknown): value is CloudProviderId {
+  return cloudProviderDefinitions.some((definition) => definition.id === value);
+}
+
+export function isLocalEndpointKind(value: unknown): value is LocalEndpointKind {
+  return value === "ollama" || value === "openai-compatible";
+}
+
+export interface CloudModelConfiguration {
+  readonly provider: CloudProviderId;
+  readonly model: string;
+  readonly credential: CredentialProvider;
+  readonly headers?: Readonly<Record<string, string>>;
+  readonly fetch?: typeof globalThis.fetch;
 }
 
 interface OpenAIChunk {
@@ -194,6 +255,11 @@ function appendChunk(partial: Map<number, PartialToolCall>, chunk: NonNullable<O
   }
 }
 
+function applyCredential(headers: Headers, credential: Exclude<ResolvedCredential, { readonly kind: "request-signer" }>): void {
+  if (credential.kind === "bearer") headers.set("authorization", `Bearer ${credential.token}`);
+  else headers.set(credential.name, credential.value);
+}
+
 /** A provider adapter for OpenAI-compatible chat-completions endpoints. */
 export class OpenAICompatibleProvider implements ModelProvider {
   readonly id: string;
@@ -206,25 +272,41 @@ export class OpenAICompatibleProvider implements ModelProvider {
     this.requestFetch = options.fetch ?? globalThis.fetch;
   }
 
-  async *stream(request: ModelRequest): AsyncIterable<ModelStreamEvent> {
-    const response = await this.requestFetch(this.endpoint, {
-      method: "POST",
-      signal: request.signal,
-      headers: {
-        "content-type": "application/json",
-        accept: "text/event-stream",
-        ...(this.options.apiKey ? { authorization: `Bearer ${this.options.apiKey}` } : {}),
-        ...this.options.headers
-      },
-      body: JSON.stringify({
-        model: this.options.model,
-        stream: true,
-        messages: request.messages.map(toOpenAIMessage),
-        tools: request.tools.map(toOpenAITool)
-      })
-    });
+  private credential(): CredentialProvider | undefined {
+    return this.options.credential ?? (this.options.apiKey ? new ApiKeyCredential(`${this.id}-api-key`, this.options.apiKey) : undefined);
+  }
 
-    if (!response.ok) throw new Error(`Model request failed (${response.status}): ${await response.text()}`);
+  private async send(request: ModelRequest): Promise<Response> {
+    const body = JSON.stringify({
+      model: this.options.model,
+      stream: true,
+      messages: request.messages.map(toOpenAIMessage),
+      tools: request.tools.map(toOpenAITool)
+    });
+    const credential = this.credential();
+    const attempt = async (): Promise<Response> => {
+      const headers = new Headers({ "content-type": "application/json", accept: "text/event-stream", ...this.options.headers });
+      const resolved = await credential?.resolve();
+      if (resolved?.kind === "request-signer") {
+        return this.requestFetch(await resolved.sign(new Request(this.endpoint, { method: "POST", signal: request.signal, headers, body })));
+      }
+      if (resolved) applyCredential(headers, resolved);
+      return this.requestFetch(this.endpoint, { method: "POST", signal: request.signal, headers, body });
+    };
+
+    let response = await attempt();
+    if ((response.status === 401 || response.status === 403) && credential?.refresh) {
+      await response.body?.cancel();
+      await credential.refresh();
+      response = await attempt();
+    }
+    return response;
+  }
+
+  async *stream(request: ModelRequest): AsyncIterable<ModelStreamEvent> {
+    const response = await this.send(request);
+
+    if (!response.ok) throw new Error(`Model request failed (${response.status}).`);
     if (!response.body) throw new Error("Model response did not include a stream");
 
     const decoder = new TextDecoder();
@@ -467,9 +549,28 @@ export async function detectLocalContextWindow(endpoint: LocalModelEndpoint, mod
 
 export function createLocalModelProvider(configuration: LocalModelConfiguration): ModelProvider {
   if (configuration.kind === "ollama") {
-    return new OllamaProvider({ baseUrl: configuration.baseUrl, model: configuration.model, apiKey: configuration.apiKey });
+    return new OllamaProvider({ baseUrl: configuration.baseUrl, model: configuration.model, apiKey: configuration.apiKey, credential: configuration.credential });
   }
-  return new OpenAICompatibleProvider({ baseUrl: configuration.baseUrl, model: configuration.model, apiKey: configuration.apiKey });
+  return new OpenAICompatibleProvider({ baseUrl: configuration.baseUrl, model: configuration.model, apiKey: configuration.apiKey, credential: configuration.credential });
+}
+
+export function cloudProviderDefinition(id: CloudProviderId): CloudProviderDefinition {
+  const definition = cloudProviderDefinitions.find((candidate) => candidate.id === id);
+  if (!definition) throw new Error(`Unknown cloud model provider: ${id}`);
+  return definition;
+}
+
+/** Creates a BYOK cloud adapter while keeping credentials outside model configuration. */
+export function createCloudModelProvider(configuration: CloudModelConfiguration): ModelProvider {
+  const definition = cloudProviderDefinition(configuration.provider);
+  return new OpenAICompatibleProvider({
+    id: definition.id,
+    baseUrl: definition.baseUrl,
+    model: configuration.model,
+    credential: configuration.credential,
+    headers: configuration.headers,
+    fetch: configuration.fetch
+  });
 }
 
 /** Generates a single response without SSE, for small local actions that need a reliable final value. */

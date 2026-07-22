@@ -2,7 +2,7 @@
 import { cwd } from "node:process";
 import { basename, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline/promises";
-import { detectLocalEndpoints, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
+import { cloudProviderDefinitions, detectLocalEndpoints, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import { brand } from "@truss-harness/branding";
 import { executeWorkspaceCommand, workspaceCommandHelp } from "@truss-harness/runtime";
 import { createClientRuntime, type ClientRuntime } from "./runtime.js";
@@ -28,7 +28,7 @@ Quick start:
 
 Commands:
   chat [prompt]          Stream one response or open persistent chat
-  setup                 Interactively choose and save local-model defaults
+  setup                 Interactively save local-model or cloud BYOK defaults
   models                List detected local servers and models
   config path           Print user and workspace configuration paths
   config init           Create a workspace configuration template
@@ -43,7 +43,7 @@ Commands:
 
 Options:
   --profile <name>       Select a named configuration profile
-  --provider <name>      ollama or openai-compatible
+  --provider <name>      Local or BYOK cloud provider (see Environment)
   --base-url <url>       Local server endpoint
   --model <name>         Model identifier
   --mode <name>          chat, plan, or edit
@@ -70,12 +70,18 @@ Permissions:
 
 Environment:
   TRUSS_HARNESS_MODEL       Required model identifier
-  TRUSS_HARNESS_PROVIDER    ollama (default) or openai-compatible
+  TRUSS_HARNESS_PROVIDER    ollama, openai-compatible, openai, anthropic,
+                            openrouter, groq, together, gemini, xai, mistral,
+                            deepseek, perplexity, fireworks, or nvidia-nim
   TRUSS_HARNESS_BASE_URL    Local server base URL (default depends on provider)
   TRUSS_HARNESS_AGENT_MODE  chat (default), plan, or edit
   TRUSS_HARNESS_PERMISSION_MODE ask (default), auto-read, or auto-all
   TRUSS_HARNESS_INTERNET_ACCESS true or 1 to enable public web tools
-  TRUSS_HARNESS_API_KEY     Optional bearer token
+  TRUSS_HARNESS_API_KEY     Optional generic bearer token
+  OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY,
+  TOGETHER_API_KEY, GEMINI_API_KEY, XAI_API_KEY, MISTRAL_API_KEY,
+  DEEPSEEK_API_KEY, PERPLEXITY_API_KEY, FIREWORKS_API_KEY, NVIDIA_API_KEY
+                                  Provider-specific BYOK credentials
   TRUSS_HARNESS_SYSTEM_PROMPT Optional system prompt
   TRUSS_HARNESS_MCP_SERVERS JSON object containing local stdio MCP servers
 
@@ -227,6 +233,31 @@ async function runSetup(): Promise<void> {
   };
 
   try {
+    const setupKind = await ask("Setup: local server or cloud BYOK", "local");
+    if (setupKind.toLowerCase() === "cloud" || setupKind.toLowerCase() === "byok") {
+      process.stdout.write(brand.productName + " cloud BYOK setup\n\n");
+      cloudProviderDefinitions.forEach((provider, index) => process.stdout.write(String(index + 1) + ". " + provider.label + " (" + provider.id + ")\n"));
+      const provider = cloudProviderDefinitions[selectedIndex(await ask("Provider", "1"), cloudProviderDefinitions.length, 0)];
+      const model = await ask("Model ID", "your-tool-capable-model");
+      const profileName = await ask("Profile name", provider.id);
+      const mode = await ask("Default mode: chat, plan, or edit", "edit");
+      if (mode !== "chat" && mode !== "plan" && mode !== "edit") throw new Error("Mode must be chat, plan, or edit.");
+      const permission = await ask("Default permission: ask, auto-read, or auto-all", "auto-read");
+      if (permission !== "ask" && permission !== "auto-read" && permission !== "auto-all") throw new Error("Permission must be ask, auto-read, or auto-all.");
+      const internet = await ask("Enable internet research: yes or no", "no");
+      const path = await saveUserProfile(cwd(), profileName, {
+        provider: provider.id,
+        baseUrl: provider.baseUrl,
+        model,
+        mode,
+        permission,
+        internetAccess: /^(y|yes|true|1)$/i.test(internet),
+        apiKeyEnv: provider.apiKeyEnvironmentVariable
+      });
+      process.stdout.write(`\nSaved profile '${profileName}' to ${path}\n`);
+      process.stdout.write(`Set ${provider.apiKeyEnvironmentVariable} outside configuration, then run: ${brand.cliCommand} chat --profile ${profileName}\n`);
+      return;
+    }
     const endpoints = await detectLocalEndpoints();
     process.stdout.write(brand.productName + " setup\n");
     process.stdout.write("Choose a local model server. Values in brackets are defaults.\n\n");

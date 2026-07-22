@@ -1,6 +1,7 @@
 export * from "./contracts.js";
 export * from "./events.js";
 export * from "./providers.js";
+export * from "./credentials.js";
 export * from "./tools.js";
 export * from "./sessions.js";
 export * from "./context.js";

@@ -1,5 +1,5 @@
 import type { ChatAttachment, WorkspacePlan } from "@truss-harness/runtime";
-import type { DesktopConfiguration, DesktopConversation, DesktopEndpoint, DesktopEvent, DesktopFile, DesktopGitStatus, DesktopMessage, DesktopState } from "./shared.js";
+import { desktopThemeNames, type DesktopConfiguration, type DesktopConversation, type DesktopEndpoint, type DesktopEvent, type DesktopFile, type DesktopGitStatus, type DesktopMessage, type DesktopProvider, type DesktopState, type DesktopThemePalette, type DesktopThemePreference } from "./shared.js";
 
 declare global {
   interface Window {
@@ -89,8 +89,13 @@ const rateMeter = document.getElementById("rateMeter") as HTMLSpanElement | null
 const settingsDialog = element<HTMLDialogElement>("settingsDialog");
 const endpointSelect = element<HTMLSelectElement>("endpointSelect");
 const providerSelect = element<HTMLSelectElement>("providerSelect");
+const byokProviderSelect = element<HTMLSelectElement>("byokProviderSelect");
 const baseUrlInput = element<HTMLInputElement>("baseUrlInput");
 const modelInput = element<HTMLInputElement>("modelInput");
+const byokBaseUrl = element<HTMLInputElement>("byokBaseUrl");
+const byokModelInput = element<HTMLInputElement>("byokModelInput");
+const apiKeyInput = element<HTMLInputElement>("apiKeyInput");
+const clearApiKey = element<HTMLButtonElement>("clearApiKey");
 const modelOptions = element<HTMLDataListElement>("modelOptions");
 const contextInput = element<HTMLInputElement>("contextInput");
 const permissionSelect = element<HTMLSelectElement>("permissionSelect");
@@ -99,13 +104,19 @@ const mcpServersInput = element<HTMLTextAreaElement>("mcpServersInput");
 const mcpStatus = element<HTMLDivElement>("mcpStatus");
 const checkUpdatesOnLaunch = element<HTMLInputElement>("checkUpdatesOnLaunch");
 const autoDownloadUpdates = element<HTMLInputElement>("autoDownloadUpdates");
+const themeSelect = element<HTMLSelectElement>("themeSelect");
+const customThemeSetting = element<HTMLElement>("customThemeSetting");
+const customThemeInput = element<HTMLTextAreaElement>("customThemeInput");
+const customThemeHelp = element<HTMLDivElement>("customThemeHelp");
+const customThemeActions = element<HTMLDivElement>("customThemeActions");
+const saveCustomTheme = element<HTMLButtonElement>("saveCustomTheme");
 const updateStatus = element<HTMLSpanElement>("updateStatus");
 const checkUpdates = element<HTMLButtonElement>("checkUpdates");
 const downloadUpdate = element<HTMLButtonElement>("downloadUpdate");
 const installUpdate = element<HTMLButtonElement>("installUpdate");
 const toast = element<HTMLDivElement>("toast");
 
-let desktopState: DesktopState = { workspaceRoot: "", updates: { checkOnLaunch: true, autoDownload: false }, conversations: [] };
+let desktopState: DesktopState = { workspaceRoot: "", updates: { checkOnLaunch: true, autoDownload: false }, theme: { name: "default" }, conversations: [] };
 let endpoints: readonly DesktopEndpoint[] = [];
 let models: readonly string[] = [];
 let files: readonly DesktopFile[] = [];
@@ -138,6 +149,9 @@ let streamedTokenEstimate = 0;
 let runningConversationId: string | undefined;
 let centerView: "editor" | "preview" = "editor";
 let pendingAttachments: ChatAttachment[] = [];
+type SettingsTab = "local" | "byok" | "other";
+let activeSettingsTab: SettingsTab = "local";
+let modelSettingsTab: "local" | "byok" = "local";
 const maxAttachmentCount = 5;
 const maxAttachmentBytes = 4 * 1024 * 1024;
 const maxAttachmentTotalBytes = 12 * 1024 * 1024;
@@ -145,6 +159,93 @@ const maxFileTextCharacters = 120_000;
 
 function configuration(): DesktopConfiguration {
   return desktopState.configuration ?? defaultConfiguration;
+}
+
+const customThemeProperties: Readonly<Record<keyof DesktopThemePalette, string>> = {
+  background: "--desktop-background",
+  surface: "--desktop-surface",
+  panel: "--desktop-panel",
+  border: "--desktop-border",
+  text: "--desktop-text",
+  muted: "--desktop-muted",
+  accent: "--desktop-accent",
+  accentText: "--desktop-accent-text",
+  warning: "--desktop-warning",
+  error: "--desktop-error"
+};
+
+function isThemeColor(value: unknown): value is string {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
+}
+
+function parseCustomTheme(): DesktopThemePalette {
+  const source = customThemeInput.value.trim();
+  if (!source) return {};
+  const parsed = JSON.parse(source) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Custom theme must be a JSON object.");
+  const palette: Record<string, string> = {};
+  for (const [name, value] of Object.entries(parsed)) {
+    if (!(name in customThemeProperties)) throw new Error(`Unknown custom theme token: ${name}.`);
+    if (!isThemeColor(value)) throw new Error(`${name} must be a #RRGGBB color.`);
+    palette[name] = value;
+  }
+  return palette as DesktopThemePalette;
+}
+
+function applyTheme(theme: DesktopThemePreference): void {
+  const root = document.documentElement;
+  for (const property of Object.values(customThemeProperties)) root.style.removeProperty(property);
+  if (theme.name === "default") {
+    delete root.dataset.desktopTheme;
+    return;
+  }
+  root.dataset.desktopTheme = theme.name;
+  if (theme.name === "custom") {
+    for (const [name, value] of Object.entries(theme.custom ?? {})) {
+      const property = customThemeProperties[name as keyof DesktopThemePalette];
+      if (property && isThemeColor(value)) root.style.setProperty(property, value);
+    }
+  }
+}
+
+function renderCustomThemeControls(): void {
+  const custom = themeSelect.value === "custom";
+  customThemeSetting.hidden = !custom;
+  customThemeHelp.hidden = !custom;
+  customThemeActions.hidden = !custom;
+}
+
+async function saveTheme(theme: DesktopThemePreference): Promise<void> {
+  applyTheme(theme);
+  desktopState = await window.trussDesktop.configureTheme(theme);
+  notify(`${theme.name === "custom" ? "Custom" : theme.name[0].toUpperCase() + theme.name.slice(1)} theme saved.`);
+}
+
+function isLocalProvider(provider: DesktopProvider): provider is "ollama" | "openai-compatible" {
+  return provider === "ollama" || provider === "openai-compatible";
+}
+
+function byokBaseUrlForSelectedProvider(): string {
+  return byokProviderSelect.selectedOptions[0]?.dataset.baseUrl ?? "";
+}
+
+function selectedSettingsProvider(): DesktopProvider {
+  return modelSettingsTab === "byok" ? byokProviderSelect.value as DesktopProvider : providerSelect.value as DesktopProvider;
+}
+
+function setSettingsTab(tab: SettingsTab): void {
+  activeSettingsTab = tab;
+  if (tab !== "other") modelSettingsTab = tab;
+  if (tab === "byok") byokBaseUrl.value = byokBaseUrlForSelectedProvider();
+  (document.getElementById("settingsPanelLocal") as HTMLElement).hidden = tab !== "local";
+  (document.getElementById("settingsPanelByok") as HTMLElement).hidden = tab !== "byok";
+  (document.getElementById("settingsPanelOther") as HTMLElement).hidden = tab !== "other";
+  document.querySelectorAll<HTMLButtonElement>("[data-settings-tab]").forEach((button) => {
+    const selected = button.dataset.settingsTab === tab;
+    button.classList.toggle("active", selected);
+    button.setAttribute("aria-selected", String(selected));
+    button.tabIndex = selected ? 0 : -1;
+  });
 }
 
 function activeConversation(): DesktopConversation | undefined {
@@ -1033,6 +1134,7 @@ async function discover(input?: Partial<DesktopConfiguration>): Promise<void> {
 
 function settingsConfiguration(): DesktopConfiguration {
   const current = configuration();
+  const provider = selectedSettingsProvider();
   let mcpServers: DesktopConfiguration["mcpServers"] = {};
   const mcpSource = mcpServersInput.value.trim();
   if (mcpSource) {
@@ -1041,9 +1143,9 @@ function settingsConfiguration(): DesktopConfiguration {
     mcpServers = parsed as DesktopConfiguration["mcpServers"];
   }
   return {
-    provider: providerSelect.value === "openai-compatible" ? "openai-compatible" : "ollama",
-    baseUrl: baseUrlInput.value.trim(),
-    model: modelInput.value.trim(),
+    provider,
+    baseUrl: isLocalProvider(provider) ? baseUrlInput.value.trim() : byokBaseUrlForSelectedProvider(),
+    model: modelSettingsTab === "byok" ? byokModelInput.value.trim() : modelInput.value.trim(),
     mode: current.mode,
     permission: permissionSelect.value === "auto-read" || permissionSelect.value === "auto-all" ? permissionSelect.value : "ask",
     contextWindow: Math.max(512, Number.parseInt(contextInput.value, 10) || 8_192),
@@ -1086,20 +1188,34 @@ function renderUpdate(status: Extract<DesktopEvent, { readonly type: "update" }>
 
 function populateSettings(): void {
   const current = configuration();
-  providerSelect.value = current.provider;
-  baseUrlInput.value = current.baseUrl;
-  modelInput.value = current.model;
+  if (isLocalProvider(current.provider)) {
+    providerSelect.value = current.provider;
+    baseUrlInput.value = current.baseUrl;
+    modelInput.value = current.model;
+    setSettingsTab("local");
+  } else {
+    byokProviderSelect.value = current.provider;
+    byokBaseUrl.value = current.baseUrl || byokBaseUrlForSelectedProvider();
+    byokModelInput.value = current.model;
+    setSettingsTab("byok");
+  }
   contextInput.value = String(current.contextWindow);
   permissionSelect.value = current.permission;
   internetAccessInput.checked = current.internetAccess;
   mcpServersInput.value = Object.keys(current.mcpServers).length ? JSON.stringify(current.mcpServers, null, 2) : "";
   checkUpdatesOnLaunch.checked = desktopState.updates.checkOnLaunch;
   autoDownloadUpdates.checked = desktopState.updates.autoDownload;
+  themeSelect.value = desktopThemeNames.includes(desktopState.theme.name) ? desktopState.theme.name : "default";
+  customThemeInput.value = desktopState.theme.name === "custom" && desktopState.theme.custom
+    ? JSON.stringify(desktopState.theme.custom, null, 2)
+    : "";
+  renderCustomThemeControls();
   renderMcpStatus();
 }
 
 async function applyConfiguration(next: DesktopConfiguration): Promise<void> {
-  const returned = await window.trussDesktop.configure(next);
+  const returned = await window.trussDesktop.configure(next, apiKeyInput.value || undefined);
+  apiKeyInput.value = "";
   desktopState = returned;
   await discover(next);
   renderRuntime();
@@ -1540,7 +1656,11 @@ element<HTMLButtonElement>("fileButton").onclick = () => { setCenterView("editor
 element<HTMLButtonElement>("diffButton").onclick = () => { setCenterView("editor"); if (activeFile) void openFile(activeFile, !showingDiff, true); };
 saveFileButton.onclick = () => void saveActiveFile();
 element<HTMLButtonElement>("settingsButton").onclick = () => { populateSettings(); settingsDialog.showModal(); };
-element<HTMLButtonElement>("dialogRefresh").onclick = () => void discover({ provider: providerSelect.value === "openai-compatible" ? "openai-compatible" : "ollama", baseUrl: baseUrlInput.value });
+element<HTMLButtonElement>("closeSettings").onclick = () => settingsDialog.close("cancel");
+element<HTMLButtonElement>("dialogRefresh").onclick = () => {
+  const provider = providerSelect.value as "ollama" | "openai-compatible";
+  void discover({ provider, baseUrl: baseUrlInput.value });
+};
 element<HTMLButtonElement>("applySettings").onclick = (event) => {
   event.preventDefault();
   try {
@@ -1553,10 +1673,36 @@ element<HTMLButtonElement>("applySettings").onclick = (event) => {
     notify(error instanceof Error ? error.message : String(error));
   }
 };
+clearApiKey.onclick = () => {
+  void window.trussDesktop.clearCredential(byokProviderSelect.value as DesktopProvider)
+    .then(() => { apiKeyInput.value = ""; notify("Stored provider key removed."); })
+    .catch((error: unknown) => notify(error instanceof Error ? error.message : String(error)));
+};
+themeSelect.onchange = () => {
+  renderCustomThemeControls();
+  if (themeSelect.value === "custom") {
+    applyTheme({ name: "custom", custom: desktopState.theme.name === "custom" ? desktopState.theme.custom : {} });
+    return;
+  }
+  void saveTheme({ name: themeSelect.value as Exclude<DesktopThemePreference["name"], "custom"> }).catch((error: unknown) => notify(error instanceof Error ? error.message : String(error)));
+};
+customThemeInput.oninput = () => {
+  try { applyTheme({ name: "custom", custom: parseCustomTheme() }); } catch { /* Keep the previous preview until the JSON is valid. */ }
+};
+saveCustomTheme.onclick = () => {
+  try { void saveTheme({ name: "custom", custom: parseCustomTheme() }).catch((error: unknown) => notify(error instanceof Error ? error.message : String(error))); } catch (error) { notify(error instanceof Error ? error.message : String(error)); }
+};
 checkUpdates.onclick = () => void window.trussDesktop.checkForUpdates().catch((error) => renderUpdate({ type: "update", status: "error", message: error instanceof Error ? error.message : String(error) }));
 downloadUpdate.onclick = () => void window.trussDesktop.downloadUpdate().catch((error) => renderUpdate({ type: "update", status: "error", message: error instanceof Error ? error.message : String(error) }));
 installUpdate.onclick = () => { void window.trussDesktop.installUpdate().catch((error) => renderUpdate({ type: "update", status: "error", message: error instanceof Error ? error.message : String(error) })); };
 endpointSelect.onchange = () => { if (!endpointSelect.value) return; const selected = JSON.parse(endpointSelect.value) as DesktopEndpoint; providerSelect.value = selected.kind; baseUrlInput.value = selected.baseUrl; void discover({ provider: selected.kind, baseUrl: selected.baseUrl }); };
+providerSelect.onchange = () => {
+  if (!isLocalProvider(configuration().provider)) baseUrlInput.value = providerSelect.value === "ollama" ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234/v1";
+};
+byokProviderSelect.onchange = () => { byokBaseUrl.value = byokBaseUrlForSelectedProvider(); };
+document.querySelectorAll<HTMLButtonElement>("[data-settings-tab]").forEach((button) => {
+  button.onclick = () => setSettingsTab(button.dataset.settingsTab === "byok" ? "byok" : button.dataset.settingsTab === "other" ? "other" : "local");
+});
 quickModel.onchange = () => { const next = quickModel.value; if (!next || next === configuration().model) return; void applyConfiguration({ ...configuration(), model: next }).catch((error) => notify(error instanceof Error ? error.message : String(error))); };
 document.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((button) => button.onclick = () => void applyConfiguration({ ...configuration(), mode: button.dataset.mode as DesktopConfiguration["mode"] }).catch((error) => notify(error instanceof Error ? error.message : String(error))));
 element<HTMLFormElement>("chatForm").onsubmit = (event) => { event.preventDefault(); void sendChat(); };
@@ -1639,6 +1785,7 @@ window.addEventListener("keydown", (event) => {
 window.trussDesktop.onEvent(handleEvent);
 void (async () => {
   desktopState = await window.trussDesktop.initialState();
+  applyTheme(desktopState.theme);
   populateSettings();
   await discover(desktopState.configuration);
   await Promise.all([loadFiles(), refreshGit(), window.trussDesktop.getPlan().then((plan) => { activePlan = plan; renderPlan(); })]);

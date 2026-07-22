@@ -57,6 +57,25 @@ describe("resolveConfiguration", () => {
     }
   });
 
+  it("resolves a cloud provider endpoint and its conventional BYOK environment variable", async () => {
+    const root = join(process.cwd(), ".test-workspaces", randomUUID());
+    const paths = { user: join(root, "user.json"), workspace: join(root, "workspace.json") };
+    await mkdir(root, { recursive: true });
+    try {
+      await writeFile(paths.user, JSON.stringify({ provider: "groq", model: "llama-test" }));
+      const resolved = await resolveConfiguration({ workspaceRoot: root, paths, environment: { GROQ_API_KEY: "private-key" } });
+
+      expect(resolved).toMatchObject({
+        provider: "groq",
+        baseUrl: "https://api.groq.com/openai/v1",
+        model: "llama-test",
+        apiKey: "private-key"
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("ignores workspace MCP commands until the user explicitly trusts them", async () => {
     const root = join(process.cwd(), ".test-workspaces", randomUUID());
     const paths = { user: join(root, "user.json"), workspace: join(root, "workspace.json") };

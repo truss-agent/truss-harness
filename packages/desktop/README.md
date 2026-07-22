@@ -1,6 +1,6 @@
 # Truss Desktop
 
-The Truss desktop client is a standalone local-first workspace for Ollama, LM Studio, llama.cpp server, and other OpenAI-compatible local endpoints.
+The Truss desktop client is a standalone local-first workspace for Ollama, LM Studio, llama.cpp server, other OpenAI-compatible local endpoints, and optional BYOK cloud providers.
 
 It uses the same TypeScript runtime as the CLI, TUI, and VS Code extension. The Electron main process owns filesystem access, terminals, tools, approvals, local-model configuration, and runtime sessions. The renderer has no Node access and communicates only through a narrow preload bridge.
 
@@ -26,6 +26,14 @@ chmod +x Truss-*.AppImage
 Install native packages with `apt install ./file.deb`, `dnf install ./file.rpm`, or `pacman -U ./file.pacman` as appropriate. Then start a local model server, open a workspace, select the endpoint and model in **Settings**, and choose a mode and permission policy.
 
 The Settings dialog also accepts an `mcpServers` JSON object for local stdio MCP servers. Agent mode loads enabled servers, Plan mode loads only servers marked `readOnly`, and MCP tool calls use the normal approval policy.
+
+## Bring your own key
+
+Settings are split into **Local provider**, **BYOK**, and **Other** tabs. In **BYOK**, choose OpenAI, Anthropic, OpenRouter, Groq, Together AI, Gemini, xAI, Mistral AI, DeepSeek, Perplexity, Fireworks AI, or NVIDIA NIM; enter its model ID and API key; then select **Apply**. The Desktop app encrypts the key with Electron secure storage before writing its local credential record. The regular desktop state file stores only provider and model configuration. Enter a new key to replace it, or use **Remove stored provider key** to delete it.
+
+## Themes
+
+The **Other** tab includes the default Truss palette plus Blue, Orange, and Multicolor presets. Choosing a preset saves it immediately and Desktop restores it on startup. Choose **Custom** to provide any subset of these `#RRGGBB` JSON tokens: `background`, `surface`, `panel`, `border`, `text`, `muted`, `accent`, `accentText`, `warning`, and `error`. Preview changes while editing, then select **Save custom theme** to persist them.
 
 The three-pane workspace supports a hierarchical file tree, multiple editor tabs, syntax-highlighted source previews, image and video previews, Git diffs, a workspace command terminal, persisted chat, plans, approvals, context and speed metrics, and optional public internet research. The collapsible **Git** section supports stage, unstage, generated commit messages, commit, pull, and push. Type `/` in chat to fuzzy-search and attach workspace files.
 

@@ -7,7 +7,7 @@ Truss is a local-first coding-agent runtime. The CLI runs one-shot agent tasks a
 ## Requirements
 
 - Node.js 20 or newer
-- Ollama, LM Studio, llama.cpp, or another compatible local model server
+- Ollama, LM Studio, llama.cpp, another compatible local server, or a supported cloud-provider API key
 - A model with native tool calling for Agent and Plan workflows
 
 ## Install
@@ -25,7 +25,7 @@ truss-cli help
 
 ## Interactive setup
 
-Run truss-cli setup after installation to discover local servers, choose a model, and save a default user-level profile. It is a command rather than an install-time prompt, so npm installs remain safe in CI and scripts.
+Run truss-cli setup after installation to discover a local server or configure a cloud BYOK profile, then save it as the default user-level profile. Cloud setup stores only the provider, model, and environment-variable name; it never writes the key itself. It is a command rather than an install-time prompt, so npm installs remain safe in CI and scripts.
 
 ## First run
 
@@ -97,6 +97,28 @@ truss-cli commands             Show slash commands used by interactive clients
 ```
 
 Keep endpoint tokens out of JSON. Set the token in an environment variable and place that variable's name in `apiKeyEnv`.
+
+## Bring your own key
+
+The API-key cloud-provider rollout supports `openai`, `anthropic`, `openrouter`, `groq`, `together`, `gemini`, `xai`, `mistral`, `deepseek`, `perplexity`, `fireworks`, and `nvidia-nim`. Truss supplies each provider's documented endpoint and reads its conventional environment variable, so a profile only needs a provider and model:
+
+```json
+{
+  "defaultProfile": "groq",
+  "profiles": {
+    "groq": {
+      "provider": "groq",
+      "model": "your-tool-capable-model",
+      "mode": "edit",
+      "permission": "ask"
+    }
+  }
+}
+```
+
+Set the matching credential outside the configuration file: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `TOGETHER_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `PERPLEXITY_API_KEY`, `FIREWORKS_API_KEY`, or `NVIDIA_API_KEY`. `TRUSS_HARNESS_API_KEY` remains available for custom OpenAI-compatible endpoints, and `apiKeyEnv` can name a different environment variable in a profile.
+
+Anthropic's current compatibility endpoint is intended primarily for evaluation; use it as an initial BYOK path while a native adapter is developed. OAuth/account sign-in, AWS IAM signing, Azure Entra, and client keychain UI are not part of this first rollout.
 
 MCP stdio servers can be defined under `mcpServers`. User-level definitions load normally. Workspace definitions can launch local processes and are ignored unless the user configuration sets `"allowWorkspaceMcpServers": true`. Plan mode loads only servers marked `"readOnly": true`; Agent mode loads all enabled servers. MCP calls follow the selected approval policy.
 

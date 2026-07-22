@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/provider-openai-compatible",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "OpenAI-compatible streaming model provider for Truss.",
   "type": "module",
   "exports": {
@@ -42,6 +42,6 @@
     "access": "public"
   },
   "dependencies": {
-    "@truss-harness/runtime": "0.1.0"
+    "@truss-harness/runtime": "0.1.1"
   }
 }
