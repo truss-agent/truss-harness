@@ -6,6 +6,9 @@
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
+    "android:device": "expo run:android --device",
+    "android:release:device": "expo run:android --device --variant release",
+    "android:apk:local": "npx eas-cli build --local --platform android --profile preview",
     "ios": "expo start --ios",
     "typecheck": "tsc --noEmit"
   },
