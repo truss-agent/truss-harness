@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { OllamaProvider, OpenAICompatibleProvider, detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, generateLocalText, listLocalModels, normalizeLocalBaseUrl } from "./index.js";
+import { OllamaProvider, OpenAICompatibleProvider, cloudProviderDefinitions, createCloudModelProvider, detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, generateLocalText, listLocalModels, normalizeLocalBaseUrl } from "./index.js";
+import type { CredentialProvider } from "@truss-harness/runtime";
 
 describe("OpenAICompatibleProvider", () => {
   it("repairs LM Studio's root endpoint without changing custom compatible endpoints", () => {
@@ -95,6 +96,64 @@ describe("OpenAICompatibleProvider", () => {
       { type: "text", text: "Review these.\n\nAttached file: notes.md (text/markdown, 7 bytes)\n\n# Notes" },
       { type: "image_url", image_url: { url: "data:image/png;base64,AA==" } }
     ]);
+  });
+
+  it("resolves credentials when sending and retries once after an authentication refresh", async () => {
+    let token = "expired";
+    let refreshes = 0;
+    const authorizations: string[] = [];
+    const credential: CredentialProvider = {
+      id: "refreshable",
+      async resolve() { return { kind: "bearer", token }; },
+      async refresh() { refreshes++; token = "fresh"; }
+    };
+    const provider = new OpenAICompatibleProvider({
+      baseUrl: "https://example.com/v1",
+      model: "test",
+      credential,
+      fetch: async (_url, init) => {
+        authorizations.push(new Headers(init?.headers).get("authorization") ?? "");
+        return authorizations.length === 1
+          ? new Response("sensitive upstream error", { status: 401 })
+          : new Response('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+      }
+    });
+
+    for await (const _event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
+    expect(authorizations).toEqual(["Bearer expired", "Bearer fresh"]);
+    expect(refreshes).toBe(1);
+  });
+
+  it("does not include provider response bodies in request errors", async () => {
+    const provider = new OpenAICompatibleProvider({
+      baseUrl: "https://example.com/v1",
+      model: "test",
+      fetch: async () => new Response("secret echoed by provider", { status: 400 })
+    });
+
+    const consume = async (): Promise<void> => {
+      for await (const _event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
+    };
+    await expect(consume()).rejects.toThrow("Model request failed (400).");
+    await expect(consume()).rejects.not.toThrow("secret echoed by provider");
+  });
+
+  it("offers typed BYOK definitions for supported cloud providers", async () => {
+    expect(cloudProviderDefinitions.map(({ id }) => id)).toEqual(["openai", "anthropic", "openrouter", "groq", "together", "gemini", "xai", "mistral", "deepseek", "perplexity", "fireworks", "nvidia-nim"]);
+    let url = "";
+    const provider = createCloudModelProvider({
+      provider: "gemini",
+      model: "gemini-test",
+      credential: { id: "gemini-key", async resolve() { return { kind: "bearer", token: "secret" }; } },
+      fetch: async (input) => {
+        url = String(input);
+        return new Response('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+      }
+    });
+
+    for await (const _event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
+    expect(provider.id).toBe("gemini");
+    expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
   });
 });
 

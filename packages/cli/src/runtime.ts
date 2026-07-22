@@ -1,4 +1,4 @@
-import { createLocalModelProvider, type LocalEndpointKind } from "@truss-harness/provider-openai-compatible";
+import { cloudProviderDefinition, createCloudModelProvider, createLocalModelProvider, isCloudProviderId, isLocalEndpointKind, type ModelProviderKind } from "@truss-harness/provider-openai-compatible";
 import { parseMcpServerConfigurations, registerMcpServers, type McpServerConfigurations, type McpServerStatus } from "@truss-harness/mcp";
 import {
   AgentRuntime,
@@ -17,6 +17,8 @@ import {
   registerCoreTools,
   registerWebTools,
   searchFilesTool,
+  ApiKeyCredential,
+  type CredentialProvider,
   type ToolApproval,
   type RuntimeEvent
 } from "@truss-harness/runtime";
@@ -25,10 +27,11 @@ export type AgentMode = "chat" | "plan" | "edit";
 
 export interface ClientRuntimeOptions {
   readonly workspaceRoot: string;
-  readonly provider: LocalEndpointKind;
+  readonly provider: ModelProviderKind;
   readonly baseUrl: string;
   readonly model: string;
   readonly apiKey?: string;
+  readonly credential?: CredentialProvider;
   readonly systemPrompt?: string;
   readonly approval?: ToolApproval;
   readonly mode?: AgentMode;
@@ -48,6 +51,13 @@ export async function createClientRuntime(options: ClientRuntimeOptions): Promis
   const tools = new ToolRegistry();
   const memory = new FileWorkspaceMemoryStore(options.workspaceRoot);
   const plans = new FileWorkspacePlanStore(options.workspaceRoot);
+  const credential = options.credential ?? (options.apiKey ? new ApiKeyCredential(`${options.provider}-api-key`, options.apiKey) : undefined);
+  if (!isLocalEndpointKind(options.provider) && !credential) {
+    throw new Error(`Provider '${options.provider}' requires a credential.`);
+  }
+  const provider = isLocalEndpointKind(options.provider)
+    ? createLocalModelProvider({ kind: options.provider, baseUrl: options.baseUrl, model: options.model, credential })
+    : createCloudModelProvider({ provider: options.provider, model: options.model, credential: credential as CredentialProvider });
   const mode = options.mode ?? "chat";
   if (mode === "edit") {
     registerCoreTools(tools);
@@ -72,12 +82,7 @@ export async function createClientRuntime(options: ClientRuntimeOptions): Promis
     mcpServers: mcp.statuses,
     dispose: () => mcp.close(),
     runtime: new AgentRuntime({
-      provider: createLocalModelProvider({
-        kind: options.provider,
-        baseUrl: options.baseUrl,
-        model: options.model,
-        apiKey: options.apiKey
-      }),
+      provider,
       tools,
       sessions: new InMemorySessionStore(),
       context: new CompositeContextManager([new WorkspacePlanContextProvider(plans), new WorkspaceMemoryContextProvider(memory)]),
@@ -99,11 +104,12 @@ export async function createClientRuntime(options: ClientRuntimeOptions): Promis
 export interface ClientConfiguration extends ClientRuntimeOptions {}
 
 export function configurationFromEnvironment(workspaceRoot: string, environment: NodeJS.ProcessEnv = process.env): ClientConfiguration {
-  const provider = environment.TRUSS_HARNESS_PROVIDER === "openai-compatible" ? "openai-compatible" : "ollama";
+  const configuredProvider = environment.TRUSS_HARNESS_PROVIDER;
+  const provider: ModelProviderKind = isLocalEndpointKind(configuredProvider) || isCloudProviderId(configuredProvider) ? configuredProvider : "ollama";
   const mode = environment.TRUSS_HARNESS_AGENT_MODE === "edit" || environment.TRUSS_HARNESS_AGENT_MODE === "plan"
     ? environment.TRUSS_HARNESS_AGENT_MODE
     : "chat";
-  const baseUrl = environment.TRUSS_HARNESS_BASE_URL ?? (provider === "ollama" ? "http://localhost:11434" : "http://localhost:1234/v1");
+  const baseUrl = environment.TRUSS_HARNESS_BASE_URL ?? (provider === "ollama" ? "http://localhost:11434" : provider === "openai-compatible" ? "http://localhost:1234/v1" : cloudProviderDefinition(provider).baseUrl);
   const model = environment.TRUSS_HARNESS_MODEL;
   if (!model) {
     throw new Error("Set TRUSS_HARNESS_MODEL to the model name exposed by your OpenAI-compatible server.");
@@ -114,7 +120,7 @@ export function configurationFromEnvironment(workspaceRoot: string, environment:
     provider,
     baseUrl,
     model,
-    apiKey: environment.TRUSS_HARNESS_API_KEY,
+    apiKey: environment.TRUSS_HARNESS_API_KEY ?? (isCloudProviderId(provider) ? environment[cloudProviderDefinition(provider).apiKeyEnvironmentVariable] : undefined),
     systemPrompt: environment.TRUSS_HARNESS_SYSTEM_PROMPT,
     mode,
     internetAccess: environment.TRUSS_HARNESS_INTERNET_ACCESS === "true" || environment.TRUSS_HARNESS_INTERNET_ACCESS === "1",

@@ -1,6 +1,6 @@
 # <Brand /> Desktop App
 
-The desktop app is a standalone local-first workspace for Ollama, LM Studio, llama.cpp server, and compatible local endpoints. It runs the same runtime, tools, sessions, approvals, and provider configuration as the other Truss clients.
+The desktop app is a standalone local-first workspace for Ollama, LM Studio, llama.cpp server, compatible local endpoints, and optional BYOK cloud providers. It runs the same runtime, tools, sessions, approvals, and provider configuration as the other Truss clients.
 
 ## Install
 
@@ -29,6 +29,14 @@ chmod +x Truss-*.AppImage
 Install a native Linux package with your distribution's package manager, such as `sudo apt install ./file.deb`, `sudo dnf install ./file.rpm`, or `sudo pacman -U ./file.pacman`.
 
 Open the app, choose a workspace, then select a detected local server and model in **Settings**. A custom compatible endpoint can be entered manually.
+
+## Bring your own key
+
+Settings are separated into **Local provider**, **BYOK**, and **Other** tabs. In **BYOK**, select OpenAI, Anthropic, OpenRouter, Groq, Together AI, Gemini, xAI, Mistral AI, DeepSeek, Perplexity, Fireworks AI, or NVIDIA NIM, then supply a model ID and API key. Truss encrypts the key through Electron's platform secure-storage service before storing it locally; the normal desktop state file contains no raw credential. Leave the API-key field blank when changing other settings to keep the saved key, or select **Remove stored provider key** to delete it.
+
+## Themes
+
+The **Other** tab has the default Truss palette plus Blue, Orange, and Multicolor presets. A preset saves immediately and is restored when Desktop starts. Select **Custom** to provide a JSON object containing any subset of `background`, `surface`, `panel`, `border`, `text`, `muted`, `accent`, `accentText`, `warning`, and `error`; each value must be a `#RRGGBB` color. Custom input previews while you edit it. Select **Save custom theme** when the palette is ready to persist.
 
 ## Updates
 

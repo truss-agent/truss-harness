@@ -5,6 +5,7 @@
 - Node.js 20 or newer
 - npm 10 or newer
 - A local model server such as Ollama, LM Studio, or llama.cpp
+- Or an API key for a supported BYOK cloud provider
 - Git for commit-message generation
 
 ## Install
@@ -47,6 +48,8 @@ truss-cli chat "Explain this workspace."
 ```
 
 If no local server is running, configure a profile first. See [Configuration](/docs/configuration).
+
+For a cloud model, set `TRUSS_HARNESS_PROVIDER`, `TRUSS_HARNESS_MODEL`, and the matching provider key environment variable before running `truss-cli chat`. See [Configuration](/docs/configuration#bring-your-own-key-byok).
 
 ## Run a first agent task
 

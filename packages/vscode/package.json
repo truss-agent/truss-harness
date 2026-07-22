@@ -2,7 +2,7 @@
   "name": "truss-harness-vscode",
   "displayName": "Truss",
   "description": "VS Code client for the Truss runtime.",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "publisher": "truss-harness",
   "repository": {
     "type": "git",
@@ -23,6 +23,8 @@
     "onView:trussHarness.chat",
     "onCommand:trussHarness.openChat",
     "onCommand:trussHarness.connectTrussGo",
+    "onCommand:trussHarness.configureByokProvider",
+    "onCommand:trussHarness.removeByokCredential",
     "onCommand:trussHarness.generateCommitMessage",
     "onCommand:trussHarness.initializeWorkspace",
     "onCommand:trussHarness.updateWorkspaceMemory",
@@ -60,6 +62,14 @@
       {
         "command": "trussHarness.connectTrussGo",
         "title": "Truss: Connect Truss Go"
+      },
+      {
+        "command": "trussHarness.configureByokProvider",
+        "title": "Truss: Configure BYOK Provider"
+      },
+      {
+        "command": "trussHarness.removeByokCredential",
+        "title": "Truss: Remove BYOK Provider Key"
       },
       {
         "command": "trussHarness.generateCommitMessage",
@@ -119,12 +129,12 @@
     "prepublishOnly": "npm run package"
   },
   "dependencies": {
-    "@truss-harness/gateway": "^0.1.0",
+    "@truss-harness/gateway": "0.1.1",
     "@types/qrcode": "^1.5.6",
     "qrcode": "^1.5.4",
     "@truss-harness/branding": "0.1.0",
-    "@truss-harness/provider-openai-compatible": "0.1.0",
-    "@truss-harness/runtime": "0.1.0"
+    "@truss-harness/provider-openai-compatible": "0.1.1",
+    "@truss-harness/runtime": "0.1.1"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, protocol, shell, type OpenDialogOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, protocol, safeStorage, shell, type OpenDialogOptions } from "electron";
 import { autoUpdater } from "electron-updater";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -12,9 +12,9 @@ import { brand } from "@truss-harness/branding";
 import { createClientRuntime, type ClientConfiguration } from "@truss-harness/cli/runtime";
 import { createPairingUri, detectLanAddress, startRemoteGateway, type RunningRemoteGateway } from "@truss-harness/gateway";
 import { parseMcpServerConfigurations } from "@truss-harness/mcp";
-import { detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, generateLocalText, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
+import { cloudProviderDefinition, detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, generateLocalText, isCloudProviderId, isLocalEndpointKind, listLocalModels, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import { executeWorkspaceCommand, FileWorkspacePlanStore, type ChatAttachment, type ContextBlock, type ToolApproval, type ToolCall } from "@truss-harness/runtime";
-import type { DesktopConfiguration, DesktopConversation, DesktopEndpoint, DesktopEvent, DesktopFile, DesktopGitStatus, DesktopMessage, DesktopState } from "./shared.js";
+import { desktopThemeNames, type DesktopConfiguration, type DesktopConversation, type DesktopEndpoint, type DesktopEvent, type DesktopFile, type DesktopGitStatus, type DesktopMessage, type DesktopState, type DesktopProvider, type DesktopThemePalette, type DesktopThemePreference } from "./shared.js";
 import QRCode from "qrcode";
 
 const execFile = promisify(execFileCallback);
@@ -38,7 +38,8 @@ protocol.registerSchemesAsPrivileged([{
 interface PersistedState extends DesktopState {}
 
 let mainWindow: BrowserWindow | undefined;
-let persisted: PersistedState = { workspaceRoot: process.cwd(), updates: { checkOnLaunch: true, autoDownload: false }, conversations: [] };
+const defaultTheme: DesktopThemePreference = { name: "default" };
+let persisted: PersistedState = { workspaceRoot: process.cwd(), updates: { checkOnLaunch: true, autoDownload: false }, theme: defaultTheme, conversations: [] };
 let runtimeClient: Awaited<ReturnType<typeof createClientRuntime>> | undefined;
 let unsubscribeEvents: (() => void) | undefined;
 let activeSessionId: string | undefined;
@@ -123,6 +124,50 @@ function statePath(): string {
   return join(app.getPath("userData"), "desktop-state.json");
 }
 
+function credentialPath(): string {
+  return join(app.getPath("userData"), "credentials.json");
+}
+
+async function readCredentials(): Promise<Readonly<Record<string, string>>> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(credentialPath(), "utf8"));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return Object.fromEntries(Object.entries(parsed).filter(([, value]) => typeof value === "string")) as Readonly<Record<string, string>>;
+  } catch {
+    return {};
+  }
+}
+
+function ensureSecureStorage(): void {
+  if (!safeStorage.isEncryptionAvailable()) throw new Error("Secure credential storage is unavailable on this system.");
+}
+
+async function storedCredential(provider: DesktopProvider): Promise<string | undefined> {
+  if (!isCloudProviderId(provider)) return undefined;
+  ensureSecureStorage();
+  const encoded = (await readCredentials())[provider];
+  if (!encoded) return undefined;
+  try {
+    return safeStorage.decryptString(Buffer.from(encoded, "base64"));
+  } catch {
+    throw new Error(`The stored ${cloudProviderDefinition(provider).label} credential could not be decrypted. Remove it and configure the provider again.`);
+  }
+}
+
+async function saveCredential(provider: DesktopProvider, value: string): Promise<void> {
+  if (!isCloudProviderId(provider)) return;
+  ensureSecureStorage();
+  const credentials = await readCredentials();
+  await writeFile(credentialPath(), `${JSON.stringify({ ...credentials, [provider]: safeStorage.encryptString(value).toString("base64") }, null, 2)}\n`, "utf8");
+}
+
+async function removeCredential(provider: DesktopProvider): Promise<void> {
+  if (!isCloudProviderId(provider)) return;
+  const credentials = await readCredentials();
+  const { [provider]: _removed, ...remaining } = credentials;
+  await writeFile(credentialPath(), `${JSON.stringify(remaining, null, 2)}\n`, "utf8");
+}
+
 async function loadPersistedState(): Promise<void> {
   try {
     const parsed = JSON.parse(await readFile(statePath(), "utf8")) as Partial<PersistedState>;
@@ -132,11 +177,12 @@ async function loadPersistedState(): Promise<void> {
       updates: parsed.updates && typeof parsed.updates === "object"
         ? { checkOnLaunch: (parsed.updates as { checkOnLaunch?: unknown }).checkOnLaunch !== false, autoDownload: (parsed.updates as { autoDownload?: unknown }).autoDownload === true }
         : { checkOnLaunch: true, autoDownload: false },
+      theme: isThemePreference(parsed.theme) ? parsed.theme : defaultTheme,
       conversations: Array.isArray(parsed.conversations) ? parsed.conversations.slice(0, 30) : [],
       activeConversationId: typeof parsed.activeConversationId === "string" ? parsed.activeConversationId : undefined
     };
   } catch {
-    persisted = { workspaceRoot: process.cwd(), updates: { checkOnLaunch: true, autoDownload: false }, conversations: [] };
+    persisted = { workspaceRoot: process.cwd(), updates: { checkOnLaunch: true, autoDownload: false }, theme: defaultTheme, conversations: [] };
   }
 }
 
@@ -147,7 +193,7 @@ async function persistState(): Promise<void> {
 function isConfiguration(value: unknown): value is DesktopConfiguration {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<DesktopConfiguration>;
-  return (candidate.provider === "ollama" || candidate.provider === "openai-compatible")
+  return (isLocalEndpointKind(candidate.provider) || isCloudProviderId(candidate.provider))
     && typeof candidate.baseUrl === "string"
     && typeof candidate.model === "string"
     && (candidate.mode === "chat" || candidate.mode === "plan" || candidate.mode === "edit")
@@ -159,7 +205,7 @@ function isConfiguration(value: unknown): value is DesktopConfiguration {
 function normalizeConfiguration(value: DesktopConfiguration): DesktopConfiguration {
   return {
     ...value,
-    baseUrl: value.baseUrl.trim(),
+    baseUrl: isCloudProviderId(value.provider) ? cloudProviderDefinition(value.provider).baseUrl : value.baseUrl.trim(),
     model: value.model.trim(),
     contextWindow: Math.max(512, Math.min(1_000_000, Math.floor(value.contextWindow || 8_192))),
     internetAccess: value.internetAccess ?? false,
@@ -167,11 +213,32 @@ function normalizeConfiguration(value: DesktopConfiguration): DesktopConfigurati
   };
 }
 
-function localEndpoint(configuration: Pick<DesktopConfiguration, "provider" | "baseUrl">): LocalModelEndpoint {
+function isLocalConfiguration(configuration: DesktopConfiguration): configuration is DesktopConfiguration & { readonly provider: "ollama" | "openai-compatible" } {
+  return isLocalEndpointKind(configuration.provider);
+}
+
+function isColor(value: unknown): value is string {
+  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
+}
+
+function isThemePalette(value: unknown): value is DesktopThemePalette {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  return Object.values(value as Record<string, unknown>).every(isColor);
+}
+
+function isThemePreference(value: unknown): value is DesktopThemePreference {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<DesktopThemePreference>;
+  return typeof candidate.name === "string"
+    && desktopThemeNames.includes(candidate.name as DesktopThemePreference["name"])
+    && (candidate.custom === undefined || isThemePalette(candidate.custom));
+}
+
+function localEndpoint(configuration: Pick<DesktopConfiguration, "baseUrl"> & { readonly provider: "ollama" | "openai-compatible" }): LocalModelEndpoint {
   return { id: "configured", label: "Configured endpoint", kind: configuration.provider, baseUrl: configuration.baseUrl };
 }
 
-function clientConfiguration(configuration: DesktopConfiguration): ClientConfiguration {
+async function clientConfiguration(configuration: DesktopConfiguration): Promise<ClientConfiguration> {
   const approval: ToolApproval = {
     approve(call: ToolCall): Promise<boolean> {
       const readOnly = ["read_file", "list_directory", "search_files", "grep"].includes(call.name);
@@ -184,9 +251,10 @@ function clientConfiguration(configuration: DesktopConfiguration): ClientConfigu
   };
   return {
     workspaceRoot: persisted.workspaceRoot,
-    provider: configuration.provider,
+    provider: configuration.provider as ClientConfiguration["provider"],
     baseUrl: configuration.baseUrl,
     model: configuration.model,
+    apiKey: await storedCredential(configuration.provider),
     mode: configuration.mode,
     internetAccess: configuration.internetAccess,
     mcpServers: configuration.mcpServers,
@@ -219,7 +287,7 @@ async function connectTrussGo(): Promise<{ readonly workspaceName: string; reado
     token, host: address, port: 0,
     workspaces: [{ id: "active-workspace", displayName: basename(persisted.workspaceRoot), createRuntime: async (mode) => {
       const approval = mobileApproval();
-      const client = await createClientRuntime({ ...clientConfiguration(configuration), mode, approval });
+      const client = await createClientRuntime({ ...(await clientConfiguration(configuration)), mode, approval });
       trussGoClients.push(client);
       return { runtime: client.runtime, events: client.events, approval, dispose: client.dispose };
     } }]
@@ -260,7 +328,7 @@ async function disposeRuntime(): Promise<void> {
 
 async function configureRuntime(configuration: DesktopConfiguration): Promise<void> {
   await disposeRuntime();
-  runtimeClient = await createClientRuntime(clientConfiguration(configuration));
+  runtimeClient = await createClientRuntime(await clientConfiguration(configuration));
   persisted = { ...persisted, mcpStatuses: runtimeClient.mcpServers };
   unsubscribeEvents = runtimeClient.events.subscribe((event) => send({ type: "agent", conversationId: sessionConversationIds.get(event.sessionId), event }));
 }
@@ -376,6 +444,7 @@ function compactCommitDiff(diff: string, contextWindow: number): string {
 async function generateCommitMessage(): Promise<string> {
   const configuration = persisted.configuration;
   if (!configuration?.model) throw new Error("Choose a local model before generating a commit message.");
+  if (!isLocalConfiguration(configuration)) throw new Error("Commit-message generation for cloud providers will use the shared agent runtime in the next Desktop slice.");
 
   let diff = await gitOutput(["diff", "--cached", "--no-ext-diff"]);
   if (!diff.trim()) diff = await gitOutput(["diff", "--no-ext-diff"]);
@@ -594,6 +663,12 @@ app.on("before-quit", () => {
 });
 
 ipcMain.handle("truss:initial-state", (): DesktopState => persisted);
+ipcMain.handle("truss:configure-theme", async (_event, theme: DesktopThemePreference): Promise<DesktopState> => {
+  if (!isThemePreference(theme)) throw new Error("Choose a valid desktop theme and use #RRGGBB colors for custom palette values.");
+  persisted = { ...persisted, theme: theme.name === "custom" ? { name: "custom", custom: theme.custom ?? {} } : { name: theme.name } };
+  await persistState();
+  return persisted;
+});
 ipcMain.handle("truss:configure-updates", async (_event, updates: { readonly checkOnLaunch: boolean; readonly autoDownload: boolean }): Promise<DesktopState> => {
   persisted = {
     ...persisted,
@@ -634,9 +709,9 @@ ipcMain.handle("truss:save-conversations", async (_event, conversations: readonl
   await persistState();
 });
 ipcMain.handle("truss:discover-models", async (_event, partial?: Partial<DesktopConfiguration>) => {
-  const configuration = partial?.baseUrl && (partial.provider === "ollama" || partial.provider === "openai-compatible")
+  const configuration = partial?.baseUrl && isLocalEndpointKind(partial.provider)
     ? { provider: partial.provider, baseUrl: partial.baseUrl }
-    : persisted.configuration ? { provider: persisted.configuration.provider, baseUrl: persisted.configuration.baseUrl } : undefined;
+    : persisted.configuration && isLocalConfiguration(persisted.configuration) ? { provider: persisted.configuration.provider, baseUrl: persisted.configuration.baseUrl } : undefined;
   const endpoints = await detectLocalEndpoints();
   const endpoint = configuration ? localEndpoint(configuration) : endpoints[0];
   let models: readonly string[] = [];
@@ -668,10 +743,16 @@ ipcMain.handle("truss:refresh-local-model", async (): Promise<DesktopState> => {
   await persistState();
   return persisted;
 });
-ipcMain.handle("truss:configure", async (_event, input: DesktopConfiguration): Promise<DesktopState> => {
+ipcMain.handle("truss:configure", async (_event, input: DesktopConfiguration, apiKey?: string): Promise<DesktopState> => {
   let next = normalizeConfiguration(input);
-  if (!next.baseUrl || !next.model) throw new Error("A local endpoint and model are required.");
-  const detectedContextWindow = await detectLocalContextWindow(localEndpoint(next), next.model).catch(() => undefined);
+  if (!next.baseUrl || !next.model) throw new Error("An endpoint and model are required.");
+  if (apiKey?.trim()) await saveCredential(next.provider, apiKey.trim());
+  if (isCloudProviderId(next.provider) && !(await storedCredential(next.provider))) {
+    throw new Error(`Enter an API key for ${cloudProviderDefinition(next.provider).label}.`);
+  }
+  const detectedContextWindow = isLocalConfiguration(next)
+    ? await detectLocalContextWindow(localEndpoint(next), next.model).catch(() => undefined)
+    : undefined;
   if (detectedContextWindow) next = { ...next, contextWindow: detectedContextWindow };
   const previous = persisted.configuration;
   persisted = { ...persisted, configuration: next };
@@ -679,6 +760,11 @@ ipcMain.handle("truss:configure", async (_event, input: DesktopConfiguration): P
   if (previous?.model !== next.model || previous?.baseUrl !== next.baseUrl || previous?.provider !== next.provider) void releaseOllamaModel(previous);
   await persistState();
   return persisted;
+});
+ipcMain.handle("truss:clear-credential", async (_event, provider: DesktopProvider): Promise<void> => {
+  if (!isCloudProviderId(provider)) return;
+  await removeCredential(provider);
+  if (persisted.configuration?.provider === provider) await disposeRuntime();
 });
 ipcMain.handle("truss:send-chat", (_event, input) => runChat(input));
 ipcMain.handle("truss:stop-chat", (): void => activeAbort?.abort());

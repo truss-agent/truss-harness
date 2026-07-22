@@ -3,14 +3,14 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { brand } from "@truss-harness/branding";
 import { parseMcpServerConfigurations, type McpServerConfigurations } from "@truss-harness/mcp";
-import { detectActiveLocalModel, type LocalEndpointKind } from "@truss-harness/provider-openai-compatible";
+import { cloudProviderDefinition, detectActiveLocalModel, isCloudProviderId, isLocalEndpointKind, type ModelProviderKind } from "@truss-harness/provider-openai-compatible";
 import type { AgentMode, ClientConfiguration } from "./runtime.js";
 import type { PermissionMode } from "./protocol.js";
 
 export type TuiThemeName = "forest" | "sage" | "dusk";
 
 export interface ProfileConfiguration {
-  readonly provider?: LocalEndpointKind;
+  readonly provider?: ModelProviderKind;
   readonly baseUrl?: string;
   readonly model?: string;
   readonly mode?: AgentMode;
@@ -47,8 +47,8 @@ export interface ConfigurationPaths {
   readonly workspace: string;
 }
 
-function validProvider(value: unknown): LocalEndpointKind | undefined {
-  return value === "ollama" || value === "openai-compatible" ? value : undefined;
+function validProvider(value: unknown): ModelProviderKind | undefined {
+  return isLocalEndpointKind(value) || isCloudProviderId(value) ? value : undefined;
 }
 
 function validMode(value: unknown): AgentMode | undefined {
@@ -196,13 +196,16 @@ export async function resolveConfiguration(options: {
   let model = merged.model;
   if (!model) {
     const hasConfiguredEndpoint = merged.provider !== undefined || baseUrl !== undefined;
+    if (!isLocalEndpointKind(provider)) {
+      baseUrl ??= cloudProviderDefinition(provider).baseUrl;
+    }
     const configuredEndpoint = hasConfiguredEndpoint ? [{
       id: "configured",
       label: "Configured endpoint",
-      kind: provider,
+      kind: isLocalEndpointKind(provider) ? provider : "openai-compatible",
       baseUrl: baseUrl ?? (provider === "ollama" ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234/v1")
     }] : undefined;
-    const detected = await detectActiveLocalModel({ endpoints: configuredEndpoint });
+    const detected = isLocalEndpointKind(provider) ? await detectActiveLocalModel({ endpoints: configuredEndpoint }) : undefined;
     if (detected) {
       provider = detected.endpoint.kind;
       baseUrl = detected.endpoint.baseUrl;
@@ -210,11 +213,15 @@ export async function resolveConfiguration(options: {
     }
   }
   if (!model) throw new Error(`Set a model with --model, TRUSS_HARNESS_MODEL, a ${brand.productName} config profile, or start a local model server.`);
-  const apiKey = merged.apiKeyEnv ? environment[merged.apiKeyEnv] : undefined;
+  const apiKey = merged.apiKeyEnv
+    ? environment[merged.apiKeyEnv]
+    : isCloudProviderId(provider)
+      ? environment[cloudProviderDefinition(provider).apiKeyEnvironmentVariable]
+      : undefined;
   return {
     workspaceRoot: options.workspaceRoot,
     provider,
-    baseUrl: baseUrl ?? (provider === "ollama" ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234/v1"),
+    baseUrl: baseUrl ?? (provider === "ollama" ? "http://127.0.0.1:11434" : provider === "openai-compatible" ? "http://127.0.0.1:1234/v1" : cloudProviderDefinition(provider).baseUrl),
     model,
     mode: merged.mode ?? "chat",
     permission: merged.permission ?? "ask",
@@ -288,7 +295,7 @@ export async function saveUserProfile(
 }
 
 export function parseConfigurationOverrides(arguments_: readonly string[]): { readonly overrides: ConfigurationOverrides; readonly rest: readonly string[] } {
-  const overrides: { profile?: string; provider?: LocalEndpointKind; baseUrl?: string; model?: string; mode?: AgentMode; permission?: PermissionMode; internetAccess?: boolean } = {};
+  const overrides: { profile?: string; provider?: ModelProviderKind; baseUrl?: string; model?: string; mode?: AgentMode; permission?: PermissionMode; internetAccess?: boolean } = {};
   const rest: string[] = [];
   for (let index = 0; index < arguments_.length; index++) {
     const argument = arguments_[index];
@@ -300,7 +307,7 @@ export function parseConfigurationOverrides(arguments_: readonly string[]): { re
     if (argument === "--profile") overrides.profile = value();
     else if (argument === "--provider") {
       const provider = validProvider(value());
-      if (!provider) throw new Error("--provider must be ollama or openai-compatible");
+      if (!provider) throw new Error("--provider must be a supported local or cloud provider; run truss-cli --help for the list.");
       overrides.provider = provider;
     } else if (argument === "--base-url") overrides.baseUrl = value();
     else if (argument === "--model") overrides.model = value();
