@@ -1,4 +1,6 @@
 import { brand } from "@truss-harness/branding";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import type { Metadata, Viewport } from "next";
 import { siteUrl } from "./site-metadata";
 import "./site.css";
@@ -67,6 +69,8 @@ export default function RootLayout({
       <body>
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }} />
         {children}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
