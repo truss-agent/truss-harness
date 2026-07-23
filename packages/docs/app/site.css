@@ -2196,7 +2196,25 @@ body {
 .site-clients { padding-bottom: 112px; padding-top: 112px; }
 .site-foundations { margin-top: 34px; }
 
-/* Use one consistent 80% content rail across the site. */
+/* Keep the client cards visually connected to their centered introduction. */
+.site-clients { gap: 32px; }
+.site-clients { padding-inline: 0; }
+.site-clients .site-section-heading { margin-bottom: 0; }
+.site-clients .site-section-subtitle { margin-top: 24px; }
+
+/* Let page-level panels meet the same outer rail as the footer. */
+.site-page,
+.client-page,
+.truss-go-page { padding-inline: 0; }
+
+.site-page > section,
+.client-page > section,
+.truss-go-page > section {
+    max-width: none;
+    width: 100%;
+}
+
+/* Use the footer's wider content rail for every marketing-page shell. */
 .site-header-inner,
 .site-hero,
 .site-page,
@@ -2207,8 +2225,8 @@ body {
 .site-foundations,
 .site-clients,
 .site-principles {
-    max-width: none;
-    width: 80%;
+    max-width: 1180px;
+    width: calc(100% - 56px);
 }
 .site-foundations .site-principles { width: 100%; }
 .about-foundations { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -2262,7 +2280,7 @@ body {
     .site-footer { margin-left: auto; margin-right: auto; }
     .site-band,
     .site-foundations { margin-top: 22px; }
-    .site-clients { padding-bottom: 72px; padding-top: 72px; }
+    .site-clients { gap: 28px; padding-bottom: 72px; padding-top: 72px; }
     .site-hero h1 { font-size: clamp(2.65rem, 12vw, 3.5rem); }
 }
 
@@ -2530,6 +2548,38 @@ body {
     .download-hero {
         gap: 28px;
     }
+
+    .download-hero { min-height: 0; }
+    .download-hero .download-intro { padding: 48px 0 0; }
+    .download-hero-screenshot { margin-top: 10px; }
+}
+
+/* The pairing diagram's fixed device widths need a vertical layout on narrow phones. */
+@media (max-width: 460px) {
+    .truss-go-pairing {
+        flex-direction: column;
+        gap: 12px;
+        min-height: 0;
+        padding: 24px 18px;
+    }
+
+    .truss-go-desktop {
+        min-height: 0;
+        width: min(100%, 260px);
+    }
+
+    .truss-go-phone {
+        min-height: 164px;
+        width: 112px;
+    }
+
+    .truss-go-connector {
+        line-height: 1;
+        transform: rotate(90deg);
+    }
+
+    .truss-go-distribution { padding-inline: 18px; }
+    .truss-go-distribution-cards article { min-width: 0; overflow-wrap: anywhere; }
 }
 
 @media (min-width: 781px) and (max-width: 1200px) {
@@ -2543,6 +2593,6 @@ body {
     .site-foundations,
     .site-clients,
     .site-principles {
-        width: 88%;
+        width: calc(100% - 56px);
     }
 }
