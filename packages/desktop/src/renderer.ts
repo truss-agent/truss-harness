@@ -33,6 +33,7 @@ const defaultConfiguration: DesktopConfiguration = {
 };
 
 const element = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
+const toolActivityPanel = element<HTMLDivElement>("toolActivityPanel");
 const fileTree = element<HTMLDivElement>("fileTree");
 const fileSearch = element<HTMLInputElement>("fileSearch");
 const clearFileSearch = element<HTMLButtonElement>("clearFileSearch");
@@ -885,15 +886,20 @@ function renderChat(): void {
     empty.className = "empty-chat";
     empty.textContent = "Select a local model, then ask about the workspace. Plan is read-only; Agent can edit files and run commands.";
     chatMessages.append(empty);
+    toolActivityPanel.hidden = true;
     return;
   }
   const activities = toolActivityByConversation.get(conversation.id) ?? [];
+  const activeActivities = activities.filter((a) => a.status !== "completed" && a.status !== "failed").slice(-10);
+  if (activeActivities.length) {
+    toolActivityPanel.hidden = false;
+    toolActivityPanel.replaceChildren(toolActivityView(conversation.id, activeActivities));
+  } else {
+    toolActivityPanel.hidden = true;
+  }
   const lastAssistantIndex = conversation.messages.map((message) => message.role).lastIndexOf("assistant");
   const showActivePlaceholder = busy && conversation.id === runningConversationId;
   conversation.messages.forEach((message, index) => {
-    if (index === lastAssistantIndex && activities.length) {
-      chatMessages.append(toolActivityView(conversation.id, activities));
-    }
     chatMessages.append(messageView(message, showActivePlaceholder && index === lastAssistantIndex));
   });
   if (conversation.lastRun) {

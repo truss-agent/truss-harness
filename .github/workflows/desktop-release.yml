@@ -68,15 +68,21 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run desktop:package:linux:${{ matrix.arch }}
+      - name: Create portable tarball from dir output
+        run: |
+          if [ -d "packages/desktop/release/linux-${{ matrix.arch }}-unpacked" ]; then
+            cd packages/desktop/release
+            tar -czf "Truss-0.1.10-linux-${{ matrix.arch }}.tar.gz" linux-${{ matrix.arch }}-unpacked/
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-linux-${{ matrix.arch }}
           path: |
-            packages/desktop/release/*.AppImage
             packages/desktop/release/*.deb
             packages/desktop/release/*.rpm
             packages/desktop/release/*.pacman
             packages/desktop/release/*.pkg.tar.zst
+            packages/desktop/release/*.tar.gz
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: matrix.arch == 'x64'

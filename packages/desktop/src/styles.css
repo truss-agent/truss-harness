@@ -188,7 +188,6 @@ button:focus-visible {
 
 .sidebar {
     display: grid;
-    grid-template-rows: minmax(0, 1fr) minmax(150px, 35%);
     border-right: 1px solid #2b383f;
     background: #131a1f;
 }
@@ -1552,6 +1551,22 @@ dialog::backdrop {
     background: #33414a;
 }
 
+.tool-activity-panel {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #151d22;
+    border-bottom: 1px solid #2b383f;
+    overflow-y: auto;
+    max-height: 200px;
+}
+
+.tool-activity-panel::-webkit-scrollbar { height: 4px; }
+.tool-activity-panel::-webkit-scrollbar-thumb { border-radius: 999px; background: #54d7b0; }
+.tool-activity-panel::-webkit-scrollbar-track { background: transparent; }
+:root[data-desktop-theme] .tool-activity-panel { scrollbar-color: var(--desktop-accent) transparent; }
+:root[data-desktop-theme] .tool-activity-panel::-webkit-scrollbar-thumb { background: var(--desktop-accent); }
+
 .tool-activity {
     overflow: hidden;
     border: 1px solid #33414a;
@@ -1559,6 +1574,7 @@ dialog::backdrop {
     background: #11171b;
     color: #b9c8cd;
     font-size: 11px;
+    margin: 8px 8px 0;
 }
 
 .tool-activity summary {
@@ -1574,7 +1590,15 @@ dialog::backdrop {
     display: grid;
     gap: 1px;
     padding: 0 7px 7px;
+    max-height: 140px;
+    overflow-y: auto;
 }
+
+.tool-activity-list::-webkit-scrollbar { width: 4px; }
+.tool-activity-list::-webkit-scrollbar-thumb { border-radius: 999px; background: #54d7b0; }
+.tool-activity-list::-webkit-scrollbar-track { background: transparent; }
+:root[data-desktop-theme] .tool-activity-list { scrollbar-color: var(--desktop-accent) transparent; }
+:root[data-desktop-theme] .tool-activity-list::-webkit-scrollbar-thumb { background: var(--desktop-accent); }
 
 .tool-activity-row {
     overflow: hidden;
