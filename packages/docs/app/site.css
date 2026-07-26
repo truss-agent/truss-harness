@@ -920,6 +920,7 @@ body {
     display: flex;
     justify-content: space-between;
     margin-bottom: 46px;
+    margin-top: 36px;
     min-height: 62px;
     padding: 13px 16px;
 }
@@ -2594,5 +2595,304 @@ body {
     .site-clients,
     .site-principles {
         width: calc(100% - 56px);
+    }
+}
+
+/* Phone layouts should favour reading rhythm over desktop hero proportions. */
+@media (max-width: 780px) {
+    .features-page .site-page-intro {
+        align-items: flex-start;
+        min-height: 0;
+        padding: 44px 0 32px;
+        text-align: left;
+    }
+
+    .features-page .site-page-intro h1 {
+        font-size: clamp(2.55rem, 11.25vw, 3.25rem);
+        line-height: .98;
+        max-width: 11ch;
+    }
+
+    .features-page .site-page-intro > p:last-child {
+        line-height: 1.65;
+        margin-inline: 0;
+        text-align: left;
+    }
+
+    .features-page .site-client-summary {
+        gap: 22px;
+        margin-bottom: 0;
+        padding: 28px 24px;
+    }
+
+    .features-page .site-client-summary h2 {
+        font-size: 28px;
+    }
+
+    .features-page .site-feature-grid {
+        gap: 16px;
+        padding: 32px 0 28px;
+    }
+
+    .features-page .site-feature {
+        padding: 24px;
+    }
+
+    .features-page .site-feature h2 {
+        font-size: 22px;
+        margin-top: 28px;
+    }
+
+    .download-page .download-release-bar {
+        gap: 18px;
+        margin-bottom: 32px;
+        margin-top: 28px;
+        padding: 20px;
+    }
+
+    .download-page .download-hero .download-intro > p:last-child {
+        text-align: left;
+    }
+
+    .download-page .download-release-bar > div:first-child {
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .download-page .download-release-bar p {
+        gap: 4px;
+    }
+
+    .download-page .download-release-bar p strong {
+        font-size: 19px;
+        line-height: 1.15;
+    }
+
+    .download-page .download-release-bar p span {
+        font-size: 14px;
+        line-height: 1.45;
+    }
+
+    .download-page .download-release-links {
+        border-top: 1px solid var(--site-line);
+        gap: 10px 16px;
+        padding: 14px 0 0;
+        width: 100%;
+    }
+
+    .download-page .download-platform > header {
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .download-page .download-platform > header h2 {
+        font-size: 26px;
+    }
+
+    .download-page .download-build {
+        gap: 15px;
+        padding: 18px;
+    }
+
+    .download-page .download-build h3 {
+        font-size: 17px;
+    }
+
+    .download-page .download-build p {
+        font-size: 14px;
+        line-height: 1.45;
+    }
+
+    .download-page .download-build-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 12px;
+    }
+}
+
+@media (max-width: 520px) {
+    .download-page .download-build {
+        padding: 20px;
+    }
+
+    .download-page .download-build .site-button {
+        min-height: 48px;
+    }
+}
+
+/* Keep the Truss Go connection legible without making the phone diagram a
+   tall, interrupted stack on ordinary phone widths. */
+@media (max-width: 780px) {
+    .truss-go-pairing {
+        display: grid;
+        gap: 10px;
+        grid-template-columns: minmax(0, 1fr) 22px 104px;
+        min-height: 244px;
+        padding: 20px;
+    }
+
+    .truss-go-desktop {
+        min-height: 140px;
+        padding: 18px;
+        width: 100%;
+    }
+
+    .truss-go-phone {
+        min-height: 162px;
+        padding: 22px 12px 14px;
+        width: 104px;
+    }
+
+    .truss-go-connector {
+        font-size: 24px;
+        line-height: 1;
+        transform: none;
+    }
+}
+
+@media (max-width: 360px) {
+    .truss-go-pairing {
+        gap: 8px;
+        grid-template-columns: minmax(0, 1fr) 18px 92px;
+        padding: 16px;
+    }
+
+    .truss-go-desktop {
+        padding: 14px;
+    }
+
+    .truss-go-phone {
+        padding-inline: 9px;
+        width: 92px;
+    }
+
+    .truss-go-desktop strong,
+    .truss-go-phone strong {
+        font-size: 14px;
+    }
+}
+
+@media (max-width: 340px) {
+    .truss-go-pairing {
+        grid-template-columns: 1fr;
+        min-height: 0;
+    }
+
+    .truss-go-desktop {
+        min-height: 120px;
+    }
+
+    .truss-go-phone {
+        justify-self: center;
+        min-height: 154px;
+        width: 104px;
+    }
+
+    .truss-go-connector {
+        transform: rotate(90deg);
+    }
+}
+
+/* About follows the same compact mobile reading rhythm as Features. */
+@media (max-width: 780px) {
+    .about-page .about-hero {
+        align-items: flex-start;
+        min-height: 0;
+        padding: 44px 0 32px;
+        text-align: left;
+    }
+
+    .about-page .about-hero h1 {
+        font-size: clamp(2.55rem, 11.25vw, 3.25rem);
+        line-height: .98;
+        max-width: 12ch;
+    }
+
+    .about-page .about-hero > p:last-child {
+        line-height: 1.65;
+        margin-inline: 0;
+        text-align: left;
+    }
+}
+
+/* Give the landing promise the same direct, content-led mobile treatment as
+   the Features and About introductions. */
+@media (max-width: 780px) {
+    .site-hero {
+        gap: 32px;
+        padding: 44px 0 48px;
+    }
+
+    .site-hero-copy {
+        align-items: flex-start;
+        margin-inline: 0;
+        max-width: none;
+        text-align: left;
+    }
+
+    .site-hero h1 {
+        font-size: clamp(2.55rem, 11.25vw, 3.25rem);
+        line-height: .98;
+        max-width: 11ch;
+    }
+
+    .site-hero-copy .site-lede {
+        line-height: 1.65;
+        margin-inline: 0;
+        max-width: 36rem;
+        text-align: left;
+    }
+
+    .site-hero-copy .site-actions {
+        justify-content: flex-start;
+        margin-top: 24px;
+    }
+}
+
+/* Clients uses the same compact mobile introduction as Features and About. */
+@media (max-width: 780px) {
+    .clients-index .site-page-intro {
+        align-items: flex-start;
+        min-height: 0;
+        padding: 44px 0 32px;
+        text-align: left;
+    }
+
+    .clients-index .site-page-intro h1 {
+        font-size: clamp(2.55rem, 11.25vw, 3.25rem);
+        line-height: .98;
+        max-width: 12ch;
+    }
+
+    .clients-index .site-page-intro > p:last-child {
+        line-height: 1.65;
+        margin-inline: 0;
+        text-align: left;
+    }
+
+    .clients-index-grid {
+        gap: 16px;
+    }
+}
+
+/* Match the landing hero's desktop presence to the Truss Go product hero. */
+@media (min-width: 1201px) {
+    .site-hero {
+        min-height: calc(100vh - 76px);
+        padding-block: 72px 86px;
+    }
+
+    .site-hero-copy {
+        max-width: 600px;
+    }
+
+    .site-hero h1 {
+        font-size: clamp(3rem, 5vw, 4.5rem);
+        letter-spacing: -.06em;
+        max-width: 590px;
+    }
+
+    .site-hero .site-lede {
+        max-width: 580px;
     }
 }

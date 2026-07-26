@@ -15,11 +15,10 @@ export default function HomePage() {
         <section className="site-hero">
           <div className="site-hero-copy">
             <p className="site-eyebrow">Local-first coding agents</p>
-            <h1>A coding agent that works your way.</h1>
+            <h1>One agent. Every way you work.</h1>
             <p className="site-lede">
-              Plan, edit, and review code with local models from the shell,
-              terminal, VS Code, or desktop—with the same tools, workspace
-              state, and approval controls everywhere.
+              Plan, edit, and review code with local or BYOK cloud models from
+              your shell, terminal, VS Code, or desktop.
             </p>
             <div className="site-actions">
               <Link
