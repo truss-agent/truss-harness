@@ -124,7 +124,6 @@ export type DesktopEvent =
   | { readonly type: "chat-end"; readonly conversationId: string; readonly aborted?: boolean }
   | { readonly type: "chat-error"; readonly conversationId: string; readonly message: string }
   | { readonly type: "approval"; readonly callId: string; readonly tool: string; readonly input: Record<string, unknown> }
-  | { readonly type: "dev-server"; readonly status: "starting" | "running" | "stopped" | "failed"; readonly command?: string; readonly url?: string; readonly message?: string }
   | { readonly type: "update"; readonly status: "checking" | "available" | "not-available" | "downloading" | "downloaded" | "error"; readonly version?: string; readonly percent?: number; readonly message?: string }
   | { readonly type: "terminal-output"; readonly commandId: string; readonly text: string };
 
@@ -167,8 +166,6 @@ export interface DesktopBridge {
   gitPull(): Promise<string>;
   gitPush(): Promise<string>;
   runTerminal(command: string): Promise<string>;
-  startDevServer(command: string): Promise<string>;
-  stopDevServer(): Promise<void>;
   openExternal(url: string): Promise<void>;
   connectTrussGo(): Promise<{ readonly workspaceName: string; readonly qrDataUrl: string }>;
   disconnectTrussGo(): Promise<void>;
