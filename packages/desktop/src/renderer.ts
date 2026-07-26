@@ -17,6 +17,7 @@ interface EmbeddedBrowserView extends HTMLElement {
   goBack(): void;
   goForward(): void;
   reload(): void;
+  openDevTools(): void;
 }
 
 const defaultConfiguration: DesktopConfiguration = {
@@ -65,11 +66,8 @@ const browserBack = element<HTMLButtonElement>("browserBack");
 const browserForward = element<HTMLButtonElement>("browserForward");
 const browserReload = element<HTMLButtonElement>("browserReload");
 const browserExternal = element<HTMLButtonElement>("browserExternal");
-const devServerCommand = element<HTMLInputElement>("devServerCommand");
-const devServerStatus = element<HTMLSpanElement>("devServerStatus");
-const startDevServer = element<HTMLButtonElement>("startDevServer");
-const stopDevServer = element<HTMLButtonElement>("stopDevServer");
 const terminalOutput = element<HTMLPreElement>("terminalOutput");
+const terminalPrompt = element<HTMLDivElement>("terminalPrompt");
 const chatMessages = element<HTMLDivElement>("chatMessages");
 const planPanel = element<HTMLElement>("planPanel");
 const chatInput = element<HTMLTextAreaElement>("chatInput");
@@ -98,6 +96,8 @@ const contextMeter = element<HTMLSpanElement>("contextMeter");
 // Keep older packaged HTML usable when only the renderer bundle has been refreshed.
 const rateMeter = document.getElementById("rateMeter") as HTMLSpanElement | null;
 const settingsPanel = element<HTMLElement>("settingsPanel");
+const settingsPanelHome = document.createComment("settings-panel-home");
+settingsPanel.before(settingsPanelHome);
 const endpointSelect = element<HTMLSelectElement>("endpointSelect");
 const providerSelect = element<HTMLSelectElement>("providerSelect");
 const byokProviderSelect = element<HTMLSelectElement>("byokProviderSelect");
@@ -355,14 +355,6 @@ function navigatePreview(value: string): void {
   browserView.src = url;
 }
 
-function renderDevServer(status: "starting" | "running" | "stopped" | "failed", message?: string): void {
-  devServerStatus.textContent = status === "starting" ? "Starting" : status === "running" ? "Running" : status === "failed" ? "Failed" : "Stopped";
-  devServerStatus.className = `dev-server-status ${status}`;
-  startDevServer.disabled = status === "starting" || status === "running";
-  stopDevServer.disabled = status === "stopped" || status === "failed";
-  if (message && status === "failed") notify(message);
-}
-
 function saveConversations(): void {
   window.clearTimeout(persistTimer);
   persistTimer = window.setTimeout(() => {
@@ -470,7 +462,13 @@ function applySidebarTracks(git: number, files: number, history: number): void {
 function resetSidebarTracks(): void {
   const splitterHeight = element<HTMLDivElement>("gitSplitter").getBoundingClientRect().height
     + element<HTMLDivElement>("historySplitter").getBoundingClientRect().height;
-  const sharedHeight = Math.max(110, Math.floor((sidebar.getBoundingClientRect().height - splitterHeight) / 3));
+  const availableHeight = sidebar.getBoundingClientRect().height - splitterHeight;
+  if (gitCollapsed) {
+    const sharedHeight = Math.max(110, Math.floor((availableHeight - 38) / 2));
+    applySidebarTracks(38, sharedHeight, sharedHeight);
+    return;
+  }
+  const sharedHeight = Math.max(110, Math.floor(availableHeight / 3));
   gitPanelHeight = sharedHeight;
   applySidebarTracks(sharedHeight, sharedHeight, sharedHeight);
 }
@@ -478,13 +476,48 @@ function resetSidebarTracks(): void {
 function setGitCollapsed(collapsed: boolean): void {
   if (gitCollapsed === collapsed) return;
   const tracks = sidebarTracks();
-  const desiredGit = collapsed ? 38 : gitPanelHeight;
-  const applied = clamp(desiredGit - tracks.git, 110 - tracks.files, Number.MAX_SAFE_INTEGER);
-  if (!collapsed) gitPanelHeight = tracks.git + applied;
+  const releasedHeight = Math.max(0, tracks.git - 38);
+  if (collapsed) gitPanelHeight = tracks.git;
   gitCollapsed = collapsed;
   renderGit();
-  applySidebarTracks(collapsed ? 38 : gitPanelHeight, tracks.files - applied, tracks.history);
+  if (collapsed) {
+    const filesGain = Math.floor(releasedHeight / 2);
+    applySidebarTracks(38, tracks.files + filesGain, tracks.history + releasedHeight - filesGain);
+    return;
+  }
+  const restoredGit = Math.min(gitPanelHeight, Math.max(38, tracks.files + tracks.history - 220 + 38));
+  const neededHeight = Math.max(0, restoredGit - 38);
+  const availableFiles = Math.max(0, tracks.files - 110);
+  const availableHistory = Math.max(0, tracks.history - 110);
+  const availableTotal = availableFiles + availableHistory;
+  const fromFiles = Math.min(availableFiles, Math.round(neededHeight * (availableFiles / Math.max(1, availableTotal))));
+  const fromHistory = Math.min(availableHistory, neededHeight - fromFiles);
+  applySidebarTracks(restoredGit, tracks.files - fromFiles, tracks.history - fromHistory);
 }
+
+let observedSidebarHeight = 0;
+new ResizeObserver(() => {
+  const sidebarHeight = Math.floor(sidebar.getBoundingClientRect().height);
+  if (!sidebarHeight || sidebarHeight === observedSidebarHeight) return;
+  observedSidebarHeight = sidebarHeight;
+  const splitterHeight = element<HTMLDivElement>("gitSplitter").getBoundingClientRect().height
+    + element<HTMLDivElement>("historySplitter").getBoundingClientRect().height;
+  const availableHeight = Math.max(220, sidebarHeight - splitterHeight);
+  const tracks = sidebarTracks();
+  if (gitCollapsed) {
+    const remainingHeight = Math.max(220, availableHeight - 38);
+    const proportion = tracks.files / Math.max(1, tracks.files + tracks.history);
+    const filesHeight = Math.round(remainingHeight * proportion);
+    applySidebarTracks(38, filesHeight, remainingHeight - filesHeight);
+    return;
+  }
+  const proportion = tracks.git / Math.max(1, tracks.git + tracks.files + tracks.history);
+  const gitHeight = Math.max(38, Math.round(availableHeight * proportion));
+  const remainingHeight = Math.max(220, availableHeight - gitHeight);
+  const filesProportion = tracks.files / Math.max(1, tracks.files + tracks.history);
+  const filesHeight = Math.round(remainingHeight * filesProportion);
+  applySidebarTracks(gitHeight, filesHeight, remainingHeight - filesHeight);
+}).observe(sidebar);
 
 function renderGit(): void {
   gitPanel.classList.toggle("collapsed", gitCollapsed);
@@ -555,6 +588,27 @@ function renderGit(): void {
 async function refreshGit(): Promise<void> {
   gitStatus = await window.trussDesktop.gitStatus();
   renderGit();
+  renderTerminalPrompt();
+}
+
+function renderTerminalPrompt(): void {
+  const workspaceParts = desktopState.workspaceRoot.replaceAll("\\", "/").split("/").filter(Boolean);
+  const path = workspaceParts.length > 3 ? `…/${workspaceParts.slice(-3).join("/")}` : workspaceParts.join("/") || "No workspace";
+  const branch = gitStatus.available ? gitStatus.branch || "detached" : "no git";
+  const changed = gitStatus.files.length;
+  const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
+  const segments: ReadonlyArray<readonly [string, string]> = [
+    ["terminal-prompt-app", "Truss"],
+    ["terminal-prompt-path", path],
+    ["terminal-prompt-git", `${branch}${changed ? ` • ${changed} changed` : ""}`],
+    ["terminal-prompt-time", time]
+  ];
+  terminalPrompt.replaceChildren(...segments.map(([className, text]) => {
+    const segment = document.createElement("span");
+    segment.className = `terminal-prompt-segment ${className}`;
+    segment.textContent = text;
+    return segment;
+  }));
 }
 
 async function runGitAction(action: string, run: () => Promise<string>): Promise<void> {
@@ -742,26 +796,71 @@ function renderConversations(): void {
   });
 }
 
+function workspaceFileReference(path: string): string | undefined {
+  const normalizedPath = path.replaceAll("\\", "/").replace(/^\.\//, "");
+  if (!normalizedPath || normalizedPath.startsWith("/") || normalizedPath.split("/").some((part) => part === "..")) return undefined;
+  return files.some((file) => file.type === "file" && editorPath(file.path) === normalizedPath) ? normalizedPath : undefined;
+}
+
+function openChatFile(path: string): void {
+  setCenterView("editor");
+  void openFile(path, false).catch((error) => notify(error instanceof Error ? error.message : String(error)));
+}
+
+function appendFileReference(parent: HTMLElement, path: string, label = path): void {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "chat-file-link";
+  button.textContent = label;
+  button.title = `Open ${path}`;
+  button.onclick = () => openChatFile(path);
+  parent.append(button);
+}
+
+function appendTextWithFileReferences(parent: HTMLElement, text: string): void {
+  const filePath = /(?:\.{1,2}\/)?(?:[A-Za-z0-9_@.-]+\/)*(?:[A-Za-z0-9_-]+\.[A-Za-z0-9][A-Za-z0-9_.-]*|\.[A-Za-z0-9_-]+)/g;
+  let cursor = 0;
+  for (const match of text.matchAll(filePath)) {
+    const index = match.index ?? 0;
+    const reference = workspaceFileReference(match[0]);
+    if (!reference) continue;
+    if (index > cursor) parent.append(document.createTextNode(text.slice(cursor, index)));
+    appendFileReference(parent, reference, match[0]);
+    cursor = index + match[0].length;
+  }
+  if (cursor < text.length) parent.append(document.createTextNode(text.slice(cursor)));
+}
+
 function appendInlineMarkdown(parent: HTMLElement, text: string): void {
   const token = /(`[^`]*`)|(\[([^\]]+)\]\(([^\s)]+)\))|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)/g;
   let cursor = 0;
   for (const match of text.matchAll(token)) {
     const index = match.index ?? 0;
-    if (index > cursor) parent.append(document.createTextNode(text.slice(cursor, index)));
+    if (index > cursor) appendTextWithFileReferences(parent, text.slice(cursor, index));
     if (match[1]) {
-      const code = document.createElement("code");
-      code.textContent = match[1].slice(1, -1);
-      parent.append(code);
-    } else if (match[2]) {
-      const link = document.createElement("a");
-      const href = match[4] ?? "";
-      link.textContent = match[3] ?? href;
-      if (/^(https?:|mailto:)/i.test(href)) {
-        link.href = href;
-        link.target = "_blank";
-        link.rel = "noreferrer";
+      const codeText = match[1].slice(1, -1);
+      const reference = workspaceFileReference(codeText);
+      if (reference) appendFileReference(parent, reference, codeText);
+      else {
+        const code = document.createElement("code");
+        code.textContent = codeText;
+        parent.append(code);
       }
-      parent.append(link);
+    } else if (match[2]) {
+      const href = match[4] ?? "";
+      const reference = workspaceFileReference(href);
+      if (reference) {
+        appendFileReference(parent, reference, match[3] ?? reference);
+      } else {
+        const link = document.createElement("a");
+        link.textContent = match[3] ?? href;
+        if (/^(https?:|mailto:)/i.test(href)) {
+          link.href = href;
+          link.target = "_blank";
+          link.rel = "noreferrer";
+        }
+        parent.append(link);
+      }
     } else if (match[5]) {
       const strong = document.createElement("strong");
       strong.textContent = match[6] ?? "";
@@ -773,7 +872,7 @@ function appendInlineMarkdown(parent: HTMLElement, text: string): void {
     }
     cursor = index + match[0].length;
   }
-  if (cursor < text.length) parent.append(document.createTextNode(text.slice(cursor)));
+  if (cursor < text.length) appendTextWithFileReferences(parent, text.slice(cursor));
 }
 
 function appendHighlightedCode(parent: HTMLElement, code: string, language = ""): void {
@@ -899,11 +998,10 @@ function renderChat(): void {
     toolActivityPanel.hidden = true;
     return;
   }
-  const activities = toolActivityByConversation.get(conversation.id) ?? [];
-  const activeActivities = activities.filter((a) => a.status !== "completed" && a.status !== "failed").slice(-10);
-  if (activeActivities.length) {
+  const activities = (toolActivityByConversation.get(conversation.id) ?? []).slice(-10);
+  if (activities.length) {
     toolActivityPanel.hidden = false;
-    toolActivityPanel.replaceChildren(toolActivityView(conversation.id, activeActivities));
+    toolActivityPanel.replaceChildren(toolActivityView(conversation.id, activities));
   } else {
     toolActivityPanel.hidden = true;
   }
@@ -1019,6 +1117,7 @@ function preserveEditorScroll(): void {
 function renderEditorContent(tab: EditorTab | undefined): void {
   editor.className = "editor-content";
   settingsPanel.hidden = true;
+  if (settingsPanel.parentElement === editor) settingsPanelHome.after(settingsPanel);
   editor.replaceChildren();
   if (!tab) {
     editor.append(document.createTextNode("Open a workspace file to inspect it."));
@@ -1097,6 +1196,14 @@ function renderEditorContent(tab: EditorTab | undefined): void {
     input.value = tab.content;
     input.spellcheck = false;
     input.setAttribute("aria-label", `Edit ${tab.path}`);
+    const occurrenceLayer = document.createElement("div");
+    occurrenceLayer.className = "editor-occurrence-layer";
+    type OccurrenceRange = { start: number; end: number };
+    let occurrenceRanges: OccurrenceRange[] = [];
+    let occurrenceNeedle = "";
+    type EditorHistoryEntry = { readonly content: string; readonly selectionStart: number; readonly selectionEnd: number };
+    const editHistory: EditorHistoryEntry[] = [{ content: input.value, selectionStart: input.selectionStart, selectionEnd: input.selectionEnd }];
+    let editHistoryIndex = 0;
     const suggestion = document.createElement("div");
     suggestion.className = "inline-completion";
     suggestion.hidden = true;
@@ -1138,8 +1245,38 @@ function renderEditorContent(tab: EditorTab | undefined): void {
     const renderLineNumbers = () => {
       lineNumbers.textContent = Array.from({ length: Math.max(1, tab.content.split("\n").length) }, (_, index) => String(index + 1)).join("\n");
     };
-    renderLineNumbers();
-    input.oninput = () => {
+    const renderOccurrenceRanges = (): void => {
+      occurrenceLayer.replaceChildren();
+      if (occurrenceRanges.length < 2) return;
+      const lines = input.value.split("\n");
+      for (const range of occurrenceRanges.slice(0, -1)) {
+        const before = input.value.slice(0, range.start);
+        const startLine = before.split("\n").length - 1;
+        const startColumn = before.length - (before.lastIndexOf("\n") + 1);
+        const selectedText = input.value.slice(range.start, range.end);
+        const selectedLines = selectedText.split("\n");
+        for (let index = 0; index < selectedLines.length; index += 1) {
+          const line = startLine + index;
+          const column = index === 0 ? startColumn : 0;
+          const length = selectedLines[index]?.length ?? 0;
+          const isFinalLine = index === selectedLines.length - 1;
+          const width = isFinalLine ? length : Math.max(1, (lines[line]?.length ?? 0) - column);
+          if (width === 0) continue;
+          const marker = document.createElement("span");
+          marker.className = "editor-occurrence";
+          marker.style.left = `${62 + column * 7.22 - input.scrollLeft}px`;
+          marker.style.top = `${12 + line * 18 - input.scrollTop}px`;
+          marker.style.width = `${Math.max(1, width) * 7.22}px`;
+          occurrenceLayer.append(marker);
+        }
+      }
+    };
+    const clearOccurrenceRanges = (): void => {
+      occurrenceRanges = [];
+      occurrenceNeedle = "";
+      renderOccurrenceRanges();
+    };
+    const updateEditorContent = (): void => {
       tab.content = input.value;
       tab.dirty = true;
       renderLineNumbers();
@@ -1149,7 +1286,108 @@ function renderEditorContent(tab: EditorTab | undefined): void {
       requestCompletion();
       refreshDiagnostics();
     };
+    const recordEditHistory = (): void => {
+      const entry: EditorHistoryEntry = { content: input.value, selectionStart: input.selectionStart, selectionEnd: input.selectionEnd };
+      const current = editHistory[editHistoryIndex];
+      if (current?.content === entry.content && current.selectionStart === entry.selectionStart && current.selectionEnd === entry.selectionEnd) return;
+      editHistory.splice(editHistoryIndex + 1);
+      editHistory.push(entry);
+      if (editHistory.length > 200) editHistory.shift();
+      editHistoryIndex = editHistory.length - 1;
+    };
+    const restoreEditHistory = (direction: -1 | 1): void => {
+      const nextIndex = editHistoryIndex + direction;
+      if (nextIndex < 0 || nextIndex >= editHistory.length) return;
+      editHistoryIndex = nextIndex;
+      const entry = editHistory[editHistoryIndex] as EditorHistoryEntry;
+      input.value = entry.content;
+      clearOccurrenceRanges();
+      input.setSelectionRange(entry.selectionStart, entry.selectionEnd);
+      updateEditorContent();
+    };
+    const selectedWord = (): OccurrenceRange | undefined => {
+      const cursor = input.selectionStart;
+      const wordCharacter = /[A-Za-z0-9_$-]/;
+      if (!wordCharacter.test(input.value[cursor] ?? "") && !wordCharacter.test(input.value[cursor - 1] ?? "")) return undefined;
+      let start = cursor;
+      let end = cursor;
+      while (start > 0 && wordCharacter.test(input.value[start - 1] ?? "")) start -= 1;
+      while (end < input.value.length && wordCharacter.test(input.value[end] ?? "")) end += 1;
+      return start === end ? undefined : { start, end };
+    };
+    const selectNextOccurrence = (): void => {
+      const currentSelection: OccurrenceRange | undefined = input.selectionStart === input.selectionEnd
+        ? selectedWord()
+        : { start: input.selectionStart, end: input.selectionEnd };
+      if (!currentSelection) {
+        notify("Select text or place the cursor inside a word first.");
+        return;
+      }
+      const currentNeedle = input.value.slice(currentSelection.start, currentSelection.end);
+      const selectedRangeIndex = occurrenceRanges.findIndex((range) => range.start === currentSelection.start && range.end === currentSelection.end);
+      if (currentNeedle !== occurrenceNeedle || selectedRangeIndex < 0) {
+        occurrenceNeedle = currentNeedle;
+        occurrenceRanges = [currentSelection];
+      }
+      const activeRange = occurrenceRanges.at(-1) as OccurrenceRange;
+      let nextStart = input.value.indexOf(occurrenceNeedle, activeRange.end);
+      if (nextStart < 0) nextStart = input.value.indexOf(occurrenceNeedle);
+      while (nextStart >= 0 && occurrenceRanges.some((range) => range.start === nextStart)) {
+        nextStart = input.value.indexOf(occurrenceNeedle, nextStart + occurrenceNeedle.length);
+      }
+      if (nextStart < 0) {
+        notify(`${occurrenceRanges.length} occurrence${occurrenceRanges.length === 1 ? "" : "s"} selected; no more matches.`);
+        input.setSelectionRange(activeRange.start, activeRange.end);
+        return;
+      }
+      const nextRange = { start: nextStart, end: nextStart + occurrenceNeedle.length };
+      occurrenceRanges.push(nextRange);
+      input.setSelectionRange(nextRange.start, nextRange.end);
+      renderOccurrenceRanges();
+      notify(`${occurrenceRanges.length} occurrences selected`);
+    };
+    renderLineNumbers();
+    input.oninput = () => {
+      clearOccurrenceRanges();
+      recordEditHistory();
+      updateEditorContent();
+    };
+    input.addEventListener("beforeinput", (event) => {
+      const inputEvent = event as InputEvent;
+      if (occurrenceRanges.length < 2) return;
+      const replacement = inputEvent.data
+        ?? inputEvent.dataTransfer?.getData("text/plain")
+        ?? (inputEvent.inputType === "insertLineBreak" ? "\n" : undefined);
+      const deleting = inputEvent.inputType === "deleteContentBackward" || inputEvent.inputType === "deleteContentForward";
+      if (replacement === undefined && !deleting) return;
+      event.preventDefault();
+      const activeRange = occurrenceRanges.at(-1) as OccurrenceRange;
+      const sortedRanges = [...occurrenceRanges].sort((left, right) => right.start - left.start);
+      for (const range of sortedRanges) input.value = `${input.value.slice(0, range.start)}${replacement ?? ""}${input.value.slice(range.end)}`;
+      const delta = (replacement ?? "").length - occurrenceNeedle.length;
+      const earlierRanges = occurrenceRanges.filter((range) => range.start < activeRange.start).length;
+      const cursor = activeRange.start + earlierRanges * delta + (replacement ?? "").length;
+      clearOccurrenceRanges();
+      input.setSelectionRange(cursor, cursor);
+      recordEditHistory();
+      updateEditorContent();
+    });
     input.onkeydown = (event) => {
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        restoreEditHistory(event.shiftKey ? 1 : -1);
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        restoreEditHistory(1);
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "d") {
+        event.preventDefault();
+        selectNextOccurrence();
+        return;
+      }
       if (event.key === "Tab" && inlineCompletion) {
         event.preventDefault();
         input.setRangeText(inlineCompletion, input.selectionStart, input.selectionEnd, "end");
@@ -1159,6 +1397,7 @@ function renderEditorContent(tab: EditorTab | undefined): void {
         return;
       }
       if (event.key === "Escape" && inlineCompletion) { inlineCompletion = ""; suggestion.hidden = true; return; }
+      if (event.key === "Escape" && occurrenceRanges.length > 0) { clearOccurrenceRanges(); return; }
       if (event.key === "Tab") {
         event.preventDefault();
         const start = input.selectionStart;
@@ -1181,10 +1420,11 @@ function renderEditorContent(tab: EditorTab | undefined): void {
       highlight.scrollTop = input.scrollTop;
       highlight.scrollLeft = input.scrollLeft;
       lineNumbers.scrollTop = input.scrollTop;
+      renderOccurrenceRanges();
       saveWorkspaceUiState();
     };
     editor.classList.add("editable");
-    surface.append(lineNumbers, highlight, input, suggestion, diagnostics);
+    surface.append(lineNumbers, highlight, occurrenceLayer, input, suggestion, diagnostics);
     refreshDiagnostics();
     editor.append(surface);
   }
@@ -1213,13 +1453,17 @@ function selectEditorTab(tab: EditorTab): void {
 }
 
 function openSettings(): void {
-  populateSettings();
   let tab = openEditorTabs.find((candidate) => candidate.mode === "settings");
+  if (tab && tab.path === activeFile) {
+    closeEditorTab(tab.path);
+    return;
+  }
+  populateSettings();
   if (!tab) {
     tab = { path: settingsEditorPath, mode: "settings", state: "ready", content: "", dirty: false, scrollTop: 0, revision: 0 };
     openEditorTabs.push(tab);
   }
-  selectEditorTab(tab);
+  selectEditorTab(tab as EditorTab);
 }
 
 function closeEditorTab(path: string): void {
@@ -1401,6 +1645,13 @@ async function discover(input?: Partial<DesktopConfiguration>): Promise<void> {
 function settingsConfiguration(): DesktopConfiguration {
   const current = configuration();
   const provider = selectedSettingsProvider();
+  const reusingCurrentProvider = provider === current.provider;
+  const baseUrl = isLocalProvider(provider)
+    ? baseUrlInput.value.trim() || (reusingCurrentProvider ? current.baseUrl : "")
+    : byokBaseUrlForSelectedProvider() || (reusingCurrentProvider ? current.baseUrl : "");
+  const model = (modelSettingsTab === "byok" ? byokModelInput.value : modelInput.value).trim()
+    || (reusingCurrentProvider ? current.model : "");
+  if (!baseUrl || !model) throw new Error("Choose a provider endpoint and model before applying agent settings.");
   let mcpServers: DesktopConfiguration["mcpServers"] = {};
   const mcpSource = mcpServersInput.value.trim();
   if (mcpSource) {
@@ -1410,8 +1661,8 @@ function settingsConfiguration(): DesktopConfiguration {
   }
   return {
     provider,
-    baseUrl: isLocalProvider(provider) ? baseUrlInput.value.trim() : byokBaseUrlForSelectedProvider(),
-    model: modelSettingsTab === "byok" ? byokModelInput.value.trim() : modelInput.value.trim(),
+    baseUrl,
+    model,
     mode: current.mode,
     permission: permissionSelect.value === "auto-read" || permissionSelect.value === "auto-all" ? permissionSelect.value : "ask",
     contextWindow: Math.max(512, Number.parseInt(contextInput.value, 10) || 8_192),
@@ -1986,11 +2237,6 @@ function handleEvent(message: DesktopEvent): void {
     return;
   }
   if (message.type === "terminal-output") { appendTerminal(message.text); return; }
-  if (message.type === "dev-server") {
-    renderDevServer(message.status, message.message);
-    if (message.url) navigatePreview(message.url);
-    return;
-  }
   if (message.type === "approval") {
     const approval = document.createElement("div");
     approval.className = "tool-message";
@@ -2393,15 +2639,6 @@ browserBack.onclick = () => { if (browserView.canGoBack()) browserView.goBack();
 browserForward.onclick = () => { if (browserView.canGoForward()) browserView.goForward(); };
 browserReload.onclick = () => { if (browserView.getURL() !== "about:blank") browserView.reload(); };
 browserExternal.onclick = () => void window.trussDesktop.openExternal(browserUrl.value).catch((error) => notify(error instanceof Error ? error.message : String(error)));
-element<HTMLFormElement>("devServerForm").onsubmit = (event) => {
-  event.preventDefault();
-  const command = devServerCommand.value.trim();
-  if (!command) { notify("Enter a dev-server command."); return; }
-  renderDevServer("starting");
-  appendTerminal(`\n[dev server] ${command}\n`);
-  void window.trussDesktop.startDevServer(command).catch((error) => renderDevServer("failed", error instanceof Error ? error.message : String(error)));
-};
-stopDevServer.onclick = () => void window.trussDesktop.stopDevServer();
 browserView.addEventListener("dom-ready", updateBrowserNavigation);
 browserView.addEventListener("did-navigate", updateBrowserNavigation);
 browserView.addEventListener("did-navigate-in-page", updateBrowserNavigation);
@@ -2437,9 +2674,14 @@ window.addEventListener("keydown", (event) => {
     event.preventDefault();
     if (browserView.getURL() !== "about:blank") browserView.reload();
   }
+  if (centerView === "preview" && event.key === "F12") {
+    event.preventDefault();
+    browserView.openDevTools();
+  }
 });
 
 window.trussDesktop.onEvent(handleEvent);
+window.setInterval(renderTerminalPrompt, 1_000);
 void (async () => {
   desktopState = await window.trussDesktop.initialState();
   for (const conversation of desktopState.conversations) {

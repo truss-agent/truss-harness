@@ -45,7 +45,6 @@ let activeSessionId: string | undefined;
 let activeConversationId: string | undefined;
 let activeAbort: AbortController | undefined;
 let activeRun: Promise<void> | undefined;
-let devServerProcess: ReturnType<typeof spawn> | undefined;
 const terminalProcesses = new Set<ChildProcess>();
 let trussGoGateway: RunningRemoteGateway | undefined;
 const trussGoClients: Array<Awaited<ReturnType<typeof createClientRuntime>>> = [];
@@ -82,11 +81,6 @@ function configureUpdater(): void {
   }
 }
 
-function detectedPreviewUrl(output: string): string | undefined {
-  const match = output.match(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d+)?(?:\/[^\s]*)?/i);
-  return match?.[0].replace(/[),.;]+$/, "").replace("0.0.0.0", "127.0.0.1");
-}
-
 function validatedPreviewUrl(value: string): string {
   const normalized = /^[a-z][a-z\d+.-]*:\/\//i.test(value.trim()) ? value.trim() : `http://${value.trim()}`;
   const url = new URL(normalized);
@@ -109,15 +103,8 @@ function stopProcessTree(child: ChildProcess | undefined): void {
   if (process.platform === "win32" && child.pid) {
     void execFile("taskkill", ["/PID", String(child.pid), "/T", "/F"]).catch(() => child.kill());
   } else {
-    child.kill();
+    child.kill("SIGTERM");
   }
-}
-
-function stopManagedDevServer(): void {
-  const child = devServerProcess;
-  devServerProcess = undefined;
-  stopProcessTree(child);
-  send({ type: "dev-server", status: "stopped" });
 }
 
 function stopManagedTerminalProcesses(): void {
@@ -127,7 +114,6 @@ function stopManagedTerminalProcesses(): void {
 
 function shutdownDesktopWork(): void {
   activeAbort?.abort();
-  stopManagedDevServer();
   stopManagedTerminalProcesses();
   for (const contents of webContents.getAllWebContents()) {
     if (contents.getType() === "webview") contents.close();
@@ -712,9 +698,17 @@ async function createMainWindow(): Promise<void> {
     contents.on("will-navigate", (event, url) => {
       if (!isAllowedPreviewUrl(url)) event.preventDefault();
     });
+    contents.on("before-input-event", (event, input) => {
+      if (input.key !== "F12") return;
+      event.preventDefault();
+      contents.openDevTools({ mode: "detach" });
+    });
   });
   await mainWindow.loadFile(join(distDirectory(), "index.html"));
-  mainWindow.on("closed", () => { mainWindow = undefined; });
+  mainWindow.on("closed", () => {
+    void stopTrussGo();
+    mainWindow = undefined;
+  });
 }
 
 if (process.platform === "win32") app.setAppUserModelId(`com.${brand.productSlug}.desktop`);
@@ -779,7 +773,6 @@ ipcMain.handle("truss:choose-workspace", async (): Promise<DesktopState | undefi
   const selection = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
   const workspaceRoot = selection.filePaths[0];
   if (selection.canceled || !workspaceRoot) return undefined;
-  stopManagedDevServer();
   const workspaceChanged = resolve(workspaceRoot) !== resolve(persisted.workspaceRoot);
   persisted = { ...persisted, workspaceRoot, workspaceUiState: workspaceChanged ? undefined : persisted.workspaceUiState };
   if (persisted.configuration) await configureRuntime(persisted.configuration);
@@ -975,53 +968,6 @@ ipcMain.handle("truss:run-terminal", async (_event, command: string): Promise<st
   });
   return commandId;
 });
-ipcMain.handle("truss:start-dev-server", (_event, command: string): string => {
-  const normalized = typeof command === "string" ? command.trim() : "";
-  if (!normalized) throw new Error("Enter a dev-server command.");
-  if (normalized.length > 2_000) throw new Error("The dev-server command is too long.");
-  stopManagedDevServer();
-  const commandId = `dev-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const child = spawn(normalized, {
-    cwd: persisted.workspaceRoot,
-    shell: true,
-    windowsHide: true,
-    env: { ...process.env, FORCE_COLOR: "0" }
-  });
-  devServerProcess = child;
-  let announcedUrl: string | undefined;
-  send({ type: "dev-server", status: "starting", command: normalized });
-  child.once("spawn", () => {
-    if (devServerProcess === child) send({ type: "dev-server", status: "running", command: normalized });
-  });
-  const output = (text: string): void => {
-    send({ type: "terminal-output", commandId, text });
-    const url = detectedPreviewUrl(text);
-    if (url && url !== announcedUrl && devServerProcess === child) {
-      announcedUrl = url;
-      send({ type: "dev-server", status: "running", command: normalized, url });
-    }
-  };
-  child.stdout.on("data", (data: Buffer) => output(data.toString()));
-  child.stderr.on("data", (data: Buffer) => output(data.toString()));
-  child.on("error", (error) => {
-    if (devServerProcess === child) {
-      devServerProcess = undefined;
-    }
-    send({ type: "dev-server", status: "failed", command: normalized, message: error.message });
-  });
-  child.on("close", (code) => {
-    if (devServerProcess !== child) return;
-    devServerProcess = undefined;
-    send({
-      type: "dev-server",
-      status: code === 0 ? "stopped" : "failed",
-      command: normalized,
-      message: code === 0 ? undefined : `Dev server exited with code ${code ?? "unknown"}.`
-    });
-  });
-  return commandId;
-});
-ipcMain.handle("truss:stop-dev-server", (): void => stopManagedDevServer());
 ipcMain.handle("truss:open-external", async (_event, value: string): Promise<void> => {
   await shell.openExternal(validatedPreviewUrl(value));
 });
@@ -1058,6 +1004,7 @@ ipcMain.handle("truss:check-syntax", async (_event, path: string, content: strin
     return [];
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (/no parser could be inferred/i.test(message)) return [];
     const line = Number(message.match(/\((\d+):(\d+)\)/)?.[1] ?? "1");
     return [{ line, message: message.replace(/\s*\(\d+:\d+\).*$/s, "").trim() }];
   }

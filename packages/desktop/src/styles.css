@@ -141,6 +141,26 @@ button:focus-visible {
     min-width: 0;
 }
 
+.app-brand {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 6px;
+    padding-right: 10px;
+    border-right: 1px solid #33414a;
+    color: #e7eef1;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: .15px;
+}
+
+.app-brand img {
+    display: block;
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+}
+
 #runtimeStatus {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -496,6 +516,20 @@ button:focus-visible {
     pointer-events: none;
 }
 
+.editor-occurrence-layer {
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    pointer-events: none;
+}
+
+.editor-occurrence {
+    position: absolute;
+    height: var(--editor-line-height);
+    background: #37645a99;
+    border-radius: 2px;
+}
+
 .editor-line-numbers {
     position: absolute;
     z-index: 2;
@@ -576,12 +610,11 @@ button:focus-visible {
     min-width: 0;
     min-height: 0;
     display: grid;
-    grid-template-rows: 38px 38px minmax(0, 1fr);
+    grid-template-rows: 38px minmax(0, 1fr);
     background: #f5f5f5;
 }
 
-.browser-toolbar,
-.dev-server-toolbar {
+.browser-toolbar {
     min-width: 0;
     display: grid;
     align-items: center;
@@ -595,12 +628,7 @@ button:focus-visible {
     grid-template-columns: auto minmax(110px, 1fr) auto auto;
 }
 
-.dev-server-toolbar {
-    grid-template-columns: auto minmax(120px, 1fr) auto auto;
-}
-
-.browser-toolbar input,
-.dev-server-toolbar input {
+.browser-toolbar input {
     height: 28px;
     min-width: 0;
     padding: 4px 7px;
@@ -609,7 +637,6 @@ button:focus-visible {
 }
 
 .browser-toolbar button,
-.dev-server-toolbar button,
 .browser-nav button {
     min-height: 27px;
     padding: 3px 7px;
@@ -620,22 +647,6 @@ button:focus-visible {
     width: 28px;
     padding: 0;
     font-size: 15px;
-}
-
-.dev-server-status {
-    min-width: 54px;
-    color: #9badb5;
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: .45px;
-}
-
-.dev-server-status.running {
-    color: #54d7b0;
-}
-
-.dev-server-status.failed {
-    color: #f07f7f;
 }
 
 .browser-view {
@@ -649,7 +660,7 @@ button:focus-visible {
 .terminal {
     min-height: 0;
     display: grid;
-    grid-template-rows: 31px minmax(0, 1fr) 34px;
+    grid-template-rows: 31px minmax(0, 1fr) 70px;
     border-top: 1px solid #2b383f;
     background: #0d1215;
 }
@@ -678,13 +689,52 @@ button:focus-visible {
 
 .terminal-form {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
     gap: 7px;
     align-items: center;
     padding: 4px 8px;
     border-top: 1px solid #202b31;
     color: #54d7b0;
 }
+
+.terminal-prompt {
+    display: flex;
+    grid-column: 1 / -1;
+    min-width: 0;
+    width: 100%;
+    max-width: none;
+    overflow: hidden;
+    border-radius: 999px;
+    color: #11171b;
+    font-family: Consolas, "Cascadia Code", monospace;
+    font-size: 11px;
+    line-height: 27px;
+    white-space: nowrap;
+}
+
+.terminal-prompt-segment {
+    overflow: hidden;
+    padding: 0 9px;
+    text-overflow: ellipsis;
+}
+
+.terminal-prompt-app,
+.terminal-prompt-git,
+.terminal-prompt-time { flex: 0 0 auto; }
+.terminal-prompt-app { background: #b9c7ff; }
+.terminal-prompt-path { flex: 1 1 auto; min-width: 70px; background: #f0ad79; }
+.terminal-prompt-git { background: #9ed79a; }
+.terminal-prompt-time { background: #d49ae8; }
+
+:root[data-desktop-theme] .terminal-prompt {
+    color: var(--desktop-accent-text);
+}
+
+:root[data-desktop-theme] .terminal-prompt-app { background: var(--desktop-accent); }
+:root[data-desktop-theme] .terminal-prompt-path { background: color-mix(in srgb, var(--desktop-accent) 58%, var(--desktop-surface)); }
+:root[data-desktop-theme] .terminal-prompt-git { background: color-mix(in srgb, var(--desktop-accent) 72%, var(--desktop-panel)); }
+:root[data-desktop-theme] .terminal-prompt-time { background: color-mix(in srgb, var(--desktop-accent) 44%, var(--desktop-surface)); }
 
 .terminal-form input {
     border: 0;
@@ -699,9 +749,20 @@ button:focus-visible {
 
 .chat-area {
     display: grid;
-    grid-template-rows: 38px auto minmax(0, 1fr) auto auto;
+    grid-template-rows: 38px minmax(0, 1fr) auto auto;
     border-left: 1px solid #2b383f;
     background: #151d22;
+}
+
+/* The activity trace belongs directly below the Agent heading.  Let hidden
+   optional panels leave no empty grid rows behind. */
+.chat-area:has(.tool-activity-panel:not([hidden])),
+.chat-area:has(.plan-panel:not([hidden])) {
+    grid-template-rows: 38px auto minmax(0, 1fr) auto;
+}
+
+.chat-area:has(.tool-activity-panel:not([hidden])):has(.plan-panel:not([hidden])) {
+    grid-template-rows: 38px auto auto minmax(0, 1fr) auto;
 }
 
 .chat-heading {
@@ -732,6 +793,11 @@ button:focus-visible {
     background: #172329;
     color: #d8e3e5;
     font-size: 12px;
+}
+
+.plan-panel[hidden],
+.tool-activity-panel[hidden] {
+    display: none !important;
 }
 
 .plan-steps {
@@ -791,6 +857,27 @@ button:focus-visible {
 .message.assistant {
     padding-left: 9px;
     border-left: 2px solid #54d7b0;
+}
+
+.chat-file-link {
+    display: inline;
+    min-height: auto;
+    padding: 0;
+    color: #82c9f5;
+    border: 0;
+    border-bottom: 1px solid currentColor;
+    border-radius: 0;
+    background: transparent;
+    font: inherit;
+    font-family: Consolas, "Cascadia Code", monospace;
+    cursor: pointer;
+}
+
+.chat-file-link:hover,
+.chat-file-link:focus-visible {
+    color: #c4e7fb;
+    background: #24485a;
+    outline: 0;
 }
 
 .thinking {
@@ -1280,7 +1367,6 @@ dialog::backdrop {
 :root[data-desktop-theme] .terminal-heading,
 :root[data-desktop-theme] .composer,
 :root[data-desktop-theme] .browser-toolbar,
-:root[data-desktop-theme] .dev-server-toolbar,
 :root[data-desktop-theme] dialog,
 :root[data-desktop-theme] input,
 :root[data-desktop-theme] select,
@@ -1350,7 +1436,6 @@ dialog::backdrop {
 }
 
 :root[data-desktop-theme] .mcp-status .connected,
-:root[data-desktop-theme] .dev-server-status.running,
 :root[data-desktop-theme] .run-result.completed {
     color: var(--desktop-accent);
     border-color: var(--desktop-accent);
@@ -1364,7 +1449,6 @@ dialog::backdrop {
 }
 
 :root[data-desktop-theme] .mcp-status .failed,
-:root[data-desktop-theme] .dev-server-status.failed,
 :root[data-desktop-theme] .run-result.failed,
 :root[data-desktop-theme] .editor-content.error {
     color: var(--desktop-error);
@@ -1387,6 +1471,7 @@ dialog::backdrop {
 }
 
 :root[data-desktop-theme] #runtimeStatus,
+:root[data-desktop-theme] .app-brand,
 :root[data-desktop-theme] .section-heading,
 :root[data-desktop-theme] .editor-toolbar,
 :root[data-desktop-theme] .chat-heading,
@@ -1396,6 +1481,61 @@ dialog::backdrop {
 :root[data-desktop-theme] #contextMeter,
 :root[data-desktop-theme] #rateMeter {
     color: var(--desktop-muted);
+}
+
+/* Complete preset and custom-theme coverage for secondary workbench surfaces.
+   These rules intentionally exclude the Default theme, whose original palette stays unchanged. */
+:root[data-desktop-theme] .git-panel,
+:root[data-desktop-theme] .sidebar > .side-section,
+:root[data-desktop-theme] .git-body,
+:root[data-desktop-theme] .git-files,
+:root[data-desktop-theme] .file-tree,
+:root[data-desktop-theme] .conversation-list,
+:root[data-desktop-theme] .tool-activity-panel,
+:root[data-desktop-theme] .pane-splitter {
+    color: var(--desktop-text);
+    background: var(--desktop-panel);
+}
+
+:root[data-desktop-theme] .git-panel,
+:root[data-desktop-theme] .git-panel .section-heading,
+:root[data-desktop-theme] .git-files,
+:root[data-desktop-theme] .sidebar > .side-section,
+:root[data-desktop-theme] .pane-splitter {
+    border-color: var(--desktop-border);
+}
+
+:root[data-desktop-theme] .git-files,
+:root[data-desktop-theme] .tool-activity,
+:root[data-desktop-theme] .code-block,
+:root[data-desktop-theme] .file-context-menu,
+:root[data-desktop-theme] .slash-menu {
+    color: var(--desktop-text);
+    border-color: var(--desktop-control-border);
+    background: var(--desktop-surface);
+}
+
+:root[data-desktop-theme] .git-summary,
+:root[data-desktop-theme] #gitCounts,
+:root[data-desktop-theme] .code-language,
+:root[data-desktop-theme] .tool-activity,
+:root[data-desktop-theme] .tool-activity summary,
+:root[data-desktop-theme] .file-context-menu button {
+    color: var(--desktop-muted);
+}
+
+:root[data-desktop-theme] .git-file-name:hover,
+:root[data-desktop-theme] .git-row-action:hover,
+:root[data-desktop-theme] .slash-option:hover,
+:root[data-desktop-theme] .slash-option.active,
+:root[data-desktop-theme] .file-context-menu button:hover {
+    color: var(--desktop-text);
+    background: color-mix(in srgb, var(--desktop-surface) 72%, var(--desktop-accent));
+}
+
+:root[data-desktop-theme] .pane-splitter:hover,
+:root[data-desktop-theme] body.resizing .pane-splitter {
+    background: color-mix(in srgb, var(--desktop-panel) 55%, var(--desktop-accent));
 }
 
 .tree-row {
