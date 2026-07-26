@@ -38,7 +38,7 @@ interface PersistedState extends DesktopState {}
 
 let mainWindow: BrowserWindow | undefined;
 const defaultTheme: DesktopThemePreference = { name: "default" };
-let persisted: PersistedState = { workspaceRoot: process.cwd(), updates: { checkOnLaunch: true, autoDownload: false }, theme: defaultTheme, conversations: [] };
+let persisted: PersistedState = { workspaceRoot: process.cwd(), zoomFactor: 1, updates: { checkOnLaunch: true, autoDownload: false }, theme: defaultTheme, conversations: [] };
 let runtimeClient: Awaited<ReturnType<typeof createClientRuntime>> | undefined;
 let unsubscribeEvents: (() => void) | undefined;
 let activeSessionId: string | undefined;
@@ -191,6 +191,7 @@ async function loadPersistedState(): Promise<void> {
     const parsed = JSON.parse(await readFile(statePath(), "utf8")) as Partial<PersistedState>;
     persisted = {
       workspaceRoot: typeof parsed.workspaceRoot === "string" ? parsed.workspaceRoot : process.cwd(),
+      zoomFactor: typeof parsed.zoomFactor === "number" && Number.isFinite(parsed.zoomFactor) ? Math.min(2, Math.max(0.7, parsed.zoomFactor)) : 1,
       configuration: isConfiguration(parsed.configuration) ? normalizeConfiguration(parsed.configuration) : undefined,
       updates: parsed.updates && typeof parsed.updates === "object"
         ? { checkOnLaunch: (parsed.updates as { checkOnLaunch?: unknown }).checkOnLaunch !== false, autoDownload: (parsed.updates as { autoDownload?: unknown }).autoDownload === true }
@@ -201,7 +202,7 @@ async function loadPersistedState(): Promise<void> {
       workspaceUiState: normalizeWorkspaceUiState(parsed.workspaceUiState)
     };
   } catch {
-    persisted = { workspaceRoot: process.cwd(), updates: { checkOnLaunch: true, autoDownload: false }, theme: defaultTheme, conversations: [] };
+    persisted = { workspaceRoot: process.cwd(), zoomFactor: 1, updates: { checkOnLaunch: true, autoDownload: false }, theme: defaultTheme, conversations: [] };
   }
 }
 
@@ -692,6 +693,7 @@ async function createMainWindow(): Promise<void> {
       webviewTag: true
     }
   });
+  mainWindow.webContents.setZoomFactor(persisted.zoomFactor);
   mainWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
     if (!isAllowedPreviewUrl(params.src)) {
       event.preventDefault();
@@ -739,6 +741,14 @@ ipcMain.handle("truss:configure-theme", async (_event, theme: DesktopThemePrefer
   persisted = { ...persisted, theme: theme.name === "custom" ? { name: "custom", custom: theme.custom ?? {} } : { name: theme.name } };
   await persistState();
   return persisted;
+});
+ipcMain.handle("truss:adjust-zoom", async (_event, direction: unknown): Promise<number> => {
+  if (direction !== -1 && direction !== 1) throw new Error("Zoom direction must be -1 or 1.");
+  const zoomFactor = Math.round(Math.min(2, Math.max(0.7, persisted.zoomFactor + direction * 0.1)) * 100) / 100;
+  persisted = { ...persisted, zoomFactor };
+  mainWindow?.webContents.setZoomFactor(zoomFactor);
+  await persistState();
+  return zoomFactor;
 });
 ipcMain.handle("truss:configure-updates", async (_event, updates: { readonly checkOnLaunch: boolean; readonly autoDownload: boolean }): Promise<DesktopState> => {
   persisted = {

@@ -70,9 +70,10 @@ jobs:
       - run: npm run desktop:package:linux:${{ matrix.arch }}
       - name: Create portable tarball from dir output
         run: |
-          if [ -d "packages/desktop/release/linux-${{ matrix.arch }}-unpacked" ]; then
-            cd packages/desktop/release
-            tar -czf "Truss-0.1.10-linux-${{ matrix.arch }}.tar.gz" linux-${{ matrix.arch }}-unpacked/
+          output_dir="linux-${{ matrix.arch }}-unpacked"
+          if [ "${{ matrix.arch }}" = "x64" ]; then output_dir="linux-unpacked"; fi
+          if [ -d "packages/desktop/release/$output_dir" ]; then
+            tar -C "packages/desktop/release/$output_dir" -czf "packages/desktop/release/Truss-${GITHUB_REF_NAME#v}-linux-${{ matrix.arch }}.tar.gz" .
           fi
       - uses: actions/upload-artifact@v4
         with:

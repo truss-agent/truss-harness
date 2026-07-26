@@ -97,7 +97,7 @@ const quickModel = element<HTMLSelectElement>("quickModel");
 const contextMeter = element<HTMLSpanElement>("contextMeter");
 // Keep older packaged HTML usable when only the renderer bundle has been refreshed.
 const rateMeter = document.getElementById("rateMeter") as HTMLSpanElement | null;
-const settingsDialog = element<HTMLDialogElement>("settingsDialog");
+const settingsPanel = element<HTMLElement>("settingsPanel");
 const endpointSelect = element<HTMLSelectElement>("endpointSelect");
 const providerSelect = element<HTMLSelectElement>("providerSelect");
 const byokProviderSelect = element<HTMLSelectElement>("byokProviderSelect");
@@ -130,7 +130,7 @@ const downloadUpdate = element<HTMLButtonElement>("downloadUpdate");
 const installUpdate = element<HTMLButtonElement>("installUpdate");
 const toast = element<HTMLDivElement>("toast");
 
-let desktopState: DesktopState = { workspaceRoot: "", updates: { checkOnLaunch: true, autoDownload: false }, theme: { name: "default" }, conversations: [] };
+let desktopState: DesktopState = { workspaceRoot: "", zoomFactor: 1, updates: { checkOnLaunch: true, autoDownload: false }, theme: { name: "default" }, conversations: [] };
 let endpoints: readonly DesktopEndpoint[] = [];
 let models: readonly string[] = [];
 let files: readonly DesktopFile[] = [];
@@ -145,7 +145,8 @@ let inlineCompletion = "";
 let completionTimer: number | undefined;
 let completionRequest = 0;
 let syntaxTimer: number | undefined;
-type EditorTabMode = "file" | "diff";
+let lastZoomWheelAt = 0;
+type EditorTabMode = "file" | "diff" | "settings";
 type EditorTabState = "loading" | "ready" | "error";
 interface EditorTab {
   readonly path: string;
@@ -158,6 +159,7 @@ interface EditorTab {
 }
 type ToolActivity = DesktopToolActivity;
 const openEditorTabs: EditorTab[] = [];
+const settingsEditorPath = "__truss_settings__";
 const toolActivityByConversation = new Map<string, ToolActivity[]>();
 const toolActivityExpandedByConversation = new Map<string, boolean>();
 let busy = false;
@@ -372,8 +374,8 @@ function workspaceUiState(): DesktopWorkspaceUiState {
   preserveEditorScroll();
   return {
     expandedDirectories: [...expandedDirectories],
-    openEditors: openEditorTabs.map((tab) => ({ path: tab.path, mode: tab.mode, scrollTop: tab.scrollTop })),
-    activeFile,
+    openEditors: openEditorTabs.flatMap((tab) => tab.mode === "settings" ? [] : [{ path: tab.path, mode: tab.mode, scrollTop: tab.scrollTop }]),
+    activeFile: activeWorkspaceFilePath(),
     fileTreeScrollTop: fileTree.scrollTop
   };
 }
@@ -996,6 +998,10 @@ function activeEditorTab(): EditorTab | undefined {
   return activeFile ? openEditorTabs.find((tab) => tab.path === activeFile) : undefined;
 }
 
+function activeWorkspaceFilePath(): string | undefined {
+  return activeEditorTab()?.mode === "settings" ? undefined : activeFile;
+}
+
 function preserveEditorScroll(): void {
   const tab = activeEditorTab();
   const input = editor.querySelector<HTMLTextAreaElement>("textarea");
@@ -1004,13 +1010,18 @@ function preserveEditorScroll(): void {
 
 function renderEditorContent(tab: EditorTab | undefined): void {
   editor.className = "editor-content";
+  settingsPanel.hidden = true;
   editor.replaceChildren();
   if (!tab) {
     editor.append(document.createTextNode("Open a workspace file to inspect it."));
     editor.scrollTop = 0;
     return;
   }
-  if (tab.state === "loading") {
+  if (tab.mode === "settings") {
+    editor.classList.add("settings-content");
+    settingsPanel.hidden = false;
+    editor.append(settingsPanel);
+  } else if (tab.state === "loading") {
     editor.classList.add("loading");
     editor.append(document.createTextNode(`Loading ${tab.path}...`));
   } else if (tab.state === "error") {
@@ -1193,6 +1204,16 @@ function selectEditorTab(tab: EditorTab): void {
   saveWorkspaceUiState();
 }
 
+function openSettings(): void {
+  populateSettings();
+  let tab = openEditorTabs.find((candidate) => candidate.mode === "settings");
+  if (!tab) {
+    tab = { path: settingsEditorPath, mode: "settings", state: "ready", content: "", dirty: false, scrollTop: 0, revision: 0 };
+    openEditorTabs.push(tab);
+  }
+  selectEditorTab(tab);
+}
+
 function closeEditorTab(path: string): void {
   const index = openEditorTabs.findIndex((tab) => tab.path === path);
   if (index < 0) return;
@@ -1227,15 +1248,16 @@ function renderEditorTabs(): void {
     select.type = "button";
     select.setAttribute("role", "tab");
     select.setAttribute("aria-selected", String(tab.path === activeFile));
-    appendFileLabel(select, tab.path, `${tab.dirty ? "* " : ""}${tab.path.split(/[\\/]/).at(-1) ?? tab.path}`);
-    select.title = `${tab.mode === "diff" ? "Diff: " : ""}${tab.path}`;
+    if (tab.mode === "settings") select.textContent = "Settings";
+    else appendFileLabel(select, tab.path, `${tab.dirty ? "* " : ""}${tab.path.split(/[\\/]/).at(-1) ?? tab.path}`);
+    select.title = tab.mode === "settings" ? "Settings" : `${tab.mode === "diff" ? "Diff: " : ""}${tab.path}`;
     select.onclick = () => selectEditorTab(tab);
     const close = document.createElement("button");
     close.className = "editor-tab-close";
     close.type = "button";
     close.textContent = "x";
-    close.title = `Close ${tab.path}`;
-    close.setAttribute("aria-label", `Close ${tab.path}`);
+    close.title = tab.mode === "settings" ? "Close Settings" : `Close ${tab.path}`;
+    close.setAttribute("aria-label", tab.mode === "settings" ? "Close Settings" : `Close ${tab.path}`);
     close.onclick = () => closeEditorTab(tab.path);
     container.append(select, close);
     return container;
@@ -1875,7 +1897,7 @@ async function sendChat(): Promise<void> {
     }
   }
   if (!configuration().model) {
-    settingsDialog.showModal();
+    openSettings();
     notify("Choose a local model first.");
     return;
   }
@@ -1903,9 +1925,9 @@ async function sendChat(): Promise<void> {
       conversationId: conversation.id,
       history,
       attachments,
-      activeFilePath: activeFile,
+      activeFilePath: activeWorkspaceFilePath(),
       attachedPaths: attachedPaths(prompt),
-      openFilePaths: openEditorTabs.map((tab) => tab.path)
+      openFilePaths: openEditorTabs.filter((tab) => tab.mode !== "settings").map((tab) => tab.path)
     });
   } catch (error) {
     updateConversation(conversation.id, (current) => ({ ...current, messages: [...current.messages.slice(0, -1), { role: "assistant", content: `Error: ${error instanceof Error ? error.message : String(error)}` }] }));
@@ -2063,6 +2085,8 @@ function clamp(value: number, minimum: number, maximum: number): number {
 
 function bindPaneResize(id: string, axis: "x" | "y", createMove: () => (delta: number) => void): void {
   const splitter = element<HTMLDivElement>(id);
+  splitter.tabIndex = 0;
+  splitter.setAttribute("aria-orientation", axis === "x" ? "vertical" : "horizontal");
   splitter.addEventListener("pointerdown", (down) => {
     down.preventDefault();
     const start = axis === "x" ? down.clientX : down.clientY;
@@ -2079,6 +2103,13 @@ function bindPaneResize(id: string, axis: "x" | "y", createMove: () => (delta: n
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onEnd);
     window.addEventListener("pointercancel", onEnd);
+  });
+  splitter.addEventListener("keydown", (event) => {
+    const increase = axis === "x" ? event.key === "ArrowRight" : event.key === "ArrowDown";
+    const decrease = axis === "x" ? event.key === "ArrowLeft" : event.key === "ArrowUp";
+    if (!increase && !decrease) return;
+    event.preventDefault();
+    createMove()(increase ? (event.shiftKey ? 48 : 12) : event.shiftKey ? -48 : -12);
   });
 }
 
@@ -2201,7 +2232,7 @@ element<HTMLButtonElement>("pullGit").onclick = () => void runGitAction("pull", 
 element<HTMLButtonElement>("pushGit").onclick = () => void runGitAction("push", () => window.trussDesktop.gitPush());
 generateCommitMessage.onclick = () => {
   if (!configuration().model) {
-    settingsDialog.showModal();
+    openSettings();
     notify("Choose a local model first.");
     return;
   }
@@ -2234,16 +2265,27 @@ element<HTMLFormElement>("commitForm").onsubmit = (event) => {
   });
 };
 element<HTMLButtonElement>("newChat").onclick = () => { cancelActiveRunForNavigation(); createConversation(); renderConversations(); renderChat(); renderRuntime(); saveConversations(); };
-element<HTMLButtonElement>("fileButton").onclick = () => { setCenterView("editor"); if (activeFile) void openFile(activeFile, false, true); };
-element<HTMLButtonElement>("diffButton").onclick = () => { setCenterView("editor"); if (activeFile) void openFile(activeFile, !showingDiff, true); };
+element<HTMLButtonElement>("fileButton").onclick = () => { const path = activeWorkspaceFilePath(); setCenterView("editor"); if (path) void openFile(path, false, true); };
+element<HTMLButtonElement>("diffButton").onclick = () => { const path = activeWorkspaceFilePath(); setCenterView("editor"); if (path) void openFile(path, !showingDiff, true); };
 formatFileButton.onclick = () => void formatActiveFile();
 editorTabsElement.addEventListener("wheel", (event) => {
+  if (event.ctrlKey || event.defaultPrevented) return;
   if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
   event.preventDefault();
   editorTabsElement.scrollBy({ left: event.deltaY, behavior: "smooth" });
 }, { passive: false });
-element<HTMLButtonElement>("settingsButton").onclick = () => { populateSettings(); settingsDialog.showModal(); };
-element<HTMLButtonElement>("closeSettings").onclick = () => settingsDialog.close("cancel");
+window.addEventListener("wheel", (event) => {
+  if (!event.ctrlKey || event.deltaY === 0) return;
+  event.preventDefault();
+  const now = Date.now();
+  if (now - lastZoomWheelAt < 140) return;
+  lastZoomWheelAt = now;
+  const direction: -1 | 1 = event.deltaY < 0 ? 1 : -1;
+  void window.trussDesktop.adjustZoom(direction)
+    .then((zoomFactor) => { desktopState = { ...desktopState, zoomFactor }; notify(`Zoom: ${Math.round(zoomFactor * 100)}%`); })
+    .catch((error: unknown) => notify(error instanceof Error ? error.message : String(error)));
+}, { passive: false, capture: true });
+element<HTMLButtonElement>("settingsButton").onclick = openSettings;
 element<HTMLButtonElement>("dialogRefresh").onclick = () => {
   const provider = providerSelect.value as "ollama" | "openai-compatible";
   void discover({ provider, baseUrl: baseUrlInput.value });
@@ -2254,7 +2296,7 @@ element<HTMLButtonElement>("applySettings").onclick = (event) => {
     const next = settingsConfiguration();
     void applyConfiguration(next)
       .then(() => window.trussDesktop.configureUpdates({ checkOnLaunch: checkUpdatesOnLaunch.checked, autoDownload: autoDownloadUpdates.checked }))
-      .then((returned) => { desktopState = returned; settingsDialog.close(); })
+      .then((returned) => { desktopState = returned; notify("Settings applied."); })
       .catch((error) => notify(error instanceof Error ? error.message : String(error)));
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error));

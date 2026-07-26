@@ -108,6 +108,7 @@ export interface DesktopGitStatus {
 
 export interface DesktopState {
   readonly workspaceRoot: string;
+  readonly zoomFactor: number;
   readonly configuration?: DesktopConfiguration;
   readonly updates: { readonly checkOnLaunch: boolean; readonly autoDownload: boolean };
   readonly theme: DesktopThemePreference;
@@ -137,6 +138,7 @@ export interface DesktopBridge {
   configure(configuration: DesktopConfiguration, apiKey?: string): Promise<DesktopState>;
   clearCredential(provider: DesktopProvider): Promise<void>;
   configureTheme(theme: DesktopThemePreference): Promise<DesktopState>;
+  adjustZoom(direction: -1 | 1): Promise<number>;
   configureUpdates(updates: { readonly checkOnLaunch: boolean; readonly autoDownload: boolean }): Promise<DesktopState>;
   checkForUpdates(): Promise<void>;
   downloadUpdate(): Promise<void>;
