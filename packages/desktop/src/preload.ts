@@ -11,6 +11,7 @@ const bridge: DesktopBridge = {
   configure: (configuration: DesktopConfiguration, apiKey?: string) => ipcRenderer.invoke("truss:configure", configuration, apiKey),
   clearCredential: (provider) => ipcRenderer.invoke("truss:clear-credential", provider),
   configureTheme: (theme) => ipcRenderer.invoke("truss:configure-theme", theme),
+  adjustZoom: (direction) => ipcRenderer.invoke("truss:adjust-zoom", direction),
   configureUpdates: (updates: { readonly checkOnLaunch: boolean; readonly autoDownload: boolean }) => ipcRenderer.invoke("truss:configure-updates", updates),
   checkForUpdates: () => ipcRenderer.invoke("truss:check-for-updates"),
   downloadUpdate: () => ipcRenderer.invoke("truss:download-update"),

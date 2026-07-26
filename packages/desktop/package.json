@@ -91,6 +91,18 @@
           ]
         }
       ]
+    },
+    "pacman": {
+      "depends": [
+        "gtk3",
+        "nss",
+        "libnotify",
+        "libxss",
+        "libxtst",
+        "xdg-utils",
+        "at-spi2-core",
+        "libsecret"
+      ]
     }
   },
   "license": "MIT",

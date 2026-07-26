@@ -455,6 +455,13 @@ button:focus-visible {
     overflow: hidden;
 }
 
+.editor-content.settings-content {
+    padding: 0;
+    overflow: hidden;
+    font-family: inherit;
+    white-space: normal;
+}
+
 .editor-edit-surface {
     --editor-line-height: 18px;
     --editor-padding-y: 12px;
@@ -1021,6 +1028,24 @@ dialog::backdrop {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
     padding: 15px;
+}
+
+.settings-editor {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 100%;
+    overflow: auto;
+    padding: 18px;
+    background: var(--desktop-background, #11161a);
+}
+
+.settings-editor .settings-form {
+    width: min(760px, 100%);
+    box-sizing: border-box;
+    margin: 0 auto;
+    border: 1px solid var(--desktop-border, #2b383f);
+    border-radius: 6px;
+    background: var(--desktop-surface, #151d22);
 }
 
 .dialog-heading,
@@ -1934,10 +1959,10 @@ dialog::backdrop {
 }
 
 .sidebar {
-    --git-height: 220px;
+    --git-height: 1fr;
     --files-height: 1fr;
-    --history-height: 150px;
-    grid-template-rows: minmax(38px, var(--git-height)) 6px minmax(110px, var(--files-height)) 6px minmax(110px, var(--history-height));
+    --history-height: 1fr;
+    grid-template-rows: minmax(38px, var(--git-height)) 12px minmax(110px, var(--files-height)) 12px minmax(110px, var(--history-height));
     overflow: hidden;
     border-right: 0;
 }
@@ -1978,6 +2003,7 @@ dialog::backdrop {
     position: relative;
     z-index: 3;
     background: #1d292f;
+    touch-action: none;
 }
 
 .pane-splitter:hover,
@@ -1991,6 +2017,23 @@ body.resizing .pane-splitter {
 
 .pane-splitter.horizontal {
     cursor: row-resize;
+}
+
+.sidebar > .pane-splitter.horizontal {
+    background: #162127;
+}
+
+.sidebar > .pane-splitter.horizontal::before {
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    left: 50%;
+    width: 42px;
+    height: 3px;
+    border-radius: 999px;
+    transform: translate(-50%, -50%);
+    background: repeating-linear-gradient(90deg, #50646d 0 3px, transparent 3px 7px);
+    content: "";
 }
 
 .pane-splitter.vertical::after {
@@ -2011,6 +2054,11 @@ body.resizing .pane-splitter {
     height: 2px;
     background: #2e3e46;
     content: "";
+}
+
+.sidebar > .pane-splitter.horizontal:focus-visible {
+    outline: 1px solid #54d7b0;
+    outline-offset: -1px;
 }
 
 body.resizing {
