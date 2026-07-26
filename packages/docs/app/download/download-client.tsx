@@ -28,8 +28,8 @@ type Build = {
 const builds: Build[] = [
   { platform: "windows", arch: "x64", format: "Windows installer", extension: ".exe", note: "Intel and AMD PCs" },
   { platform: "windows", arch: "arm64", format: "Windows installer", extension: ".exe", note: "Snapdragon and ARM PCs" },
-  { platform: "linux", arch: "x64", format: "AppImage", extension: ".AppImage", note: "Portable, most distributions" },
-  { platform: "linux", arch: "arm64", format: "AppImage", extension: ".AppImage", note: "Portable, ARM Linux" },
+  { platform: "linux", arch: "x64", format: "Portable archive", extension: ".tar.gz", note: "All distributions" },
+  { platform: "linux", arch: "arm64", format: "Portable archive", extension: ".tar.gz", note: "ARM Linux" },
   { platform: "linux", arch: "x64", format: "Debian package", extension: ".deb", note: "Debian, Ubuntu, and Mint" },
   { platform: "linux", arch: "arm64", format: "Debian package", extension: ".deb", note: "Debian and Ubuntu on ARM" },
   { platform: "linux", arch: "x64", format: "RPM package", extension: ".rpm", note: "Fedora, RHEL, and openSUSE" },
@@ -53,6 +53,8 @@ function assetMatches(asset: ReleaseAsset, build: Build): boolean {
   const extensionMatches =
     extension === ".pacman"
       ? name.endsWith(".pacman") || name.endsWith(".pkg.tar.zst")
+      : extension === ".tar.gz"
+      ? name.endsWith(".tar.gz")
       : name.endsWith(extension);
 
   return platformMatches && archMatches && extensionMatches;

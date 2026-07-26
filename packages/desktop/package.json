@@ -13,8 +13,8 @@
     "package:win:all": "npm run build && electron-builder --publish never --win nsis --x64 --arm64",
     "package:win:x64": "npm run build && electron-builder --publish never --win nsis --x64",
     "package:win:arm64": "npm run build && electron-builder --publish never --win nsis --arm64",
-    "package:linux:x64": "npm run build && electron-builder --publish never --linux AppImage deb rpm pacman --x64",
-    "package:linux:arm64": "npm run build && electron-builder --publish never --linux AppImage deb rpm pacman --arm64"
+    "package:linux:x64": "npm run build && electron-builder --publish never --linux deb rpm pacman dir --x64",
+    "package:linux:arm64": "npm run build && electron-builder --publish never --linux deb rpm pacman dir --arm64"
   },
   "build": {
     "appId": "com.truss-harness.desktop",
@@ -63,13 +63,6 @@
       "executableName": "truss-harness",
       "target": [
         {
-          "target": "AppImage",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        },
-        {
           "target": "deb",
           "arch": [
             "x64",
@@ -89,6 +82,13 @@
             "x64",
             "arm64"
           ]
+        },
+        {
+          "target": "dir",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ]
     }
@@ -103,7 +103,6 @@
     "@types/qrcode": "^1.5.6",
     "electron-updater": "^6.3.9",
     "highlight.js": "11.11.1",
-    "prettier": "3.6.2",
     "qrcode": "^1.5.4",
     "@truss-harness/branding": "0.1.0",
     "@truss-harness/cli": "0.1.7",
@@ -114,7 +113,8 @@
   "devDependencies": {
     "electron": "37.10.3",
     "electron-builder": "^26.0.0",
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.0",
+    "prettier": "3.6.2"
   },
   "bugs": {
     "url": "https://github.com/truss-agent/truss-harness/issues"
