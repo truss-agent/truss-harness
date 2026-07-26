@@ -1,8 +1,9 @@
 {
   "name": "@truss-harness/desktop",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Standalone desktop client for the Truss runtime.",
   "author": "Truss Contributors",
+  "desktopName": "truss-harness.desktop",
   "type": "module",
   "main": "./dist/main.cjs",
   "scripts": {
@@ -54,7 +55,8 @@
       "createStartMenuShortcut": true
     },
     "linux": {
-      "icon": "./assets/brand-logo.png",
+      "icon": "./assets/brand-logo-512.png",
+      "syncDesktopName": true,
       "category": "Development",
       "synopsis": "Local-first coding agent workspace",
       "description": "Desktop workspace for local coding models with chat, tools, Git, terminal, editor, and approval controls.",
@@ -93,6 +95,7 @@
       ]
     },
     "pacman": {
+      "compression": "zstd",
       "depends": [
         "gtk3",
         "nss",
@@ -115,6 +118,7 @@
     "@types/qrcode": "^1.5.6",
     "electron-updater": "^6.3.9",
     "highlight.js": "11.11.1",
+    "prettier": "3.6.2",
     "qrcode": "^1.5.4",
     "@truss-harness/branding": "0.1.0",
     "@truss-harness/cli": "0.1.7",
@@ -125,8 +129,7 @@
   "devDependencies": {
     "electron": "37.10.3",
     "electron-builder": "^26.0.0",
-    "esbuild": "^0.25.0",
-    "prettier": "3.6.2"
+    "esbuild": "^0.25.0"
   },
   "bugs": {
     "url": "https://github.com/truss-agent/truss-harness/issues"

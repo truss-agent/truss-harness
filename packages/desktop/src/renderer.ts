@@ -467,6 +467,14 @@ function applySidebarTracks(git: number, files: number, history: number): void {
   sidebar.style.setProperty("--history-height", `${history}px`);
 }
 
+function resetSidebarTracks(): void {
+  const splitterHeight = element<HTMLDivElement>("gitSplitter").getBoundingClientRect().height
+    + element<HTMLDivElement>("historySplitter").getBoundingClientRect().height;
+  const sharedHeight = Math.max(110, Math.floor((sidebar.getBoundingClientRect().height - splitterHeight) / 3));
+  gitPanelHeight = sharedHeight;
+  applySidebarTracks(sharedHeight, sharedHeight, sharedHeight);
+}
+
 function setGitCollapsed(collapsed: boolean): void {
   if (gitCollapsed === collapsed) return;
   const tracks = sidebarTracks();
@@ -2137,6 +2145,8 @@ bindPaneResize("historySplitter", "y", () => {
     applySidebarTracks(initial.git, initial.files + applied, initial.history - applied);
   };
 });
+element<HTMLDivElement>("gitSplitter").ondblclick = resetSidebarTracks;
+element<HTMLDivElement>("historySplitter").ondblclick = resetSidebarTracks;
 bindPaneResize("terminalSplitter", "y", () => {
   const initial = terminal.getBoundingClientRect().height;
   const adjacent = centerSurface.getBoundingClientRect().height;
@@ -2440,9 +2450,7 @@ void (async () => {
   await discover(desktopState.configuration);
   await Promise.all([loadFiles(), refreshGit(), window.trussDesktop.getPlan().then((plan) => { activePlan = plan; renderPlan(); })]);
   await restoreWorkspaceUiState();
-  const tracks = sidebarTracks();
-  gitPanelHeight = tracks.git;
-  applySidebarTracks(tracks.git, tracks.files, tracks.history);
+  resetSidebarTracks();
   renderConversations();
   renderChat();
   renderRuntime();
