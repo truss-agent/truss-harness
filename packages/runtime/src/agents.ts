@@ -91,6 +91,16 @@ export interface AgentRunSummary {
   readonly error?: AgentRunError;
 }
 
+/**
+ * A replaceable, credential-free store for completed agent run summaries.
+ * Hosts decide where these workspace-local records live; the runtime only
+ * keeps their lifecycle and retention policy consistent.
+ */
+export interface AgentRunHistoryStore {
+  load(): Promise<readonly AgentRunSummary[]>;
+  save(runs: readonly AgentRunSummary[]): Promise<void>;
+}
+
 export interface ManagedAgentEvent {
   readonly agentId: AgentId;
   readonly runId: AgentRunId;
@@ -342,6 +352,9 @@ export interface AgentCoordinatorOptions {
   readonly runtimeFactory: AgentRuntimeFactory;
   readonly maxConcurrentRuns?: number;
   readonly writeLease?: WorkspaceWriteLease;
+  /** Optional durable history for terminal runs. Defaults to 50 retained runs. */
+  readonly history?: AgentRunHistoryStore;
+  readonly maxRunHistory?: number;
 }
 
 /**
@@ -353,9 +366,12 @@ export class AgentCoordinator {
   readonly events = new EventBus<AgentCoordinatorEvent>();
   private readonly runs = new Map<AgentRunId, ActiveRun>();
   private readonly runsByAgent = new Map<AgentId, AgentRunId>();
+  private readonly history = new Map<AgentRunId, AgentRunSummary>();
   private readonly maxConcurrentRuns: number;
+  private readonly maxRunHistory: number;
   private readonly writeLease: WorkspaceWriteLease;
   private queuePump = Promise.resolve();
+  private historyRestored = false;
 
   constructor(private readonly options: AgentCoordinatorOptions) {
     this.maxConcurrentRuns = options.maxConcurrentRuns ?? 3;
@@ -366,6 +382,10 @@ export class AgentCoordinator {
       throw new Error("maxConcurrentRuns must be a positive integer.");
     }
     this.writeLease = options.writeLease ?? new InMemoryWorkspaceWriteLease();
+    this.maxRunHistory = options.maxRunHistory ?? 50;
+    if (!Number.isSafeInteger(this.maxRunHistory) || this.maxRunHistory < 1) {
+      throw new Error("maxRunHistory must be a positive integer.");
+    }
   }
 
   async listProfiles(): Promise<readonly AgentProfile[]> {
@@ -393,12 +413,35 @@ export class AgentCoordinator {
     return this.options.profiles.delete(agentId);
   }
 
+  /**
+   * Hydrates summaries from an optional host-owned store. A malformed or
+   * unavailable history must never keep a client from starting an agent.
+   */
+  async restoreHistory(): Promise<readonly AgentRunSummary[]> {
+    if (this.historyRestored || !this.options.history) return this.listRuns();
+    this.historyRestored = true;
+    const stored = await this.options.history.load().catch(() => []);
+    for (const run of stored) {
+      if (this.isHistoricalSummary(run)) this.history.set(run.id, run);
+    }
+    this.trimHistory();
+    return this.listRuns();
+  }
+
   listRuns(): readonly AgentRunSummary[] {
-    return [...this.runs.values()].map((run) => this.summary(run));
+    const current = [...this.runs.values()].map((run) => this.summary(run));
+    const currentIds = new Set(current.map((run) => run.id));
+    return [
+      ...current,
+      ...[...this.history.values()].filter((run) => !currentIds.has(run.id)),
+    ].sort(
+      (left, right) =>
+        this.summaryTimestamp(right) - this.summaryTimestamp(left),
+    );
   }
   getRun(runId: AgentRunId): AgentRunSummary | undefined {
     const run = this.runs.get(runId);
-    return run ? this.summary(run) : undefined;
+    return run ? this.summary(run) : this.history.get(runId);
   }
 
   async start(input: StartAgentRunInput): Promise<AgentRunSummary> {
@@ -427,6 +470,7 @@ export class AgentCoordinator {
       sequence: 0,
       ownsWriteLease: false,
     };
+    this.history.delete(run.id);
     this.runs.set(run.id, run);
     this.runsByAgent.set(run.agentId, run.id);
     await this.publishRun(run);
@@ -592,6 +636,9 @@ export class AgentCoordinator {
     run.controller = undefined;
     if (created) await created.dispose().catch(() => undefined);
     await this.publishRun(run);
+    this.rememberTerminalRun(run);
+    await this.persistHistory();
+    this.pruneTerminalRunCache();
     await this.pump();
   }
 
@@ -603,6 +650,57 @@ export class AgentCoordinator {
 
   private isTerminal(state: AgentRunState): boolean {
     return state === "completed" || state === "failed" || state === "cancelled";
+  }
+
+  private isHistoricalSummary(run: AgentRunSummary): boolean {
+    return (
+      typeof run.id === "string" &&
+      typeof run.agentId === "string" &&
+      typeof run.prompt === "string" &&
+      this.isTerminal(run.state) &&
+      Array.isArray(run.changedFiles) &&
+      run.changedFiles.every((path) => typeof path === "string")
+    );
+  }
+
+  private rememberTerminalRun(run: ActiveRun): void {
+    this.history.set(run.id, this.summary(run));
+    this.trimHistory();
+  }
+
+  private trimHistory(): void {
+    const retained = [...this.history.values()]
+      .sort(
+        (left, right) =>
+          this.summaryTimestamp(right) - this.summaryTimestamp(left),
+      )
+      .slice(0, this.maxRunHistory);
+    this.history.clear();
+    for (const run of retained) this.history.set(run.id, run);
+  }
+
+  private pruneTerminalRunCache(): void {
+    const terminal = [...this.runs.values()]
+      .filter((run) => this.isTerminal(run.state))
+      .sort(
+        (left, right) =>
+          this.summaryTimestamp(this.summary(right)) -
+          this.summaryTimestamp(this.summary(left)),
+      );
+    for (const run of terminal.slice(this.maxRunHistory))
+      this.runs.delete(run.id);
+  }
+
+  private async persistHistory(): Promise<void> {
+    if (!this.options.history) return;
+    await this.options.history
+      .save([...this.history.values()])
+      .catch(() => undefined);
+  }
+
+  private summaryTimestamp(run: AgentRunSummary): number {
+    const timestamp = run.completedAt ?? run.startedAt;
+    return timestamp ? Date.parse(timestamp) || 0 : 0;
   }
 
   private summary(run: ActiveRun): AgentRunSummary {

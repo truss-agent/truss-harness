@@ -33,6 +33,7 @@ import {
   createClientRuntime,
   type ClientConfiguration,
 } from "@truss-harness/cli/runtime";
+import { FileAgentRunHistoryStore } from "@truss-harness/cli/agents";
 import {
   createGatewayAgentController,
   createPairingUri,
@@ -467,7 +468,9 @@ async function configureAgentCoordinator(): Promise<void> {
   agentCoordinator = new AgentCoordinator({
     profiles: new DesktopAgentProfileStore(),
     runtimeFactory: agentHost.createRuntimeFactory(),
+    history: new FileAgentRunHistoryStore(persisted.workspaceRoot),
   });
+  await agentCoordinator.restoreHistory();
   unsubscribeAgentEvents = agentCoordinator.events.subscribe(() => {
     void publishAgents();
   });

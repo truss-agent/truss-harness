@@ -5,7 +5,7 @@ import { promisify } from "node:util";
 import { createInterface } from "node:readline";
 import { cloudProviderDefinition, cloudProviderDefinitions, detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, isCloudProviderId, isLocalEndpointKind, listLocalModels, normalizeLocalBaseUrl, type ModelProviderKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import { brand } from "@truss-harness/branding";
-import { FileAgentProfileStore, profileFromConfiguration } from "@truss-harness/cli/agents";
+import { FileAgentProfileStore, FileAgentRunHistoryStore, profileFromConfiguration } from "@truss-harness/cli/agents";
 import type { ClientConfiguration } from "@truss-harness/cli/runtime";
 import { AgentHost } from "@truss-harness/agent-host";
 import { AgentCoordinator, ApiKeyCredential, executeWorkspaceCommand, type AgentProfile, type AgentRunSummary, type ChatAttachment, type ContextBlock, type ToolApproval, type ToolCall, type WorkspacePlan } from "@truss-harness/runtime";
@@ -509,7 +509,9 @@ export function activate(context: vscode.ExtensionContext): void {
     const coordinator = new AgentCoordinator({
       profiles: new FileAgentProfileStore(workspaceRoot()),
       runtimeFactory: host.createRuntimeFactory(),
+      history: new FileAgentRunHistoryStore(workspaceRoot()),
     });
+    await coordinator.restoreHistory();
     agentCoordinator = coordinator;
     agentCoordinatorSignature = signature;
     disposeAgentEvents = coordinator.events.subscribe((event) => {

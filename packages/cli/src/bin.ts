@@ -543,7 +543,9 @@ async function main(): Promise<void> {
         readonly approval: ProtocolToolApproval;
       }
     >();
-    const agentCoordinators = [] as ReturnType<typeof createCliAgentCoordinator>[];
+    const agentCoordinators = [] as ReturnType<
+      typeof createCliAgentCoordinator
+    >[];
     const workspaces = await Promise.all(
       workspaceRoots.map(async (workspaceRoot, index) => {
         const configuration = await resolveConfiguration({
@@ -555,6 +557,7 @@ async function main(): Promise<void> {
           configuration,
           new FileAgentProfileStore(workspaceRoot),
         );
+        await coordinator.restoreHistory();
         agentCoordinators.push(coordinator);
         return {
           id,
@@ -614,7 +617,9 @@ async function main(): Promise<void> {
       await Promise.all(
         [...clients.values()].map(async ({ client }) => client.dispose()),
       );
-      await Promise.all(agentCoordinators.map((coordinator) => coordinator.dispose()));
+      await Promise.all(
+        agentCoordinators.map((coordinator) => coordinator.dispose()),
+      );
     }
     return;
   }
@@ -667,6 +672,7 @@ async function main(): Promise<void> {
         overrides,
       });
       const coordinator = createCliAgentCoordinator(configuration, profiles);
+      await coordinator.restoreHistory();
       const unsubscribe = coordinator.events.subscribe((event) => {
         if (
           event.type === "runtime" &&
