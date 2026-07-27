@@ -465,6 +465,7 @@ button:focus-visible {
 .agent-run-detail-heading strong { display: block; }
 .agent-run-detail-heading span, .agent-run-detail p { color: var(--desktop-muted); }
 .agent-run-detail p { margin: 0; overflow-wrap: anywhere; font-family: Consolas, "Cascadia Code", monospace; font-size: 12px; }
+.agent-run-output { max-height: 280px; margin: 0; overflow: auto; padding: 10px; border: 1px solid var(--desktop-border); border-radius: 5px; background: var(--desktop-panel); color: var(--desktop-text); font-family: Consolas, "Cascadia Code", monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .agent-changed-files { display: flex; flex-wrap: wrap; gap: 7px; }
 .agent-changed-files button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 @media (max-width: 900px) { .agent-create { grid-template-columns: 1fr 1fr; } }

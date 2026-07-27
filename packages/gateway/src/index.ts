@@ -67,6 +67,7 @@ function remoteRun(run: AgentRunSummary): RemoteAgentRunSummary {
     ...(run.startedAt ? { startedAt: run.startedAt } : {}),
     ...(run.completedAt ? { completedAt: run.completedAt } : {}),
     ...(run.latestProgress ? { latestProgress: run.latestProgress } : {}),
+    ...(run.output ? { output: run.output } : {}),
     ...(run.activeTool ? { activeTool: run.activeTool } : {}),
     changedFiles: run.changedFiles,
     ...(run.error ? { errorCode: run.error.code } : {}),

@@ -70,6 +70,8 @@ class FakeRuntime {
         }),
       ),
     ]);
+    await this.events.emit({ type: "text_delta", sessionId, text: "A completed " });
+    await this.events.emit({ type: "text_delta", sessionId, text: "response." });
     await this.events.emit({
       type: "run_completed",
       sessionId,
@@ -376,6 +378,7 @@ describe("AgentCoordinator", () => {
       agentId: profile.id,
       state: "completed",
       prompt: "Review the diff",
+      output: "A completed response.",
     });
 
     const restored = new AgentCoordinator({
@@ -390,6 +393,7 @@ describe("AgentCoordinator", () => {
     expect(restored.getRun(newerRun.id)).toMatchObject({
       id: newerRun.id,
       state: "completed",
+      output: "A completed response.",
     });
     expect(restored.listRuns()).toHaveLength(1);
   });
