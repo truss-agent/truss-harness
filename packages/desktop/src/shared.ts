@@ -1,10 +1,22 @@
 import type { ModelProviderKind } from "@truss-harness/provider-openai-compatible";
+import type {
+  AgentProfile,
+  AgentRunSummary,
+  CreateAgentProfileInput,
+  UpdateAgentProfileInput,
+} from "@truss-harness/runtime";
 
 export type DesktopProvider = ModelProviderKind;
 export type DesktopLocalProvider = "ollama" | "openai-compatible";
 export type DesktopMode = "chat" | "plan" | "edit";
 export type DesktopPermission = "ask" | "auto-read" | "auto-all";
-export const desktopThemeNames = ["default", "blue", "orange", "multicolor", "custom"] as const;
+export const desktopThemeNames = [
+  "default",
+  "blue",
+  "orange",
+  "multicolor",
+  "custom",
+] as const;
 export type DesktopThemeName = (typeof desktopThemeNames)[number];
 
 /** Palette tokens used by a custom Desktop theme. Omitted values retain the default token. */
@@ -35,7 +47,10 @@ export interface DesktopConfiguration {
   readonly contextWindow: number;
   readonly internetAccess: boolean;
   readonly mcpServers: McpServerConfigurations;
-  readonly autocomplete?: { readonly enabled: boolean; readonly model?: string };
+  readonly autocomplete?: {
+    readonly enabled: boolean;
+    readonly model?: string;
+  };
   readonly formatOnSave?: boolean;
 }
 
@@ -110,42 +125,143 @@ export interface DesktopState {
   readonly workspaceRoot: string;
   readonly zoomFactor: number;
   readonly configuration?: DesktopConfiguration;
-  readonly updates: { readonly checkOnLaunch: boolean; readonly autoDownload: boolean };
+  readonly updates: {
+    readonly checkOnLaunch: boolean;
+    readonly autoDownload: boolean;
+  };
   readonly theme: DesktopThemePreference;
   readonly conversations: readonly DesktopConversation[];
   readonly activeConversationId?: string;
   readonly mcpStatuses?: readonly McpServerStatus[];
   readonly workspaceUiState?: DesktopWorkspaceUiState;
+  /** Workspace-local profiles; provider credentials remain in encrypted host storage. */
+  readonly agentProfiles?: readonly AgentProfile[];
 }
 
 export type DesktopEvent =
-  | { readonly type: "agent"; readonly conversationId?: string; readonly event: { readonly type: string; readonly sessionId: string; readonly text?: string; readonly tool?: string; readonly callId?: string; readonly input?: Record<string, unknown>; readonly result?: { readonly content?: string; readonly isError?: boolean }; readonly error?: { readonly message?: string }; readonly plan?: WorkspacePlan; readonly modifiedFiles?: readonly string[] } }
-  | { readonly type: "file-context-open"; readonly x: number; readonly y: number; readonly target: { readonly kind: "root" | "directory" | "file"; readonly path: string } }
+  | {
+      readonly type: "agent";
+      readonly conversationId?: string;
+      readonly event: {
+        readonly type: string;
+        readonly sessionId: string;
+        readonly text?: string;
+        readonly tool?: string;
+        readonly callId?: string;
+        readonly input?: Record<string, unknown>;
+        readonly result?: {
+          readonly content?: string;
+          readonly isError?: boolean;
+        };
+        readonly error?: { readonly message?: string };
+        readonly plan?: WorkspacePlan;
+        readonly modifiedFiles?: readonly string[];
+      };
+    }
+  | {
+      readonly type: "file-context-open";
+      readonly x: number;
+      readonly y: number;
+      readonly target: {
+        readonly kind: "root" | "directory" | "file";
+        readonly path: string;
+      };
+    }
   | { readonly type: "chat-start"; readonly conversationId: string }
-  | { readonly type: "chat-end"; readonly conversationId: string; readonly aborted?: boolean }
-  | { readonly type: "chat-error"; readonly conversationId: string; readonly message: string }
-  | { readonly type: "approval"; readonly callId: string; readonly tool: string; readonly input: Record<string, unknown> }
-  | { readonly type: "update"; readonly status: "checking" | "available" | "not-available" | "downloading" | "downloaded" | "error"; readonly version?: string; readonly percent?: number; readonly message?: string }
-  | { readonly type: "terminal-output"; readonly commandId: string; readonly text: string };
+  | {
+      readonly type: "chat-end";
+      readonly conversationId: string;
+      readonly aborted?: boolean;
+    }
+  | {
+      readonly type: "chat-error";
+      readonly conversationId: string;
+      readonly message: string;
+    }
+  | {
+      readonly type: "approval";
+      readonly callId: string;
+      readonly tool: string;
+      readonly input: Record<string, unknown>;
+    }
+  | { readonly type: "agents"; readonly snapshot: DesktopAgentsSnapshot }
+  | {
+      readonly type: "update";
+      readonly status:
+        | "checking"
+        | "available"
+        | "not-available"
+        | "downloading"
+        | "downloaded"
+        | "error";
+      readonly version?: string;
+      readonly percent?: number;
+      readonly message?: string;
+    }
+  | {
+      readonly type: "terminal-output";
+      readonly commandId: string;
+      readonly text: string;
+    };
+
+export interface DesktopAgentsSnapshot {
+  readonly profiles: readonly AgentProfile[];
+  readonly runs: readonly AgentRunSummary[];
+}
 
 export interface DesktopBridge {
   initialState(): Promise<DesktopState>;
   chooseWorkspace(): Promise<DesktopState | undefined>;
-  saveConversations(conversations: readonly DesktopConversation[], activeConversationId?: string): Promise<void>;
+  saveConversations(
+    conversations: readonly DesktopConversation[],
+    activeConversationId?: string,
+  ): Promise<void>;
   saveWorkspaceUiState(state: DesktopWorkspaceUiState): Promise<void>;
-  discoverModels(configuration?: Partial<DesktopConfiguration>): Promise<{ readonly endpoints: readonly DesktopEndpoint[]; readonly models: readonly string[] }>;
+  discoverModels(configuration?: Partial<DesktopConfiguration>): Promise<{
+    readonly endpoints: readonly DesktopEndpoint[];
+    readonly models: readonly string[];
+  }>;
   refreshLocalModel(): Promise<DesktopState>;
-  configure(configuration: DesktopConfiguration, apiKey?: string): Promise<DesktopState>;
+  configure(
+    configuration: DesktopConfiguration,
+    apiKey?: string,
+  ): Promise<DesktopState>;
   clearCredential(provider: DesktopProvider): Promise<void>;
   configureTheme(theme: DesktopThemePreference): Promise<DesktopState>;
   adjustZoom(direction: -1 | 1): Promise<number>;
-  configureUpdates(updates: { readonly checkOnLaunch: boolean; readonly autoDownload: boolean }): Promise<DesktopState>;
+  configureUpdates(updates: {
+    readonly checkOnLaunch: boolean;
+    readonly autoDownload: boolean;
+  }): Promise<DesktopState>;
   checkForUpdates(): Promise<void>;
   downloadUpdate(): Promise<void>;
   installUpdate(): Promise<void>;
-  sendChat(input: { readonly prompt: string; readonly conversationId: string; readonly history: readonly DesktopMessage[]; readonly attachments?: readonly import("@truss-harness/runtime").ChatAttachment[]; readonly activeFilePath?: string; readonly attachedPaths?: readonly string[]; readonly openFilePaths?: readonly string[] }): Promise<void>;
+  sendChat(input: {
+    readonly prompt: string;
+    readonly conversationId: string;
+    readonly history: readonly DesktopMessage[];
+    readonly attachments?: readonly import("@truss-harness/runtime").ChatAttachment[];
+    readonly activeFilePath?: string;
+    readonly attachedPaths?: readonly string[];
+    readonly openFilePaths?: readonly string[];
+  }): Promise<void>;
   stopChat(): Promise<void>;
   resolveApproval(callId: string, approved: boolean): Promise<void>;
+  listAgents(): Promise<DesktopAgentsSnapshot>;
+  createAgent(input: CreateAgentProfileInput): Promise<DesktopAgentsSnapshot>;
+  updateAgent(
+    id: string,
+    input: UpdateAgentProfileInput,
+  ): Promise<DesktopAgentsSnapshot>;
+  deleteAgent(id: string): Promise<DesktopAgentsSnapshot>;
+  startAgent(id: string, prompt: string): Promise<DesktopAgentsSnapshot>;
+  stopAgent(runId: string): Promise<DesktopAgentsSnapshot>;
+  stopAllAgents(): Promise<DesktopAgentsSnapshot>;
+  resolveAgentApproval(
+    runId: string,
+    callId: string,
+    approved: boolean,
+  ): Promise<DesktopAgentsSnapshot>;
   listFiles(): Promise<readonly DesktopFile[]>;
   listDirectory(path: string): Promise<readonly DesktopFile[]>;
   readFile(path: string): Promise<string>;
@@ -168,12 +284,25 @@ export interface DesktopBridge {
   gitPush(): Promise<string>;
   runTerminal(command: string): Promise<string>;
   openExternal(url: string): Promise<void>;
-  connectTrussGo(): Promise<{ readonly workspaceName: string; readonly qrDataUrl: string }>;
+  connectTrussGo(): Promise<{
+    readonly workspaceName: string;
+    readonly qrDataUrl: string;
+  }>;
   disconnectTrussGo(): Promise<void>;
-  complete(input: { readonly prefix: string; readonly suffix: string; readonly path: string }): Promise<string>;
+  complete(input: {
+    readonly prefix: string;
+    readonly suffix: string;
+    readonly path: string;
+  }): Promise<string>;
   formatFile(path: string, content: string): Promise<string>;
-  checkSyntax(path: string, content: string): Promise<readonly { readonly line: number; readonly message: string }[]>;
+  checkSyntax(
+    path: string,
+    content: string,
+  ): Promise<readonly { readonly line: number; readonly message: string }[]>;
   onEvent(listener: (event: DesktopEvent) => void): () => void;
 }
 import type { WorkspacePlan } from "@truss-harness/runtime";
-import type { McpServerConfigurations, McpServerStatus } from "@truss-harness/mcp";
+import type {
+  McpServerConfigurations,
+  McpServerStatus,
+} from "@truss-harness/mcp";
