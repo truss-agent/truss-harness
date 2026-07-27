@@ -4,12 +4,13 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
-    version: "Next release",
+    version: "0.1.17",
     label: "Multi-agent control center",
     changes: [
       "Added workspace-local agent profiles that can use different local or BYOK providers, endpoints, models, modes, and approval policies.",
       "Added coordinated concurrent Chat and Plan runs, safe queued Edit runs, per-run approvals, stop controls, and recent run details across Desktop, VS Code, the CLI, and host-authorized Truss Go connections.",
-      "Added bounded, workspace-local terminal run history and secret-safe runtime lifecycle records for cleanup diagnostics."
+      "Added bounded, workspace-local terminal run history and secret-safe runtime lifecycle records for cleanup diagnostics.",
+      "Kept completed agent responses available in run details and hardened cancellation, restart, and Linux file-menu behavior."
     ]
   },
   {

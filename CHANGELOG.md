@@ -2,7 +2,7 @@
 
 All notable desktop release changes are documented in this file.
 
-## [Unreleased]
+## [0.1.17] - 2026-07-27
 
 ### Added
 
@@ -11,8 +11,28 @@ All notable desktop release changes are documented in this file.
   per-run controls, and recent run details.
 - Added bounded local run history and secret-safe lifecycle diagnostics for
   managed-agent cleanup.
+- Retained each managed agent's bounded final response so it remains available
+  in Desktop, VS Code, and Truss Go after a run completes.
 
-## [0.1.15] - Unreleased
+### Fixed
+
+- Made the Desktop file-tree context menu reliable on Linux by handling its
+  lifecycle directly in the renderer.
+- Prevented a cancelled managed agent from starting after asynchronous session
+  creation completes, and verified repeated concurrent cancel/restart cleanup.
+
+## [0.1.16] - 2026-07-26
+
+### Fixed
+
+- Improved Linux file and folder actions, including the file-tree context menu.
+
+### Changed
+
+- Refreshed the public site layout, mobile presentation, and documentation
+  navigation.
+
+## [0.1.15] - 2026-07-26
 
 ### Fixed
 
