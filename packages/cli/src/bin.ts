@@ -34,7 +34,10 @@ import {
   profileFromConfiguration,
   waitForAgentRun,
 } from "./agents.js";
-import { startRemoteGateway } from "@truss-harness/gateway";
+import {
+  createGatewayAgentController,
+  startRemoteGateway,
+} from "@truss-harness/gateway";
 import qrcode from "qrcode-terminal";
 
 const help = `${brand.productName} CLI
@@ -540,6 +543,7 @@ async function main(): Promise<void> {
         readonly approval: ProtocolToolApproval;
       }
     >();
+    const agentCoordinators = [] as ReturnType<typeof createCliAgentCoordinator>[];
     const workspaces = await Promise.all(
       workspaceRoots.map(async (workspaceRoot, index) => {
         const configuration = await resolveConfiguration({
@@ -547,9 +551,15 @@ async function main(): Promise<void> {
           overrides,
         });
         const id = `workspace-${index + 1}`;
+        const coordinator = createCliAgentCoordinator(
+          configuration,
+          new FileAgentProfileStore(workspaceRoot),
+        );
+        agentCoordinators.push(coordinator);
         return {
           id,
           displayName: basename(workspaceRoot),
+          agents: createGatewayAgentController(coordinator),
           createRuntime: async (
             mode: "chat" | "plan" | "edit",
             toolApprovalMode?: PermissionMode,
@@ -602,6 +612,7 @@ async function main(): Promise<void> {
       await Promise.all(
         [...clients.values()].map(async ({ client }) => client.dispose()),
       );
+      await Promise.all(agentCoordinators.map((coordinator) => coordinator.dispose()));
     }
     return;
   }
