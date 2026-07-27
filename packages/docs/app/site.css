@@ -55,19 +55,23 @@ body {
     border-radius: 8px;
 }
 
-.site-open-source {
-    border: 1px solid #afc1b7;
+.site .site-open-source {
+    align-items: center;
+    border: 1px solid #c45f1a;
     border-radius: 999px;
-    color: #31594a;
+    color: #b9500d;
+    display: inline-flex;
     font-size: 11px;
     font-weight: 750;
+    gap: 6px;
     letter-spacing: .02em;
     padding: 4px 8px;
 }
 
-.site-open-source:hover {
-    border-color: #0b7965;
-    color: #0b7965;
+.site .site-open-source:hover {
+    background: #fff0e5;
+    border-color: #a84208;
+    color: #a84208;
 }
 
 .site-nav {
@@ -101,10 +105,10 @@ body {
     color: #40554d;
     cursor: pointer;
     font: inherit;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 750;
-    min-height: 34px;
-    padding: 0 10px;
+    min-height: 36px;
+    padding: 0 15px;
 }
 
 .site-theme-toggle:hover {
@@ -1141,6 +1145,67 @@ body {
     margin-bottom: 0;
 }
 
+.truss-go-showcase {
+    border-block: 1px solid #c7d6ca;
+    padding: 76px 0;
+}
+
+.truss-go-showcase > header {
+    margin: 0 auto 44px;
+    max-width: 720px;
+    text-align: center;
+}
+
+.truss-go-showcase > header h2 {
+    margin-inline: auto;
+    max-width: 620px;
+}
+
+.truss-go-showcase > header > p:last-child {
+    color: #4d6259;
+    font-size: 18px;
+    line-height: 1.65;
+    margin: 0 auto;
+    max-width: 650px;
+}
+
+.truss-go-screenshots {
+    display: grid;
+    gap: 48px;
+    grid-template-columns: repeat(2, minmax(0, 340px));
+    justify-content: center;
+}
+
+.truss-go-screenshots figure {
+    display: grid;
+    gap: 18px;
+    margin: 0;
+}
+
+.truss-go-screenshots img {
+    background: #0c1613;
+    border: 1px solid #315e4a;
+    border-radius: 26px;
+    box-shadow: 0 24px 54px rgba(20, 45, 36, .2);
+    display: block;
+    height: auto;
+    width: 100%;
+}
+
+.truss-go-screenshots figcaption {
+    display: grid;
+    gap: 7px;
+    line-height: 1.55;
+}
+
+.truss-go-screenshots figcaption strong {
+    font-size: 18px;
+}
+
+.truss-go-screenshots figcaption span {
+    color: #52675e;
+}
+
 .truss-go-pairing {
     align-items: center;
     background: linear-gradient(145deg, #10221b, #1d4738);
@@ -1468,6 +1533,33 @@ body {
         padding-bottom: 56px;
     }
 
+    .truss-go-showcase {
+        padding: 54px 0;
+    }
+
+    .truss-go-showcase > header {
+        margin-bottom: 32px;
+    }
+
+    .truss-go-showcase > header > p:last-child {
+        font-size: 16px;
+    }
+
+    .truss-go-screenshots {
+        display: grid;
+        gap: 20px;
+        grid-template-columns: minmax(0, 1fr);
+        justify-items: center;
+        margin-inline: 0;
+        overflow: visible;
+        padding: 0;
+    }
+
+    .truss-go-screenshots figure {
+        max-width: 320px;
+        width: 100%;
+    }
+
     .truss-go-hero h1 {
         font-size: 43px;
     }
@@ -1677,13 +1769,14 @@ body {
 }
 
 :root[data-truss-theme="dark"] .site-open-source {
-    border-color: #4f7565;
-    color: #cbe1d4;
+    border-color: #f28a43;
+    color: #ff9f5e;
 }
 
 :root[data-truss-theme="dark"] .site-open-source:hover {
-    border-color: #9ccbb0;
-    color: #edfff4;
+    background: #2c1b12;
+    border-color: #ffad73;
+    color: #ffad73;
 }
 
 :root[data-truss-theme="dark"] .site-nav .site-nav-download {
@@ -1841,6 +1934,15 @@ body {
     background: #14261f;
 }
 
+:root[data-truss-theme="dark"] .truss-go-showcase {
+    border-color: #365a4a;
+}
+
+:root[data-truss-theme="dark"] .truss-go-showcase > header > p:last-child,
+:root[data-truss-theme="dark"] .truss-go-screenshots figcaption span {
+    color: #b5c9bf;
+}
+
 :root[data-truss-theme="dark"] .truss-go-distribution-cards article {
     background: #13231d;
     border-color: #365a4a;
@@ -1949,7 +2051,7 @@ body {
 }
 
 .site-header-inner { min-height: 76px; padding-inline: 32px; }
-.site-brand { font-size: 18px; letter-spacing: -.035em; }
+.site-brand { font-size: 22px; letter-spacing: -.035em; }
 .site-nav { gap: 26px; }
 .site-nav a { font-size: 13px; letter-spacing: .01em; }
 .site-nav .site-nav-download { border-radius: 999px; padding: 10px 16px; }
@@ -2095,7 +2197,7 @@ body {
 .mobile-menu { display: none; position: relative; }
 .mobile-menu-toggle { align-items: center; background: transparent; border: 1px solid var(--site-line); border-radius: 10px; cursor: pointer; display: grid; gap: 4px; height: 40px; justify-items: center; padding: 8px; width: 40px; }
 .mobile-menu-toggle span { background: #31594a; display: block; height: 1.5px; width: 17px; }
-.mobile-menu-panel { background: rgba(251, 253, 249, .94); border: 1px solid var(--site-line); border-radius: 16px; box-shadow: 0 20px 45px rgba(20, 45, 36, .14); display: grid; gap: 18px; padding: 18px; position: absolute; right: 0; top: 50px; width: min(280px, calc(100vw - 36px)); z-index: 20; backdrop-filter: blur(18px); }
+.mobile-menu-panel { background: #f4f7f1; border: 1px solid var(--site-line); border-radius: 16px; box-shadow: 0 20px 45px rgba(20, 45, 36, .14); display: grid; gap: 18px; padding: 18px; position: absolute; right: 0; top: 50px; width: min(280px, calc(100vw - 36px)); z-index: 20; }
 .mobile-menu-panel nav { display: grid; gap: 3px; }
 .mobile-menu-panel nav a { border-radius: 9px; color: #31594a; font-size: 15px; font-weight: 700; padding: 11px 10px; }
 .mobile-menu-panel nav a:hover { background: #e2ebe4; }
@@ -2121,7 +2223,7 @@ body {
     background: radial-gradient(circle at 8% 4%, rgba(91, 174, 128, .1), transparent 28rem), #0c1613;
 }
 :root[data-truss-theme="dark"] .site-header { background: rgba(12, 22, 19, .72); }
-:root[data-truss-theme="dark"] .mobile-menu-panel { background: rgba(19, 35, 29, .96); }
+:root[data-truss-theme="dark"] .mobile-menu-panel { background: #0c1613; }
 :root[data-truss-theme="dark"] .mobile-menu-panel nav a { color: #d7e8de; }
 :root[data-truss-theme="dark"] .mobile-menu-panel nav a:hover { background: #1d342b; }
 :root[data-truss-theme="dark"] .mobile-menu-toggle span { background: #b8d7c4; }
@@ -2531,11 +2633,20 @@ body {
         margin-inline: auto;
         text-align: center;
     }
+    .truss-go-hero > div:first-child {
+        width: 100%;
+    }
+    .truss-go-hero h1 {
+        margin-inline: auto;
+    }
     .site-hero-copy .site-lede,
     .client-hero-copy > p:last-of-type,
     .truss-go-hero > div > p:last-of-type,
     .download-hero .download-intro > p:last-child {
         margin-inline: auto;
+    }
+    .truss-go-hero > div:first-child > p:last-of-type {
+        max-width: 720px;
     }
     .site-hero-copy .site-actions,
     .client-hero-copy .site-actions,
@@ -2815,8 +2926,7 @@ body {
     }
 }
 
-/* Give the landing promise the same direct, content-led mobile treatment as
-   the Features and About introductions. */
+/* Keep the landing promise compact and centered on phone layouts. */
 @media (max-width: 780px) {
     .site-hero {
         gap: 32px;
@@ -2824,27 +2934,28 @@ body {
     }
 
     .site-hero-copy {
-        align-items: flex-start;
-        margin-inline: 0;
+        align-items: center;
+        margin-inline: auto;
         max-width: none;
-        text-align: left;
+        text-align: center;
     }
 
     .site-hero h1 {
         font-size: clamp(2.55rem, 11.25vw, 3.25rem);
         line-height: .98;
+        margin-inline: auto;
         max-width: 11ch;
     }
 
     .site-hero-copy .site-lede {
         line-height: 1.65;
-        margin-inline: 0;
+        margin-inline: auto;
         max-width: 36rem;
-        text-align: left;
+        text-align: center;
     }
 
     .site-hero-copy .site-actions {
-        justify-content: flex-start;
+        justify-content: center;
         margin-top: 24px;
     }
 }
@@ -2894,5 +3005,69 @@ body {
 
     .site-hero .site-lede {
         max-width: 580px;
+    }
+}
+
+/* Nextra's docs navigation defaults to translucent backdrop surfaces. Keep
+   docs navigation consistent with the solid Truss site chrome so links remain
+   readable over documentation content on mobile and desktop. */
+.nextra-navbar-blur,
+.nextra-mobile-nav,
+.nextra-navbar [role="menu"] {
+    background: #f4f7f1 !important;
+    border-color: #cfd9d1 !important;
+    color: #14231f;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+}
+
+.nextra-mobile-nav {
+    border-top: 1px solid #cfd9d1;
+}
+
+.dark .nextra-navbar-blur,
+.dark .nextra-mobile-nav,
+.dark .nextra-navbar [role="menu"],
+:root[data-truss-theme="dark"] .nextra-navbar-blur,
+:root[data-truss-theme="dark"] .nextra-mobile-nav,
+:root[data-truss-theme="dark"] .nextra-navbar [role="menu"] {
+    background: #0c1613 !important;
+    border-color: #29453a !important;
+    color: #ecf5ef;
+}
+
+/* Shared marketing-page rail
+   The header and landing hero wrappers include their own horizontal padding,
+   so their visible content begins 28px inside the 1180px shell. Use that
+   visible edge for every other page section and for the footer. */
+.site {
+    --site-content-rail-max: 1124px;
+    --site-content-rail-width: calc(100% - 112px);
+}
+
+.site-page,
+.client-page,
+.truss-go-page,
+.site-footer,
+.site-band,
+.site-foundations,
+.site-clients,
+.site-principles {
+    max-width: var(--site-content-rail-max);
+    width: var(--site-content-rail-width);
+}
+
+.site-foundations .site-principles {
+    max-width: none;
+    width: 100%;
+}
+
+@media (max-width: 780px) {
+    .site {
+        --site-content-rail-width: calc(100% - 36px);
+    }
+
+    .site-header-inner {
+        width: 100%;
     }
 }

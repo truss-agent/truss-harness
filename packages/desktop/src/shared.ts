@@ -120,6 +120,7 @@ export interface DesktopState {
 
 export type DesktopEvent =
   | { readonly type: "agent"; readonly conversationId?: string; readonly event: { readonly type: string; readonly sessionId: string; readonly text?: string; readonly tool?: string; readonly callId?: string; readonly input?: Record<string, unknown>; readonly result?: { readonly content?: string; readonly isError?: boolean }; readonly error?: { readonly message?: string }; readonly plan?: WorkspacePlan; readonly modifiedFiles?: readonly string[] } }
+  | { readonly type: "file-context-open"; readonly x: number; readonly y: number; readonly target: { readonly kind: "root" | "directory" | "file"; readonly path: string } }
   | { readonly type: "chat-start"; readonly conversationId: string }
   | { readonly type: "chat-end"; readonly conversationId: string; readonly aborted?: boolean }
   | { readonly type: "chat-error"; readonly conversationId: string; readonly message: string }
