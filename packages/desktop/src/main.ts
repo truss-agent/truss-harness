@@ -1357,42 +1357,6 @@ async function createMainWindow(): Promise<void> {
       contents.openDevTools({ mode: "detach" });
     });
   });
-  mainWindow.webContents.on("context-menu", (event, params) => {
-    event.preventDefault();
-    const contents = mainWindow?.webContents;
-    if (!contents || contents.isDestroyed()) return;
-    const lookup = `(() => {
-      const element = document.elementFromPoint(${JSON.stringify(params.x)}, ${JSON.stringify(params.y)});
-      if (!(element instanceof Element) || !element.closest("#fileTree")) return null;
-      const row = element.closest(".tree-row");
-      const button = row?.querySelector("button[data-path]");
-      if (!row || !(button instanceof HTMLElement) || !button.dataset.path) return { kind: "root", path: "" };
-      return { kind: row.classList.contains("directory") ? "directory" : "file", path: button.dataset.path };
-    })()`;
-    void contents
-      .executeJavaScript(lookup, true)
-      .then(
-        (
-          target:
-            | Extract<
-                DesktopEvent,
-                { readonly type: "file-context-open" }
-              >["target"]
-            | null,
-        ) => {
-          if (!target || contents.isDestroyed()) return;
-          contents.send("truss:event", {
-            type: "file-context-open",
-            x: params.x,
-            y: params.y,
-            target,
-          } satisfies DesktopEvent);
-        },
-      )
-      .catch((error: unknown) =>
-        console.error("Unable to open file context menu:", error),
-      );
-  });
   await mainWindow.loadFile(join(distDirectory(), "index.html"));
   mainWindow.on("closed", () => {
     void stopTrussGo();
@@ -1733,7 +1697,9 @@ ipcMain.handle(
     prompt: string,
   ): Promise<DesktopAgentsSnapshot> => {
     if (!agentCoordinator) throw new Error("The agent host is not ready.");
-    await agentCoordinator.start({ agentId: id, prompt });
+    if (!prompt.trim())
+      throw new Error("Enter a focused task before starting an agent.");
+    await agentCoordinator.start({ agentId: id, prompt: prompt.trim() });
     return publishAgents();
   },
 );

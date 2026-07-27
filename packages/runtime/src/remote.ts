@@ -78,6 +78,8 @@ export interface RemoteAgentRunSummary {
   readonly startedAt?: string;
   readonly completedAt?: string;
   readonly latestProgress?: string;
+  /** Bounded assistant text produced by the managed agent. */
+  readonly output?: string;
   readonly activeTool?: { readonly callId: string; readonly name: string };
   readonly changedFiles: readonly string[];
   readonly errorCode?: string;

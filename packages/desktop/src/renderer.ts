@@ -552,14 +552,25 @@ function renderAgents(): void {
     const start = document.createElement("button");
     start.className = "primary";
     start.textContent = activeRun ? "Running" : "Start";
-    start.disabled = Boolean(activeRun);
-    start.onclick = () =>
+    const updateStartAvailability = (): void => {
+      start.disabled = Boolean(activeRun) || !prompt.value.trim();
+    };
+    prompt.addEventListener("input", updateStartAvailability);
+    updateStartAvailability();
+    start.onclick = () => {
+      const task = prompt.value.trim();
+      if (!task) {
+        notify("Enter a focused task before starting this agent.");
+        prompt.focus();
+        return;
+      }
       void window.trussDesktop
-        .startAgent(profile.id, prompt.value)
+        .startAgent(profile.id, task)
         .then(applyAgentsSnapshot)
         .catch((error) =>
           notify(error instanceof Error ? error.message : String(error)),
         );
+    };
     const stop = document.createElement("button");
     stop.textContent = "Stop";
     stop.disabled = !activeRun;
@@ -661,6 +672,14 @@ function renderAgents(): void {
       selectedRun.error?.message ??
       "No additional progress has been reported for this run.";
     detailPanel.append(summary);
+    if (selectedRun.output) {
+      const outputHeading = document.createElement("strong");
+      outputHeading.textContent = "Response";
+      const output = document.createElement("pre");
+      output.className = "agent-run-output";
+      output.textContent = selectedRun.output;
+      detailPanel.append(outputHeading, output);
+    }
     if (selectedRun.activeTool) {
       const tool = document.createElement("p");
       tool.textContent = `Current tool: ${selectedRun.activeTool.name}`;
@@ -3683,6 +3702,21 @@ document.addEventListener("pointerdown", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !fileContextMenu.hidden) hideFileContextMenu();
+});
+fileTree.addEventListener("contextmenu", (event) => {
+  event.preventDefault();
+  const element = event.target;
+  const row =
+    element instanceof Element ? element.closest<HTMLElement>(".tree-row") : null;
+  const button = row?.querySelector<HTMLButtonElement>("button[data-path]");
+  const target: FileContextTarget =
+    !row || !button?.dataset.path
+      ? { kind: "root", path: "" }
+      : {
+          kind: row.classList.contains("directory") ? "directory" : "file",
+          path: button.dataset.path,
+        };
+  showFileContextMenu(event.clientX, event.clientY, target);
 });
 fileTree.addEventListener("scroll", saveWorkspaceUiState, { passive: true });
 editor.addEventListener(

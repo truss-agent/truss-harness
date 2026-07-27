@@ -86,6 +86,8 @@ export interface AgentRunSummary {
   readonly startedAt?: string;
   readonly completedAt?: string;
   readonly latestProgress?: string;
+  /** Bounded assistant text produced during this run, retained for clients and history. */
+  readonly output?: string;
   readonly activeTool?: { readonly callId: string; readonly name: string };
   readonly changedFiles: readonly string[];
   readonly error?: AgentRunError;
@@ -357,6 +359,7 @@ interface ActiveRun {
   startedAt?: string;
   completedAt?: string;
   latestProgress?: string;
+  output?: string;
   activeTool?: { readonly callId: string; readonly name: string };
   changedFiles: readonly string[];
   error?: AgentRunError;
@@ -365,6 +368,17 @@ interface ActiveRun {
   created?: CreatedManagedAgentRuntime;
   unsubscribe?: () => void;
   ownsWriteLease: boolean;
+}
+
+const maxAgentRunOutputChars = 20_000;
+
+function appendAgentRunOutput(
+  current: string | undefined,
+  delta: string,
+): string {
+  const combined = `${current ?? ""}${delta}`;
+  if (combined.length <= maxAgentRunOutputChars) return combined;
+  return `…${combined.slice(-(maxAgentRunOutputChars - 1))}`;
 }
 
 export interface StartAgentRunInput {
@@ -620,6 +634,9 @@ export class AgentCoordinator {
     };
     await this.events.emit({ type: "runtime", event: managed });
     if (event.type === "progress_delta") run.latestProgress = event.text;
+    if (event.type === "text_delta") {
+      run.output = appendAgentRunOutput(run.output, event.text);
+    }
     if (event.type === "tool_call_requested") {
       run.activeTool = { callId: event.callId, name: event.tool };
       if (run.profile.approvalPolicy === "ask") {
@@ -696,6 +713,7 @@ export class AgentCoordinator {
       typeof run.agentId === "string" &&
       typeof run.prompt === "string" &&
       this.isTerminal(run.state) &&
+      (run.output === undefined || typeof run.output === "string") &&
       Array.isArray(run.changedFiles) &&
       run.changedFiles.every((path) => typeof path === "string")
     );
@@ -782,6 +800,7 @@ export class AgentCoordinator {
       ...(run.startedAt ? { startedAt: run.startedAt } : {}),
       ...(run.completedAt ? { completedAt: run.completedAt } : {}),
       ...(run.latestProgress ? { latestProgress: run.latestProgress } : {}),
+      ...(run.output ? { output: run.output } : {}),
       ...(run.activeTool ? { activeTool: run.activeTool } : {}),
       changedFiles: run.changedFiles,
       ...(run.error ? { error: run.error } : {}),

@@ -68,6 +68,7 @@ function validRunSummary(value: unknown): value is AgentRunSummary {
     (run.completedAt === undefined || typeof run.completedAt === "string") &&
     (run.latestProgress === undefined ||
       typeof run.latestProgress === "string") &&
+    (run.output === undefined || typeof run.output === "string") &&
     (run.activeTool === undefined ||
       (typeof run.activeTool.callId === "string" &&
         typeof run.activeTool.name === "string")) &&
