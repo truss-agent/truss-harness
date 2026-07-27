@@ -52,6 +52,7 @@
     "local-first"
   ],
   "dependencies": {
+    "@truss-harness/agent-host": "0.1.0",
     "@truss-harness/gateway": "0.1.5",
     "@types/qrcode-terminal": "^0.12.2",
     "qrcode-terminal": "^0.11.0",
