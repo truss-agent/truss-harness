@@ -20,12 +20,15 @@ import * as SecureStore from "expo-secure-store";
 type ChatItem = { readonly id: string; readonly role: "user" | "assistant" | "system"; readonly content: string };
 type AgentMode = "chat" | "plan" | "edit";
 type ApprovalMode = "ask" | "auto-read" | "auto-all";
-type Screen = "home" | "settings" | "session" | "scanner";
+type Screen = "home" | "settings" | "session" | "scanner" | "agents";
 type SavedGateway = { readonly id: string; readonly name: string; readonly url: string; readonly token: string };
-type Workspace = { readonly id: string; readonly displayName: string; readonly capabilities: { readonly modes: readonly AgentMode[]; readonly toolApprovalModes?: readonly ApprovalMode[] } };
-type RemoteEvent = { readonly type: string; readonly sessionId?: string; readonly text?: string; readonly message?: string; readonly callId?: string; readonly tool?: string; readonly input?: Record<string, unknown>; readonly result?: { readonly content: string; readonly isError?: boolean }; readonly modifiedFiles?: readonly string[] };
+type Workspace = { readonly id: string; readonly displayName: string; readonly capabilities: { readonly protocolVersions?: readonly number[]; readonly modes: readonly AgentMode[]; readonly toolApprovalModes?: readonly ApprovalMode[]; readonly supportsAgents?: boolean } };
+type AgentProfile = { readonly id: string; readonly displayName: string; readonly providerId: string; readonly modelId: string; readonly mode: AgentMode; readonly approvalPolicy: ApprovalMode; readonly internetAccess: boolean };
+type AgentRun = { readonly id: string; readonly agentId: string; readonly state: "idle" | "queued" | "running" | "waiting_for_approval" | "completed" | "failed" | "cancelled"; readonly latestProgress?: string; readonly activeTool?: { readonly callId: string; readonly name: string }; readonly changedFiles: readonly string[]; readonly errorCode?: string };
+type RemoteEvent = { readonly type: string; readonly workspaceId?: string; readonly sessionId?: string; readonly text?: string; readonly message?: string; readonly callId?: string; readonly tool?: string; readonly input?: Record<string, unknown>; readonly result?: { readonly content: string; readonly isError?: boolean }; readonly modifiedFiles?: readonly string[]; readonly run?: AgentRun; readonly agentId?: string; readonly runId?: string; readonly event?: RemoteEvent };
 type ToolApproval = { readonly callId: string; readonly tool: string; readonly input: Record<string, unknown> };
-type GatewayCommandResult = { readonly type: string; readonly sessionId?: string; readonly message?: string };
+type AgentToolApproval = ToolApproval & { readonly runId: string };
+type GatewayCommandResult = { readonly type: string; readonly sessionId?: string; readonly message?: string; readonly profiles?: readonly AgentProfile[]; readonly runs?: readonly AgentRun[]; readonly run?: AgentRun };
 
 const approvalCopy: Record<ApprovalMode, { readonly title: string; readonly detail: string; readonly badge: string }> = {
   ask: { title: "Ask every time", detail: "Review every workspace tool before it runs.", badge: "Recommended" },
@@ -77,6 +80,12 @@ export default function App() {
   const [eventConnected, setEventConnected] = useState(false);
   const [savedGateways, setSavedGateways] = useState<readonly SavedGateway[]>([]);
   const [pairingCode, setPairingCode] = useState("");
+  const [agentProfiles, setAgentProfiles] = useState<readonly AgentProfile[]>([]);
+  const [agentRuns, setAgentRuns] = useState<readonly AgentRun[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>();
+  const [agentPrompt, setAgentPrompt] = useState("");
+  const [agentApproval, setAgentApproval] = useState<AgentToolApproval>();
+  const [agentsLoading, setAgentsLoading] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const eventSocket = useRef<WebSocket | undefined>(undefined);
   const eventConnectedRef = useRef(false);
@@ -113,14 +122,14 @@ export default function App() {
     setStatus(`Paired with ${gateway.name}. Connect when you are ready.`);
   }, [saveGateway]);
 
-  const command = useCallback(async (body: Record<string, unknown>) => {
+  const command = useCallback(async (body: Record<string, unknown>, version = 1) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30_000);
     try {
       const response = await fetch(gatewayPath(gatewayUrl, "/v1/commands"), {
         method: "POST",
         headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ version: 1, requestId: nextId(), ...body }),
+        body: JSON.stringify({ version, requestId: nextId(), ...body }),
         signal: controller.signal
       });
       const result = await response.json() as GatewayCommandResult;
@@ -147,7 +156,28 @@ export default function App() {
   useEffect(() => { approvalModeRef.current = approvalMode; }, [approvalMode]);
   useEffect(() => { modeRef.current = mode; }, [mode]);
 
+  const updateAgentRun = useCallback((run: AgentRun) => {
+    setAgentRuns((current) => {
+      const index = current.findIndex((item) => item.id === run.id);
+      return index < 0 ? [run, ...current] : current.map((item) => item.id === run.id ? run : item);
+    });
+  }, []);
+
   const handleEvent = useCallback((event: RemoteEvent) => {
+    if (event.type === "agent_run_updated" && event.workspaceId === workspaceId && event.run) {
+      updateAgentRun(event.run);
+      if (event.run.state === "completed") setStatus("Agent run completed.");
+      if (event.run.state === "failed") setStatus(`Agent run failed${event.run.errorCode ? ` (${event.run.errorCode})` : ""}.`);
+      return;
+    }
+    if (event.type === "agent_runtime" && event.workspaceId === workspaceId && event.event) {
+      const nested = event.event;
+      if (nested.type === "tool_call_requested" && nested.callId && nested.tool && nested.input && event.runId) {
+        setAgentApproval({ runId: event.runId, callId: nested.callId, tool: nested.tool, input: nested.input });
+        setStatus("An agent tool needs your approval.");
+      }
+      return;
+    }
     if (event.type === "text_delta" && event.text) appendAssistant(event.text);
     if (event.type === "run_started") { setRunning(true); setStatus("Truss is working in your workspace."); }
     if (event.type === "run_completed") {
@@ -168,7 +198,7 @@ export default function App() {
       setStatus(`${event.tool.replaceAll("_", " ")} failed.`);
       appendSystem(`${event.tool} failed: ${detail}`);
     }
-  }, [appendAssistant, appendSystem]);
+  }, [appendAssistant, appendSystem, updateAgentRun, workspaceId]);
 
   const connectEvents = useCallback(() => new Promise<void>((resolve, reject) => {
     eventSocket.current?.close();
@@ -190,7 +220,7 @@ export default function App() {
       clearTimeout(timeout);
       reject(new Error(message));
     };
-    socket.onopen = () => socket.send(JSON.stringify({ type: "authenticate", token }));
+    socket.onopen = () => socket.send(JSON.stringify({ type: "authenticate", token, protocolVersions: [2, 1] }));
     socket.onmessage = ({ data }) => {
       let event: RemoteEvent;
       try { event = JSON.parse(String(data)) as RemoteEvent; } catch { return; }
@@ -265,16 +295,85 @@ export default function App() {
   }, [approvalMode, ensureEventConnection, gatewayUrl, mode, token]);
 
   const selectedWorkspace = workspaces.find((item) => item.id === workspaceId);
+  const selectedAgent = agentProfiles.find((profile) => profile.id === selectedAgentId);
+  const supportsManagedAgents = Boolean(
+    selectedWorkspace?.capabilities.supportsAgents &&
+      selectedWorkspace.capabilities.protocolVersions?.includes(2),
+  );
   const availableApprovalModes = selectedWorkspace
     ? selectedWorkspace.capabilities.toolApprovalModes?.length ? selectedWorkspace.capabilities.toolApprovalModes : ["ask"] as const
     : allApprovalModes;
 
   const chooseWorkspace = useCallback((workspace: Workspace) => {
     setWorkspaceId(workspace.id);
+    setAgentProfiles([]);
+    setAgentRuns([]);
+    setSelectedAgentId(undefined);
+    setAgentApproval(undefined);
     if (!workspace.capabilities.modes.includes(mode)) setMode(workspace.capabilities.modes[0] ?? "chat");
     const allowed = workspace.capabilities.toolApprovalModes?.length ? workspace.capabilities.toolApprovalModes : ["ask"] as const;
     if (!allowed.includes(approvalMode)) setApprovalMode(allowed[0]);
   }, [approvalMode, mode]);
+
+  const refreshAgents = useCallback(async () => {
+    if (!workspaceId || !supportsManagedAgents) return;
+    setAgentsLoading(true);
+    try {
+      await ensureEventConnection();
+      const result = await command({ type: "list_agents", workspaceId }, 2);
+      if (result.type !== "agents_listed") throw new Error("The gateway did not return its agent profiles.");
+      const profiles = result.profiles ?? [];
+      setAgentProfiles(profiles);
+      setAgentRuns(result.runs ?? []);
+      setSelectedAgentId((current) => current && profiles.some((profile) => profile.id === current) ? current : profiles[0]?.id);
+    } finally {
+      setAgentsLoading(false);
+    }
+  }, [command, ensureEventConnection, supportsManagedAgents, workspaceId]);
+
+  const openAgents = useCallback(async () => {
+    if (!supportsManagedAgents) {
+      setStatus("This paired host has not enabled managed agents yet.");
+      return;
+    }
+    setScreen("agents");
+    try {
+      await refreshAgents();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Unable to load managed agents.");
+    }
+  }, [refreshAgents, supportsManagedAgents]);
+
+  const startAgent = useCallback(async () => {
+    if (!workspaceId || !selectedAgentId || !agentPrompt.trim()) return;
+    const task = agentPrompt.trim();
+    setAgentPrompt("");
+    try {
+      await ensureEventConnection();
+      const result = await command({ type: "start_agent", workspaceId, agentId: selectedAgentId, prompt: task }, 2);
+      if (result.type !== "agent_run" || !result.run) throw new Error("The gateway did not start the agent run.");
+      updateAgentRun(result.run);
+      setStatus("Managed agent started.");
+    } catch (error) {
+      setAgentPrompt(task);
+      setStatus(error instanceof Error ? error.message : "Unable to start agent.");
+    }
+  }, [agentPrompt, command, ensureEventConnection, selectedAgentId, updateAgentRun, workspaceId]);
+
+  const stopAgent = useCallback(async (runId: string) => {
+    if (!workspaceId) return;
+    const result = await command({ type: "stop_agent", workspaceId, runId }, 2);
+    if (result.type !== "agent_run" || !result.run) throw new Error("The gateway did not stop the agent run.");
+    updateAgentRun(result.run);
+    setStatus("Stopping managed agent...");
+  }, [command, updateAgentRun, workspaceId]);
+
+  const decideAgentTool = useCallback(async (approved: boolean) => {
+    if (!workspaceId || !agentApproval) return;
+    await command({ type: "resolve_agent_approval", workspaceId, runId: agentApproval.runId, callId: agentApproval.callId, approved }, 2);
+    setAgentApproval(undefined);
+    setStatus(approved ? "Agent tool approved." : "Agent tool denied.");
+  }, [agentApproval, command, workspaceId]);
 
   const beginSession = useCallback(async () => {
     if (!workspaceId || !selectedWorkspace) {
@@ -363,7 +462,7 @@ export default function App() {
   }, [running]);
 
   const goBack = useCallback(() => {
-    if (screen === "settings") {
+    if (screen === "settings" || screen === "agents") {
       setScreen(sessionId ? "session" : "home");
       return;
     }
@@ -414,6 +513,7 @@ export default function App() {
     </View>
     <View style={styles.headerActions}>
       {workspaces.length > 0 && <Pill tone="success">Connected</Pill>}
+      {supportsManagedAgents && screen !== "agents" && <Pressable accessibilityLabel="Open agent control center" style={styles.iconButton} onPress={() => void openAgents()}><Text style={styles.agentIconButtonText}>◎</Text></Pressable>}
       {screen !== "settings" && <Pressable accessibilityLabel="Open settings" style={styles.iconButton} onPress={() => setScreen("settings")}><Text style={styles.iconButtonText}>•••</Text></Pressable>}
     </View>
   </View>;
@@ -456,9 +556,47 @@ export default function App() {
           <View style={styles.pageIntro}><Pill tone="success">Gateway connected</Pill><Text style={styles.screenTitle}>Choose where to work.</Text><Text style={styles.screenIntro}>Your files and model remain on the paired computer.</Text></View>
           <View style={styles.section}><Text style={styles.sectionEyebrow}>WORKSPACE</Text><View style={styles.cardList}>{workspaces.map((workspace) => <Pressable key={workspace.id} style={[styles.workspaceCard, workspaceId === workspace.id && styles.workspaceCardSelected]} onPress={() => chooseWorkspace(workspace)}><View style={styles.workspaceIcon}><Text style={styles.workspaceIconText}>⌘</Text></View><View style={styles.gatewayCopy}><Text style={styles.gatewayName}>{workspace.displayName}</Text><Text style={styles.gatewayUrl}>{workspace.capabilities.modes.map((item) => modeCopy[item].title).join(" · ")}</Text></View>{workspaceId === workspace.id && <Text style={styles.selectedMark}>✓</Text>}</Pressable>)}</View></View>
           <View style={styles.section}><Text style={styles.sectionEyebrow}>WORKING MODE</Text>{renderModeSelector(setMode)}</View>
+          {supportsManagedAgents && <Pressable style={styles.outlineButton} onPress={() => void openAgents()}><Text style={styles.outlineButtonText}>Open agent control center</Text></Pressable>}
           <Pressable style={styles.primaryButton} onPress={() => void beginSession()}><Text style={styles.primaryButtonText}>Open workspace</Text><Text style={styles.primaryButtonArrow}>›</Text></Pressable>
         </>}
         <View style={styles.notice}><View style={styles.noticeDot} /><Text style={styles.noticeText}>{status}</Text></View>
+      </ScrollView>}
+
+      {screen === "agents" && <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <View style={styles.pageIntro}>
+          <Pill tone="success">MANAGED AGENTS</Pill>
+          <Text style={styles.screenTitle}>Agent control center</Text>
+          <Text style={styles.screenIntro}>Each agent keeps its own provider, model, mode, and approval policy on your paired computer.</Text>
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeading}><Text style={styles.sectionEyebrow}>AVAILABLE AGENTS</Text>{agentsLoading ? <ActivityIndicator color="#74e3ba" /> : <Pressable style={styles.textButton} onPress={() => void refreshAgents().catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to refresh agents."))}><Text style={styles.textButtonText}>Refresh</Text></Pressable>}</View>
+          {agentProfiles.length === 0 && !agentsLoading ? <View style={styles.notice}><View style={styles.noticeDot} /><Text style={styles.noticeText}>No profiles are configured for this workspace yet. Create one in Truss Desktop, VS Code, or the CLI, then refresh here.</Text></View> : <View style={styles.cardList}>{agentProfiles.map((profile) => <Pressable key={profile.id} style={[styles.agentProfileCard, selectedAgentId === profile.id && styles.agentProfileCardSelected]} onPress={() => setSelectedAgentId(profile.id)}><View style={styles.agentProfileMark}><Text style={styles.agentProfileMarkText}>{profile.displayName.slice(0, 1).toUpperCase()}</Text></View><View style={styles.gatewayCopy}><Text style={styles.gatewayName}>{profile.displayName}</Text><Text style={styles.gatewayUrl}>{profile.providerId} · {profile.modelId}</Text><Text style={styles.agentProfileDetail}>{modeCopy[profile.mode].title} · {profile.approvalPolicy}</Text></View>{selectedAgentId === profile.id && <Text style={styles.selectedMark}>✓</Text>}</Pressable>)}</View>}
+        </View>
+
+        {selectedAgent && <View style={styles.section}>
+          <Text style={styles.sectionEyebrow}>START {selectedAgent.displayName.toUpperCase()}</Text>
+          <View style={styles.formCard}>
+            <Text style={styles.agentTaskHint}>Runs use {selectedAgent.providerId}/{selectedAgent.modelId} with the host’s saved permissions.</Text>
+            <TextInput style={[styles.input, styles.agentTaskInput]} multiline value={agentPrompt} onChangeText={setAgentPrompt} placeholder="Describe a focused task for this agent" placeholderTextColor="#71827c" />
+            <Pressable style={[styles.primaryButton, !agentPrompt.trim() && styles.disabled]} disabled={!agentPrompt.trim()} onPress={() => void startAgent()}><Text style={styles.primaryButtonText}>Start agent</Text><Text style={styles.primaryButtonArrow}>›</Text></Pressable>
+          </View>
+        </View>}
+
+        {agentApproval && <View style={styles.approvalSheet}>
+          <View style={styles.approvalHeading}><View><Text style={styles.approvalKicker}>AGENT TOOL APPROVAL</Text><Text style={styles.approvalTitle}>Allow {agentApproval.tool.replaceAll("_", " ")}?</Text></View><Pill tone="warning">Action needed</Pill></View>
+          <Text style={styles.approvalText}>The managed agent is waiting for permission from this paired device.</Text><Text style={styles.approvalInput}>{JSON.stringify(agentApproval.input, null, 2)}</Text>
+          <View style={styles.approvalActions}><Pressable style={styles.denyButton} onPress={() => void decideAgentTool(false).catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to deny agent tool."))}><Text style={styles.denyButtonText}>Deny</Text></Pressable><Pressable style={styles.allowButton} onPress={() => void decideAgentTool(true).catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to approve agent tool."))}><Text style={styles.allowButtonText}>Allow tool</Text></Pressable></View>
+        </View>}
+
+        <View style={styles.section}>
+          <Text style={styles.sectionEyebrow}>RUNS</Text>
+          {agentRuns.length === 0 ? <View style={styles.notice}><View style={styles.noticeDot} /><Text style={styles.noticeText}>Agent activity will appear here while this trusted gateway is connected.</Text></View> : <View style={styles.cardList}>{agentRuns.map((run) => {
+            const profile = agentProfiles.find((candidate) => candidate.id === run.agentId);
+            const active = run.state === "queued" || run.state === "running" || run.state === "waiting_for_approval";
+            return <View key={run.id} style={styles.agentRunCard}><View style={styles.agentRunHeading}><View><Text style={styles.agentRunTitle}>{profile?.displayName ?? "Managed agent"}</Text><Text style={styles.agentRunState}>{run.state.replaceAll("_", " ")}</Text></View>{active ? <Pill tone={run.state === "waiting_for_approval" ? "warning" : "success"}>{run.state === "waiting_for_approval" ? "Needs approval" : "Running"}</Pill> : <Pill>{run.state}</Pill>}</View>{run.latestProgress && <Text style={styles.agentRunProgress} numberOfLines={3}>{run.latestProgress}</Text>}{run.changedFiles.length > 0 && <Text style={styles.agentRunFiles}>{run.changedFiles.length} changed file{run.changedFiles.length === 1 ? "" : "s"}</Text>}{run.errorCode && <Text style={styles.agentRunError}>Failed: {run.errorCode}</Text>}{active && <Pressable style={styles.agentStopButton} onPress={() => void stopAgent(run.id).catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to stop agent."))}><Text style={styles.agentStopButtonText}>Stop agent</Text></Pressable>}</View>;
+          })}</View>}
+        </View>
       </ScrollView>}
 
       {screen === "scanner" && <ScrollView contentContainerStyle={styles.scannerPage} keyboardShouldPersistTaps="handled">
@@ -511,6 +649,7 @@ const styles = StyleSheet.create({
   headerActions: { alignItems: "center", flexDirection: "row", gap: 8 },
   iconButton: { alignItems: "center", borderColor: "#2a4038", borderRadius: 10, borderWidth: 1, height: 38, justifyContent: "center", width: 38 },
   iconButtonText: { color: "#c6d9d1", fontSize: 16, fontWeight: "800", letterSpacing: 1, marginTop: -7 },
+  agentIconButtonText: { color: "#8ee9c3", fontSize: 24, fontWeight: "700", lineHeight: 27, marginTop: -2 },
   scrollContent: { gap: 22, padding: 20, paddingBottom: 34 },
   hero: { gap: 13, paddingTop: 18 },
   heroTitle: { color: "#f2f8f5", fontSize: 34, fontWeight: "800", letterSpacing: 0, lineHeight: 39 },
@@ -552,6 +691,22 @@ const styles = StyleSheet.create({
   workspaceCardSelected: { backgroundColor: "#153126", borderColor: "#48b98e" },
   workspaceIcon: { alignItems: "center", backgroundColor: "#1e4034", borderRadius: 11, height: 34, justifyContent: "center", width: 34 },
   workspaceIconText: { color: "#91e8c8", fontSize: 21, fontWeight: "700" },
+  agentProfileCard: { alignItems: "center", backgroundColor: "#121d19", borderColor: "#253a32", borderRadius: 12, borderWidth: 1, flexDirection: "row", gap: 12, minHeight: 76, paddingHorizontal: 14, paddingVertical: 12 },
+  agentProfileCardSelected: { backgroundColor: "#153126", borderColor: "#48b98e" },
+  agentProfileMark: { alignItems: "center", backgroundColor: "#1e4034", borderRadius: 14, height: 34, justifyContent: "center", width: 34 },
+  agentProfileMarkText: { color: "#91e8c8", fontSize: 16, fontWeight: "800" },
+  agentProfileDetail: { color: "#7fe0b8", fontSize: 12, fontWeight: "700", marginTop: 1 },
+  agentTaskHint: { color: "#9db2a9", fontSize: 13, lineHeight: 19 },
+  agentTaskInput: { minHeight: 104, textAlignVertical: "top" },
+  agentRunCard: { backgroundColor: "#121d19", borderColor: "#253a32", borderRadius: 12, borderWidth: 1, gap: 9, padding: 14 },
+  agentRunHeading: { alignItems: "center", flexDirection: "row", justifyContent: "space-between" },
+  agentRunTitle: { color: "#edf7f2", fontSize: 16, fontWeight: "800" },
+  agentRunState: { color: "#8ca39a", fontSize: 12, marginTop: 3, textTransform: "capitalize" },
+  agentRunProgress: { color: "#b7cac1", fontSize: 13, lineHeight: 19 },
+  agentRunFiles: { color: "#80dcb7", fontSize: 12, fontWeight: "700" },
+  agentRunError: { color: "#efa5a5", fontSize: 12, fontWeight: "700" },
+  agentStopButton: { alignItems: "center", borderColor: "#795959", borderRadius: 9, borderWidth: 1, justifyContent: "center", minHeight: 40 },
+  agentStopButtonText: { color: "#f0b3b3", fontSize: 14, fontWeight: "800" },
   modeSelector: { flexDirection: "row", gap: 7 },
   modeChoice: { backgroundColor: "#121d19", borderColor: "#263b33", borderRadius: 10, borderWidth: 1, flex: 1, gap: 2, minHeight: 65, paddingHorizontal: 10, paddingVertical: 10 },
   modeChoiceSelected: { backgroundColor: "#174232", borderColor: "#5bd4a9" },
