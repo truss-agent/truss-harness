@@ -3,7 +3,7 @@
     "name": "Truss Go",
     "slug": "truss-go",
     "scheme": "truss",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "owner": "jrh89s-team",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
@@ -16,7 +16,7 @@
     },
     "android": {
       "package": "com.trussagent.trussgo",
-      "versionCode": 2,
+      "versionCode": 3,
       "icon": "./assets/icon.png",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
