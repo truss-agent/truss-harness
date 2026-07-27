@@ -27,7 +27,7 @@ const sections = [
     title: "A modular platform for agent work.",
     items: [
       "Plugin registries and an SDK for providers, tools, memory, context sources, and client surfaces.",
-      "Optional remote execution, sandboxes, model benchmarking, and multi-agent workflows without coupling the core runtime to one service.",
+      "Optional remote execution, sandboxes, model benchmarking, and explicit multi-agent workflow graphs without coupling the core runtime to one service.",
       "Session replay and durable workspace knowledge that make long-running work easier to inspect and resume."
     ]
   }

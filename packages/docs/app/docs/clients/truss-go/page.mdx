@@ -45,6 +45,16 @@ The mobile app talks to the Truss computer, which retains the workspace,
 provider configuration, and agent tools. Your phone does not need your model
 provider credentials.
 
+## Managed agents
+
+When the paired host enables managed agents, Truss Go shows an **Agents**
+control center with the host-visible profiles, recent runs, live progress, and
+pending approvals. The host explicitly advertises whether the phone may start,
+stop, or approve a run, so unavailable controls stay disabled. Create and edit
+profiles on Desktop, VS Code, or the CLI; the phone never receives provider
+credentials. See [Managed Agents](/docs/runtime/managed-agents) for the shared
+run and safety policy.
+
 ## Maintainer release process
 
 The first release needs an Expo account to initialize the EAS project

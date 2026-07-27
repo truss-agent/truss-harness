@@ -52,6 +52,15 @@ The desktop workspace has three panes:
 - **Editor**: read a selected file or switch to its Git working-tree diff. The terminal at the bottom runs commands in the selected workspace.
 - **Agent**: chat, model selection, mode selection, context estimate, tool approvals, and persisted conversations.
 
+## Managed agents
+
+Select **Agents** in the main work area to create workspace-local profiles and
+run them independently. Each profile can use a different local or BYOK provider,
+model, mode, and approval policy. Chat and Plan work can run in parallel; Edit
+runs queue behind the active workspace writer. The control center shows recent
+run state, progress, approvals, errors, and verified changed files. See
+[Managed Agents](/docs/runtime/managed-agents) for run policy and retention.
+
 ## Git workflow
 
 The collapsible **Git** panel sits above the file tree. It shows the current branch, ahead/behind state, and changed files. Use `+` and `-` to stage or unstage an individual file, **Stage all** to stage every displayed change, then enter a message and select **Commit**. **Pull** and **Push** use the repository's configured remote. Git output is written to the terminal pane for inspection.

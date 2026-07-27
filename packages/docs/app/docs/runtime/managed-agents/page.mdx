@@ -1,0 +1,71 @@
+# Managed agents
+
+Managed agents let one trusted workspace run several independent Truss profiles
+at once. Each profile selects its own provider, endpoint, model, mode, approval
+policy, and internet-access setting. Profiles are workspace-local; credentials
+remain in the host client or its configured secure storage.
+
+## Run policy
+
+- **Chat** and **Plan** agents can run concurrently, up to the host's configured
+  concurrency limit (three by default).
+- **Edit** agents use one workspace write lease. A second Edit run stays queued
+  until the active writer completes or is stopped, so two agents cannot mutate
+  the workspace at the same time.
+- One profile has at most one queued or active run. Stop a run before starting
+  that profile again or deleting it.
+- A run can wait for a tool approval. Stopping it denies outstanding approvals,
+  releases its write lease, and disposes its isolated runtime resources.
+
+Completed, failed, and cancelled summaries are retained locally in
+`.truss-harness/agents/runs.json`. The newest 50 summaries are kept so the
+control center can show recent work after a client restarts. The history stores
+run summaries only; it does not store provider credentials, model bindings,
+runtime instances, or tool input.
+
+## Use a control surface
+
+### Desktop
+
+Open **Agents** in the main work area. Create a profile, give it a focused
+prompt, then use the card to start or stop it. The run detail view shows recent
+progress, an active approval, errors, and verified changed files. Select a
+changed file to open it in the editor.
+
+### VS Code
+
+Run **Truss: Open Agent Control Center** from the Command Palette. The panel
+can create and manage workspace-local profiles, start independent runs, stop
+them, and resolve pending approvals. VS Code keeps provider credentials in
+Secret Storage; profiles hold only an opaque credential reference.
+
+### CLI and gateway
+
+Create and run profiles from the workspace directory:
+
+```sh
+truss-cli agents add review
+truss-cli agents list
+truss-cli agents run <agent-id> "Review the current diff"
+truss-cli agents remove <agent-id>
+```
+
+When the trusted LAN gateway is running, Truss Go can list profiles and recent
+runs. The host advertises whether a paired phone may start, stop, or approve a
+run; clients must not assume those actions are allowed.
+
+## Operational records
+
+The runtime emits structured lifecycle records for queueing, write-lease
+acquisition, starts, approval waits and resolution, terminal state, and cleanup
+duration. These records contain run and agent IDs, state, timestamps, and safe
+error codes only. They never include prompts, provider/model bindings, tool
+inputs, or credentials.
+
+## Safety notes
+
+Use separate profiles when you intentionally want different providers or
+models. Keep Edit prompts focused, review approvals, and treat **Auto-allow
+all** as permission for that profile to use every registered tool. A paired
+phone never receives your provider credentials; profile creation and editing
+remain host-side controls.

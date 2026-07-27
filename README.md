@@ -6,6 +6,11 @@ Truss is a local-first, provider-neutral coding-agent platform. Use the same
 models, tools, permissions, workspace memory, and plans from the command line,
 terminal, VS Code, or a dedicated desktop workspace.
 
+Create multiple workspace-local managed-agent profiles when a task benefits
+from separate models or providers. Chat and Plan agents can work concurrently;
+Edit agents are serialized through a workspace write lease so they cannot
+mutate the same workspace at the same time.
+
 Bring an Ollama, LM Studio, llama.cpp, or compatible endpoint—or configure a
 supported cloud provider with your own API key. Truss does not require a hosted
 control plane.
@@ -19,6 +24,14 @@ control plane.
 | VS Code | Chat, file context, completions, and approvals in the editor | [Install from the Marketplace](https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode) |
 | Desktop | A dedicated workspace with files, diffs, terminal, Git, and chat | [Download Truss Desktop](https://truss-agent.com/download) |
 | Truss Go | Continue a trusted Desktop or VS Code session from Android | [Explore Truss Go](https://truss-agent.com/truss-go) |
+
+## Managed agents
+
+Desktop, VS Code, the CLI, and a host-authorized Truss Go connection can
+control independent workspace-local agent profiles. Each profile has its own
+provider, endpoint, model, mode, and approval policy while credentials remain
+with the host. Read the [managed-agent guide](https://truss-agent.com/docs/runtime/managed-agents)
+for run policy, safety behavior, and CLI commands.
 
 ### CLI
 

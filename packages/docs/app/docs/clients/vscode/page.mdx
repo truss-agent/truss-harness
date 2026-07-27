@@ -47,6 +47,16 @@ Type `@/` in the chat composer to fuzzy-search workspace files. Use the arrow ke
 
 When Internet research is enabled, `web_search` and `web_fetch` are available in every mode. They only read public text pages, reject private/local addresses, and prompt under Ask and Auto-allow read-only policies.
 
+## Managed agents
+
+Run **Truss: Open Agent Control Center** from the Command Palette to create
+workspace-local profiles and start focused independent work. Each profile may
+use a different provider, endpoint, model, mode, and approval policy. The
+control center shows live status and allows stopping a run or resolving its
+pending approval. Provider keys remain in VS Code Secret Storage; profile data
+contains only an opaque reference. See [Managed Agents](/docs/runtime/managed-agents)
+for concurrency and Edit-run safety rules.
+
 ## Editor actions
 
 - **Commit message** reads staged changes, then unstaged changes, and asks the selected local model for a conventional commit message. It never creates a commit.
