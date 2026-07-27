@@ -11,6 +11,10 @@
     "./config": {
       "types": "./dist/config.d.ts",
       "default": "./dist/config.js"
+    },
+    "./agents": {
+      "types": "./dist/agents.d.ts",
+      "default": "./dist/agents.js"
     }
   },
   "bin": {
