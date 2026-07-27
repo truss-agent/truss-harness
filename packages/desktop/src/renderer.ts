@@ -1927,12 +1927,14 @@ function requestWorkspaceEntry(options: { readonly title: string; readonly descr
 }
 
 fileEntryForm.addEventListener("submit", (event) => {
-  if ((event as SubmitEvent).submitter !== confirmFileEntry) return;
+  event.preventDefault();
   if (!fileEntryInput.value.trim()) {
-    event.preventDefault();
     fileEntryInput.focus();
+    return;
   }
+  fileEntryDialog.close("confirm");
 });
+element<HTMLButtonElement>("cancelFileEntry").onclick = () => fileEntryDialog.close("cancel");
 element<HTMLButtonElement>("closeFileEntry").onclick = () => fileEntryDialog.close("cancel");
 fileEntryDialog.addEventListener("close", () => {
   const resolve = resolveFileEntry;
@@ -2083,8 +2085,7 @@ async function deleteWorkspaceEntry(target: FileContextTarget): Promise<void> {
   notify(`Deleted ${target.path}`);
 }
 
-function showFileContextMenu(event: MouseEvent, target: FileContextTarget): void {
-  event.preventDefault();
+function showFileContextMenu(x: number, y: number, target: FileContextTarget): void {
   fileContextTarget = target;
   fileContextMenu.replaceChildren();
   const parent = target.kind === "directory" ? target.path : target.kind === "file" ? entryParent(target.path) : "";
@@ -2107,8 +2108,8 @@ function showFileContextMenu(event: MouseEvent, target: FileContextTarget): void
   addFileContextAction("Refresh Explorer", refreshWorkspaceAfterFileOperation, { separatorBefore: target.kind === "root" });
   fileContextMenu.hidden = false;
   const bounds = fileContextMenu.getBoundingClientRect();
-  fileContextMenu.style.left = `${Math.min(event.clientX, window.innerWidth - bounds.width - 8)}px`;
-  fileContextMenu.style.top = `${Math.min(event.clientY, window.innerHeight - bounds.height - 8)}px`;
+  fileContextMenu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - bounds.width - 8))}px`;
+  fileContextMenu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - bounds.height - 8))}px`;
 }
 
 function toolActivityView(conversationId: string, activities: readonly ToolActivity[]): HTMLElement {
@@ -2202,6 +2203,7 @@ function appendTerminal(text: string): void {
 
 function handleEvent(message: DesktopEvent): void {
   if (message.type === "update") { renderUpdate(message); return; }
+  if (message.type === "file-context-open") { showFileContextMenu(message.x, message.y, message.target); return; }
   if (message.type === "chat-start") {
     runningConversationId = message.conversationId;
     setToolActivity(message.conversationId, []);
@@ -2434,20 +2436,11 @@ element<HTMLButtonElement>("refreshModels").onclick = () => {
 };
 element<HTMLButtonElement>("refreshFiles").onclick = () => void loadFiles();
 fileSearch.oninput = () => { fileSearchQuery = fileSearch.value; renderFiles(); };
-fileTree.addEventListener("contextmenu", (event) => {
-  const row = (event.target as HTMLElement).closest<HTMLElement>(".tree-row");
-  const button = row?.querySelector<HTMLButtonElement>("button[data-path]");
-  if (!row || !button?.dataset.path) {
-    showFileContextMenu(event, { kind: "root", path: "" });
-    return;
-  }
-  showFileContextMenu(event, {
-    kind: row.classList.contains("directory") ? "directory" : "file",
-    path: button.dataset.path
-  });
-});
 document.addEventListener("pointerdown", (event) => {
-  if (!fileContextMenu.hidden && !fileContextMenu.contains(event.target as Node)) hideFileContextMenu();
+  // Do not let a secondary click close the menu before its contextmenu event
+  // can replace it. This matters on Linux window managers that dispatch those
+  // pointer events in a different order from Chromium on other platforms.
+  if (event.button === 0 && !fileContextMenu.hidden && !fileContextMenu.contains(event.target as Node)) hideFileContextMenu();
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !fileContextMenu.hidden) hideFileContextMenu();

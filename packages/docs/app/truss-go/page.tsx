@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { brand } from "@truss-harness/branding";
 import { SiteFooter, SiteHeader } from "../site-chrome";
 import { createPageMetadata } from "../site-metadata";
@@ -37,6 +38,24 @@ export default function TrussGoPage() {
             <div className="truss-go-desktop"><span>TRUSS</span><strong>Connect Truss Go</strong><i>QR pairing ready</i></div>
             <div className="truss-go-connector" aria-hidden="true">→</div>
             <div className="truss-go-phone"><span>TRUSS GO</span><strong>Connected</strong><i>Workspace chat</i></div>
+          </div>
+        </section>
+
+        <section className="truss-go-showcase" aria-labelledby="truss-go-showcase-heading">
+          <header>
+            <p className="site-eyebrow">Truss Go in action</p>
+            <h2 id="truss-go-showcase-heading">Your trusted workspace, designed for your phone.</h2>
+            <p>Pair with the computer running Truss, then choose exactly how the remote agent may use workspace tools.</p>
+          </header>
+          <div className="truss-go-screenshots">
+            <figure>
+              <Image src="/screenshots/truss-go-home.png" alt="Truss Go home screen with QR pairing and manual gateway connection controls" width={1080} height={2400} sizes="(max-width: 780px) 78vw, 340px" />
+              <figcaption><strong>Pair with your workspace</strong><span>Scan the trusted QR from Truss Desktop or VS Code, with manual connection controls available for development.</span></figcaption>
+            </figure>
+            <figure>
+              <Image src="/screenshots/truss-go-settings.png" alt="Truss Go settings screen showing agent tool approval options and connection details" width={1080} height={2400} sizes="(max-width: 780px) 78vw, 340px" />
+              <figcaption><strong>Keep approvals in your hands</strong><span>Review every tool, automatically allow reads, or enable all registered tools for the current trusted gateway.</span></figcaption>
+            </figure>
           </div>
         </section>
 

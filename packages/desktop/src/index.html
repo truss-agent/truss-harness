@@ -108,7 +108,7 @@
     <form id="fileEntryForm" method="dialog" class="file-entry-form">
       <div class="dialog-heading"><div><strong id="fileEntryTitle">New file</strong><span id="fileEntryDescription">Enter a relative path inside the workspace.</span></div><button id="closeFileEntry" type="button" aria-label="Close">x</button></div>
       <label>Path<input id="fileEntryInput" autocomplete="off" spellcheck="false" required></label>
-      <div class="dialog-actions"><button value="cancel">Cancel</button><button id="confirmFileEntry" class="primary" value="confirm">Create</button></div>
+      <div class="dialog-actions"><button id="cancelFileEntry" type="button">Cancel</button><button id="confirmFileEntry" class="primary" type="submit">Create</button></div>
     </form>
   </dialog>
   <div id="fileContextMenu" class="file-context-menu" role="menu" hidden></div>

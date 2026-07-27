@@ -4,15 +4,138 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
-    version: "Unreleased",
-    label: "Recently completed",
+    version: "0.1.16",
+    label: "Desktop file actions and website refresh",
     changes: [
-      "Added Truss Go for Android, with signed APK releases, setup guidance, and a dedicated product page.",
-      "Added trusted same-Wi-Fi QR pairing from Truss Desktop and VS Code so Truss Go can continue a workspace conversation without receiving model-provider credentials.",
-      "Stabilized Truss Go pairing with physical LAN-adapter detection, a persistent Desktop gateway, reconnect diagnostics, selectable approval policies, and an Android-safe adaptive icon.",
-      "Added MCP stdio tool discovery and invocation across the shared runtime, with connection diagnostics, approval policies, and explicit trust for workspace-defined servers.",
-      "Shipped dedicated pages for the CLI, terminal UI, VS Code extension, desktop app, and Truss Go, plus a clearer responsive website and download experience.",
-      "Improved desktop request context with the active editor and other open tabs while keeping explicitly attached files at the highest priority."
+      "Made the desktop file-tree context menu reliable on Linux, including repeated use and file or folder creation without closing the app.",
+      "Added a clearer Truss Go showcase with real Android screenshots and responsive single-column presentation on phones.",
+      "Standardized marketing-page margins, mobile navigation, theme controls, and solid documentation menus across light and dark themes."
+    ]
+  },
+  {
+    version: "0.1.15",
+    label: "Runtime reliability",
+    changes: [
+      "Hardened tool-call parsing so malformed or incomplete model arguments fail clearly and can recover instead of derailing the conversation.",
+      "Aligned internal package versions used by release builds.",
+      "Refreshed the user-facing README and responsive marketing layouts."
+    ]
+  },
+  {
+    version: "0.1.14",
+    label: "Desktop workspace polish",
+    changes: [
+      "Improved editor keyboard workflows, chat file references, terminal context, tool activity, settings-tab behavior, and workspace pane resizing.",
+      "Made desktop themes apply consistently across workspace panels and custom themes.",
+      "Ensured Truss-managed development servers stop when the desktop app exits."
+    ]
+  },
+  {
+    version: "0.1.13",
+    label: "Linux and settings fixes",
+    changes: [
+      "Fixed Arch Linux package dependencies and improved Linux launcher icon metadata.",
+      "Bundled the formatter required by the desktop Format action.",
+      "Reworked settings and resizable workspace sections so all controls remain reachable."
+    ]
+  },
+  {
+    version: "0.1.12",
+    label: "Settings in the editor",
+    changes: [
+      "Moved desktop settings from a popup modal into a normal editor tab.",
+      "Reused the existing Settings button to open, focus, or close that tab."
+    ]
+  },
+  {
+    version: "0.1.11",
+    label: "Linux release experience",
+    changes: [
+      "Improved Linux release packaging for Debian, Fedora, Arch, and portable builds.",
+      "Added application-wide zoom controls and more flexible desktop workspace sizing.",
+      "Polished responsive website layouts and added deployment observability."
+    ]
+  },
+  {
+    version: "0.1.10",
+    label: "Desktop agent workflow",
+    changes: [
+      "Polished the desktop agent workspace, editor, Git, terminal, and approval workflow.",
+      "Fixed the download site so it selects the latest desktop release instead of an unrelated tagged release.",
+      "Refreshed client versions and shared brand assets."
+    ]
+  },
+  {
+    version: "0.1.9",
+    label: "Truss Go stability",
+    changes: [
+      "Stabilized Truss Go startup, same-Wi-Fi pairing, reconnect behavior, and Android branding.",
+      "Improved the mobile conversation, approval, and connection experience."
+    ]
+  },
+  {
+    version: "0.1.8",
+    label: "Desktop feedback and editing",
+    changes: [
+      "Polished the desktop workspace, syntax presentation, agent feedback, and usage metrics."
+    ]
+  },
+  {
+    version: "0.1.7",
+    label: "Tool-backed edit reliability",
+    changes: [
+      "Required edit tasks to complete through verified tool actions and improved release reliability."
+    ]
+  },
+  {
+    version: "0.1.6",
+    label: "Workspace persistence",
+    changes: [
+      "Improved desktop workspace persistence and expanded the public client pages."
+    ]
+  },
+  {
+    version: "0.1.5",
+    label: "Providers, themes, and public website",
+    changes: [
+      "Added BYOK cloud providers alongside local model endpoints.",
+      "Added desktop themes and custom theme support.",
+      "Expanded the public website, documentation navigation, downloads, roadmap, and client content."
+    ]
+  },
+  {
+    version: "0.1.4",
+    label: "Truss Go pairing",
+    changes: [
+      "Added Truss Go for Android with trusted QR pairing from Desktop and VS Code.",
+      "Added mobile workspace streaming, approvals, verified tool outcomes, navigation, and chat attachments.",
+      "Kept provider credentials on the host while exposing explicit connection controls."
+    ]
+  },
+  {
+    version: "0.1.3",
+    label: "Workspace editing and Git",
+    changes: [
+      "Expanded desktop workspace editing and Git controls.",
+      "Added terminal UI themes and refined the website foundations."
+    ]
+  },
+  {
+    version: "0.1.2",
+    label: "Updates and file filtering",
+    changes: [
+      "Added desktop update support and workspace file filtering.",
+      "Improved Windows release packaging and GitHub asset upload reliability.",
+      "Added client screenshots to the documentation."
+    ]
+  },
+  {
+    version: "0.1.1",
+    label: "Client reliability",
+    changes: [
+      "Added interactive CLI setup and persistent chat sessions.",
+      "Improved Windows executable discovery for CLI and terminal clients.",
+      "Bundled the runtime into the VS Code extension and normalized local-provider configuration."
     ]
   },
   {
