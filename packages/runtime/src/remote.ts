@@ -3,6 +3,14 @@ import type { WorkspacePlan } from "./plans.js";
 
 /** The first version of the provider-neutral protocol used by remote Truss clients. */
 export const REMOTE_SESSION_PROTOCOL_VERSION = 1 as const;
+/** The protocol revision that adds workspace-scoped managed-agent controls. */
+export const REMOTE_AGENT_PROTOCOL_VERSION = 2 as const;
+/** Protocol revisions a host may negotiate with a remote client. */
+export const REMOTE_PROTOCOL_VERSIONS = [
+  REMOTE_SESSION_PROTOCOL_VERSION,
+  REMOTE_AGENT_PROTOCOL_VERSION,
+] as const;
+export type RemoteProtocolVersion = (typeof REMOTE_PROTOCOL_VERSIONS)[number];
 
 /** Host-controlled policy for handling remote agent tool requests. */
 export type RemoteToolApprovalMode = "ask" | "auto-read" | "auto-all";
@@ -16,12 +24,16 @@ export interface RemoteWorkspace {
 
 /** Features a host is willing to expose to a connected client. */
 export interface RemoteHostCapabilities {
+  /** Versions the host can negotiate. Clients should select the highest shared version. */
+  readonly protocolVersions: readonly RemoteProtocolVersion[];
   readonly modes: readonly ("chat" | "plan" | "edit")[];
   /** Approval policies the host allows the connected client to select. */
   readonly toolApprovalModes: readonly RemoteToolApprovalMode[];
   readonly supportsAttachments: boolean;
   readonly supportsDiffs: boolean;
   readonly supportsToolApproval: boolean;
+  /** Whether this workspace exposes the optional managed-agent command family. */
+  readonly supportsAgents: boolean;
 }
 
 /** Metadata used by a transport during pairing and connection setup. Authentication remains transport-owned. */
@@ -32,8 +44,39 @@ export interface RemoteClientDescriptor {
 }
 
 interface RemoteCommandEnvelope {
-  readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION;
+  readonly version: RemoteProtocolVersion;
   readonly requestId: string;
+}
+
+interface RemoteAgentCommandEnvelope {
+  readonly version: typeof REMOTE_AGENT_PROTOCOL_VERSION;
+  readonly requestId: string;
+  readonly workspaceId: string;
+}
+
+/** A credential-safe profile descriptor for a trusted paired client. */
+export interface RemoteAgentProfile {
+  readonly id: string;
+  readonly displayName: string;
+  readonly providerId: string;
+  readonly modelId: string;
+  readonly mode: "chat" | "plan" | "edit";
+  readonly approvalPolicy: RemoteToolApprovalMode;
+  readonly internetAccess: boolean;
+}
+
+/** A credential-safe managed-agent state snapshot. Prompt text is deliberately excluded. */
+export interface RemoteAgentRunSummary {
+  readonly id: string;
+  readonly agentId: string;
+  readonly sessionId?: string;
+  readonly state: "idle" | "queued" | "running" | "waiting_for_approval" | "completed" | "failed" | "cancelled";
+  readonly startedAt?: string;
+  readonly completedAt?: string;
+  readonly latestProgress?: string;
+  readonly activeTool?: { readonly callId: string; readonly name: string };
+  readonly changedFiles: readonly string[];
+  readonly errorCode?: string;
 }
 
 /** Commands a remote client may request. The host authorizes every command against its own policy. */
@@ -42,11 +85,17 @@ export type RemoteClientCommand =
   | (RemoteCommandEnvelope & { readonly type: "change_session_mode"; readonly sessionId: string; readonly mode: "chat" | "plan" | "edit"; readonly toolApprovalMode?: RemoteToolApprovalMode })
   | (RemoteCommandEnvelope & { readonly type: "send_message"; readonly sessionId: string; readonly prompt: string; readonly attachments?: readonly ChatAttachment[] })
   | (RemoteCommandEnvelope & { readonly type: "approve_tool"; readonly sessionId: string; readonly callId: string; readonly approved: boolean })
-  | (RemoteCommandEnvelope & { readonly type: "interrupt"; readonly sessionId: string });
+  | (RemoteCommandEnvelope & { readonly type: "interrupt"; readonly sessionId: string })
+  | (RemoteAgentCommandEnvelope & { readonly type: "list_agents" })
+  | (RemoteAgentCommandEnvelope & { readonly type: "start_agent"; readonly agentId: string; readonly prompt: string; readonly attachments?: readonly ChatAttachment[] })
+  | (RemoteAgentCommandEnvelope & { readonly type: "stop_agent"; readonly runId: string })
+  | (RemoteAgentCommandEnvelope & { readonly type: "resolve_agent_approval"; readonly runId: string; readonly callId: string; readonly approved: boolean });
 
 export type RemoteCommandResult =
   | { readonly requestId: string; readonly type: "session_created"; readonly sessionId: string }
   | { readonly requestId: string; readonly type: "accepted" }
+  | { readonly requestId: string; readonly type: "agents_listed"; readonly profiles: readonly RemoteAgentProfile[]; readonly runs: readonly RemoteAgentRunSummary[] }
+  | { readonly requestId: string; readonly type: "agent_run"; readonly run: RemoteAgentRunSummary }
   | { readonly requestId: string; readonly type: "rejected"; readonly code: "invalid_command" | "not_authorized" | "not_found" | "conflict"; readonly message: string };
 
 /** JSON-safe, sequenced events for clients that are not running in the host process. */
@@ -59,6 +108,13 @@ export type RemoteSessionEvent =
   | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "plan_updated"; readonly sessionId: string; readonly plan: WorkspacePlan }
   | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "run_completed"; readonly sessionId: string; readonly modifiedFiles: readonly string[] }
   | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "run_failed"; readonly sessionId: string; readonly message: string };
+
+/** Agent events are v2 envelopes; nested runtime events remain compatible v1 payloads. */
+export type RemoteAgentEvent =
+  | { readonly version: typeof REMOTE_AGENT_PROTOCOL_VERSION; readonly sequence: number; readonly type: "agent_run_updated"; readonly workspaceId: string; readonly run: RemoteAgentRunSummary }
+  | { readonly version: typeof REMOTE_AGENT_PROTOCOL_VERSION; readonly sequence: number; readonly type: "agent_runtime"; readonly workspaceId: string; readonly agentId: string; readonly runId: string; readonly runSequence: number; readonly occurredAt: string; readonly event: RemoteSessionEvent };
+
+export type RemoteGatewayEvent = RemoteSessionEvent | RemoteAgentEvent;
 
 /**
  * Maps in-process runtime events to the versioned wire form. It intentionally
@@ -80,10 +136,10 @@ export function toRemoteSessionEvent(event: RuntimeEvent, sequence: number): Rem
 
 /** A transport-neutral connection. Implementations may use local IPC, WebSocket, or SSE. */
 export interface RemoteSessionTransport {
-  readonly protocolVersion: typeof REMOTE_SESSION_PROTOCOL_VERSION;
+  readonly protocolVersion: RemoteProtocolVersion;
   readonly client: RemoteClientDescriptor;
   readonly workspaces: readonly RemoteWorkspace[];
   execute(command: RemoteClientCommand): Promise<RemoteCommandResult>;
-  events(signal?: AbortSignal): AsyncIterable<RemoteSessionEvent>;
+  events(signal?: AbortSignal): AsyncIterable<RemoteGatewayEvent>;
   close(): Promise<void>;
 }

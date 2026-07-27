@@ -34,6 +34,7 @@ import {
   type ClientConfiguration,
 } from "@truss-harness/cli/runtime";
 import {
+  createGatewayAgentController,
   createPairingUri,
   detectLanAddress,
   startRemoteGateway,
@@ -761,6 +762,9 @@ async function connectTrussGo(): Promise<{
       {
         id: "active-workspace",
         displayName: basename(persisted.workspaceRoot),
+        ...(agentCoordinator
+          ? { agents: createGatewayAgentController(agentCoordinator) }
+          : {}),
         createRuntime: async (mode, toolApprovalMode) => {
           const approval = mobileApproval(toolApprovalMode);
           const client = await createClientRuntime({
