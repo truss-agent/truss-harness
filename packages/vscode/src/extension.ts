@@ -7,7 +7,8 @@ import { cloudProviderDefinition, cloudProviderDefinitions, detectActiveLocalMod
 import { brand } from "@truss-harness/branding";
 import { FileAgentProfileStore, profileFromConfiguration } from "@truss-harness/cli/agents";
 import type { ClientConfiguration } from "@truss-harness/cli/runtime";
-import { executeWorkspaceCommand, type ChatAttachment, type ContextBlock, type WorkspacePlan } from "@truss-harness/runtime";
+import { AgentHost } from "@truss-harness/agent-host";
+import { AgentCoordinator, ApiKeyCredential, executeWorkspaceCommand, type AgentProfile, type AgentRunSummary, type ChatAttachment, type ContextBlock, type ToolApproval, type ToolCall, type WorkspacePlan } from "@truss-harness/runtime";
 import { createPairingUri, detectLanAddress } from "@truss-harness/gateway";
 import QRCode from "qrcode";
 import * as vscode from "vscode";
@@ -169,6 +170,32 @@ type WebviewRequest =
   | { readonly type: "saveConversations"; readonly state: StoredConversationState }
   | { readonly type: "toolApproval"; readonly callId: string; readonly approved: boolean }
   | { readonly type: "connectTrussGo" };
+
+type AgentDashboardRequest =
+  | { readonly type: "ready" }
+  | { readonly type: "start"; readonly agentId: string; readonly prompt: string }
+  | { readonly type: "stop"; readonly runId: string }
+  | { readonly type: "resolveApproval"; readonly runId: string; readonly callId: string; readonly approved: boolean }
+  | { readonly type: "manageProfiles" };
+
+interface AgentDashboardProfile {
+  readonly id: string;
+  readonly displayName: string;
+  readonly provider: string;
+  readonly model: string;
+  readonly mode: AgentMode;
+  readonly approvalPolicy: PermissionMode;
+}
+
+interface AgentDashboardRun {
+  readonly id: string;
+  readonly agentId: string;
+  readonly state: AgentRunSummary["state"];
+  readonly latestProgress?: string;
+  readonly activeTool?: { readonly callId: string; readonly name: string };
+  readonly changedFiles: readonly string[];
+  readonly error?: string;
+}
 
 interface HostState {
   readonly configuration: ModelConfiguration;
@@ -360,6 +387,51 @@ function normalizeCommitMessage(value: string): string {
     .trim();
 }
 
+function dashboardProfile(profile: AgentProfile): AgentDashboardProfile {
+  return {
+    id: profile.id,
+    displayName: profile.displayName,
+    provider: profile.provider.providerId,
+    model: profile.provider.modelId,
+    mode: profile.mode,
+    approvalPolicy: profile.approvalPolicy,
+  };
+}
+
+function dashboardRun(run: AgentRunSummary): AgentDashboardRun {
+  return {
+    id: run.id,
+    agentId: run.agentId,
+    state: run.state,
+    ...(run.latestProgress ? { latestProgress: run.latestProgress } : {}),
+    ...(run.activeTool ? { activeTool: run.activeTool } : {}),
+    changedFiles: run.changedFiles,
+    ...(run.error ? { error: run.error.message } : {}),
+  };
+}
+
+function dashboardApproval(profile: AgentProfile): ToolApproval & { resolve(callId: string, approved: boolean): boolean; denyAll(): void } {
+  const pending = new Map<string, (approved: boolean) => void>();
+  return {
+    async approve(call: ToolCall): Promise<boolean> {
+      const readOnly = ["read_file", "list_directory", "search_files", "grep"].includes(call.name);
+      if (profile.approvalPolicy === "auto-all" || (profile.approvalPolicy === "auto-read" && readOnly)) return true;
+      return new Promise<boolean>((resolveApproval) => pending.set(call.id, resolveApproval));
+    },
+    resolve(callId: string, approved: boolean): boolean {
+      const resolveApproval = pending.get(callId);
+      if (!resolveApproval) return false;
+      pending.delete(callId);
+      resolveApproval(approved);
+      return true;
+    },
+    denyAll(): void {
+      for (const resolveApproval of pending.values()) resolveApproval(false);
+      pending.clear();
+    },
+  };
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel(brand.productName);
   let view: vscode.WebviewView | undefined;
@@ -372,6 +444,10 @@ export function activate(context: vscode.ExtensionContext): void {
   let configuration = normalizeConfiguration(context.workspaceState.get("modelConfiguration"));
   let conversations = normalizeConversationState(context.workspaceState.get("conversations"));
   let trussGoProcess: ChildProcessWithoutNullStreams | undefined;
+  let agentCoordinator: AgentCoordinator | undefined;
+  let disposeAgentEvents: (() => void) | undefined;
+  let agentPanel: vscode.WebviewPanel | undefined;
+  let agentCoordinatorSignature: string | undefined;
 
   const credentialKey = (provider: ModelProviderKind): string => `model-provider-api-key:${provider}`;
   const providerApiKey = async (provider = configuration.provider): Promise<string | undefined> => {
@@ -394,6 +470,55 @@ export function activate(context: vscode.ExtensionContext): void {
       environment.TRUSS_HARNESS_API_KEY = apiKey;
     }
     return environment;
+  };
+
+  const disposeAgentCoordinator = async (): Promise<void> => {
+    disposeAgentEvents?.();
+    disposeAgentEvents = undefined;
+    const current = agentCoordinator;
+    agentCoordinator = undefined;
+    agentCoordinatorSignature = undefined;
+    await current?.dispose();
+  };
+  const sendAgentSnapshot = async (): Promise<void> => {
+    if (!agentPanel || !agentCoordinator) return;
+    const profiles = await agentCoordinator.listProfiles();
+    void agentPanel.webview.postMessage({
+      type: "state",
+      profiles: profiles.map(dashboardProfile),
+      runs: agentCoordinator.listRuns().map(dashboardRun),
+    });
+  };
+  const ensureAgentCoordinator = async (): Promise<AgentCoordinator> => {
+    if (!configuration.model) throw new Error("Choose a model before starting a managed agent.");
+    const credential = isCloudProviderId(configuration.provider) ? await providerApiKey() : undefined;
+    if (isCloudProviderId(configuration.provider) && !credential) throw new Error(`No API key is stored for ${cloudProviderDefinition(configuration.provider).label}. Run 'Truss: Configure BYOK Provider'.`);
+    const signature = JSON.stringify({ workspaceRoot: workspaceRoot(), provider: configuration.provider, baseUrl: configuration.baseUrl, model: configuration.model, internetAccess: configuration.internetAccess, mcpServers: configuration.mcpServers, hasCredential: Boolean(credential) });
+    if (agentCoordinator && agentCoordinatorSignature === signature) return agentCoordinator;
+    await disposeAgentCoordinator();
+    const host = new AgentHost({
+      workspaceRoot: workspaceRoot(),
+      mcpServers: configuration.mcpServers,
+      credentialResolver: {
+        async resolve(reference) {
+          return reference === "configuration" && credential ? new ApiKeyCredential("vscode-agent-credential", credential) : undefined;
+        },
+      },
+      approvalFactory: dashboardApproval,
+    });
+    const coordinator = new AgentCoordinator({
+      profiles: new FileAgentProfileStore(workspaceRoot()),
+      runtimeFactory: host.createRuntimeFactory(),
+    });
+    agentCoordinator = coordinator;
+    agentCoordinatorSignature = signature;
+    disposeAgentEvents = coordinator.events.subscribe((event) => {
+      if (event.type === "run_updated") void agentPanel?.webview.postMessage({ type: "run", run: dashboardRun(event.run) });
+      if (event.type === "runtime" && event.event.event.type === "tool_call_requested") {
+        void agentPanel?.webview.postMessage({ type: "approval", runId: event.event.runId, callId: event.event.event.callId, tool: event.event.event.tool, input: event.event.event.input });
+      }
+    });
+    return coordinator;
   };
 
   const stopTrussGo = (): void => { trussGoProcess?.kill(); trussGoProcess = undefined; };
@@ -588,6 +713,52 @@ ${diff}`);
     return true;
   };
 
+  const openAgentControlCenter = async (): Promise<void> => {
+    if (agentPanel) {
+      agentPanel.reveal(vscode.ViewColumn.Beside);
+      await ensureAgentCoordinator();
+      await sendAgentSnapshot();
+      return;
+    }
+    const panel = vscode.window.createWebviewPanel("trussHarness.agentControlCenter", `${brand.productName}: Agent Control Center`, vscode.ViewColumn.Beside, { enableScripts: true, retainContextWhenHidden: true });
+    agentPanel = panel;
+    panel.webview.html = agentControlCenterHtml(panel.webview);
+    panel.onDidDispose(() => { if (agentPanel === panel) agentPanel = undefined; }, undefined, context.subscriptions);
+    panel.webview.onDidReceiveMessage(async (message: AgentDashboardRequest) => {
+      try {
+        if (message.type === "ready") {
+          await ensureAgentCoordinator();
+          await sendAgentSnapshot();
+          return;
+        }
+        if (message.type === "manageProfiles") {
+          await vscode.commands.executeCommand("trussHarness.manageAgents");
+          return;
+        }
+        const coordinator = await ensureAgentCoordinator();
+        if (message.type === "start") {
+          if (!message.agentId?.trim() || !message.prompt?.trim()) throw new Error("Choose an agent and enter a task.");
+          await coordinator.start({ agentId: message.agentId, prompt: message.prompt });
+          await sendAgentSnapshot();
+          return;
+        }
+        if (message.type === "stop") {
+          if (!message.runId?.trim()) throw new Error("Choose an agent run to stop.");
+          await coordinator.stop(message.runId);
+          await sendAgentSnapshot();
+          return;
+        }
+        if (message.type === "resolveApproval") {
+          if (!message.runId?.trim() || !message.callId?.trim()) throw new Error("The tool approval is incomplete.");
+          if (!await coordinator.resolveApproval(message.runId, message.callId, message.approved)) throw new Error("That tool approval is no longer pending.");
+          await sendAgentSnapshot();
+        }
+      } catch (error) {
+        void panel.webview.postMessage({ type: "error", message: error instanceof Error ? error.message : String(error) });
+      }
+    }, undefined, context.subscriptions);
+  };
+
   const bindWebview = (webview: vscode.Webview): void => {
     webview.options = { enableScripts: true };
     webview.html = webviewHtml(webview);
@@ -615,6 +786,7 @@ ${diff}`);
           if (detectedContextWindow) configuration = { ...configuration, contextWindow: detectedContextWindow };
           await context.workspaceState.update("modelConfiguration", configuration);
           disposeService();
+          await disposeAgentCoordinator();
           if (previousConfiguration.model !== configuration.model || previousConfiguration.provider !== configuration.provider || previousConfiguration.baseUrl !== configuration.baseUrl) {
             void releaseOllamaModel(previousConfiguration);
           }
@@ -667,7 +839,9 @@ ${diff}`);
       webviewView.onDidDispose(() => { view = undefined; }, undefined, context.subscriptions);
     }
   }));
+  context.subscriptions.push({ dispose: () => { void disposeAgentCoordinator(); } });
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.openChat", () => vscode.commands.executeCommand("workbench.view.extension.trussHarness")));
+  context.subscriptions.push(vscode.commands.registerCommand("trussHarness.openAgentControlCenter", () => openAgentControlCenter().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.manageAgents", async () => {
     if (!configuration.model) throw new Error("Choose a model before managing agents.");
     const store = new FileAgentProfileStore(workspaceRoot());
@@ -682,10 +856,11 @@ ${diff}`);
       if (!name?.trim()) return;
       const runtime: ClientConfiguration = { workspaceRoot: workspaceRoot(), provider: configuration.provider, baseUrl: configuration.baseUrl, model: configuration.model, apiKey: await providerApiKey(), mode: configuration.mode, internetAccess: configuration.internetAccess, mcpServers: configuration.mcpServers };
       const profile = await store.create(profileFromConfiguration(runtime, name));
-      void vscode.window.showInformationMessage(`${brand.productName} created agent profile ${profile.displayName}. Run it with '${brand.cliCommand} agents run ${profile.id} <task>'.`);
+      await vscode.window.showInformationMessage(`${brand.productName} created agent profile ${profile.displayName}.`);
+      await openAgentControlCenter();
       return;
     }
-    await vscode.window.showInformationMessage(`${choice.label}: ${choice.description}. Run it from the integrated terminal with '${brand.cliCommand} agents run ${choice.detail} <task>'.`);
+    await openAgentControlCenter();
   }));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.connectTrussGo", () => connectTrussGo().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.configureByokProvider", async () => {
@@ -719,6 +894,7 @@ ${diff}`);
     };
     await context.workspaceState.update("modelConfiguration", configuration);
     disposeService();
+    await disposeAgentCoordinator();
     post({ type: "runtimeReset" });
     await sendState();
     void vscode.window.showInformationMessage(`${brand.productName} is configured for ${selected.label}. Its API key is stored in VS Code Secret Storage.`);
@@ -727,7 +903,10 @@ ${diff}`);
     const selected = await vscode.window.showQuickPick(cloudProviderDefinitions.map((provider) => ({ label: provider.label, description: provider.id, provider })), { placeHolder: "Remove a stored provider key" });
     if (!selected) return;
     await context.secrets.delete(credentialKey(selected.provider.id));
-    if (configuration.provider === selected.provider.id) disposeService();
+    if (configuration.provider === selected.provider.id) {
+      disposeService();
+      await disposeAgentCoordinator();
+    }
     void vscode.window.showInformationMessage(`${brand.productName} removed the stored ${selected.label} API key.`);
   }));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.generateCommitMessage", async () => {
@@ -784,6 +963,42 @@ ${diff}`);
 }
 
 export function deactivate(): void {}
+
+function agentControlCenterHtml(webview: vscode.Webview): string {
+  const nonce = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body { color: var(--vscode-foreground); background: var(--vscode-editor-background); font-family: var(--vscode-font-family); margin: 0; }
+main { max-width: 920px; margin: 0 auto; padding: 24px; display: grid; gap: 20px; }
+h1 { font-size: 20px; margin: 0; } h2 { font-size: 12px; letter-spacing: .6px; color: var(--vscode-descriptionForeground); margin: 0 0 9px; } p { color: var(--vscode-descriptionForeground); line-height: 1.5; margin: 5px 0 0; }
+.top, .run-head, .approval-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; } .card { display: grid; gap: 11px; padding: 14px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--vscode-sideBar-background); } .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 12px; }
+label { display: grid; gap: 5px; color: var(--vscode-descriptionForeground); font-size: 12px; } select, textarea { box-sizing: border-box; width: 100%; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border); border-radius: 3px; padding: 7px; font: inherit; } textarea { min-height: 90px; resize: vertical; }
+button { min-height: 30px; padding: 5px 10px; border: 1px solid var(--vscode-button-border, transparent); border-radius: 3px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; } button.secondary { color: var(--vscode-foreground); background: transparent; border-color: var(--vscode-panel-border); } button.danger { color: var(--vscode-errorForeground); background: transparent; border-color: var(--vscode-errorForeground); } button:disabled { cursor: default; opacity: .55; }
+.runs { display: grid; gap: 8px; } .run { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--vscode-panel-border); border-radius: 5px; } .state { color: var(--vscode-terminal-ansiGreen); font-size: 12px; text-transform: capitalize; } .state.waiting_for_approval { color: var(--vscode-editorWarning-foreground); } .state.failed { color: var(--vscode-errorForeground); } .detail { color: var(--vscode-descriptionForeground); font-size: 12px; overflow-wrap: anywhere; } #approval { display: none; border-color: var(--vscode-editorWarning-foreground); } #approval.open { display: grid; } #status { min-height: 18px; color: var(--vscode-descriptionForeground); font-size: 12px; } #status.error { color: var(--vscode-errorForeground); } .empty { color: var(--vscode-descriptionForeground); font-style: italic; }
+@media (max-width: 620px) { main { padding: 14px; } .grid { grid-template-columns: 1fr; } }
+</style></head><body><main>
+<div class="top"><div><h1>Agent Control Center</h1><p>Run independent profiles in this workspace. Providers, models, and permissions remain local to VS Code.</p></div><button id="manage" class="secondary">Manage profiles</button></div>
+<div class="card"><h2>START AN AGENT</h2><div class="grid"><label>Profile<select id="profile"></select></label><label>Task<textarea id="prompt" placeholder="Give this agent a focused task"></textarea></label></div><div><button id="start">Start agent</button></div></div>
+<div id="approval" class="card"><div class="approval-head"><div><h2>TOOL APPROVAL</h2><strong id="approvalTitle">Agent needs approval</strong></div><span class="state waiting_for_approval">Waiting</span></div><p id="approvalInput"></p><div><button id="deny" class="danger">Deny</button> <button id="allow">Allow tool</button></div></div>
+<section><div class="top"><h2>AGENT RUNS</h2><button id="refresh" class="secondary">Refresh</button></div><div id="runs" class="runs"><div class="empty">Loading agent profiles…</div></div></section><div id="status"></div>
+</main><script nonce="${nonce}">
+const vscode = acquireVsCodeApi();
+const profiles = new Map(); const runs = new Map(); let pendingApproval;
+const profileSelect = document.querySelector('#profile'); const prompt = document.querySelector('#prompt'); const runsElement = document.querySelector('#runs'); const status = document.querySelector('#status'); const approval = document.querySelector('#approval');
+const post = (message) => vscode.postMessage(message);
+const setStatus = (message, error = false) => { status.textContent = message || ''; status.className = error ? 'error' : ''; };
+const text = (tag, value, className) => { const element = document.createElement(tag); element.textContent = value; if (className) element.className = className; return element; };
+const active = (state) => ['queued', 'running', 'waiting_for_approval'].includes(state);
+function renderProfiles() { const selected = profileSelect.value; profileSelect.replaceChildren(); for (const profile of profiles.values()) { const option = document.createElement('option'); option.value = profile.id; option.textContent = profile.displayName + ' — ' + profile.provider + '/' + profile.model + ' · ' + profile.mode; profileSelect.append(option); } if (profiles.has(selected)) profileSelect.value = selected; document.querySelector('#start').disabled = profiles.size === 0; }
+function renderRuns() { runsElement.replaceChildren(); if (!runs.size) { runsElement.append(text('div', 'No agent runs yet.', 'empty')); return; } for (const run of [...runs.values()].reverse()) { const owner = profiles.get(run.agentId); const card = document.createElement('article'); card.className = 'run'; const head = document.createElement('div'); head.className = 'run-head'; const name = document.createElement('div'); name.append(text('strong', owner ? owner.displayName : 'Managed agent')); name.append(text('div', owner ? owner.provider + '/' + owner.model : run.agentId, 'detail')); head.append(name); head.append(text('span', run.state.replaceAll('_', ' '), 'state ' + run.state)); card.append(head); if (run.latestProgress) card.append(text('div', run.latestProgress, 'detail')); if (run.activeTool) card.append(text('div', 'Active tool: ' + run.activeTool.name, 'detail')); if (run.changedFiles && run.changedFiles.length) card.append(text('div', run.changedFiles.length + ' changed file' + (run.changedFiles.length === 1 ? '' : 's'), 'detail')); if (run.error) card.append(text('div', run.error, 'detail')); if (active(run.state)) { const stop = text('button', 'Stop agent', 'danger'); stop.onclick = () => post({ type: 'stop', runId: run.id }); card.append(stop); } runsElement.append(card); } }
+function renderApproval() { if (!pendingApproval) { approval.className = 'card'; return; } approval.className = 'card open'; document.querySelector('#approvalTitle').textContent = 'Allow ' + pendingApproval.tool.replaceAll('_', ' ') + '?'; document.querySelector('#approvalInput').textContent = JSON.stringify(pendingApproval.input, null, 2); }
+document.querySelector('#start').onclick = () => { const task = prompt.value.trim(); if (!task) return setStatus('Enter a task before starting an agent.', true); post({ type: 'start', agentId: profileSelect.value, prompt: task }); prompt.value = ''; };
+document.querySelector('#refresh').onclick = () => post({ type: 'ready' }); document.querySelector('#manage').onclick = () => post({ type: 'manageProfiles' }); document.querySelector('#allow').onclick = () => { if (pendingApproval) post({ ...pendingApproval, type: 'resolveApproval', approved: true }); pendingApproval = undefined; renderApproval(); }; document.querySelector('#deny').onclick = () => { if (pendingApproval) post({ ...pendingApproval, type: 'resolveApproval', approved: false }); pendingApproval = undefined; renderApproval(); };
+window.addEventListener('message', ({ data: message }) => { if (message.type === 'state') { profiles.clear(); runs.clear(); for (const profile of message.profiles || []) profiles.set(profile.id, profile); for (const run of message.runs || []) runs.set(run.id, run); renderProfiles(); renderRuns(); setStatus(''); } if (message.type === 'run') { runs.set(message.run.id, message.run); renderRuns(); } if (message.type === 'approval') { pendingApproval = message; renderApproval(); } if (message.type === 'error') setStatus(message.message, true); });
+post({ type: 'ready' });
+</script></body></html>`;
+}
 
 function legacyWebviewHtml(webview: vscode.Webview): string {
   const nonce = `${Date.now()}-${Math.random().toString(16).slice(2)}`;

@@ -22,6 +22,7 @@
   "activationEvents": [
     "onView:trussHarness.chat",
     "onCommand:trussHarness.openChat",
+    "onCommand:trussHarness.openAgentControlCenter",
     "onCommand:trussHarness.connectTrussGo",
     "onCommand:trussHarness.configureByokProvider",
     "onCommand:trussHarness.removeByokCredential",
@@ -58,6 +59,10 @@
       {
         "command": "trussHarness.openChat",
         "title": "Truss: Open Chat"
+      },
+      {
+        "command": "trussHarness.openAgentControlCenter",
+        "title": "Truss: Open Agent Control Center"
       },
       {
         "command": "trussHarness.connectTrussGo",
@@ -133,6 +138,7 @@
     "prepublishOnly": "npm run package"
   },
   "dependencies": {
+    "@truss-harness/agent-host": "0.1.0",
     "@truss-harness/gateway": "0.1.5",
     "@types/qrcode": "^1.5.6",
     "qrcode": "^1.5.4",
