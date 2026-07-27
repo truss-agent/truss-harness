@@ -14,6 +14,8 @@ export type RemoteProtocolVersion = (typeof REMOTE_PROTOCOL_VERSIONS)[number];
 
 /** Host-controlled policy for handling remote agent tool requests. */
 export type RemoteToolApprovalMode = "ask" | "auto-read" | "auto-all";
+/** Actions a host has explicitly delegated to an authenticated remote client. */
+export type RemoteAgentAction = "start" | "stop" | "approve";
 
 /** An opaque workspace identifier. Remote clients must never supply a host filesystem path. */
 export interface RemoteWorkspace {
@@ -34,6 +36,8 @@ export interface RemoteHostCapabilities {
   readonly supportsToolApproval: boolean;
   /** Whether this workspace exposes the optional managed-agent command family. */
   readonly supportsAgents: boolean;
+  /** Managed-agent actions authorized by this host for the paired client. */
+  readonly agentActions: readonly RemoteAgentAction[];
 }
 
 /** Metadata used by a transport during pairing and connection setup. Authentication remains transport-owned. */

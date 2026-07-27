@@ -763,7 +763,11 @@ async function connectTrussGo(): Promise<{
         id: "active-workspace",
         displayName: basename(persisted.workspaceRoot),
         ...(agentCoordinator
-          ? { agents: createGatewayAgentController(agentCoordinator) }
+          ? {
+              agents: createGatewayAgentController(agentCoordinator, {
+                allowStart: true,
+              }),
+            }
           : {}),
         createRuntime: async (mode, toolApprovalMode) => {
           const approval = mobileApproval(toolApprovalMode);

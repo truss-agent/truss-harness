@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
-import type { AgentCoordinator, AgentCoordinatorEvent, AgentRunSummary, AgentRuntime, RemoteAgentEvent, RemoteAgentProfile, RemoteAgentRunSummary, RemoteCommandResult, RemoteHostCapabilities, RemoteToolApprovalMode, RemoteWorkspace, RuntimeEvent, ToolApproval } from "@truss-harness/runtime";
+import type { AgentCoordinator, AgentCoordinatorEvent, AgentRunSummary, AgentRuntime, RemoteAgentAction, RemoteAgentEvent, RemoteAgentProfile, RemoteAgentRunSummary, RemoteCommandResult, RemoteHostCapabilities, RemoteToolApprovalMode, RemoteWorkspace, RuntimeEvent, ToolApproval } from "@truss-harness/runtime";
 import { toRemoteSessionEvent } from "@truss-harness/runtime";
 export { createPairingUri, detectLanAddress } from "./pairing.js";
 
@@ -14,12 +14,36 @@ export interface GatewayRuntime {
 
 /** Optional managed-agent surface made available to trusted remote clients. */
 export interface GatewayAgentController {
+  /** Deliberately delegated actions for the paired client. Listing permitted profiles is always read-only. */
+  readonly access: {
+    readonly canStart: boolean;
+    readonly canStop: boolean;
+    readonly canResolveApproval: boolean;
+  };
   readonly events: { subscribe(listener: (event: AgentCoordinatorEvent) => void): () => void };
   listProfiles(): Promise<readonly RemoteAgentProfile[]>;
   listRuns(): readonly RemoteAgentRunSummary[];
   start(input: { readonly agentId: string; readonly prompt: string; readonly attachments?: readonly import("@truss-harness/runtime").ChatAttachment[] }): Promise<RemoteAgentRunSummary>;
   stop(runId: string): Promise<RemoteAgentRunSummary>;
   resolveApproval(runId: string, callId: string, approved: boolean): Promise<boolean>;
+}
+
+export interface GatewayAgentAccessOptions {
+  /** Undefined exposes all profiles; provide IDs to expose only a selected subset. */
+  readonly allowedProfileIds?: readonly string[];
+  /** Starting a run is opt-in because it can invoke tools on the paired host. */
+  readonly allowStart?: boolean;
+  /** Stopping a visible run is allowed by default. */
+  readonly allowStop?: boolean;
+  /** Resolving a visible run's pending tool approval is allowed by default. */
+  readonly allowApproval?: boolean;
+}
+
+class GatewayAgentAccessError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "GatewayAgentAccessError";
+  }
 }
 
 function remoteProfile(profile: Awaited<ReturnType<AgentCoordinator["listProfiles"]>>[number]): RemoteAgentProfile {
@@ -50,15 +74,58 @@ function remoteRun(run: AgentRunSummary): RemoteAgentRunSummary {
 }
 
 /** Adapts the runtime coordinator without exposing prompts, instructions, credentials, or endpoint URLs. */
-export function createGatewayAgentController(coordinator: AgentCoordinator): GatewayAgentController {
-  return {
-    events: coordinator.events,
-    async listProfiles() { return (await coordinator.listProfiles()).map(remoteProfile); },
-    listRuns() { return coordinator.listRuns().map(remoteRun); },
-    async start(input) { return remoteRun(await coordinator.start(input)); },
-    async stop(runId) { return remoteRun(await coordinator.stop(runId)); },
-    resolveApproval(runId, callId, approved) { return coordinator.resolveApproval(runId, callId, approved); },
+export function createGatewayAgentController(
+  coordinator: AgentCoordinator,
+  options: GatewayAgentAccessOptions = {},
+): GatewayAgentController {
+  const allowedProfileIds = options.allowedProfileIds
+    ? new Set(options.allowedProfileIds)
+    : undefined;
+  const visible = (agentId: string): boolean =>
+    !allowedProfileIds || allowedProfileIds.has(agentId);
+  const access = {
+    canStart: options.allowStart === true,
+    canStop: options.allowStop !== false,
+    canResolveApproval: options.allowApproval !== false,
   };
+  return {
+    access,
+    events: coordinator.events,
+    async listProfiles() {
+      return (await coordinator.listProfiles())
+        .filter((profile) => visible(profile.id))
+        .map(remoteProfile);
+    },
+    listRuns() {
+      return coordinator.listRuns()
+        .filter((run) => visible(run.agentId))
+        .map(remoteRun);
+    },
+    async start(input) {
+      if (!access.canStart || !visible(input.agentId))
+        throw new GatewayAgentAccessError("Starting this agent is not authorized for the paired client.");
+      return remoteRun(await coordinator.start(input));
+    },
+    async stop(runId) {
+      const run = coordinator.getRun(runId);
+      if (!access.canStop || !run || !visible(run.agentId))
+        throw new GatewayAgentAccessError("Stopping this agent run is not authorized for the paired client.");
+      return remoteRun(await coordinator.stop(runId));
+    },
+    async resolveApproval(runId, callId, approved) {
+      const run = coordinator.getRun(runId);
+      if (!access.canResolveApproval || !run || !visible(run.agentId)) return false;
+      return coordinator.resolveApproval(runId, callId, approved);
+    },
+  };
+}
+
+function agentActions(agents: GatewayAgentController): readonly RemoteAgentAction[] {
+  return [
+    ...(agents.access.canStart ? ["start" as const] : []),
+    ...(agents.access.canStop ? ["stop" as const] : []),
+    ...(agents.access.canResolveApproval ? ["approve" as const] : []),
+  ];
 }
 
 /** A host-configured workspace. The root path remains private to the host. */
@@ -104,14 +171,16 @@ const defaultCapabilities: RemoteHostCapabilities = {
   supportsAttachments: false,
   supportsDiffs: false,
   supportsToolApproval: true,
-  supportsAgents: false
+  supportsAgents: false,
+  agentActions: []
 };
 
 function isApprovalMode(value: unknown): value is RemoteToolApprovalMode {
   return value === "ask" || value === "auto-read" || value === "auto-all";
 }
 
-function agentErrorCode(error: unknown): "invalid_command" | "not_found" | "conflict" {
+function agentErrorCode(error: unknown): "invalid_command" | "not_authorized" | "not_found" | "conflict" {
+  if (error instanceof GatewayAgentAccessError) return "not_authorized";
   if (error && typeof error === "object" && "code" in error) {
     if (error.code === "not_found") return "not_found";
     if (error.code === "conflict") return "conflict";
@@ -138,7 +207,9 @@ export async function startRemoteGateway(options: RemoteGatewayOptions): Promise
     if (!workspace.id || workspaces.has(workspace.id)) throw new Error("Each gateway workspace needs a unique non-empty id.");
     const capabilities = {
       ...(workspace.capabilities ?? defaultCapabilities),
-      ...(workspace.agents ? { supportsAgents: true } : {}),
+      ...(workspace.agents
+        ? { supportsAgents: true, agentActions: agentActions(workspace.agents) }
+        : {}),
     };
     workspaces.set(workspace.id, {
       remote: { id: workspace.id, displayName: workspace.displayName, capabilities },
@@ -234,15 +305,18 @@ export async function startRemoteGateway(options: RemoteGatewayOptions): Promise
       if (!workspace.remote.capabilities.protocolVersions.includes(2)) return reject(requestId, "not_authorized", "This workspace does not support remote protocol version 2.");
       if (input.type === "list_agents") return { requestId, type: "agents_listed", profiles: await agents.listProfiles(), runs: agents.listRuns() };
       if (input.type === "start_agent") {
+        if (!agents.access.canStart) return reject(requestId, "not_authorized", "Starting managed agents is disabled by the paired host.");
         if (typeof input.agentId !== "string" || typeof input.prompt !== "string" || !input.prompt.trim()) return reject(requestId, "invalid_command", "An agentId and non-empty prompt are required.");
         try { return { requestId, type: "agent_run", run: await agents.start({ agentId: input.agentId, prompt: input.prompt, ...(Array.isArray(input.attachments) ? { attachments: input.attachments as readonly import("@truss-harness/runtime").ChatAttachment[] } : {}) }) }; }
         catch (error) { return reject(requestId, agentErrorCode(error), error instanceof Error ? error.message : "Unable to start agent."); }
       }
       if (input.type === "stop_agent") {
+        if (!agents.access.canStop) return reject(requestId, "not_authorized", "Stopping managed agents is disabled by the paired host.");
         if (typeof input.runId !== "string") return reject(requestId, "invalid_command", "A runId is required.");
         try { return { requestId, type: "agent_run", run: await agents.stop(input.runId) }; }
         catch (error) { return reject(requestId, agentErrorCode(error), error instanceof Error ? error.message : "Unable to stop agent."); }
       }
+      if (!agents.access.canResolveApproval) return reject(requestId, "not_authorized", "Approving managed-agent tools is disabled by the paired host.");
       if (typeof input.runId !== "string" || typeof input.callId !== "string" || typeof input.approved !== "boolean") return reject(requestId, "invalid_command", "An agent approval requires runId, callId, and approved.");
       if (!await agents.resolveApproval(input.runId, input.callId, input.approved)) return reject(requestId, "not_found", "No pending approval matches that call.");
       return { requestId, type: "accepted" };
