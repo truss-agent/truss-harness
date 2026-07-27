@@ -2,12 +2,38 @@
 import { cwd } from "node:process";
 import { basename, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline/promises";
-import { cloudProviderDefinitions, detectLocalEndpoints, listLocalModels, type LocalEndpointKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
+import {
+  cloudProviderDefinitions,
+  detectLocalEndpoints,
+  listLocalModels,
+  type LocalEndpointKind,
+  type LocalModelEndpoint,
+} from "@truss-harness/provider-openai-compatible";
 import { brand } from "@truss-harness/branding";
-import { executeWorkspaceCommand, workspaceCommandHelp } from "@truss-harness/runtime";
+import {
+  executeWorkspaceCommand,
+  workspaceCommandHelp,
+} from "@truss-harness/runtime";
 import { createClientRuntime, type ClientRuntime } from "./runtime.js";
-import { configurationPaths, initializeWorkspaceConfiguration, parseConfigurationOverrides, resolveConfiguration, saveUserProfile, type ResolvedConfiguration } from "./config.js";
-import { ProtocolToolApproval, runService, type PermissionMode } from "./protocol.js";
+import {
+  configurationPaths,
+  initializeWorkspaceConfiguration,
+  parseConfigurationOverrides,
+  resolveConfiguration,
+  saveUserProfile,
+  type ResolvedConfiguration,
+} from "./config.js";
+import {
+  ProtocolToolApproval,
+  runService,
+  type PermissionMode,
+} from "./protocol.js";
+import {
+  createCliAgentCoordinator,
+  FileAgentProfileStore,
+  profileFromConfiguration,
+  waitForAgentRun,
+} from "./agents.js";
 import { startRemoteGateway } from "@truss-harness/gateway";
 import qrcode from "qrcode-terminal";
 
@@ -39,6 +65,10 @@ Commands:
   commands              Print slash commands shared by interactive clients
   serve                 Start the JSONL runtime service for editor clients
   gateway               Start a loopback HTTP/SSE gateway for the mobile client
+  agents list           List workspace-local multi-agent profiles
+  agents add <name>     Add a profile using the selected configuration
+  agents remove <id>    Remove an idle profile
+  agents run <id> <task> Run a profile and stream its status
   help                  Show this reference
 
 Options:
@@ -97,21 +127,53 @@ ${workspaceCommandHelp()}
 function subscribeToRuntimeEvents(events: ClientRuntime["events"]): void {
   events.subscribe((event) => {
     if (event.type === "text_delta") process.stdout.write(event.text);
-    if (event.type === "progress_delta") process.stderr.write("\n[thinking] " + event.text + "\n");
-    if (event.type === "tool_call_requested") process.stderr.write("\n[tool] " + event.tool + "\n");
+    if (event.type === "progress_delta")
+      process.stderr.write("\n[thinking] " + event.text + "\n");
+    if (event.type === "tool_call_requested")
+      process.stderr.write("\n[tool] " + event.tool + "\n");
     if (event.type === "plan_updated") {
-      const steps = event.plan.steps.map((step) => "  " + (step.status === "completed" ? "[x]" : step.status === "in_progress" ? "[..]" : "[ ]") + " " + step.content).join("\n");
-      process.stderr.write("\n[plan] " + event.plan.title + "\n" + steps + "\n");
+      const steps = event.plan.steps
+        .map(
+          (step) =>
+            "  " +
+            (step.status === "completed"
+              ? "[x]"
+              : step.status === "in_progress"
+                ? "[..]"
+                : "[ ]") +
+            " " +
+            step.content,
+        )
+        .join("\n");
+      process.stderr.write(
+        "\n[plan] " + event.plan.title + "\n" + steps + "\n",
+      );
     }
   });
 }
 
-function inlineMode(input: string): { readonly mode?: "chat" | "plan" | "edit"; readonly prompt: string } {
-  const match = input.trim().match(/^--mode\s+(chat|plan|edit)(?:\s+([\s\S]*))?$/);
-  return match ? { mode: match[1] as "chat" | "plan" | "edit", prompt: match[2]?.trim() ?? "" } : { prompt: input.trim() };
+function inlineMode(input: string): {
+  readonly mode?: "chat" | "plan" | "edit";
+  readonly prompt: string;
+} {
+  const match = input
+    .trim()
+    .match(/^--mode\s+(chat|plan|edit)(?:\s+([\s\S]*))?$/);
+  return match
+    ? {
+        mode: match[1] as "chat" | "plan" | "edit",
+        prompt: match[2]?.trim() ?? "",
+      }
+    : { prompt: input.trim() };
 }
 
-function gatewayArguments(rawArgs: readonly string[]): { readonly token?: string; readonly host?: string; readonly port: number; readonly workspaceRoots: readonly string[]; readonly rest: readonly string[] } {
+function gatewayArguments(rawArgs: readonly string[]): {
+  readonly token?: string;
+  readonly host?: string;
+  readonly port: number;
+  readonly workspaceRoots: readonly string[];
+  readonly rest: readonly string[];
+} {
   let token: string | undefined;
   let host: string | undefined;
   let port = 4787;
@@ -125,19 +187,24 @@ function gatewayArguments(rawArgs: readonly string[]): { readonly token?: string
     }
     if (argument === "--gateway-port") {
       const value = Number.parseInt(rawArgs[++index] ?? "", 10);
-      if (!Number.isSafeInteger(value) || value < 1 || value > 65_535) throw new Error("--gateway-port must be a port between 1 and 65535.");
+      if (!Number.isSafeInteger(value) || value < 1 || value > 65_535)
+        throw new Error("--gateway-port must be a port between 1 and 65535.");
       port = value;
       continue;
     }
     if (argument === "--gateway-host") {
       const value = rawArgs[++index];
-      if (!value?.trim()) throw new Error("--gateway-host must be a non-empty hostname or address.");
+      if (!value?.trim())
+        throw new Error(
+          "--gateway-host must be a non-empty hostname or address.",
+        );
       host = value;
       continue;
     }
     if (argument === "--gateway-workspace") {
       const value = rawArgs[++index];
-      if (!value?.trim()) throw new Error("--gateway-workspace must be a non-empty path.");
+      if (!value?.trim())
+        throw new Error("--gateway-workspace must be a non-empty path.");
       workspaceRoots.push(value);
       continue;
     }
@@ -153,16 +220,29 @@ async function waitForShutdown(): Promise<void> {
   });
 }
 
-async function runInteractiveChat(initialConfiguration: ResolvedConfiguration): Promise<void> {
+async function runInteractiveChat(
+  initialConfiguration: ResolvedConfiguration,
+): Promise<void> {
   let configuration = initialConfiguration;
   let client = await createClientRuntime(configuration);
   let session = await client.runtime.createSession();
   let messages = session.messages;
   subscribeToRuntimeEvents(client.events);
-  const readline = createInterface({ input: process.stdin, output: process.stdout, terminal: process.stdin.isTTY === true });
-  process.stdout.write(brand.productName + " interactive chat. :help for controls. Mode: " + configuration.mode + ".\n");
+  const readline = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: process.stdin.isTTY === true,
+  });
+  process.stdout.write(
+    brand.productName +
+      " interactive chat. :help for controls. Mode: " +
+      configuration.mode +
+      ".\n",
+  );
 
-  const replaceRuntime = async (mode: "chat" | "plan" | "edit"): Promise<void> => {
+  const replaceRuntime = async (
+    mode: "chat" | "plan" | "edit",
+  ): Promise<void> => {
     const current = await client.runtime.getSession(session.id);
     messages = current?.messages ?? messages;
     await client.dispose();
@@ -175,13 +255,17 @@ async function runInteractiveChat(initialConfiguration: ResolvedConfiguration): 
 
   try {
     while (true) {
-      const line = await readline.question(brand.cliCommand + " (" + configuration.mode + ") > ").catch(() => undefined);
+      const line = await readline
+        .question(brand.cliCommand + " (" + configuration.mode + ") > ")
+        .catch(() => undefined);
       if (line === undefined) break;
       const input = line.trim();
       if (!input) continue;
       if (input === ":exit" || input === ":quit") break;
       if (input === ":help") {
-        process.stdout.write("Controls: :mode chat|plan|edit, :clear, :exit. You can also prefix a message with --mode chat|plan|edit.\n");
+        process.stdout.write(
+          "Controls: :mode chat|plan|edit, :clear, :exit. You can also prefix a message with --mode chat|plan|edit.\n",
+        );
         continue;
       }
       if (input === ":clear") {
@@ -201,9 +285,13 @@ async function runInteractiveChat(initialConfiguration: ResolvedConfiguration): 
       }
 
       const next = inlineMode(input);
-      if (next.mode && next.mode !== configuration.mode) await replaceRuntime(next.mode);
+      if (next.mode && next.mode !== configuration.mode)
+        await replaceRuntime(next.mode);
       if (!next.prompt) continue;
-      const workspaceCommand = await executeWorkspaceCommand({ workspaceRoot: cwd(), input: next.prompt });
+      const workspaceCommand = await executeWorkspaceCommand({
+        workspaceRoot: cwd(),
+        input: next.prompt,
+      });
       if (workspaceCommand.handled) {
         process.stdout.write(workspaceCommand.message + "\n");
         continue;
@@ -212,7 +300,11 @@ async function runInteractiveChat(initialConfiguration: ResolvedConfiguration): 
         await client.runtime.run(session.id, next.prompt);
         process.stdout.write("\n");
       } catch (error) {
-        process.stderr.write("\n" + (error instanceof Error ? error.message : String(error)) + "\n");
+        process.stderr.write(
+          "\n" +
+            (error instanceof Error ? error.message : String(error)) +
+            "\n",
+        );
       }
     }
   } finally {
@@ -223,28 +315,64 @@ async function runInteractiveChat(initialConfiguration: ResolvedConfiguration): 
 
 function selectedIndex(input: string, count: number, fallback: number): number {
   const index = Number.parseInt(input, 10);
-  return Number.isInteger(index) && index >= 1 && index <= count ? index - 1 : fallback;
+  return Number.isInteger(index) && index >= 1 && index <= count
+    ? index - 1
+    : fallback;
 }
 
 async function runSetup(): Promise<void> {
-  const readline = createInterface({ input: process.stdin, output: process.stdout, terminal: process.stdin.isTTY === true });
+  const readline = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+    terminal: process.stdin.isTTY === true,
+  });
   const ask = async (label: string, fallback: string): Promise<string> => {
-    const answer = (await readline.question(label + " [" + fallback + "]: ")).trim();
+    const answer = (
+      await readline.question(label + " [" + fallback + "]: ")
+    ).trim();
     return answer || fallback;
   };
 
   try {
     const setupKind = await ask("Setup: local server or cloud BYOK", "local");
-    if (setupKind.toLowerCase() === "cloud" || setupKind.toLowerCase() === "byok") {
+    if (
+      setupKind.toLowerCase() === "cloud" ||
+      setupKind.toLowerCase() === "byok"
+    ) {
       process.stdout.write(brand.productName + " cloud BYOK setup\n\n");
-      cloudProviderDefinitions.forEach((provider, index) => process.stdout.write(String(index + 1) + ". " + provider.label + " (" + provider.id + ")\n"));
-      const provider = cloudProviderDefinitions[selectedIndex(await ask("Provider", "1"), cloudProviderDefinitions.length, 0)];
+      cloudProviderDefinitions.forEach((provider, index) =>
+        process.stdout.write(
+          String(index + 1) +
+            ". " +
+            provider.label +
+            " (" +
+            provider.id +
+            ")\n",
+        ),
+      );
+      const provider =
+        cloudProviderDefinitions[
+          selectedIndex(
+            await ask("Provider", "1"),
+            cloudProviderDefinitions.length,
+            0,
+          )
+        ];
       const model = await ask("Model ID", "your-tool-capable-model");
       const profileName = await ask("Profile name", provider.id);
       const mode = await ask("Default mode: chat, plan, or edit", "edit");
-      if (mode !== "chat" && mode !== "plan" && mode !== "edit") throw new Error("Mode must be chat, plan, or edit.");
-      const permission = await ask("Default permission: ask, auto-read, or auto-all", "auto-read");
-      if (permission !== "ask" && permission !== "auto-read" && permission !== "auto-all") throw new Error("Permission must be ask, auto-read, or auto-all.");
+      if (mode !== "chat" && mode !== "plan" && mode !== "edit")
+        throw new Error("Mode must be chat, plan, or edit.");
+      const permission = await ask(
+        "Default permission: ask, auto-read, or auto-all",
+        "auto-read",
+      );
+      if (
+        permission !== "ask" &&
+        permission !== "auto-read" &&
+        permission !== "auto-all"
+      )
+        throw new Error("Permission must be ask, auto-read, or auto-all.");
       const internet = await ask("Enable internet research: yes or no", "no");
       const path = await saveUserProfile(cwd(), profileName, {
         provider: provider.id,
@@ -253,39 +381,82 @@ async function runSetup(): Promise<void> {
         mode,
         permission,
         internetAccess: /^(y|yes|true|1)$/i.test(internet),
-        apiKeyEnv: provider.apiKeyEnvironmentVariable
+        apiKeyEnv: provider.apiKeyEnvironmentVariable,
       });
       process.stdout.write(`\nSaved profile '${profileName}' to ${path}\n`);
-      process.stdout.write(`Set ${provider.apiKeyEnvironmentVariable} outside configuration, then run: ${brand.cliCommand} chat --profile ${profileName}\n`);
+      process.stdout.write(
+        `Set ${provider.apiKeyEnvironmentVariable} outside configuration, then run: ${brand.cliCommand} chat --profile ${profileName}\n`,
+      );
       return;
     }
     const endpoints = await detectLocalEndpoints();
     process.stdout.write(brand.productName + " setup\n");
-    process.stdout.write("Choose a local model server. Values in brackets are defaults.\n\n");
-    endpoints.forEach((endpoint, index) => process.stdout.write(String(index + 1) + ". " + endpoint.label + " (" + endpoint.baseUrl + ")\n"));
+    process.stdout.write(
+      "Choose a local model server. Values in brackets are defaults.\n\n",
+    );
+    endpoints.forEach((endpoint, index) =>
+      process.stdout.write(
+        String(index + 1) +
+          ". " +
+          endpoint.label +
+          " (" +
+          endpoint.baseUrl +
+          ")\n",
+      ),
+    );
     process.stdout.write(String(endpoints.length + 1) + ". Custom endpoint\n");
-    const endpointChoice = selectedIndex(await ask("Server", "1"), endpoints.length + 1, 0);
+    const endpointChoice = selectedIndex(
+      await ask("Server", "1"),
+      endpoints.length + 1,
+      0,
+    );
 
     let endpoint: LocalModelEndpoint;
     if (endpointChoice < endpoints.length) {
       endpoint = endpoints[endpointChoice];
     } else {
-      const provider = await ask("Provider: ollama or openai-compatible", "openai-compatible") as LocalEndpointKind;
-      if (provider !== "ollama" && provider !== "openai-compatible") throw new Error("Provider must be ollama or openai-compatible.");
-      const fallbackUrl = provider === "ollama" ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234/v1";
-      endpoint = { id: "custom", label: "Custom endpoint", kind: provider, baseUrl: await ask("Endpoint URL", fallbackUrl) };
+      const provider = (await ask(
+        "Provider: ollama or openai-compatible",
+        "openai-compatible",
+      )) as LocalEndpointKind;
+      if (provider !== "ollama" && provider !== "openai-compatible")
+        throw new Error("Provider must be ollama or openai-compatible.");
+      const fallbackUrl =
+        provider === "ollama"
+          ? "http://127.0.0.1:11434"
+          : "http://127.0.0.1:1234/v1";
+      endpoint = {
+        id: "custom",
+        label: "Custom endpoint",
+        kind: provider,
+        baseUrl: await ask("Endpoint URL", fallbackUrl),
+      };
     }
 
     const models = await listLocalModels(endpoint).catch(() => []);
-    models.forEach((model, index) => process.stdout.write(String(index + 1) + ". " + model.name + "\n"));
+    models.forEach((model, index) =>
+      process.stdout.write(String(index + 1) + ". " + model.name + "\n"),
+    );
     const model = models.length
       ? models[selectedIndex(await ask("Model", "1"), models.length, 0)].name
       : await ask("Model ID", "local-model");
-    const profileName = await ask("Profile name", endpoint.id === "custom" ? "local" : endpoint.id);
+    const profileName = await ask(
+      "Profile name",
+      endpoint.id === "custom" ? "local" : endpoint.id,
+    );
     const mode = await ask("Default mode: chat, plan, or edit", "edit");
-    if (mode !== "chat" && mode !== "plan" && mode !== "edit") throw new Error("Mode must be chat, plan, or edit.");
-    const permission = await ask("Default permission: ask, auto-read, or auto-all", "auto-read");
-    if (permission !== "ask" && permission !== "auto-read" && permission !== "auto-all") throw new Error("Permission must be ask, auto-read, or auto-all.");
+    if (mode !== "chat" && mode !== "plan" && mode !== "edit")
+      throw new Error("Mode must be chat, plan, or edit.");
+    const permission = await ask(
+      "Default permission: ask, auto-read, or auto-all",
+      "auto-read",
+    );
+    if (
+      permission !== "ask" &&
+      permission !== "auto-read" &&
+      permission !== "auto-all"
+    )
+      throw new Error("Permission must be ask, auto-read, or auto-all.");
     const internet = await ask("Enable internet research: yes or no", "no");
     const path = await saveUserProfile(cwd(), profileName, {
       provider: endpoint.kind,
@@ -293,10 +464,18 @@ async function runSetup(): Promise<void> {
       model,
       mode,
       permission,
-      internetAccess: /^(y|yes|true|1)$/i.test(internet)
+      internetAccess: /^(y|yes|true|1)$/i.test(internet),
     });
-    process.stdout.write("\nSaved profile '" + profileName + "' to " + path + "\n");
-    process.stdout.write("Start a persistent session with: " + brand.cliCommand + " chat --profile " + profileName + "\n");
+    process.stdout.write(
+      "\nSaved profile '" + profileName + "' to " + path + "\n",
+    );
+    process.stdout.write(
+      "Start a persistent session with: " +
+        brand.cliCommand +
+        " chat --profile " +
+        profileName +
+        "\n",
+    );
   } finally {
     readline.close();
   }
@@ -311,7 +490,12 @@ async function main(): Promise<void> {
 
   if (command === "models") {
     const endpoints = await detectLocalEndpoints();
-    const models = await Promise.all(endpoints.map(async (endpoint) => ({ endpoint, models: await listLocalModels(endpoint) })));
+    const models = await Promise.all(
+      endpoints.map(async (endpoint) => ({
+        endpoint,
+        models: await listLocalModels(endpoint),
+      })),
+    );
     process.stdout.write(`${JSON.stringify(models, null, 2)}\n`);
     return;
   }
@@ -329,65 +513,210 @@ async function main(): Promise<void> {
       return;
     }
     if (action === "init") {
-      process.stdout.write(`Created ${await initializeWorkspaceConfiguration(cwd(), paths)}\n`);
+      process.stdout.write(
+        `Created ${await initializeWorkspaceConfiguration(cwd(), paths)}\n`,
+      );
       return;
     }
-    throw new Error(`Use ${brand.cliCommand} config path or ${brand.cliCommand} config init`);
+    throw new Error(
+      `Use ${brand.cliCommand} config path or ${brand.cliCommand} config init`,
+    );
   }
 
   if (command === "gateway") {
     const gateway = gatewayArguments(rawArgs);
-    if (!gateway.token || gateway.token.length < 24) throw new Error("Set --gateway-token to a random value with at least 24 characters.");
+    if (!gateway.token || gateway.token.length < 24)
+      throw new Error(
+        "Set --gateway-token to a random value with at least 24 characters.",
+      );
     const { overrides } = parseConfigurationOverrides([...gateway.rest]);
-    const workspaceRoots = gateway.workspaceRoots.length ? gateway.workspaceRoots.map((path) => resolvePath(cwd(), path)) : [cwd()];
-    const clients = new Map<string, { readonly client: ClientRuntime; readonly approval: ProtocolToolApproval }>();
-    const workspaces = await Promise.all(workspaceRoots.map(async (workspaceRoot, index) => {
-      const configuration = await resolveConfiguration({ workspaceRoot, overrides });
-      const id = `workspace-${index + 1}`;
-      return {
-        id,
-        displayName: basename(workspaceRoot),
-        createRuntime: async (mode: "chat" | "plan" | "edit", toolApprovalMode?: PermissionMode) => {
-          const key = `${id}:${mode}:${toolApprovalMode ?? configuration.permission}`;
-          const current = clients.get(key);
-          if (current) return { runtime: current.client.runtime, events: current.client.events, approval: current.approval };
-          const approval = new ProtocolToolApproval(toolApprovalMode ?? configuration.permission);
-          const client = await createClientRuntime({ ...configuration, mode, approval });
-          clients.set(key, { client, approval });
-          return { runtime: client.runtime, events: client.events, approval };
-        }
-      };
-    }));
+    const workspaceRoots = gateway.workspaceRoots.length
+      ? gateway.workspaceRoots.map((path) => resolvePath(cwd(), path))
+      : [cwd()];
+    const clients = new Map<
+      string,
+      {
+        readonly client: ClientRuntime;
+        readonly approval: ProtocolToolApproval;
+      }
+    >();
+    const workspaces = await Promise.all(
+      workspaceRoots.map(async (workspaceRoot, index) => {
+        const configuration = await resolveConfiguration({
+          workspaceRoot,
+          overrides,
+        });
+        const id = `workspace-${index + 1}`;
+        return {
+          id,
+          displayName: basename(workspaceRoot),
+          createRuntime: async (
+            mode: "chat" | "plan" | "edit",
+            toolApprovalMode?: PermissionMode,
+          ) => {
+            const key = `${id}:${mode}:${toolApprovalMode ?? configuration.permission}`;
+            const current = clients.get(key);
+            if (current)
+              return {
+                runtime: current.client.runtime,
+                events: current.client.events,
+                approval: current.approval,
+              };
+            const approval = new ProtocolToolApproval(
+              toolApprovalMode ?? configuration.permission,
+            );
+            const client = await createClientRuntime({
+              ...configuration,
+              mode,
+              approval,
+            });
+            clients.set(key, { client, approval });
+            return { runtime: client.runtime, events: client.events, approval };
+          },
+        };
+      }),
+    );
     const server = await startRemoteGateway({
       token: gateway.token,
       port: gateway.port,
       host: gateway.host,
-      workspaces
+      workspaces,
     });
     process.stdout.write(`Truss mobile gateway listening at ${server.url}\n`);
-    const advertisedUrl = gateway.host && gateway.host !== "0.0.0.0" ? `http://${gateway.host}:${gateway.port}` : server.url;
+    const advertisedUrl =
+      gateway.host && gateway.host !== "0.0.0.0"
+        ? `http://${gateway.host}:${gateway.port}`
+        : server.url;
     const pairingUri = `truss://pair?gateway=${encodeURIComponent(advertisedUrl)}&token=${encodeURIComponent(gateway.token)}&name=${encodeURIComponent(basename(cwd()))}`;
-    process.stdout.write("Scan this trusted-LAN pairing QR code in Truss Remote:\n");
+    process.stdout.write(
+      "Scan this trusted-LAN pairing QR code in Truss Remote:\n",
+    );
     qrcode.generate(pairingUri, { small: true });
-    process.stdout.write("It binds to loopback by default. A non-loopback host is for a trusted LAN or secure tunnel only; do not expose it to the public internet without TLS and device-pairing support.\n");
+    process.stdout.write(
+      "It binds to loopback by default. A non-loopback host is for a trusted LAN or secure tunnel only; do not expose it to the public internet without TLS and device-pairing support.\n",
+    );
     try {
       await waitForShutdown();
     } finally {
       await server.close();
-      await Promise.all([...clients.values()].map(async ({ client }) => client.dispose()));
+      await Promise.all(
+        [...clients.values()].map(async ({ client }) => client.dispose()),
+      );
     }
     return;
   }
 
+  if (command === "agents") {
+    const { overrides, rest } = parseConfigurationOverrides(rawArgs);
+    const [action = "list", identifier, ...promptParts] = rest;
+    const profiles = new FileAgentProfileStore(cwd());
+    if (action === "list") {
+      const values = await profiles.list();
+      process.stdout.write(
+        values.length
+          ? `${values.map((profile) => `${profile.id}\t${profile.displayName}\t${profile.provider.providerId}\t${profile.provider.modelId}\t${profile.mode}\t${profile.approvalPolicy}`).join("\n")}\n`
+          : "No agent profiles. Add one with `truss agents add <name>`.\n",
+      );
+      return;
+    }
+    if (action === "add") {
+      if (!identifier?.trim())
+        throw new Error(
+          `Provide a profile name: ${brand.cliCommand} agents add <name>`,
+        );
+      const configuration = await resolveConfiguration({
+        workspaceRoot: cwd(),
+        overrides,
+      });
+      const profile = await profiles.create(
+        profileFromConfiguration(configuration, identifier),
+      );
+      process.stdout.write(
+        `Created agent ${profile.displayName} (${profile.id}) using ${profile.provider.providerId}/${profile.provider.modelId}.\n`,
+      );
+      return;
+    }
+    if (action === "remove") {
+      if (!identifier?.trim())
+        throw new Error(
+          `Provide an agent ID: ${brand.cliCommand} agents remove <id>`,
+        );
+      if (!(await profiles.delete(identifier)))
+        throw new Error("Unknown agent profile.");
+      process.stdout.write("Agent profile removed.\n");
+      return;
+    }
+    if (action === "run") {
+      if (!identifier?.trim() || !promptParts.join(" ").trim())
+        throw new Error(`Use: ${brand.cliCommand} agents run <id> <task>`);
+      const configuration = await resolveConfiguration({
+        workspaceRoot: cwd(),
+        overrides,
+      });
+      const coordinator = createCliAgentCoordinator(configuration, profiles);
+      const unsubscribe = coordinator.events.subscribe((event) => {
+        if (
+          event.type === "runtime" &&
+          event.event.runId &&
+          event.event.event.type === "text_delta"
+        )
+          process.stdout.write(event.event.event.text);
+        if (
+          event.type === "runtime" &&
+          event.event.event.type === "progress_delta"
+        )
+          process.stderr.write(`\n[progress] ${event.event.event.text}\n`);
+        if (
+          event.type === "runtime" &&
+          event.event.event.type === "tool_call_requested"
+        )
+          process.stderr.write(`\n[tool] ${event.event.event.tool}\n`);
+      });
+      try {
+        const run = await coordinator.start({
+          agentId: identifier,
+          prompt: promptParts.join(" "),
+        });
+        const completed = await waitForAgentRun(
+          coordinator,
+          run.id,
+          (current) => {
+            process.stderr.write(
+              `[agent:${current.agentId}] ${current.state}${current.latestProgress ? ` — ${current.latestProgress}` : ""}\n`,
+            );
+          },
+        );
+        process.stdout.write("\n");
+        if (completed.state !== "completed") process.exitCode = 1;
+      } finally {
+        unsubscribe();
+        await coordinator.dispose();
+      }
+      return;
+    }
+    throw new Error(
+      `Use ${brand.cliCommand} agents list, add, remove, or run.`,
+    );
+  }
+
   const { overrides, rest: args } = parseConfigurationOverrides(rawArgs);
-  const workspaceCommand = command === "init" ? "/init"
-    : command === "update" ? `/update ${args.join(" ")}`.trim()
-      : command === "status" ? "/status"
-        : command === "clear-memory" ? "/clear-memory"
-          : command === "commands" ? "/help"
-            : undefined;
+  const workspaceCommand =
+    command === "init"
+      ? "/init"
+      : command === "update"
+        ? `/update ${args.join(" ")}`.trim()
+        : command === "status"
+          ? "/status"
+          : command === "clear-memory"
+            ? "/clear-memory"
+            : command === "commands"
+              ? "/help"
+              : undefined;
   if (workspaceCommand) {
-    const result = await executeWorkspaceCommand({ workspaceRoot: cwd(), input: workspaceCommand });
+    const result = await executeWorkspaceCommand({
+      workspaceRoot: cwd(),
+      input: workspaceCommand,
+    });
     process.stdout.write(`${result.message}\n`);
     if (!result.ok) process.exitCode = 1;
     return;
@@ -395,8 +724,12 @@ async function main(): Promise<void> {
 
   if (command === "chat" && args.length) {
     const prompt = args.join(" ").trim();
-    if (!prompt) throw new Error(`Provide a prompt: ${brand.cliCommand} chat <prompt>`);
-    const result = await executeWorkspaceCommand({ workspaceRoot: cwd(), input: prompt });
+    if (!prompt)
+      throw new Error(`Provide a prompt: ${brand.cliCommand} chat <prompt>`);
+    const result = await executeWorkspaceCommand({
+      workspaceRoot: cwd(),
+      input: prompt,
+    });
     if (result.handled) {
       process.stdout.write(`${result.message}\n`);
       if (!result.ok) process.exitCode = 1;
@@ -404,13 +737,18 @@ async function main(): Promise<void> {
     }
   }
 
-  const configuration = await resolveConfiguration({ workspaceRoot: cwd(), overrides });
+  const configuration = await resolveConfiguration({
+    workspaceRoot: cwd(),
+    overrides,
+  });
 
   if (command === "serve") {
     const approval = new ProtocolToolApproval(configuration.permission);
     const client = await createClientRuntime({ ...configuration, approval });
     for (const server of client.mcpServers) {
-      process.stderr.write(`[mcp] ${server.name}: ${server.state}${server.error ? ` (${server.error})` : ` (${server.toolCount} tools)`}\n`);
+      process.stderr.write(
+        `[mcp] ${server.name}: ${server.state}${server.error ? ` (${server.error})` : ` (${server.toolCount} tools)`}\n`,
+      );
     }
     try {
       await runService(client.runtime, client.events, approval);
@@ -428,16 +766,21 @@ async function main(): Promise<void> {
   const client = await createClientRuntime(configuration);
   const { runtime, events } = client;
   for (const server of client.mcpServers) {
-    process.stderr.write(`[mcp] ${server.name}: ${server.state}${server.error ? ` (${server.error})` : ` (${server.toolCount} tools)`}\n`);
+    process.stderr.write(
+      `[mcp] ${server.name}: ${server.state}${server.error ? ` (${server.error})` : ` (${server.toolCount} tools)`}\n`,
+    );
   }
 
   if (command === "chat") {
     const prompt = args.join(" ").trim();
     events.subscribe((event) => {
       if (event.type === "text_delta") process.stdout.write(event.text);
-      if (event.type === "tool_call_requested") process.stderr.write(`\n[tool] ${event.tool}\n`);
+      if (event.type === "tool_call_requested")
+        process.stderr.write(`\n[tool] ${event.tool}\n`);
       if (event.type === "plan_updated") {
-        process.stderr.write(`\n[plan] ${event.plan.title}\n${event.plan.steps.map((step) => `  ${step.status === "completed" ? "[x]" : step.status === "in_progress" ? "[..]" : "[ ]"} ${step.content}`).join("\n")}\n`);
+        process.stderr.write(
+          `\n[plan] ${event.plan.title}\n${event.plan.steps.map((step) => `  ${step.status === "completed" ? "[x]" : step.status === "in_progress" ? "[..]" : "[ ]"} ${step.content}`).join("\n")}\n`,
+        );
       }
     });
     try {
@@ -454,6 +797,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.stderr.write(
+    `${error instanceof Error ? error.message : String(error)}\n`,
+  );
   process.exitCode = 1;
 });
