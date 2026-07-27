@@ -32,16 +32,19 @@ class FakeRuntime {
   private sessionNumber = 0;
   private activeSessionId: string | undefined;
   readonly started = new Deferred();
+  runCalls = 0;
 
   constructor(
     private readonly events: EventBus<RuntimeEvent>,
     private readonly gate: Deferred,
+    private readonly sessionGate?: Deferred,
   ) {}
 
   async createSession() {
     this.sessionNumber += 1;
     const timestamp = new Date();
     this.activeSessionId = `session-${this.sessionNumber}`;
+    await this.sessionGate?.promise;
     return {
       id: this.activeSessionId,
       createdAt: timestamp,
@@ -55,6 +58,7 @@ class FakeRuntime {
     _prompt: string,
     signal?: AbortSignal,
   ): Promise<void> {
+    this.runCalls += 1;
     await this.events.emit({ type: "run_started", sessionId });
     await this.events.emit({
       type: "progress_delta",
@@ -109,6 +113,7 @@ class FakeFactory implements AgentRuntimeFactory {
   readonly disposed = new Map<string, number>();
   readonly runtimes = new Map<string, FakeRuntime>();
   readonly gates = new Map<string, Deferred>();
+  readonly sessionGates = new Map<string, Deferred>();
 
   async validate(_profile: AgentProfile): Promise<void> {}
 
@@ -116,7 +121,7 @@ class FakeFactory implements AgentRuntimeFactory {
     this.created.push(profile.id);
     const events = new EventBus<RuntimeEvent>();
     const gate = new Deferred();
-    const runtime = new FakeRuntime(events, gate);
+    const runtime = new FakeRuntime(events, gate, this.sessionGates.get(profile.id));
     const approval = new FakeApproval();
     this.gates.set(profile.id, gate);
     this.runtimes.set(profile.id, runtime);
@@ -482,5 +487,84 @@ describe("AgentCoordinator", () => {
     expect([...factory.disposed.values()].every((count) => count === 1)).toBe(
       true,
     );
+  });
+
+  it("releases all concurrent slots and disposes fresh runtimes after a cancel-and-restart cycle", async () => {
+    const profiles = new InMemoryAgentProfileStore();
+    const factory = new FakeFactory();
+    const coordinator = new AgentCoordinator({
+      profiles,
+      runtimeFactory: factory,
+      maxConcurrentRuns: 3,
+    });
+    const agents = await Promise.all(
+      ["Research", "Review", "Test"].map((name) =>
+        createProfile(profiles, name),
+      ),
+    );
+
+    const firstRuns = await Promise.all(
+      agents.map((agent) =>
+        coordinator.start({ agentId: agent.id, prompt: `First ${agent.id}` }),
+      ),
+    );
+    await waitFor(
+      () => factory.created.length === agents.length,
+      "all available concurrent slots should start",
+    );
+    await coordinator.stopAll();
+
+    expect(firstRuns.map((run) => coordinator.getRun(run.id)?.state)).toEqual(
+      Array.from({ length: agents.length }, () => "cancelled"),
+    );
+    expect(agents.map((agent) => factory.disposed.get(agent.id))).toEqual(
+      Array.from({ length: agents.length }, () => 1),
+    );
+
+    const restartedRuns = await Promise.all(
+      agents.map((agent) =>
+        coordinator.start({ agentId: agent.id, prompt: `Restart ${agent.id}` }),
+      ),
+    );
+    await waitFor(
+      () => factory.created.length === agents.length * 2,
+      "every slot should be reusable after cancellation",
+    );
+    await coordinator.dispose();
+
+    expect(restartedRuns.map((run) => coordinator.getRun(run.id)?.state)).toEqual(
+      Array.from({ length: agents.length }, () => "cancelled"),
+    );
+    expect(agents.map((agent) => factory.disposed.get(agent.id))).toEqual(
+      Array.from({ length: agents.length }, () => 2),
+    );
+  });
+
+  it("does not start a disposed runtime when cancellation races session creation", async () => {
+    const profiles = new InMemoryAgentProfileStore();
+    const factory = new FakeFactory();
+    const coordinator = new AgentCoordinator({
+      profiles,
+      runtimeFactory: factory,
+    });
+    const profile = await createProfile(profiles, "Delayed session");
+    const sessionGate = new Deferred();
+    factory.sessionGates.set(profile.id, sessionGate);
+
+    const run = await coordinator.start({
+      agentId: profile.id,
+      prompt: "Wait for a session",
+    });
+    await waitFor(
+      () => factory.runtimes.has(profile.id),
+      "runtime should be created before cancelling its session allocation",
+    );
+    await coordinator.stop(run.id);
+    sessionGate.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(coordinator.getRun(run.id)?.state).toBe("cancelled");
+    expect(factory.disposed.get(profile.id)).toBe(1);
+    expect(factory.runtimes.get(profile.id)?.runCalls).toBe(0);
   });
 });

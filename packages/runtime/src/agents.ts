@@ -601,6 +601,10 @@ export class AgentCoordinator {
         this.handleRuntimeEvent(run, event),
       );
       const session = await created.runtime.createSession();
+      // Stop may arrive while an asynchronous session is being allocated. In
+      // that case finish() has already disposed the created runtime; never
+      // start it again without an abort signal.
+      if (this.isTerminal(run.state)) return;
       run.sessionId = session.id;
       run.controller = new AbortController();
       await this.publishRun(run);
