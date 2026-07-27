@@ -32,10 +32,15 @@ function optionalStringInput(input: JsonObject, key: string, fallback: string): 
 function optionalNumberInput(input: JsonObject, key: string, fallback: number): number {
   const value = input[key];
   if (value === undefined) return fallback;
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+  const normalized = typeof value === "number"
+    ? value
+    : typeof value === "string" && /^\d+$/.test(value.trim())
+      ? Number(value.trim())
+      : Number.NaN;
+  if (!Number.isFinite(normalized) || normalized <= 0) {
     throw new Error(`'${key}' must be a positive number`);
   }
-  return value;
+  return normalized;
 }
 
 const pathSchema = { type: "object" as const, properties: { path: { type: "string" } }, required: ["path"] };

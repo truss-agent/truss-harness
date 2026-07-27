@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { createTerminalTool, replaceInFileTool, writeFileTool } from "./tools.js";
+import { createTerminalTool, grepTool, replaceInFileTool, writeFileTool } from "./tools.js";
 
 const workspaces: string[] = [];
 
@@ -57,5 +57,16 @@ describe("agent terminal tool", () => {
 
     expect(result).toMatchObject({ isError: true });
     expect(result.content).toContain("write_file or replace_in_file");
+  });
+});
+
+describe("tool argument recovery", () => {
+  it("accepts numeric-string result limits", async () => {
+    const root = await workspace();
+    await writeFile(join(root, "README.md"), "first\nneedle\nsecond\nneedle\n", "utf8");
+
+    const result = await grepTool.execute({ query: "needle", maxResults: "1" }, { workspaceRoot: root });
+
+    expect(result.content.split("\n")).toHaveLength(1);
   });
 });

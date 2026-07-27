@@ -19,6 +19,17 @@ describe("web tools", () => {
     expect(result.content).not.toContain("ignore()");
   });
 
+  it("accepts numeric-string response limits from smaller tool-calling models", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response("123456", { headers: { "content-type": "text/plain" } }));
+    const result = await createWebFetchTool({ fetch, resolveHost: publicResolver }).execute(
+      { url: "https://example.com/docs", maxCharacters: "3" },
+      { workspaceRoot: ".", signal: new AbortController().signal }
+    );
+
+    expect(result.content).toContain("123");
+    expect(result.content).not.toContain("123456");
+  });
+
   it("blocks local and private network targets before fetching", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>();
     const tool = createWebFetchTool({ fetch, resolveHost: async () => ["127.0.0.1"] });
