@@ -1,6 +1,22 @@
 import type { ChatAttachment, WorkspacePlan } from "@truss-harness/runtime";
 import hljs from "highlight.js/lib/common";
-import { desktopThemeNames, type DesktopConfiguration, type DesktopConversation, type DesktopEndpoint, type DesktopEvent, type DesktopFile, type DesktopGitStatus, type DesktopMessage, type DesktopProvider, type DesktopState, type DesktopThemePalette, type DesktopThemePreference, type DesktopToolActivity, type DesktopWorkspaceUiState } from "./shared.js";
+import {
+  desktopThemeNames,
+  type DesktopAgentsSnapshot,
+  type DesktopConfiguration,
+  type DesktopConversation,
+  type DesktopEndpoint,
+  type DesktopEvent,
+  type DesktopFile,
+  type DesktopGitStatus,
+  type DesktopMessage,
+  type DesktopProvider,
+  type DesktopState,
+  type DesktopThemePalette,
+  type DesktopThemePreference,
+  type DesktopToolActivity,
+  type DesktopWorkspaceUiState,
+} from "./shared.js";
 
 declare global {
   interface Window {
@@ -30,36 +46,52 @@ const defaultConfiguration: DesktopConfiguration = {
   internetAccess: false,
   autocomplete: { enabled: false },
   formatOnSave: false,
-  mcpServers: {}
+  mcpServers: {},
 };
 
-const element = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
+const element = <T extends HTMLElement>(id: string): T =>
+  document.getElementById(id) as T;
 const toolActivityPanel = element<HTMLDivElement>("toolActivityPanel");
 const fileTree = element<HTMLDivElement>("fileTree");
 const fileSearch = element<HTMLInputElement>("fileSearch");
 const clearFileSearch = element<HTMLButtonElement>("clearFileSearch");
 const fileContextMenu = element<HTMLDivElement>("fileContextMenu");
 const conversations = element<HTMLDivElement>("conversationList");
-const workbench = document.querySelector<HTMLElement>(".workbench") as HTMLElement;
+const workbench = document.querySelector<HTMLElement>(
+  ".workbench",
+) as HTMLElement;
 const sidebar = document.querySelector<HTMLElement>(".sidebar") as HTMLElement;
-const editorArea = document.querySelector<HTMLElement>(".editor-area") as HTMLElement;
-const filesSection = document.querySelector<HTMLElement>(".files-section") as HTMLElement;
-const historySection = document.querySelector<HTMLElement>(".history-section") as HTMLElement;
+const editorArea = document.querySelector<HTMLElement>(
+  ".editor-area",
+) as HTMLElement;
+const filesSection = document.querySelector<HTMLElement>(
+  ".files-section",
+) as HTMLElement;
+const historySection = document.querySelector<HTMLElement>(
+  ".history-section",
+) as HTMLElement;
 const centerSurface = element<HTMLElement>("centerSurface");
-const editorContent = document.querySelector<HTMLElement>(".editor-content") as HTMLElement;
-const terminal = document.querySelector<HTMLElement>(".terminal") as HTMLElement;
+const editorContent = document.querySelector<HTMLElement>(
+  ".editor-content",
+) as HTMLElement;
+const terminal = document.querySelector<HTMLElement>(
+  ".terminal",
+) as HTMLElement;
 const gitPanel = element<HTMLElement>("gitPanel");
 const gitBody = element<HTMLDivElement>("gitBody");
 const gitBranch = element<HTMLSpanElement>("gitBranch");
 const gitCounts = element<HTMLSpanElement>("gitCounts");
 const gitFiles = element<HTMLDivElement>("gitFiles");
 const commitMessage = element<HTMLInputElement>("commitMessage");
-const generateCommitMessage = element<HTMLButtonElement>("generateCommitMessage");
+const generateCommitMessage = element<HTMLButtonElement>(
+  "generateCommitMessage",
+);
 const editor = element<HTMLElement>("editor");
 const formatFileButton = element<HTMLButtonElement>("formatFileButton");
 const editorTabsElement = element<HTMLDivElement>("editorTabs");
 const editorTitle = element<HTMLSpanElement>("editorTitle");
 const browserPanel = element<HTMLElement>("browserPanel");
+const agentsPanel = element<HTMLElement>("agentsPanel");
 const browserView = element<EmbeddedBrowserView>("browserView");
 const browserUrl = element<HTMLInputElement>("browserUrl");
 const browserBack = element<HTMLButtonElement>("browserBack");
@@ -94,7 +126,9 @@ const confirmFileEntry = element<HTMLButtonElement>("confirmFileEntry");
 const quickModel = element<HTMLSelectElement>("quickModel");
 const contextMeter = element<HTMLSpanElement>("contextMeter");
 // Keep older packaged HTML usable when only the renderer bundle has been refreshed.
-const rateMeter = document.getElementById("rateMeter") as HTMLSpanElement | null;
+const rateMeter = document.getElementById(
+  "rateMeter",
+) as HTMLSpanElement | null;
 const settingsPanel = element<HTMLElement>("settingsPanel");
 const settingsPanelHome = document.createComment("settings-panel-home");
 settingsPanel.before(settingsPanelHome);
@@ -130,12 +164,21 @@ const downloadUpdate = element<HTMLButtonElement>("downloadUpdate");
 const installUpdate = element<HTMLButtonElement>("installUpdate");
 const toast = element<HTMLDivElement>("toast");
 
-let desktopState: DesktopState = { workspaceRoot: "", zoomFactor: 1, updates: { checkOnLaunch: true, autoDownload: false }, theme: { name: "default" }, conversations: [] };
+let desktopState: DesktopState = {
+  workspaceRoot: "",
+  zoomFactor: 1,
+  updates: { checkOnLaunch: true, autoDownload: false },
+  theme: { name: "default" },
+  conversations: [],
+};
 let endpoints: readonly DesktopEndpoint[] = [];
 let models: readonly string[] = [];
 let files: readonly DesktopFile[] = [];
 let fileSearchQuery = "";
-type FileContextTarget = { readonly kind: "root" | "directory" | "file"; readonly path: string };
+type FileContextTarget = {
+  readonly kind: "root" | "directory" | "file";
+  readonly path: string;
+};
 let fileContextTarget: FileContextTarget | undefined;
 let copiedWorkspaceFile: string | undefined;
 let resolveFileEntry: ((value: string | undefined) => void) | undefined;
@@ -169,7 +212,12 @@ let slashResults: readonly DesktopFile[] = [];
 let slashIndex = 0;
 const expandedDirectories = new Set<string>();
 const loadedDirectoryContents = new Set<string>();
-let gitStatus: DesktopGitStatus = { available: false, ahead: 0, behind: 0, files: [] };
+let gitStatus: DesktopGitStatus = {
+  available: false,
+  ahead: 0,
+  behind: 0,
+  files: [],
+};
 let gitCollapsed = false;
 let gitPanelHeight = 220;
 let activePlan: WorkspacePlan | undefined;
@@ -177,7 +225,8 @@ let streamStartedAt = 0;
 let streamedTextCharacters = 0;
 let agentActivity = "Ready";
 let runningConversationId: string | undefined;
-let centerView: "editor" | "preview" = "editor";
+let centerView: "editor" | "preview" | "agents" = "editor";
+let agentsSnapshot: DesktopAgentsSnapshot = { profiles: [], runs: [] };
 let pendingAttachments: ChatAttachment[] = [];
 type SettingsTab = "local" | "byok" | "other";
 let activeSettingsTab: SettingsTab = "local";
@@ -192,7 +241,9 @@ function configuration(): DesktopConfiguration {
   return desktopState.configuration ?? defaultConfiguration;
 }
 
-const customThemeProperties: Readonly<Record<keyof DesktopThemePalette, string>> = {
+const customThemeProperties: Readonly<
+  Record<keyof DesktopThemePalette, string>
+> = {
   background: "--desktop-background",
   surface: "--desktop-surface",
   panel: "--desktop-panel",
@@ -202,7 +253,7 @@ const customThemeProperties: Readonly<Record<keyof DesktopThemePalette, string>>
   accent: "--desktop-accent",
   accentText: "--desktop-accent-text",
   warning: "--desktop-warning",
-  error: "--desktop-error"
+  error: "--desktop-error",
 };
 
 function isThemeColor(value: unknown): value is string {
@@ -213,11 +264,14 @@ function parseCustomTheme(): DesktopThemePalette {
   const source = customThemeInput.value.trim();
   if (!source) return {};
   const parsed = JSON.parse(source) as unknown;
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Custom theme must be a JSON object.");
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    throw new Error("Custom theme must be a JSON object.");
   const palette: Record<string, string> = {};
   for (const [name, value] of Object.entries(parsed)) {
-    if (!(name in customThemeProperties)) throw new Error(`Unknown custom theme token: ${name}.`);
-    if (!isThemeColor(value)) throw new Error(`${name} must be a #RRGGBB color.`);
+    if (!(name in customThemeProperties))
+      throw new Error(`Unknown custom theme token: ${name}.`);
+    if (!isThemeColor(value))
+      throw new Error(`${name} must be a #RRGGBB color.`);
     palette[name] = value;
   }
   return palette as DesktopThemePalette;
@@ -225,7 +279,8 @@ function parseCustomTheme(): DesktopThemePalette {
 
 function applyTheme(theme: DesktopThemePreference): void {
   const root = document.documentElement;
-  for (const property of Object.values(customThemeProperties)) root.style.removeProperty(property);
+  for (const property of Object.values(customThemeProperties))
+    root.style.removeProperty(property);
   if (theme.name === "default") {
     delete root.dataset.desktopTheme;
     return;
@@ -234,7 +289,8 @@ function applyTheme(theme: DesktopThemePreference): void {
   if (theme.name === "custom") {
     for (const [name, value] of Object.entries(theme.custom ?? {})) {
       const property = customThemeProperties[name as keyof DesktopThemePalette];
-      if (property && isThemeColor(value)) root.style.setProperty(property, value);
+      if (property && isThemeColor(value))
+        root.style.setProperty(property, value);
     }
   }
 }
@@ -249,10 +305,14 @@ function renderCustomThemeControls(): void {
 async function saveTheme(theme: DesktopThemePreference): Promise<void> {
   applyTheme(theme);
   desktopState = await window.trussDesktop.configureTheme(theme);
-  notify(`${theme.name === "custom" ? "Custom" : theme.name[0].toUpperCase() + theme.name.slice(1)} theme saved.`);
+  notify(
+    `${theme.name === "custom" ? "Custom" : theme.name[0].toUpperCase() + theme.name.slice(1)} theme saved.`,
+  );
 }
 
-function isLocalProvider(provider: DesktopProvider): provider is "ollama" | "openai-compatible" {
+function isLocalProvider(
+  provider: DesktopProvider,
+): provider is "ollama" | "openai-compatible" {
   return provider === "ollama" || provider === "openai-compatible";
 }
 
@@ -261,30 +321,43 @@ function byokBaseUrlForSelectedProvider(): string {
 }
 
 function selectedSettingsProvider(): DesktopProvider {
-  return modelSettingsTab === "byok" ? byokProviderSelect.value as DesktopProvider : providerSelect.value as DesktopProvider;
+  return modelSettingsTab === "byok"
+    ? (byokProviderSelect.value as DesktopProvider)
+    : (providerSelect.value as DesktopProvider);
 }
 
 function setSettingsTab(tab: SettingsTab): void {
   activeSettingsTab = tab;
   if (tab !== "other") modelSettingsTab = tab;
   if (tab === "byok") byokBaseUrl.value = byokBaseUrlForSelectedProvider();
-  (document.getElementById("settingsPanelLocal") as HTMLElement).hidden = tab !== "local";
-  (document.getElementById("settingsPanelByok") as HTMLElement).hidden = tab !== "byok";
-  (document.getElementById("settingsPanelOther") as HTMLElement).hidden = tab !== "other";
-  document.querySelectorAll<HTMLButtonElement>("[data-settings-tab]").forEach((button) => {
-    const selected = button.dataset.settingsTab === tab;
-    button.classList.toggle("active", selected);
-    button.setAttribute("aria-selected", String(selected));
-    button.tabIndex = selected ? 0 : -1;
-  });
+  (document.getElementById("settingsPanelLocal") as HTMLElement).hidden =
+    tab !== "local";
+  (document.getElementById("settingsPanelByok") as HTMLElement).hidden =
+    tab !== "byok";
+  (document.getElementById("settingsPanelOther") as HTMLElement).hidden =
+    tab !== "other";
+  document
+    .querySelectorAll<HTMLButtonElement>("[data-settings-tab]")
+    .forEach((button) => {
+      const selected = button.dataset.settingsTab === tab;
+      button.classList.toggle("active", selected);
+      button.setAttribute("aria-selected", String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    });
 }
 
 function activeConversation(): DesktopConversation | undefined {
-  return desktopState.conversations.find((conversation) => conversation.id === desktopState.activeConversationId);
+  return desktopState.conversations.find(
+    (conversation) => conversation.id === desktopState.activeConversationId,
+  );
 }
 
-function conversationById(id: string | undefined): DesktopConversation | undefined {
-  return id ? desktopState.conversations.find((conversation) => conversation.id === id) : undefined;
+function conversationById(
+  id: string | undefined,
+): DesktopConversation | undefined {
+  return id
+    ? desktopState.conversations.find((conversation) => conversation.id === id)
+    : undefined;
 }
 
 function createId(): string {
@@ -292,18 +365,28 @@ function createId(): string {
 }
 
 function tokenEstimate(messages: readonly DesktopMessage[]): number {
-  return messages.reduce((total, message) => total + Math.ceil(message.content.trim().length / 4), 400);
+  return messages.reduce(
+    (total, message) => total + Math.ceil(message.content.trim().length / 4),
+    400,
+  );
 }
 
 function isDirectWorkspaceChangeRequest(prompt: string): boolean {
-  const action = "(?:add|change|create|delete|edit|fix|implement|modify|overhaul|refactor|remove|rename|replace|rewrite|rework|update|write)";
-  const directRequest = new RegExp(`^\\s*(?:(?:please|can you|could you|would you)\\s+)?${action}\\b|^\\s*(?:i am going to|i'm going to|we need to|let's)\\s+${action}\\b`, "i");
-  const errorReport = /\b(?:error|exception|stack trace|uncaught|referenceerror|typeerror|syntaxerror|not working|doesn['’]t work|broken|failed)\b/i;
+  const action =
+    "(?:add|change|create|delete|edit|fix|implement|modify|overhaul|refactor|remove|rename|replace|rewrite|rework|update|write)";
+  const directRequest = new RegExp(
+    `^\\s*(?:(?:please|can you|could you|would you)\\s+)?${action}\\b|^\\s*(?:i am going to|i'm going to|we need to|let's)\\s+${action}\\b`,
+    "i",
+  );
+  const errorReport =
+    /\b(?:error|exception|stack trace|uncaught|referenceerror|typeerror|syntaxerror|not working|doesn['’]t work|broken|failed)\b/i;
   return directRequest.test(prompt) || errorReport.test(prompt);
 }
 
 function formatTokens(value: number): string {
-  return value >= 1_000 ? `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1).replace(/\.0$/, "")}k` : String(Math.round(value));
+  return value >= 1_000
+    ? `${(value / 1_000).toFixed(value >= 10_000 ? 0 : 1).replace(/\.0$/, "")}k`
+    : String(Math.round(value));
 }
 
 function notify(message: string): void {
@@ -315,17 +398,221 @@ function notify(message: string): void {
 function normalizedPreviewUrl(value: string): string {
   const trimmed = value.trim();
   if (!trimmed) throw new Error("Enter a preview URL.");
-  const normalized = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  const normalized = /^[a-z][a-z\d+.-]*:\/\//i.test(trimmed)
+    ? trimmed
+    : `http://${trimmed}`;
   const url = new URL(normalized);
-  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Preview URLs must use HTTP or HTTPS.");
+  if (url.protocol !== "http:" && url.protocol !== "https:")
+    throw new Error("Preview URLs must use HTTP or HTTPS.");
   return url.toString();
 }
 
-function setCenterView(next: "editor" | "preview"): void {
+function setCenterView(next: "editor" | "preview" | "agents"): void {
   centerView = next;
   editor.hidden = next !== "editor";
   browserPanel.hidden = next !== "preview";
-  document.querySelectorAll<HTMLButtonElement>("[data-center-view]").forEach((button) => button.classList.toggle("active", button.dataset.centerView === next));
+  agentsPanel.hidden = next !== "agents";
+  document
+    .querySelectorAll<HTMLButtonElement>("[data-center-view]")
+    .forEach((button) =>
+      button.classList.toggle("active", button.dataset.centerView === next),
+    );
+  if (next === "agents") renderAgents();
+}
+
+function agentProviderOptions(selected: string): HTMLOptionElement[] {
+  const providers = [
+    ["ollama", "Ollama"],
+    ["openai-compatible", "OpenAI-compatible"],
+    ["llama-cpp", "llama.cpp server"],
+    ["openai", "OpenAI"],
+    ["anthropic", "Anthropic"],
+    ["openrouter", "OpenRouter"],
+    ["gemini", "Google Gemini"],
+  ] as const;
+  return providers.map(([id, label]) => {
+    const option = document.createElement("option");
+    option.value = id;
+    option.textContent = label;
+    option.selected = id === selected;
+    return option;
+  });
+}
+
+function applyAgentsSnapshot(snapshot: DesktopAgentsSnapshot): void {
+  agentsSnapshot = snapshot;
+  if (centerView === "agents") renderAgents();
+}
+
+function renderAgents(): void {
+  agentsPanel.replaceChildren();
+  const heading = document.createElement("div");
+  heading.className = "agents-heading";
+  const title = document.createElement("div");
+  title.innerHTML =
+    "<strong>Agents</strong><span>Run independent local or BYOK agents in this workspace.</span>";
+  const stopAll = document.createElement("button");
+  stopAll.type = "button";
+  stopAll.textContent = "Stop all";
+  stopAll.disabled = !agentsSnapshot.runs.some((run) =>
+    ["queued", "running", "waiting_for_approval"].includes(run.state),
+  );
+  stopAll.onclick = () =>
+    void window.trussDesktop
+      .stopAllAgents()
+      .then(applyAgentsSnapshot)
+      .catch((error) =>
+        notify(error instanceof Error ? error.message : String(error)),
+      );
+  heading.append(title, stopAll);
+
+  const create = document.createElement("form");
+  create.className = "agent-create";
+  const name = document.createElement("input");
+  name.placeholder = "Agent name";
+  name.value = "New agent";
+  const provider = document.createElement("select");
+  provider.append(
+    ...agentProviderOptions(desktopState.configuration?.provider ?? "ollama"),
+  );
+  const endpoint = document.createElement("input");
+  endpoint.placeholder = "Endpoint URL";
+  endpoint.value =
+    desktopState.configuration?.baseUrl ?? "http://127.0.0.1:11434";
+  const model = document.createElement("input");
+  model.placeholder = "Model ID";
+  model.value = desktopState.configuration?.model ?? "";
+  const mode = document.createElement("select");
+  for (const value of ["chat", "plan", "edit"] as const) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent =
+      value === "edit" ? "Agent" : value[0].toUpperCase() + value.slice(1);
+    option.selected = value === "plan";
+    mode.append(option);
+  }
+  const add = document.createElement("button");
+  add.className = "primary";
+  add.textContent = "Create agent";
+  create.append(name, provider, endpoint, model, mode, add);
+  create.onsubmit = (event) => {
+    event.preventDefault();
+    const providerId = provider.value;
+    void window.trussDesktop
+      .createAgent({
+        displayName: name.value,
+        provider: {
+          providerId,
+          endpointUrl: endpoint.value,
+          modelId: model.value,
+          ...(["ollama", "openai-compatible", "llama-cpp"].includes(providerId)
+            ? {}
+            : { credentialRef: providerId }),
+        },
+        mode: mode.value as "chat" | "plan" | "edit",
+        approvalPolicy: "ask",
+        internetAccess: false,
+      })
+      .then(applyAgentsSnapshot)
+      .catch((error) =>
+        notify(error instanceof Error ? error.message : String(error)),
+      );
+  };
+
+  const cards = document.createElement("div");
+  cards.className = "agent-cards";
+  for (const profile of agentsSnapshot.profiles) {
+    const run = agentsSnapshot.runs.find(
+      (candidate) =>
+        candidate.agentId === profile.id &&
+        !["completed", "failed", "cancelled"].includes(candidate.state),
+    );
+    const card = document.createElement("section");
+    card.className = "agent-card";
+    const details = document.createElement("div");
+    details.className = "agent-card-title";
+    const label = document.createElement("strong");
+    label.textContent = profile.displayName;
+    const status = document.createElement("span");
+    status.textContent = run?.state?.replaceAll("_", " ") ?? "idle";
+    details.append(label, status);
+    const binding = document.createElement("p");
+    binding.textContent = `${profile.provider.providerId} · ${profile.provider.modelId} · ${profile.mode}${profile.provider.endpointUrl ? ` · ${profile.provider.endpointUrl}` : ""}`;
+    const prompt = document.createElement("textarea");
+    prompt.rows = 2;
+    prompt.placeholder = "Give this agent a focused task";
+    prompt.disabled = Boolean(run);
+    const actions = document.createElement("div");
+    actions.className = "agent-card-actions";
+    const start = document.createElement("button");
+    start.className = "primary";
+    start.textContent = run ? "Running" : "Start";
+    start.disabled = Boolean(run);
+    start.onclick = () =>
+      void window.trussDesktop
+        .startAgent(profile.id, prompt.value)
+        .then(applyAgentsSnapshot)
+        .catch((error) =>
+          notify(error instanceof Error ? error.message : String(error)),
+        );
+    const stop = document.createElement("button");
+    stop.textContent = "Stop";
+    stop.disabled = !run;
+    stop.onclick = () =>
+      run &&
+      void window.trussDesktop
+        .stopAgent(run.id)
+        .then(applyAgentsSnapshot)
+        .catch((error) =>
+          notify(error instanceof Error ? error.message : String(error)),
+        );
+    const remove = document.createElement("button");
+    remove.textContent = "Delete";
+    remove.disabled = Boolean(run);
+    remove.onclick = () =>
+      void window.trussDesktop
+        .deleteAgent(profile.id)
+        .then(applyAgentsSnapshot)
+        .catch((error) =>
+          notify(error instanceof Error ? error.message : String(error)),
+        );
+    actions.append(start, stop, remove);
+    if (run?.state === "waiting_for_approval" && run.activeTool) {
+      const approval = document.createElement("div");
+      approval.className = "agent-approval";
+      approval.textContent = `Approve ${run.activeTool.name}?`;
+      for (const [labelText, approved] of [
+        ["Allow", true],
+        ["Deny", false],
+      ] as const) {
+        const button = document.createElement("button");
+        button.textContent = labelText;
+        button.onclick = () =>
+          void window.trussDesktop
+            .resolveAgentApproval(
+              run.id,
+              run.activeTool?.callId ?? "",
+              approved,
+            )
+            .then(applyAgentsSnapshot);
+        approval.append(button);
+      }
+      card.append(approval);
+    }
+    const progress = document.createElement("small");
+    progress.textContent =
+      run?.latestProgress ?? run?.error?.message ?? "Ready for a task.";
+    card.append(details, binding, prompt, actions, progress);
+    cards.append(card);
+  }
+  if (!agentsSnapshot.profiles.length) {
+    const empty = document.createElement("p");
+    empty.className = "agents-empty";
+    empty.textContent =
+      "Create an agent to run a focused task with its own provider, model, and mode.";
+    cards.append(empty);
+  }
+  agentsPanel.append(heading, create, cards);
 }
 
 function updateBrowserNavigation(): void {
@@ -358,7 +645,10 @@ function navigatePreview(value: string): void {
 function saveConversations(): void {
   window.clearTimeout(persistTimer);
   persistTimer = window.setTimeout(() => {
-    void window.trussDesktop.saveConversations(desktopState.conversations, desktopState.activeConversationId);
+    void window.trussDesktop.saveConversations(
+      desktopState.conversations,
+      desktopState.activeConversationId,
+    );
   }, 220);
 }
 
@@ -366,9 +656,13 @@ function workspaceUiState(): DesktopWorkspaceUiState {
   preserveEditorScroll();
   return {
     expandedDirectories: [...expandedDirectories],
-    openEditors: openEditorTabs.flatMap((tab) => tab.mode === "settings" ? [] : [{ path: tab.path, mode: tab.mode, scrollTop: tab.scrollTop }]),
+    openEditors: openEditorTabs.flatMap((tab) =>
+      tab.mode === "settings"
+        ? []
+        : [{ path: tab.path, mode: tab.mode, scrollTop: tab.scrollTop }],
+    ),
     activeFile: activeWorkspaceFilePath(),
-    fileTreeScrollTop: fileTree.scrollTop
+    fileTreeScrollTop: fileTree.scrollTop,
   };
 }
 
@@ -403,7 +697,14 @@ function cancelActiveRunForNavigation(): void {
   if (!busy) return;
   const running = conversationById(runningConversationId);
   if (running) {
-    updateConversation(running.id, (current) => ({ ...current, lastRun: { status: "failed", modifiedFiles: [], completedAt: new Date().toISOString() } }));
+    updateConversation(running.id, (current) => ({
+      ...current,
+      lastRun: {
+        status: "failed",
+        modifiedFiles: [],
+        completedAt: new Date().toISOString(),
+      },
+    }));
   }
   runningConversationId = undefined;
   setBusy(false);
@@ -412,26 +713,48 @@ function cancelActiveRunForNavigation(): void {
 
 function renderRuntime(): void {
   const config = desktopState.configuration;
-  runtimeStatus.textContent = config?.model ? `${config.provider} / ${config.model}` : "No model selected";
+  runtimeStatus.textContent = config?.model
+    ? `${config.provider} / ${config.model}`
+    : "No model selected";
   statusDot.className = `status-dot ${busy ? "busy" : config?.model ? "ready" : ""}`;
-  document.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((button) => button.classList.toggle("active", button.dataset.mode === configuration().mode));
-  const values = [...new Set([config?.model, ...models].filter((value): value is string => Boolean(value)))];
-  quickModel.replaceChildren(...values.map((value) => {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = value;
-    return option;
-  }));
+  document
+    .querySelectorAll<HTMLButtonElement>("[data-mode]")
+    .forEach((button) =>
+      button.classList.toggle(
+        "active",
+        button.dataset.mode === configuration().mode,
+      ),
+    );
+  const values = [
+    ...new Set(
+      [config?.model, ...models].filter((value): value is string =>
+        Boolean(value),
+      ),
+    ),
+  ];
+  quickModel.replaceChildren(
+    ...values.map((value) => {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      return option;
+    }),
+  );
   quickModel.value = config?.model ?? "";
   const used = tokenEstimate(activeConversation()?.messages ?? []);
   contextMeter.textContent = `Context ${formatTokens(used)} / ${formatTokens(configuration().contextWindow)} est.`;
   chatStatus.textContent = busy ? agentActivity : "Ready";
-  const elapsed = streamStartedAt ? (performance.now() - streamStartedAt) / 1_000 : 0;
+  const elapsed = streamStartedAt
+    ? (performance.now() - streamStartedAt) / 1_000
+    : 0;
   const estimatedTokens = streamedTextCharacters / 4;
   if (rateMeter) {
-    rateMeter.textContent = estimatedTokens && elapsed > 0
-      ? `Output ${(estimatedTokens / elapsed).toFixed(1)} est. tok/s`
-      : busy ? `Working · ${agentActivity}` : "Output -- tok/s";
+    rateMeter.textContent =
+      estimatedTokens && elapsed > 0
+        ? `Output ${(estimatedTokens / elapsed).toFixed(1)} est. tok/s`
+        : busy
+          ? `Working · ${agentActivity}`
+          : "Output -- tok/s";
   }
 }
 
@@ -445,11 +768,15 @@ function statusLabel(file: DesktopGitStatus["files"][number]): string {
   return status.trim() || "CHG";
 }
 
-function sidebarTracks(): { readonly git: number; readonly files: number; readonly history: number } {
+function sidebarTracks(): {
+  readonly git: number;
+  readonly files: number;
+  readonly history: number;
+} {
   return {
     git: gitPanel.getBoundingClientRect().height,
     files: filesSection.getBoundingClientRect().height,
-    history: historySection.getBoundingClientRect().height
+    history: historySection.getBoundingClientRect().height,
   };
 }
 
@@ -460,9 +787,11 @@ function applySidebarTracks(git: number, files: number, history: number): void {
 }
 
 function resetSidebarTracks(): void {
-  const splitterHeight = element<HTMLDivElement>("gitSplitter").getBoundingClientRect().height
-    + element<HTMLDivElement>("historySplitter").getBoundingClientRect().height;
-  const availableHeight = sidebar.getBoundingClientRect().height - splitterHeight;
+  const splitterHeight =
+    element<HTMLDivElement>("gitSplitter").getBoundingClientRect().height +
+    element<HTMLDivElement>("historySplitter").getBoundingClientRect().height;
+  const availableHeight =
+    sidebar.getBoundingClientRect().height - splitterHeight;
   if (gitCollapsed) {
     const sharedHeight = Math.max(110, Math.floor((availableHeight - 38) / 2));
     applySidebarTracks(38, sharedHeight, sharedHeight);
@@ -482,17 +811,31 @@ function setGitCollapsed(collapsed: boolean): void {
   renderGit();
   if (collapsed) {
     const filesGain = Math.floor(releasedHeight / 2);
-    applySidebarTracks(38, tracks.files + filesGain, tracks.history + releasedHeight - filesGain);
+    applySidebarTracks(
+      38,
+      tracks.files + filesGain,
+      tracks.history + releasedHeight - filesGain,
+    );
     return;
   }
-  const restoredGit = Math.min(gitPanelHeight, Math.max(38, tracks.files + tracks.history - 220 + 38));
+  const restoredGit = Math.min(
+    gitPanelHeight,
+    Math.max(38, tracks.files + tracks.history - 220 + 38),
+  );
   const neededHeight = Math.max(0, restoredGit - 38);
   const availableFiles = Math.max(0, tracks.files - 110);
   const availableHistory = Math.max(0, tracks.history - 110);
   const availableTotal = availableFiles + availableHistory;
-  const fromFiles = Math.min(availableFiles, Math.round(neededHeight * (availableFiles / Math.max(1, availableTotal))));
+  const fromFiles = Math.min(
+    availableFiles,
+    Math.round(neededHeight * (availableFiles / Math.max(1, availableTotal))),
+  );
   const fromHistory = Math.min(availableHistory, neededHeight - fromFiles);
-  applySidebarTracks(restoredGit, tracks.files - fromFiles, tracks.history - fromHistory);
+  applySidebarTracks(
+    restoredGit,
+    tracks.files - fromFiles,
+    tracks.history - fromHistory,
+  );
 }
 
 let observedSidebarHeight = 0;
@@ -500,21 +843,25 @@ new ResizeObserver(() => {
   const sidebarHeight = Math.floor(sidebar.getBoundingClientRect().height);
   if (!sidebarHeight || sidebarHeight === observedSidebarHeight) return;
   observedSidebarHeight = sidebarHeight;
-  const splitterHeight = element<HTMLDivElement>("gitSplitter").getBoundingClientRect().height
-    + element<HTMLDivElement>("historySplitter").getBoundingClientRect().height;
+  const splitterHeight =
+    element<HTMLDivElement>("gitSplitter").getBoundingClientRect().height +
+    element<HTMLDivElement>("historySplitter").getBoundingClientRect().height;
   const availableHeight = Math.max(220, sidebarHeight - splitterHeight);
   const tracks = sidebarTracks();
   if (gitCollapsed) {
     const remainingHeight = Math.max(220, availableHeight - 38);
-    const proportion = tracks.files / Math.max(1, tracks.files + tracks.history);
+    const proportion =
+      tracks.files / Math.max(1, tracks.files + tracks.history);
     const filesHeight = Math.round(remainingHeight * proportion);
     applySidebarTracks(38, filesHeight, remainingHeight - filesHeight);
     return;
   }
-  const proportion = tracks.git / Math.max(1, tracks.git + tracks.files + tracks.history);
+  const proportion =
+    tracks.git / Math.max(1, tracks.git + tracks.files + tracks.history);
   const gitHeight = Math.max(38, Math.round(availableHeight * proportion));
   const remainingHeight = Math.max(220, availableHeight - gitHeight);
-  const filesProportion = tracks.files / Math.max(1, tracks.files + tracks.history);
+  const filesProportion =
+    tracks.files / Math.max(1, tracks.files + tracks.history);
   const filesHeight = Math.round(remainingHeight * filesProportion);
   applySidebarTracks(gitHeight, filesHeight, remainingHeight - filesHeight);
 }).observe(sidebar);
@@ -533,56 +880,82 @@ function renderGit(): void {
     return;
   }
   gitBranch.textContent = gitStatus.branch || "No branch yet";
-  gitCounts.textContent = [gitStatus.ahead ? `up ${gitStatus.ahead}` : "", gitStatus.behind ? `down ${gitStatus.behind}` : "", `${gitStatus.files.length} changed`].filter(Boolean).join(" | ");
-  const staged = gitStatus.files.filter((file) => file.indexStatus !== " " && file.indexStatus !== "?");
+  gitCounts.textContent = [
+    gitStatus.ahead ? `up ${gitStatus.ahead}` : "",
+    gitStatus.behind ? `down ${gitStatus.behind}` : "",
+    `${gitStatus.files.length} changed`,
+  ]
+    .filter(Boolean)
+    .join(" | ");
+  const staged = gitStatus.files.filter(
+    (file) => file.indexStatus !== " " && file.indexStatus !== "?",
+  );
   const stageAll = element<HTMLButtonElement>("stageAll");
   stageAll.textContent = staged.length ? "Unstage all" : "Stage all";
-  stageAll.title = staged.length ? "Unstage every staged file" : "Stage all changed files";
+  stageAll.title = staged.length
+    ? "Unstage every staged file"
+    : "Stage all changed files";
   stageAll.disabled = gitStatus.files.length === 0;
-  element<HTMLButtonElement>("discardAll").disabled = gitStatus.files.length === 0;
-  gitFiles.replaceChildren(...gitStatus.files.map((file) => {
-    const row = document.createElement("div");
-    row.className = "git-file-row";
-    const status = document.createElement("span");
-    status.className = "git-file-status";
-    status.textContent = statusLabel(file);
-    const open = document.createElement("button");
-    open.className = "git-file-name";
-    open.textContent = file.path;
-    open.title = file.path;
-    open.onclick = () => void openFile(file.path, false);
-    const actions = document.createElement("div");
-    actions.className = "git-row-actions";
-    row.append(status, open, actions);
-    if (file.indexStatus !== " " && file.indexStatus !== "?") {
-      const unstage = document.createElement("button");
-      unstage.className = "git-row-action";
-      unstage.textContent = "-";
-      unstage.title = `Unstage ${file.path}`;
-      unstage.setAttribute("aria-label", `Unstage ${file.path}`);
-      unstage.onclick = () => void runGitAction("unstage", () => window.trussDesktop.gitUnstage([file.path]));
-      actions.append(unstage);
-    }
-    if (file.workTreeStatus !== " " || file.indexStatus === "?") {
-      const stage = document.createElement("button");
-      stage.className = "git-row-action";
-      stage.textContent = "+";
-      stage.title = `Stage ${file.path}`;
-      stage.setAttribute("aria-label", `Stage ${file.path}`);
-      stage.onclick = () => void runGitAction("stage", () => window.trussDesktop.gitStage([file.path]));
-      actions.append(stage);
-    }
-    const discard = document.createElement("button");
-    discard.className = "git-row-action danger";
-    discard.textContent = "x";
-    discard.title = `Discard all uncommitted changes in ${file.path}`;
-    discard.setAttribute("aria-label", `Discard ${file.path}`);
-    discard.onclick = () => {
-      if (window.confirm(`Discard all uncommitted changes in ${file.path}? This cannot be undone.`)) void runGitAction("discard", () => window.trussDesktop.gitDiscard([file.path]));
-    };
-    actions.append(discard);
-    return row;
-  }));
+  element<HTMLButtonElement>("discardAll").disabled =
+    gitStatus.files.length === 0;
+  gitFiles.replaceChildren(
+    ...gitStatus.files.map((file) => {
+      const row = document.createElement("div");
+      row.className = "git-file-row";
+      const status = document.createElement("span");
+      status.className = "git-file-status";
+      status.textContent = statusLabel(file);
+      const open = document.createElement("button");
+      open.className = "git-file-name";
+      open.textContent = file.path;
+      open.title = file.path;
+      open.onclick = () => void openFile(file.path, false);
+      const actions = document.createElement("div");
+      actions.className = "git-row-actions";
+      row.append(status, open, actions);
+      if (file.indexStatus !== " " && file.indexStatus !== "?") {
+        const unstage = document.createElement("button");
+        unstage.className = "git-row-action";
+        unstage.textContent = "-";
+        unstage.title = `Unstage ${file.path}`;
+        unstage.setAttribute("aria-label", `Unstage ${file.path}`);
+        unstage.onclick = () =>
+          void runGitAction("unstage", () =>
+            window.trussDesktop.gitUnstage([file.path]),
+          );
+        actions.append(unstage);
+      }
+      if (file.workTreeStatus !== " " || file.indexStatus === "?") {
+        const stage = document.createElement("button");
+        stage.className = "git-row-action";
+        stage.textContent = "+";
+        stage.title = `Stage ${file.path}`;
+        stage.setAttribute("aria-label", `Stage ${file.path}`);
+        stage.onclick = () =>
+          void runGitAction("stage", () =>
+            window.trussDesktop.gitStage([file.path]),
+          );
+        actions.append(stage);
+      }
+      const discard = document.createElement("button");
+      discard.className = "git-row-action danger";
+      discard.textContent = "x";
+      discard.title = `Discard all uncommitted changes in ${file.path}`;
+      discard.setAttribute("aria-label", `Discard ${file.path}`);
+      discard.onclick = () => {
+        if (
+          window.confirm(
+            `Discard all uncommitted changes in ${file.path}? This cannot be undone.`,
+          )
+        )
+          void runGitAction("discard", () =>
+            window.trussDesktop.gitDiscard([file.path]),
+          );
+      };
+      actions.append(discard);
+      return row;
+    }),
+  );
 }
 
 async function refreshGit(): Promise<void> {
@@ -592,26 +965,46 @@ async function refreshGit(): Promise<void> {
 }
 
 function renderTerminalPrompt(): void {
-  const workspaceParts = desktopState.workspaceRoot.replaceAll("\\", "/").split("/").filter(Boolean);
-  const path = workspaceParts.length > 3 ? `…/${workspaceParts.slice(-3).join("/")}` : workspaceParts.join("/") || "No workspace";
-  const branch = gitStatus.available ? gitStatus.branch || "detached" : "no git";
+  const workspaceParts = desktopState.workspaceRoot
+    .replaceAll("\\", "/")
+    .split("/")
+    .filter(Boolean);
+  const path =
+    workspaceParts.length > 3
+      ? `…/${workspaceParts.slice(-3).join("/")}`
+      : workspaceParts.join("/") || "No workspace";
+  const branch = gitStatus.available
+    ? gitStatus.branch || "detached"
+    : "no git";
   const changed = gitStatus.files.length;
-  const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
+  const time = new Intl.DateTimeFormat(undefined, {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date());
   const segments: ReadonlyArray<readonly [string, string]> = [
     ["terminal-prompt-app", "Truss"],
     ["terminal-prompt-path", path],
-    ["terminal-prompt-git", `${branch}${changed ? ` • ${changed} changed` : ""}`],
-    ["terminal-prompt-time", time]
+    [
+      "terminal-prompt-git",
+      `${branch}${changed ? ` • ${changed} changed` : ""}`,
+    ],
+    ["terminal-prompt-time", time],
   ];
-  terminalPrompt.replaceChildren(...segments.map(([className, text]) => {
-    const segment = document.createElement("span");
-    segment.className = `terminal-prompt-segment ${className}`;
-    segment.textContent = text;
-    return segment;
-  }));
+  terminalPrompt.replaceChildren(
+    ...segments.map(([className, text]) => {
+      const segment = document.createElement("span");
+      segment.className = `terminal-prompt-segment ${className}`;
+      segment.textContent = text;
+      return segment;
+    }),
+  );
 }
 
-async function runGitAction(action: string, run: () => Promise<string>): Promise<void> {
+async function runGitAction(
+  action: string,
+  run: () => Promise<string>,
+): Promise<void> {
   try {
     const result = await run();
     appendTerminal(`\n[git ${action}]\n${result}\n`);
@@ -627,7 +1020,9 @@ async function runGitAction(action: string, run: () => Promise<string>): Promise
 function renderFiles(): void {
   const scrollTop = fileTree.scrollTop;
   fileTree.replaceChildren();
-  window.requestAnimationFrame(() => { fileTree.scrollTop = scrollTop; });
+  window.requestAnimationFrame(() => {
+    fileTree.scrollTop = scrollTop;
+  });
   if (!files.length) {
     const empty = document.createElement("div");
     empty.className = "empty-chat";
@@ -644,7 +1039,11 @@ function renderFiles(): void {
         const score = fuzzyScore(file.path, query);
         return score === undefined ? [] : [{ file, score }];
       })
-      .sort((left, right) => left.score - right.score || left.file.path.localeCompare(right.file.path));
+      .sort(
+        (left, right) =>
+          left.score - right.score ||
+          left.file.path.localeCompare(right.file.path),
+      );
     if (!matches.length) {
       const empty = document.createElement("div");
       empty.className = "empty-chat";
@@ -666,7 +1065,10 @@ function renderFiles(): void {
     }
     return;
   }
-  interface TreeNode { readonly directories: Map<string, TreeNode>; readonly files: DesktopFile[]; }
+  interface TreeNode {
+    readonly directories: Map<string, TreeNode>;
+    readonly files: DesktopFile[];
+  }
   const root: TreeNode = { directories: new Map(), files: [] };
   for (const file of files) {
     const parts = file.path.split(/[\\/]/).filter(Boolean);
@@ -683,7 +1085,9 @@ function renderFiles(): void {
     if (fileName) node.files.push(file);
   }
   const renderNode = (node: TreeNode, path: string, depth: number): void => {
-    const directories = [...node.directories.entries()].sort(([left], [right]) => left.localeCompare(right));
+    const directories = [...node.directories.entries()].sort(
+      ([left], [right]) => left.localeCompare(right),
+    );
     for (const [name, child] of directories) {
       const directoryPath = path ? `${path}/${name}` : name;
       const row = document.createElement("div");
@@ -713,7 +1117,9 @@ function renderFiles(): void {
           try {
             await loadDirectoryContents(directoryPath);
           } catch (error) {
-            notify(`Unable to read ${directoryPath}: ${error instanceof Error ? error.message : String(error)}`);
+            notify(
+              `Unable to read ${directoryPath}: ${error instanceof Error ? error.message : String(error)}`,
+            );
           }
         }
         renderFiles();
@@ -723,12 +1129,18 @@ function renderFiles(): void {
       fileTree.append(row);
       if (expanded) renderNode(child, directoryPath, depth + 1);
     }
-    for (const file of [...node.files].sort((left, right) => left.path.localeCompare(right.path))) {
+    for (const file of [...node.files].sort((left, right) =>
+      left.path.localeCompare(right.path),
+    )) {
       const row = document.createElement("div");
       row.className = "tree-row file";
       row.style.setProperty("--depth", String(depth));
       const button = document.createElement("button");
-      appendFileLabel(button, file.path, file.path.split(/[\\/]/).at(-1) ?? file.path);
+      appendFileLabel(
+        button,
+        file.path,
+        file.path.split(/[\\/]/).at(-1) ?? file.path,
+      );
       button.title = file.path;
       button.dataset.path = editorPath(file.path);
       if (editorPath(file.path) === activeFile) button.classList.add("active");
@@ -742,15 +1154,19 @@ function renderFiles(): void {
 }
 
 function updateFileSelection(): void {
-  fileTree.querySelectorAll<HTMLButtonElement>(".tree-row.file button").forEach((button) => {
-    button.classList.toggle("active", button.dataset.path === activeFile);
-  });
+  fileTree
+    .querySelectorAll<HTMLButtonElement>(".tree-row.file button")
+    .forEach((button) => {
+      button.classList.toggle("active", button.dataset.path === activeFile);
+    });
 }
 
 function mergeFiles(entries: readonly DesktopFile[]): void {
   const merged = new Map(files.map((file) => [editorPath(file.path), file]));
   entries.forEach((file) => merged.set(editorPath(file.path), file));
-  files = [...merged.values()].sort((left, right) => left.path.localeCompare(right.path));
+  files = [...merged.values()].sort((left, right) =>
+    left.path.localeCompare(right.path),
+  );
 }
 
 async function loadDirectoryContents(path: string): Promise<void> {
@@ -768,9 +1184,11 @@ function renderConversations(): void {
     const select = document.createElement("button");
     select.textContent = conversation.title;
     select.title = conversation.title;
-    if (conversation.id === desktopState.activeConversationId) select.classList.add("active");
+    if (conversation.id === desktopState.activeConversationId)
+      select.classList.add("active");
     select.onclick = () => {
-      if (conversation.id !== desktopState.activeConversationId) cancelActiveRunForNavigation();
+      if (conversation.id !== desktopState.activeConversationId)
+        cancelActiveRunForNavigation();
       desktopState = { ...desktopState, activeConversationId: conversation.id };
       renderConversations();
       renderChat();
@@ -783,9 +1201,19 @@ function renderConversations(): void {
     remove.title = "Delete conversation";
     remove.onclick = () => {
       if (!window.confirm(`Delete "${conversation.title}"?`)) return;
-      if (conversation.id === desktopState.activeConversationId) cancelActiveRunForNavigation();
-      const remaining = desktopState.conversations.filter((item) => item.id !== conversation.id);
-      desktopState = { ...desktopState, conversations: remaining, activeConversationId: desktopState.activeConversationId === conversation.id ? remaining[0]?.id : desktopState.activeConversationId };
+      if (conversation.id === desktopState.activeConversationId)
+        cancelActiveRunForNavigation();
+      const remaining = desktopState.conversations.filter(
+        (item) => item.id !== conversation.id,
+      );
+      desktopState = {
+        ...desktopState,
+        conversations: remaining,
+        activeConversationId:
+          desktopState.activeConversationId === conversation.id
+            ? remaining[0]?.id
+            : desktopState.activeConversationId,
+      };
       renderConversations();
       renderChat();
       renderRuntime();
@@ -798,16 +1226,31 @@ function renderConversations(): void {
 
 function workspaceFileReference(path: string): string | undefined {
   const normalizedPath = path.replaceAll("\\", "/").replace(/^\.\//, "");
-  if (!normalizedPath || normalizedPath.startsWith("/") || normalizedPath.split("/").some((part) => part === "..")) return undefined;
-  return files.some((file) => file.type === "file" && editorPath(file.path) === normalizedPath) ? normalizedPath : undefined;
+  if (
+    !normalizedPath ||
+    normalizedPath.startsWith("/") ||
+    normalizedPath.split("/").some((part) => part === "..")
+  )
+    return undefined;
+  return files.some(
+    (file) => file.type === "file" && editorPath(file.path) === normalizedPath,
+  )
+    ? normalizedPath
+    : undefined;
 }
 
 function openChatFile(path: string): void {
   setCenterView("editor");
-  void openFile(path, false).catch((error) => notify(error instanceof Error ? error.message : String(error)));
+  void openFile(path, false).catch((error) =>
+    notify(error instanceof Error ? error.message : String(error)),
+  );
 }
 
-function appendFileReference(parent: HTMLElement, path: string, label = path): void {
+function appendFileReference(
+  parent: HTMLElement,
+  path: string,
+  label = path,
+): void {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "chat-file-link";
@@ -818,25 +1261,30 @@ function appendFileReference(parent: HTMLElement, path: string, label = path): v
 }
 
 function appendTextWithFileReferences(parent: HTMLElement, text: string): void {
-  const filePath = /(?:\.{1,2}\/)?(?:[A-Za-z0-9_@.-]+\/)*(?:[A-Za-z0-9_-]+\.[A-Za-z0-9][A-Za-z0-9_.-]*|\.[A-Za-z0-9_-]+)/g;
+  const filePath =
+    /(?:\.{1,2}\/)?(?:[A-Za-z0-9_@.-]+\/)*(?:[A-Za-z0-9_-]+\.[A-Za-z0-9][A-Za-z0-9_.-]*|\.[A-Za-z0-9_-]+)/g;
   let cursor = 0;
   for (const match of text.matchAll(filePath)) {
     const index = match.index ?? 0;
     const reference = workspaceFileReference(match[0]);
     if (!reference) continue;
-    if (index > cursor) parent.append(document.createTextNode(text.slice(cursor, index)));
+    if (index > cursor)
+      parent.append(document.createTextNode(text.slice(cursor, index)));
     appendFileReference(parent, reference, match[0]);
     cursor = index + match[0].length;
   }
-  if (cursor < text.length) parent.append(document.createTextNode(text.slice(cursor)));
+  if (cursor < text.length)
+    parent.append(document.createTextNode(text.slice(cursor)));
 }
 
 function appendInlineMarkdown(parent: HTMLElement, text: string): void {
-  const token = /(`[^`]*`)|(\[([^\]]+)\]\(([^\s)]+)\))|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)/g;
+  const token =
+    /(`[^`]*`)|(\[([^\]]+)\]\(([^\s)]+)\))|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)/g;
   let cursor = 0;
   for (const match of text.matchAll(token)) {
     const index = match.index ?? 0;
-    if (index > cursor) appendTextWithFileReferences(parent, text.slice(cursor, index));
+    if (index > cursor)
+      appendTextWithFileReferences(parent, text.slice(cursor, index));
     if (match[1]) {
       const codeText = match[1].slice(1, -1);
       const reference = workspaceFileReference(codeText);
@@ -872,32 +1320,56 @@ function appendInlineMarkdown(parent: HTMLElement, text: string): void {
     }
     cursor = index + match[0].length;
   }
-  if (cursor < text.length) appendTextWithFileReferences(parent, text.slice(cursor));
+  if (cursor < text.length)
+    appendTextWithFileReferences(parent, text.slice(cursor));
 }
 
-function appendHighlightedCode(parent: HTMLElement, code: string, language = ""): void {
-  const aliases: Readonly<Record<string, string>> = { html: "xml", shell: "bash", sh: "bash", tsx: "typescript", jsx: "javascript", vue: "xml", svelte: "xml", svg: "xml", yml: "yaml" };
-  const resolvedLanguage = aliases[language.toLowerCase()] ?? language.toLowerCase();
-  if (!resolvedLanguage || resolvedLanguage === "text" || !hljs.getLanguage(resolvedLanguage)) {
+function appendHighlightedCode(
+  parent: HTMLElement,
+  code: string,
+  language = "",
+): void {
+  const aliases: Readonly<Record<string, string>> = {
+    html: "xml",
+    shell: "bash",
+    sh: "bash",
+    tsx: "typescript",
+    jsx: "javascript",
+    vue: "xml",
+    svelte: "xml",
+    svg: "xml",
+    yml: "yaml",
+  };
+  const resolvedLanguage =
+    aliases[language.toLowerCase()] ?? language.toLowerCase();
+  if (
+    !resolvedLanguage ||
+    resolvedLanguage === "text" ||
+    !hljs.getLanguage(resolvedLanguage)
+  ) {
     parent.textContent = code;
     return;
   }
   // highlight.js escapes source before producing its token spans.
   const template = document.createElement("template");
-  template.innerHTML = hljs.highlight(code, { language: resolvedLanguage, ignoreIllegals: true }).value;
+  template.innerHTML = hljs.highlight(code, {
+    language: resolvedLanguage,
+    ignoreIllegals: true,
+  }).value;
   parent.replaceChildren(template.content);
 }
 
 function renderMarkdown(container: HTMLElement, content: string): void {
   const lines = content.replace(/\r\n/g, "\n").split("\n");
-  for (let index = 0; index < lines.length;) {
+  for (let index = 0; index < lines.length; ) {
     const line = lines[index];
     const fence = line.match(/^```([^\s]*)\s*$/);
     if (fence) {
       const language = fence[1] || "text";
       const code: string[] = [];
       index += 1;
-      while (index < lines.length && !/^```\s*$/.test(lines[index])) code.push(lines[index++]);
+      while (index < lines.length && !/^```\s*$/.test(lines[index]))
+        code.push(lines[index++]);
       if (index < lines.length) index += 1;
       const block = document.createElement("div");
       block.className = "code-block";
@@ -914,7 +1386,9 @@ function renderMarkdown(container: HTMLElement, content: string): void {
     }
     const heading = line.match(/^(#{1,4})\s+(.+)$/);
     if (heading) {
-      const element = document.createElement(`h${heading[1].length}`) as HTMLHeadingElement;
+      const element = document.createElement(
+        `h${heading[1].length}`,
+      ) as HTMLHeadingElement;
       appendInlineMarkdown(element, heading[2]);
       container.append(element);
       index += 1;
@@ -940,17 +1414,28 @@ function renderMarkdown(container: HTMLElement, content: string): void {
       index += 1;
       continue;
     }
-    if (!line.trim()) { index += 1; continue; }
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
     const paragraph = document.createElement("p");
     const paragraphLines = [line];
     index += 1;
-    while (index < lines.length && lines[index].trim() && !/^(#{1,4}\s|```|[-*+]\s+|>\s?)/.test(lines[index])) paragraphLines.push(lines[index++]);
+    while (
+      index < lines.length &&
+      lines[index].trim() &&
+      !/^(#{1,4}\s|```|[-*+]\s+|>\s?)/.test(lines[index])
+    )
+      paragraphLines.push(lines[index++]);
     appendInlineMarkdown(paragraph, paragraphLines.join("\n"));
     container.append(paragraph);
   }
 }
 
-function messageView(message: DesktopMessage, activePlaceholder = false): HTMLElement {
+function messageView(
+  message: DesktopMessage,
+  activePlaceholder = false,
+): HTMLElement {
   const view = document.createElement("div");
   view.className = `message ${message.role}`;
   const role = document.createElement("span");
@@ -993,22 +1478,35 @@ function renderChat(): void {
   if (!conversation || !conversation.messages.length) {
     const empty = document.createElement("div");
     empty.className = "empty-chat";
-    empty.textContent = "Select a local model, then ask about the workspace. Plan is read-only; Agent can edit files and run commands.";
+    empty.textContent =
+      "Select a local model, then ask about the workspace. Plan is read-only; Agent can edit files and run commands.";
     chatMessages.append(empty);
     toolActivityPanel.hidden = true;
     return;
   }
-  const activities = (toolActivityByConversation.get(conversation.id) ?? []).slice(-10);
+  const activities = (
+    toolActivityByConversation.get(conversation.id) ?? []
+  ).slice(-10);
   if (activities.length) {
     toolActivityPanel.hidden = false;
-    toolActivityPanel.replaceChildren(toolActivityView(conversation.id, activities));
+    toolActivityPanel.replaceChildren(
+      toolActivityView(conversation.id, activities),
+    );
   } else {
     toolActivityPanel.hidden = true;
   }
-  const lastAssistantIndex = conversation.messages.map((message) => message.role).lastIndexOf("assistant");
-  const showActivePlaceholder = busy && conversation.id === runningConversationId;
+  const lastAssistantIndex = conversation.messages
+    .map((message) => message.role)
+    .lastIndexOf("assistant");
+  const showActivePlaceholder =
+    busy && conversation.id === runningConversationId;
   conversation.messages.forEach((message, index) => {
-    chatMessages.append(messageView(message, showActivePlaceholder && index === lastAssistantIndex));
+    chatMessages.append(
+      messageView(
+        message,
+        showActivePlaceholder && index === lastAssistantIndex,
+      ),
+    );
   });
   if (conversation.lastRun) {
     const result = document.createElement("div");
@@ -1018,7 +1516,8 @@ function renderChat(): void {
       // bottom-most state while a run is active.
       result.hidden = true;
     } else if (conversation.lastRun.status === "failed") {
-      result.textContent = "Run did not complete. No file changes are verified.";
+      result.textContent =
+        "Run did not complete. No file changes are verified.";
     } else if (conversation.lastRun.modifiedFiles.length) {
       result.textContent = `Verified workspace changes: ${conversation.lastRun.modifiedFiles.join(", ")}`;
     } else {
@@ -1054,8 +1553,17 @@ function appendToolMessage(text: string): void {
 }
 
 function createConversation(): DesktopConversation {
-  const conversation: DesktopConversation = { id: createId(), title: "New conversation", messages: [], updatedAt: new Date().toISOString() };
-  desktopState = { ...desktopState, conversations: [conversation, ...desktopState.conversations], activeConversationId: conversation.id };
+  const conversation: DesktopConversation = {
+    id: createId(),
+    title: "New conversation",
+    messages: [],
+    updatedAt: new Date().toISOString(),
+  };
+  desktopState = {
+    ...desktopState,
+    conversations: [conversation, ...desktopState.conversations],
+    activeConversationId: conversation.id,
+  };
   return conversation;
 }
 
@@ -1063,31 +1571,68 @@ function ensureConversation(): DesktopConversation {
   return activeConversation() ?? createConversation();
 }
 
-function updateConversation(conversationId: string, update: (conversation: DesktopConversation) => DesktopConversation): void {
-  desktopState = { ...desktopState, conversations: desktopState.conversations.map((conversation) => conversation.id === conversationId ? update(conversation) : conversation) };
+function updateConversation(
+  conversationId: string,
+  update: (conversation: DesktopConversation) => DesktopConversation,
+): void {
+  desktopState = {
+    ...desktopState,
+    conversations: desktopState.conversations.map((conversation) =>
+      conversation.id === conversationId ? update(conversation) : conversation,
+    ),
+  };
 }
 
-function setToolActivity(conversationId: string, activities: readonly ToolActivity[]): void {
+function setToolActivity(
+  conversationId: string,
+  activities: readonly ToolActivity[],
+): void {
   toolActivityByConversation.set(conversationId, [...activities]);
-  updateConversation(conversationId, (current) => ({ ...current, toolActivity: [...activities] }));
+  updateConversation(conversationId, (current) => ({
+    ...current,
+    toolActivity: [...activities],
+  }));
   saveConversations();
 }
 
 function languageForPath(path: string): string {
   const extension = path.split(".").at(-1)?.toLowerCase() ?? "";
   const languages: Record<string, string> = {
-    cjs: "javascript", css: "css", go: "go", htm: "html", html: "html", java: "java",
-    js: "javascript", json: "json", jsx: "jsx", md: "markdown", mjs: "javascript",
-    php: "php", py: "python", rb: "ruby", rs: "rust", scss: "scss", sh: "shell",
-    sql: "sql", svelte: "svelte", svg: "svg", toml: "toml", ts: "typescript",
-    tsx: "tsx", vue: "vue", xml: "xml", yaml: "yaml", yml: "yaml"
+    cjs: "javascript",
+    css: "css",
+    go: "go",
+    htm: "html",
+    html: "html",
+    java: "java",
+    js: "javascript",
+    json: "json",
+    jsx: "jsx",
+    md: "markdown",
+    mjs: "javascript",
+    php: "php",
+    py: "python",
+    rb: "ruby",
+    rs: "rust",
+    scss: "scss",
+    sh: "shell",
+    sql: "sql",
+    svelte: "svelte",
+    svg: "svg",
+    toml: "toml",
+    ts: "typescript",
+    tsx: "tsx",
+    vue: "vue",
+    xml: "xml",
+    yaml: "yaml",
+    yml: "yaml",
   };
   return languages[extension] ?? extension;
 }
 
 function mediaKindForPath(path: string): "image" | "video" | undefined {
   const extension = path.split(".").at(-1)?.toLowerCase();
-  if (extension && ["jpg", "jpeg", "png", "svg", "webp"].includes(extension)) return "image";
+  if (extension && ["jpg", "jpeg", "png", "svg", "webp"].includes(extension))
+    return "image";
   if (extension && ["mp4", "webm"].includes(extension)) return "video";
   return undefined;
 }
@@ -1101,7 +1646,9 @@ function editorPath(path: string): string {
 }
 
 function activeEditorTab(): EditorTab | undefined {
-  return activeFile ? openEditorTabs.find((tab) => tab.path === activeFile) : undefined;
+  return activeFile
+    ? openEditorTabs.find((tab) => tab.path === activeFile)
+    : undefined;
 }
 
 function activeWorkspaceFilePath(): string | undefined {
@@ -1117,10 +1664,13 @@ function preserveEditorScroll(): void {
 function renderEditorContent(tab: EditorTab | undefined): void {
   editor.className = "editor-content";
   settingsPanel.hidden = true;
-  if (settingsPanel.parentElement === editor) settingsPanelHome.after(settingsPanel);
+  if (settingsPanel.parentElement === editor)
+    settingsPanelHome.after(settingsPanel);
   editor.replaceChildren();
   if (!tab) {
-    editor.append(document.createTextNode("Open a workspace file to inspect it."));
+    editor.append(
+      document.createTextNode("Open a workspace file to inspect it."),
+    );
     editor.scrollTop = 0;
     return;
   }
@@ -1170,14 +1720,21 @@ function renderEditorContent(tab: EditorTab | undefined): void {
     for (const line of tab.content.replace(/\r\n/g, "\n").split("\n")) {
       const row = document.createElement("span");
       row.className = "editor-diff-line";
-      if (line.startsWith("+") && !line.startsWith("+++")) row.classList.add("added");
-      else if (line.startsWith("-") && !line.startsWith("---")) row.classList.add("removed");
+      if (line.startsWith("+") && !line.startsWith("+++"))
+        row.classList.add("added");
+      else if (line.startsWith("-") && !line.startsWith("---"))
+        row.classList.add("removed");
       else if (line.startsWith("@@")) row.classList.add("hunk");
       const marker = document.createElement("span");
       marker.className = "diff-marker";
-      marker.textContent = line[0] === "+" || line[0] === "-" || line[0] === " " ? line[0] : " ";
+      marker.textContent =
+        line[0] === "+" || line[0] === "-" || line[0] === " " ? line[0] : " ";
       const code = document.createElement("span");
-      appendHighlightedCode(code, marker.textContent.trim() ? line.slice(1) : line, language);
+      appendHighlightedCode(
+        code,
+        marker.textContent.trim() ? line.slice(1) : line,
+        language,
+      );
       row.append(marker, code);
       editor.append(row);
     }
@@ -1201,8 +1758,18 @@ function renderEditorContent(tab: EditorTab | undefined): void {
     type OccurrenceRange = { start: number; end: number };
     let occurrenceRanges: OccurrenceRange[] = [];
     let occurrenceNeedle = "";
-    type EditorHistoryEntry = { readonly content: string; readonly selectionStart: number; readonly selectionEnd: number };
-    const editHistory: EditorHistoryEntry[] = [{ content: input.value, selectionStart: input.selectionStart, selectionEnd: input.selectionEnd }];
+    type EditorHistoryEntry = {
+      readonly content: string;
+      readonly selectionStart: number;
+      readonly selectionEnd: number;
+    };
+    const editHistory: EditorHistoryEntry[] = [
+      {
+        content: input.value,
+        selectionStart: input.selectionStart,
+        selectionEnd: input.selectionEnd,
+      },
+    ];
     let editHistoryIndex = 0;
     const suggestion = document.createElement("div");
     suggestion.className = "inline-completion";
@@ -1213,37 +1780,61 @@ function renderEditorContent(tab: EditorTab | undefined): void {
     const refreshDiagnostics = (): void => {
       window.clearTimeout(syntaxTimer);
       syntaxTimer = window.setTimeout(() => {
-        void window.trussDesktop.checkSyntax(tab.path, input.value).then((items) => {
-          if (input.value !== tab.content) return;
-          diagnostics.hidden = items.length === 0;
-          diagnostics.textContent = items.map((item) => `Line ${item.line}: ${item.message}`).join("\n");
-        }).catch(() => undefined);
+        void window.trussDesktop
+          .checkSyntax(tab.path, input.value)
+          .then((items) => {
+            if (input.value !== tab.content) return;
+            diagnostics.hidden = items.length === 0;
+            diagnostics.textContent = items
+              .map((item) => `Line ${item.line}: ${item.message}`)
+              .join("\n");
+          })
+          .catch(() => undefined);
       }, 250);
     };
     const requestCompletion = (): void => {
       window.clearTimeout(completionTimer);
       inlineCompletion = "";
       suggestion.hidden = true;
-      if (!configuration().autocomplete?.enabled || input.selectionStart !== input.selectionEnd) return;
+      if (
+        !configuration().autocomplete?.enabled ||
+        input.selectionStart !== input.selectionEnd
+      )
+        return;
       const cursor = input.selectionStart;
       const prefix = input.value.slice(0, cursor);
       if (prefix.trim().length < 3) return;
       const request = ++completionRequest;
       completionTimer = window.setTimeout(() => {
-        void window.trussDesktop.complete({ prefix, suffix: input.value.slice(cursor), path: tab.path }).then((completion) => {
-          if (request !== completionRequest || !completion || input.value !== tab.content) return;
-          inlineCompletion = completion;
-          const currentLine = prefix.slice(prefix.lastIndexOf("\n") + 1);
-          const line = prefix.split("\n").length - 1;
-          suggestion.textContent = completion.split("\n", 1)[0];
-          suggestion.style.left = `${62 + currentLine.length * 7.22 - input.scrollLeft}px`;
-          suggestion.style.top = `${12 + line * 18 - input.scrollTop}px`;
-          suggestion.hidden = false;
-        }).catch(() => undefined);
+        void window.trussDesktop
+          .complete({
+            prefix,
+            suffix: input.value.slice(cursor),
+            path: tab.path,
+          })
+          .then((completion) => {
+            if (
+              request !== completionRequest ||
+              !completion ||
+              input.value !== tab.content
+            )
+              return;
+            inlineCompletion = completion;
+            const currentLine = prefix.slice(prefix.lastIndexOf("\n") + 1);
+            const line = prefix.split("\n").length - 1;
+            suggestion.textContent = completion.split("\n", 1)[0];
+            suggestion.style.left = `${62 + currentLine.length * 7.22 - input.scrollLeft}px`;
+            suggestion.style.top = `${12 + line * 18 - input.scrollTop}px`;
+            suggestion.hidden = false;
+          })
+          .catch(() => undefined);
       }, 350);
     };
     const renderLineNumbers = () => {
-      lineNumbers.textContent = Array.from({ length: Math.max(1, tab.content.split("\n").length) }, (_, index) => String(index + 1)).join("\n");
+      lineNumbers.textContent = Array.from(
+        { length: Math.max(1, tab.content.split("\n").length) },
+        (_, index) => String(index + 1),
+      ).join("\n");
     };
     const renderOccurrenceRanges = (): void => {
       occurrenceLayer.replaceChildren();
@@ -1260,7 +1851,9 @@ function renderEditorContent(tab: EditorTab | undefined): void {
           const column = index === 0 ? startColumn : 0;
           const length = selectedLines[index]?.length ?? 0;
           const isFinalLine = index === selectedLines.length - 1;
-          const width = isFinalLine ? length : Math.max(1, (lines[line]?.length ?? 0) - column);
+          const width = isFinalLine
+            ? length
+            : Math.max(1, (lines[line]?.length ?? 0) - column);
           if (width === 0) continue;
           const marker = document.createElement("span");
           marker.className = "editor-occurrence";
@@ -1287,9 +1880,18 @@ function renderEditorContent(tab: EditorTab | undefined): void {
       refreshDiagnostics();
     };
     const recordEditHistory = (): void => {
-      const entry: EditorHistoryEntry = { content: input.value, selectionStart: input.selectionStart, selectionEnd: input.selectionEnd };
+      const entry: EditorHistoryEntry = {
+        content: input.value,
+        selectionStart: input.selectionStart,
+        selectionEnd: input.selectionEnd,
+      };
       const current = editHistory[editHistoryIndex];
-      if (current?.content === entry.content && current.selectionStart === entry.selectionStart && current.selectionEnd === entry.selectionEnd) return;
+      if (
+        current?.content === entry.content &&
+        current.selectionStart === entry.selectionStart &&
+        current.selectionEnd === entry.selectionEnd
+      )
+        return;
       editHistory.splice(editHistoryIndex + 1);
       editHistory.push(entry);
       if (editHistory.length > 200) editHistory.shift();
@@ -1308,23 +1910,40 @@ function renderEditorContent(tab: EditorTab | undefined): void {
     const selectedWord = (): OccurrenceRange | undefined => {
       const cursor = input.selectionStart;
       const wordCharacter = /[A-Za-z0-9_$-]/;
-      if (!wordCharacter.test(input.value[cursor] ?? "") && !wordCharacter.test(input.value[cursor - 1] ?? "")) return undefined;
+      if (
+        !wordCharacter.test(input.value[cursor] ?? "") &&
+        !wordCharacter.test(input.value[cursor - 1] ?? "")
+      )
+        return undefined;
       let start = cursor;
       let end = cursor;
-      while (start > 0 && wordCharacter.test(input.value[start - 1] ?? "")) start -= 1;
-      while (end < input.value.length && wordCharacter.test(input.value[end] ?? "")) end += 1;
+      while (start > 0 && wordCharacter.test(input.value[start - 1] ?? ""))
+        start -= 1;
+      while (
+        end < input.value.length &&
+        wordCharacter.test(input.value[end] ?? "")
+      )
+        end += 1;
       return start === end ? undefined : { start, end };
     };
     const selectNextOccurrence = (): void => {
-      const currentSelection: OccurrenceRange | undefined = input.selectionStart === input.selectionEnd
-        ? selectedWord()
-        : { start: input.selectionStart, end: input.selectionEnd };
+      const currentSelection: OccurrenceRange | undefined =
+        input.selectionStart === input.selectionEnd
+          ? selectedWord()
+          : { start: input.selectionStart, end: input.selectionEnd };
       if (!currentSelection) {
         notify("Select text or place the cursor inside a word first.");
         return;
       }
-      const currentNeedle = input.value.slice(currentSelection.start, currentSelection.end);
-      const selectedRangeIndex = occurrenceRanges.findIndex((range) => range.start === currentSelection.start && range.end === currentSelection.end);
+      const currentNeedle = input.value.slice(
+        currentSelection.start,
+        currentSelection.end,
+      );
+      const selectedRangeIndex = occurrenceRanges.findIndex(
+        (range) =>
+          range.start === currentSelection.start &&
+          range.end === currentSelection.end,
+      );
       if (currentNeedle !== occurrenceNeedle || selectedRangeIndex < 0) {
         occurrenceNeedle = currentNeedle;
         occurrenceRanges = [currentSelection];
@@ -1332,15 +1951,26 @@ function renderEditorContent(tab: EditorTab | undefined): void {
       const activeRange = occurrenceRanges.at(-1) as OccurrenceRange;
       let nextStart = input.value.indexOf(occurrenceNeedle, activeRange.end);
       if (nextStart < 0) nextStart = input.value.indexOf(occurrenceNeedle);
-      while (nextStart >= 0 && occurrenceRanges.some((range) => range.start === nextStart)) {
-        nextStart = input.value.indexOf(occurrenceNeedle, nextStart + occurrenceNeedle.length);
+      while (
+        nextStart >= 0 &&
+        occurrenceRanges.some((range) => range.start === nextStart)
+      ) {
+        nextStart = input.value.indexOf(
+          occurrenceNeedle,
+          nextStart + occurrenceNeedle.length,
+        );
       }
       if (nextStart < 0) {
-        notify(`${occurrenceRanges.length} occurrence${occurrenceRanges.length === 1 ? "" : "s"} selected; no more matches.`);
+        notify(
+          `${occurrenceRanges.length} occurrence${occurrenceRanges.length === 1 ? "" : "s"} selected; no more matches.`,
+        );
         input.setSelectionRange(activeRange.start, activeRange.end);
         return;
       }
-      const nextRange = { start: nextStart, end: nextStart + occurrenceNeedle.length };
+      const nextRange = {
+        start: nextStart,
+        end: nextStart + occurrenceNeedle.length,
+      };
       occurrenceRanges.push(nextRange);
       input.setSelectionRange(nextRange.start, nextRange.end);
       renderOccurrenceRanges();
@@ -1355,49 +1985,82 @@ function renderEditorContent(tab: EditorTab | undefined): void {
     input.addEventListener("beforeinput", (event) => {
       const inputEvent = event as InputEvent;
       if (occurrenceRanges.length < 2) return;
-      const replacement = inputEvent.data
-        ?? inputEvent.dataTransfer?.getData("text/plain")
-        ?? (inputEvent.inputType === "insertLineBreak" ? "\n" : undefined);
-      const deleting = inputEvent.inputType === "deleteContentBackward" || inputEvent.inputType === "deleteContentForward";
+      const replacement =
+        inputEvent.data ??
+        inputEvent.dataTransfer?.getData("text/plain") ??
+        (inputEvent.inputType === "insertLineBreak" ? "\n" : undefined);
+      const deleting =
+        inputEvent.inputType === "deleteContentBackward" ||
+        inputEvent.inputType === "deleteContentForward";
       if (replacement === undefined && !deleting) return;
       event.preventDefault();
       const activeRange = occurrenceRanges.at(-1) as OccurrenceRange;
-      const sortedRanges = [...occurrenceRanges].sort((left, right) => right.start - left.start);
-      for (const range of sortedRanges) input.value = `${input.value.slice(0, range.start)}${replacement ?? ""}${input.value.slice(range.end)}`;
+      const sortedRanges = [...occurrenceRanges].sort(
+        (left, right) => right.start - left.start,
+      );
+      for (const range of sortedRanges)
+        input.value = `${input.value.slice(0, range.start)}${replacement ?? ""}${input.value.slice(range.end)}`;
       const delta = (replacement ?? "").length - occurrenceNeedle.length;
-      const earlierRanges = occurrenceRanges.filter((range) => range.start < activeRange.start).length;
-      const cursor = activeRange.start + earlierRanges * delta + (replacement ?? "").length;
+      const earlierRanges = occurrenceRanges.filter(
+        (range) => range.start < activeRange.start,
+      ).length;
+      const cursor =
+        activeRange.start + earlierRanges * delta + (replacement ?? "").length;
       clearOccurrenceRanges();
       input.setSelectionRange(cursor, cursor);
       recordEditHistory();
       updateEditorContent();
     });
     input.onkeydown = (event) => {
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "z") {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        !event.altKey &&
+        event.key.toLowerCase() === "z"
+      ) {
         event.preventDefault();
         restoreEditHistory(event.shiftKey ? 1 : -1);
         return;
       }
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "y") {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        !event.altKey &&
+        event.key.toLowerCase() === "y"
+      ) {
         event.preventDefault();
         restoreEditHistory(1);
         return;
       }
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "d") {
+      if (
+        (event.ctrlKey || event.metaKey) &&
+        !event.altKey &&
+        event.key.toLowerCase() === "d"
+      ) {
         event.preventDefault();
         selectNextOccurrence();
         return;
       }
       if (event.key === "Tab" && inlineCompletion) {
         event.preventDefault();
-        input.setRangeText(inlineCompletion, input.selectionStart, input.selectionEnd, "end");
+        input.setRangeText(
+          inlineCompletion,
+          input.selectionStart,
+          input.selectionEnd,
+          "end",
+        );
         inlineCompletion = "";
         suggestion.hidden = true;
         input.dispatchEvent(new Event("input", { bubbles: true }));
         return;
       }
-      if (event.key === "Escape" && inlineCompletion) { inlineCompletion = ""; suggestion.hidden = true; return; }
-      if (event.key === "Escape" && occurrenceRanges.length > 0) { clearOccurrenceRanges(); return; }
+      if (event.key === "Escape" && inlineCompletion) {
+        inlineCompletion = "";
+        suggestion.hidden = true;
+        return;
+      }
+      if (event.key === "Escape" && occurrenceRanges.length > 0) {
+        clearOccurrenceRanges();
+        return;
+      }
       if (event.key === "Tab") {
         event.preventDefault();
         const start = input.selectionStart;
@@ -1406,12 +2069,23 @@ function renderEditorContent(tab: EditorTab | undefined): void {
         input.dispatchEvent(new Event("input", { bubbles: true }));
         return;
       }
-      if (event.key !== "Enter" || (!event.ctrlKey && !event.metaKey && !event.shiftKey)) return;
+      if (
+        event.key !== "Enter" ||
+        (!event.ctrlKey && !event.metaKey && !event.shiftKey)
+      )
+        return;
       event.preventDefault();
-      const selection = event.shiftKey ? input.selectionStart : input.selectionEnd;
-      const lineStart = input.value.lastIndexOf("\n", Math.max(0, selection - 1)) + 1;
+      const selection = event.shiftKey
+        ? input.selectionStart
+        : input.selectionEnd;
+      const lineStart =
+        input.value.lastIndexOf("\n", Math.max(0, selection - 1)) + 1;
       const nextLine = input.value.indexOf("\n", selection);
-      const insertionPoint = event.shiftKey ? lineStart : nextLine < 0 ? input.value.length : nextLine;
+      const insertionPoint = event.shiftKey
+        ? lineStart
+        : nextLine < 0
+          ? input.value.length
+          : nextLine;
       input.setRangeText("\n", insertionPoint, insertionPoint, "end");
       input.dispatchEvent(new Event("input", { bubbles: true }));
     };
@@ -1424,7 +2098,14 @@ function renderEditorContent(tab: EditorTab | undefined): void {
       saveWorkspaceUiState();
     };
     editor.classList.add("editable");
-    surface.append(lineNumbers, highlight, occurrenceLayer, input, suggestion, diagnostics);
+    surface.append(
+      lineNumbers,
+      highlight,
+      occurrenceLayer,
+      input,
+      suggestion,
+      diagnostics,
+    );
     refreshDiagnostics();
     editor.append(surface);
   }
@@ -1434,10 +2115,11 @@ function renderEditorContent(tab: EditorTab | undefined): void {
       input.scrollTop = tab.scrollTop;
       const highlight = editor.querySelector<HTMLElement>(".editor-highlight");
       if (highlight) highlight.scrollTop = tab.scrollTop;
-      const lineNumbers = editor.querySelector<HTMLElement>(".editor-line-numbers");
+      const lineNumbers = editor.querySelector<HTMLElement>(
+        ".editor-line-numbers",
+      );
       if (lineNumbers) lineNumbers.scrollTop = tab.scrollTop;
-    }
-    else editor.scrollTop = tab.scrollTop;
+    } else editor.scrollTop = tab.scrollTop;
   });
 }
 
@@ -1460,7 +2142,15 @@ function openSettings(): void {
   }
   populateSettings();
   if (!tab) {
-    tab = { path: settingsEditorPath, mode: "settings", state: "ready", content: "", dirty: false, scrollTop: 0, revision: 0 };
+    tab = {
+      path: settingsEditorPath,
+      mode: "settings",
+      state: "ready",
+      content: "",
+      dirty: false,
+      scrollTop: 0,
+      revision: 0,
+    };
     openEditorTabs.push(tab);
   }
   selectEditorTab(tab as EditorTab);
@@ -1469,7 +2159,11 @@ function openSettings(): void {
 function closeEditorTab(path: string): void {
   const index = openEditorTabs.findIndex((tab) => tab.path === path);
   if (index < 0) return;
-  if (openEditorTabs[index].dirty && !window.confirm(`Close ${path} without saving your edits?`)) return;
+  if (
+    openEditorTabs[index].dirty &&
+    !window.confirm(`Close ${path} without saving your edits?`)
+  )
+    return;
   const wasActive = activeFile === path;
   if (wasActive) preserveEditorScroll();
   openEditorTabs.splice(index, 1);
@@ -1501,15 +2195,27 @@ function renderEditorTabs(): void {
     select.setAttribute("role", "tab");
     select.setAttribute("aria-selected", String(tab.path === activeFile));
     if (tab.mode === "settings") select.textContent = "Settings";
-    else appendFileLabel(select, tab.path, `${tab.dirty ? "* " : ""}${tab.path.split(/[\\/]/).at(-1) ?? tab.path}`);
-    select.title = tab.mode === "settings" ? "Settings" : `${tab.mode === "diff" ? "Diff: " : ""}${tab.path}`;
+    else
+      appendFileLabel(
+        select,
+        tab.path,
+        `${tab.dirty ? "* " : ""}${tab.path.split(/[\\/]/).at(-1) ?? tab.path}`,
+      );
+    select.title =
+      tab.mode === "settings"
+        ? "Settings"
+        : `${tab.mode === "diff" ? "Diff: " : ""}${tab.path}`;
     select.onclick = () => selectEditorTab(tab);
     const close = document.createElement("button");
     close.className = "editor-tab-close";
     close.type = "button";
     close.textContent = "x";
-    close.title = tab.mode === "settings" ? "Close Settings" : `Close ${tab.path}`;
-    close.setAttribute("aria-label", tab.mode === "settings" ? "Close Settings" : `Close ${tab.path}`);
+    close.title =
+      tab.mode === "settings" ? "Close Settings" : `Close ${tab.path}`;
+    close.setAttribute(
+      "aria-label",
+      tab.mode === "settings" ? "Close Settings" : `Close ${tab.path}`,
+    );
     close.onclick = () => closeEditorTab(tab.path);
     container.append(select, close);
     return container;
@@ -1523,9 +2229,12 @@ async function loadEditorTab(tab: EditorTab): Promise<void> {
   tab.state = "loading";
   if (tab.path === activeFile) renderEditorContent(tab);
   try {
-    const content = tab.mode === "file" && mediaKindForPath(tab.path)
-      ? ""
-      : tab.mode === "diff" ? await window.trussDesktop.diffFile(tab.path) : await window.trussDesktop.readFile(tab.path);
+    const content =
+      tab.mode === "file" && mediaKindForPath(tab.path)
+        ? ""
+        : tab.mode === "diff"
+          ? await window.trussDesktop.diffFile(tab.path)
+          : await window.trussDesktop.readFile(tab.path);
     if (revision !== tab.revision) return;
     tab.content = content;
     tab.dirty = false;
@@ -1538,14 +2247,31 @@ async function loadEditorTab(tab: EditorTab): Promise<void> {
   if (tab.path === activeFile) renderEditorContent(tab);
 }
 
-async function openFile(path: string, diff: boolean, switchMode = false): Promise<void> {
+async function openFile(
+  path: string,
+  diff: boolean,
+  switchMode = false,
+): Promise<void> {
   const normalizedPath = editorPath(path);
-  let tab = openEditorTabs.find((candidate) => candidate.path === normalizedPath);
+  let tab = openEditorTabs.find(
+    (candidate) => candidate.path === normalizedPath,
+  );
   if (!tab) {
-    tab = { path: normalizedPath, mode: diff ? "diff" : "file", state: "loading", content: "", dirty: false, scrollTop: 0, revision: 0 };
+    tab = {
+      path: normalizedPath,
+      mode: diff ? "diff" : "file",
+      state: "loading",
+      content: "",
+      dirty: false,
+      scrollTop: 0,
+      revision: 0,
+    };
     openEditorTabs.push(tab);
   } else if (switchMode && tab.mode !== (diff ? "diff" : "file")) {
-    if (tab.dirty) { notify("Save or discard your edits before switching to the diff view."); return; }
+    if (tab.dirty) {
+      notify("Save or discard your edits before switching to the diff view.");
+      return;
+    }
     tab.mode = diff ? "diff" : "file";
     tab.scrollTop = 0;
   } else {
@@ -1560,7 +2286,11 @@ async function loadFiles(): Promise<void> {
   try {
     files = await window.trussDesktop.listFiles();
     loadedDirectoryContents.clear();
-    await Promise.all([...expandedDirectories].map((path) => loadDirectoryContents(path).catch(() => undefined)));
+    await Promise.all(
+      [...expandedDirectories].map((path) =>
+        loadDirectoryContents(path).catch(() => undefined),
+      ),
+    );
     renderFiles();
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error));
@@ -1569,9 +2299,11 @@ async function loadFiles(): Promise<void> {
 
 async function saveActiveFile(): Promise<void> {
   const tab = activeEditorTab();
-  if (!tab || tab.mode !== "file" || mediaKindForPath(tab.path) || !tab.dirty) return;
+  if (!tab || tab.mode !== "file" || mediaKindForPath(tab.path) || !tab.dirty)
+    return;
   try {
-    if (configuration().formatOnSave) tab.content = await window.trussDesktop.formatFile(tab.path, tab.content);
+    if (configuration().formatOnSave)
+      tab.content = await window.trussDesktop.formatFile(tab.path, tab.content);
     await window.trussDesktop.writeFile(tab.path, tab.content);
     tab.dirty = false;
     renderEditorTabs();
@@ -1585,20 +2317,47 @@ async function saveActiveFile(): Promise<void> {
 
 function fileIconKind(path: string): string {
   const name = path.split(/[\\/]/).at(-1)?.toLowerCase() ?? "";
-  if (["package.json", "tsconfig.json", ".eslintrc", ".prettierrc"].includes(name)) return "config";
+  if (
+    ["package.json", "tsconfig.json", ".eslintrc", ".prettierrc"].includes(name)
+  )
+    return "config";
   const extension = name.split(".").at(-1) ?? "";
   if (["ts", "tsx"].includes(extension)) return "typescript";
   if (["js", "jsx", "mjs", "cjs"].includes(extension)) return "javascript";
-  if (["json", "yaml", "yml", "toml", "ini"].includes(extension)) return "config";
+  if (["json", "yaml", "yml", "toml", "ini"].includes(extension))
+    return "config";
   if (["css", "scss", "sass", "less"].includes(extension)) return "style";
   if (["html", "htm", "svg", "xml"].includes(extension)) return "markup";
   if (["md", "mdx", "txt"].includes(extension)) return "document";
-  if (["py", "go", "rs", "java", "kt", "c", "cc", "cpp", "h", "hpp", "php", "rb", "sh", "sql"].includes(extension)) return extension;
-  if (["png", "jpg", "jpeg", "webp", "gif", "ico"].includes(extension)) return "image";
+  if (
+    [
+      "py",
+      "go",
+      "rs",
+      "java",
+      "kt",
+      "c",
+      "cc",
+      "cpp",
+      "h",
+      "hpp",
+      "php",
+      "rb",
+      "sh",
+      "sql",
+    ].includes(extension)
+  )
+    return extension;
+  if (["png", "jpg", "jpeg", "webp", "gif", "ico"].includes(extension))
+    return "image";
   return "plain";
 }
 
-function appendFileLabel(button: HTMLButtonElement, path: string, label: string): void {
+function appendFileLabel(
+  button: HTMLButtonElement,
+  path: string,
+  label: string,
+): void {
   const icon = document.createElement("span");
   icon.className = `file-icon ${fileIconKind(path)}`;
   icon.setAttribute("aria-hidden", "true");
@@ -1628,17 +2387,25 @@ async function discover(input?: Partial<DesktopConfiguration>): Promise<void> {
   const result = await window.trussDesktop.discoverModels(input);
   endpoints = result.endpoints;
   models = result.models;
-  endpointSelect.replaceChildren(...[{ id: "", label: "Custom endpoint", kind: "", baseUrl: "" }, ...endpoints].map((endpoint) => {
-    const option = document.createElement("option");
-    option.value = endpoint.id ? JSON.stringify(endpoint) : "";
-    option.textContent = endpoint.label + (endpoint.baseUrl ? ` (${endpoint.baseUrl})` : "");
-    return option;
-  }));
-  modelOptions.replaceChildren(...models.map((name) => {
-    const option = document.createElement("option");
-    option.value = name;
-    return option;
-  }));
+  endpointSelect.replaceChildren(
+    ...[
+      { id: "", label: "Custom endpoint", kind: "", baseUrl: "" },
+      ...endpoints,
+    ].map((endpoint) => {
+      const option = document.createElement("option");
+      option.value = endpoint.id ? JSON.stringify(endpoint) : "";
+      option.textContent =
+        endpoint.label + (endpoint.baseUrl ? ` (${endpoint.baseUrl})` : "");
+      return option;
+    }),
+  );
+  modelOptions.replaceChildren(
+    ...models.map((name) => {
+      const option = document.createElement("option");
+      option.value = name;
+      return option;
+    }),
+  );
   renderRuntime();
 }
 
@@ -1647,16 +2414,25 @@ function settingsConfiguration(): DesktopConfiguration {
   const provider = selectedSettingsProvider();
   const reusingCurrentProvider = provider === current.provider;
   const baseUrl = isLocalProvider(provider)
-    ? baseUrlInput.value.trim() || (reusingCurrentProvider ? current.baseUrl : "")
-    : byokBaseUrlForSelectedProvider() || (reusingCurrentProvider ? current.baseUrl : "");
-  const model = (modelSettingsTab === "byok" ? byokModelInput.value : modelInput.value).trim()
-    || (reusingCurrentProvider ? current.model : "");
-  if (!baseUrl || !model) throw new Error("Choose a provider endpoint and model before applying agent settings.");
+    ? baseUrlInput.value.trim() ||
+      (reusingCurrentProvider ? current.baseUrl : "")
+    : byokBaseUrlForSelectedProvider() ||
+      (reusingCurrentProvider ? current.baseUrl : "");
+  const model =
+    (modelSettingsTab === "byok"
+      ? byokModelInput.value
+      : modelInput.value
+    ).trim() || (reusingCurrentProvider ? current.model : "");
+  if (!baseUrl || !model)
+    throw new Error(
+      "Choose a provider endpoint and model before applying agent settings.",
+    );
   let mcpServers: DesktopConfiguration["mcpServers"] = {};
   const mcpSource = mcpServersInput.value.trim();
   if (mcpSource) {
     const parsed = JSON.parse(mcpSource) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("MCP servers must be a JSON object.");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      throw new Error("MCP servers must be a JSON object.");
     mcpServers = parsed as DesktopConfiguration["mcpServers"];
   }
   return {
@@ -1664,12 +2440,22 @@ function settingsConfiguration(): DesktopConfiguration {
     baseUrl,
     model,
     mode: current.mode,
-    permission: permissionSelect.value === "auto-read" || permissionSelect.value === "auto-all" ? permissionSelect.value : "ask",
-    contextWindow: Math.max(512, Number.parseInt(contextInput.value, 10) || 8_192),
+    permission:
+      permissionSelect.value === "auto-read" ||
+      permissionSelect.value === "auto-all"
+        ? permissionSelect.value
+        : "ask",
+    contextWindow: Math.max(
+      512,
+      Number.parseInt(contextInput.value, 10) || 8_192,
+    ),
     internetAccess: internetAccessInput.checked,
-    autocomplete: { enabled: autocompleteEnabled.checked, model: autocompleteModel.value.trim() || undefined },
+    autocomplete: {
+      enabled: autocompleteEnabled.checked,
+      model: autocompleteModel.value.trim() || undefined,
+    },
     formatOnSave: formatOnSave.checked,
-    mcpServers
+    mcpServers,
   };
 }
 
@@ -1681,27 +2467,39 @@ function renderMcpStatus(): void {
       : "No MCP servers configured.";
     return;
   }
-  mcpStatus.replaceChildren(...statuses.map((status) => {
-    const item = document.createElement("span");
-    item.className = status.state;
-    item.textContent = status.state === "connected"
-      ? `${status.name}: ${status.toolCount} tools`
-      : `${status.name}: ${status.error ?? "connection failed"}`;
-    return item;
-  }));
+  mcpStatus.replaceChildren(
+    ...statuses.map((status) => {
+      const item = document.createElement("span");
+      item.className = status.state;
+      item.textContent =
+        status.state === "connected"
+          ? `${status.name}: ${status.toolCount} tools`
+          : `${status.name}: ${status.error ?? "connection failed"}`;
+      return item;
+    }),
+  );
 }
 
-function renderUpdate(status: Extract<DesktopEvent, { readonly type: "update" }>): void {
+function renderUpdate(
+  status: Extract<DesktopEvent, { readonly type: "update" }>,
+): void {
   const version = status.version ? ` ${status.version}` : "";
-  updateStatus.textContent = status.status === "checking" ? "Checking for updates..."
-    : status.status === "available" ? `Version${version} is available.`
-      : status.status === "not-available" ? "Truss is up to date."
-        : status.status === "downloading" ? `Downloading update${status.percent === undefined ? "..." : ` (${Math.round(status.percent)}%)`}`
-          : status.status === "downloaded" ? `Version${version} is ready to install.`
-            : status.message ?? "Unable to check for updates.";
+  updateStatus.textContent =
+    status.status === "checking"
+      ? "Checking for updates..."
+      : status.status === "available"
+        ? `Version${version} is available.`
+        : status.status === "not-available"
+          ? "Truss is up to date."
+          : status.status === "downloading"
+            ? `Downloading update${status.percent === undefined ? "..." : ` (${Math.round(status.percent)}%)`}`
+            : status.status === "downloaded"
+              ? `Version${version} is ready to install.`
+              : (status.message ?? "Unable to check for updates.");
   downloadUpdate.hidden = status.status !== "available";
   installUpdate.hidden = status.status !== "downloaded";
-  checkUpdates.disabled = status.status === "checking" || status.status === "downloading";
+  checkUpdates.disabled =
+    status.status === "checking" || status.status === "downloading";
   downloadUpdate.disabled = status.status === "downloading";
 }
 
@@ -1724,13 +2522,18 @@ function populateSettings(): void {
   autocompleteEnabled.checked = current.autocomplete?.enabled ?? false;
   autocompleteModel.value = current.autocomplete?.model ?? "";
   formatOnSave.checked = current.formatOnSave ?? false;
-  mcpServersInput.value = Object.keys(current.mcpServers).length ? JSON.stringify(current.mcpServers, null, 2) : "";
+  mcpServersInput.value = Object.keys(current.mcpServers).length
+    ? JSON.stringify(current.mcpServers, null, 2)
+    : "";
   checkUpdatesOnLaunch.checked = desktopState.updates.checkOnLaunch;
   autoDownloadUpdates.checked = desktopState.updates.autoDownload;
-  themeSelect.value = desktopThemeNames.includes(desktopState.theme.name) ? desktopState.theme.name : "default";
-  customThemeInput.value = desktopState.theme.name === "custom" && desktopState.theme.custom
-    ? JSON.stringify(desktopState.theme.custom, null, 2)
-    : "";
+  themeSelect.value = desktopThemeNames.includes(desktopState.theme.name)
+    ? desktopState.theme.name
+    : "default";
+  customThemeInput.value =
+    desktopState.theme.name === "custom" && desktopState.theme.custom
+      ? JSON.stringify(desktopState.theme.custom, null, 2)
+      : "";
   renderCustomThemeControls();
   renderMcpStatus();
 }
@@ -1742,29 +2545,49 @@ async function restoreWorkspaceUiState(): Promise<void> {
   activeFile = undefined;
   showingDiff = false;
   if (state) {
-    state.expandedDirectories.forEach((path) => expandedDirectories.add(editorPath(path)));
-    for (const path of [...expandedDirectories].sort((left, right) => left.split("/").length - right.split("/").length)) {
+    state.expandedDirectories.forEach((path) =>
+      expandedDirectories.add(editorPath(path)),
+    );
+    for (const path of [...expandedDirectories].sort(
+      (left, right) => left.split("/").length - right.split("/").length,
+    )) {
       await loadDirectoryContents(path).catch(() => undefined);
     }
     for (const saved of state.openEditors) {
       const path = editorPath(saved.path);
       if (openEditorTabs.some((tab) => tab.path === path)) continue;
-      openEditorTabs.push({ path, mode: saved.mode, state: "loading", content: "", dirty: false, scrollTop: saved.scrollTop, revision: 0 });
+      openEditorTabs.push({
+        path,
+        mode: saved.mode,
+        state: "loading",
+        content: "",
+        dirty: false,
+        scrollTop: saved.scrollTop,
+        revision: 0,
+      });
     }
     const savedActiveFile = state.activeFile;
-    const restoredActive = savedActiveFile ? openEditorTabs.find((tab) => tab.path === editorPath(savedActiveFile)) : undefined;
+    const restoredActive = savedActiveFile
+      ? openEditorTabs.find((tab) => tab.path === editorPath(savedActiveFile))
+      : undefined;
     activeFile = restoredActive?.path ?? openEditorTabs.at(-1)?.path;
-    showingDiff = openEditorTabs.find((tab) => tab.path === activeFile)?.mode === "diff";
+    showingDiff =
+      openEditorTabs.find((tab) => tab.path === activeFile)?.mode === "diff";
   }
   renderFiles();
   renderEditorTabs();
   renderEditorContent(activeEditorTab());
   await Promise.all(openEditorTabs.map(loadEditorTab));
-  window.requestAnimationFrame(() => { fileTree.scrollTop = state?.fileTreeScrollTop ?? 0; });
+  window.requestAnimationFrame(() => {
+    fileTree.scrollTop = state?.fileTreeScrollTop ?? 0;
+  });
 }
 
 async function applyConfiguration(next: DesktopConfiguration): Promise<void> {
-  const returned = await window.trussDesktop.configure(next, apiKeyInput.value || undefined);
+  const returned = await window.trussDesktop.configure(
+    next,
+    apiKeyInput.value || undefined,
+  );
   apiKeyInput.value = "";
   desktopState = returned;
   await discover(next);
@@ -1772,8 +2595,13 @@ async function applyConfiguration(next: DesktopConfiguration): Promise<void> {
   notify(`Using ${next.model}`);
 }
 
-function slashQuery(): { readonly start: number; readonly query: string } | undefined {
-  const beforeCursor = chatInput.value.slice(0, chatInput.selectionStart ?? chatInput.value.length);
+function slashQuery():
+  | { readonly start: number; readonly query: string }
+  | undefined {
+  const beforeCursor = chatInput.value.slice(
+    0,
+    chatInput.selectionStart ?? chatInput.value.length,
+  );
   const match = beforeCursor.match(/(?:^|\s)\/([^\s]*)$/);
   if (!match) return undefined;
   return { start: beforeCursor.length - match[1].length - 1, query: match[1] };
@@ -1806,7 +2634,11 @@ function renderSlashMenu(): void {
       const score = fuzzyScore(file.path, query.query);
       return score === undefined ? [] : [{ file, score }];
     })
-    .sort((left, right) => left.score - right.score || left.file.path.localeCompare(right.file.path))
+    .sort(
+      (left, right) =>
+        left.score - right.score ||
+        left.file.path.localeCompare(right.file.path),
+    )
     .slice(0, 8)
     .map(({ file }) => file);
   if (!slashResults.length) {
@@ -1814,16 +2646,21 @@ function renderSlashMenu(): void {
     return;
   }
   slashIndex = Math.min(slashIndex, slashResults.length - 1);
-  slashMenu.replaceChildren(...slashResults.map((file, index) => {
-    const option = document.createElement("button");
-    option.type = "button";
-    option.className = `slash-option${index === slashIndex ? " active" : ""}`;
-    option.setAttribute("role", "option");
-    option.setAttribute("aria-selected", String(index === slashIndex));
-    option.textContent = file.path;
-    option.onmousedown = (event) => { event.preventDefault(); insertSlashFile(file.path); };
-    return option;
-  }));
+  slashMenu.replaceChildren(
+    ...slashResults.map((file, index) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = `slash-option${index === slashIndex ? " active" : ""}`;
+      option.setAttribute("role", "option");
+      option.setAttribute("aria-selected", String(index === slashIndex));
+      option.textContent = file.path;
+      option.onmousedown = (event) => {
+        event.preventDefault();
+        insertSlashFile(file.path);
+      };
+      return option;
+    }),
+  );
   slashMenu.hidden = false;
 }
 
@@ -1839,8 +2676,16 @@ function insertSlashFile(path: string): void {
 }
 
 function attachedPaths(prompt: string): readonly string[] {
-  const available = new Set(files.filter((file) => file.type === "file").map((file) => file.path));
-  return [...new Set([...prompt.matchAll(/(?:^|\s)\/([^\s]+)/g)].map((match) => match[1].replaceAll("\\", "/")).filter((path) => available.has(path)))];
+  const available = new Set(
+    files.filter((file) => file.type === "file").map((file) => file.path),
+  );
+  return [
+    ...new Set(
+      [...prompt.matchAll(/(?:^|\s)\/([^\s]+)/g)]
+        .map((match) => match[1].replaceAll("\\", "/"))
+        .filter((path) => available.has(path)),
+    ),
+  ];
 }
 
 function attachmentId(): string {
@@ -1848,56 +2693,112 @@ function attachmentId(): string {
 }
 
 function supportsTextAttachment(file: File): boolean {
-  return file.type.startsWith("text/") || /\.(?:md|mdx|txt|json|jsonc|ya?ml|toml|ini|cfg|conf|csv|ts|tsx|js|jsx|mjs|cjs|css|html?|xml|svg|py|go|rs|java|php|rb|sh|sql)$/i.test(file.name);
+  return (
+    file.type.startsWith("text/") ||
+    /\.(?:md|mdx|txt|json|jsonc|ya?ml|toml|ini|cfg|conf|csv|ts|tsx|js|jsx|mjs|cjs|css|html?|xml|svg|py|go|rs|java|php|rb|sh|sql)$/i.test(
+      file.name,
+    )
+  );
 }
 
 async function toAttachment(file: File): Promise<ChatAttachment> {
   if (!file.name) throw new Error("The selected file has no name.");
-  if (file.size > maxAttachmentBytes) throw new Error(`${file.name} exceeds the 4 MB attachment limit.`);
+  if (file.size > maxAttachmentBytes)
+    throw new Error(`${file.name} exceeds the 4 MB attachment limit.`);
   if (file.type.startsWith("image/")) {
-    if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type)) throw new Error(`${file.name} uses an unsupported image type. Use PNG, JPEG, WebP, or GIF.`);
+    if (
+      !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(
+        file.type,
+      )
+    )
+      throw new Error(
+        `${file.name} uses an unsupported image type. Use PNG, JPEG, WebP, or GIF.`,
+      );
     const data = await new Promise<string>((resolveData, reject) => {
       const reader = new FileReader();
-      reader.onload = () => typeof reader.result === "string" ? resolveData(reader.result) : reject(new Error(`Unable to read ${file.name}.`));
+      reader.onload = () =>
+        typeof reader.result === "string"
+          ? resolveData(reader.result)
+          : reject(new Error(`Unable to read ${file.name}.`));
       reader.onerror = () => reject(new Error(`Unable to read ${file.name}.`));
       reader.readAsDataURL(file);
     });
-    return { id: attachmentId(), kind: "image", name: file.name, mediaType: file.type, data, size: file.size };
+    return {
+      id: attachmentId(),
+      kind: "image",
+      name: file.name,
+      mediaType: file.type,
+      data,
+      size: file.size,
+    };
   }
-  if (!supportsTextAttachment(file)) throw new Error(`${file.name} is not a supported text file. Attach source code, Markdown, JSON, or another text file.`);
+  if (!supportsTextAttachment(file))
+    throw new Error(
+      `${file.name} is not a supported text file. Attach source code, Markdown, JSON, or another text file.`,
+    );
   const text = await file.text();
-  if (text.includes("\u0000")) throw new Error(`${file.name} appears to be binary and cannot be attached as text.`);
-  return { id: attachmentId(), kind: "file", name: file.name, mediaType: file.type || "text/plain", text: text.slice(0, maxFileTextCharacters), size: file.size };
+  if (text.includes("\u0000"))
+    throw new Error(
+      `${file.name} appears to be binary and cannot be attached as text.`,
+    );
+  return {
+    id: attachmentId(),
+    kind: "file",
+    name: file.name,
+    mediaType: file.type || "text/plain",
+    text: text.slice(0, maxFileTextCharacters),
+    size: file.size,
+  };
 }
 
 function renderPendingAttachments(): void {
   attachmentList.hidden = pendingAttachments.length === 0;
-  attachmentList.replaceChildren(...pendingAttachments.map((attachment) => {
-    const item = document.createElement("div");
-    item.className = "pending-attachment";
-    if (attachment.kind === "image" && attachment.data) {
-      const image = document.createElement("img");
-      image.src = attachment.data;
-      image.alt = "";
-      item.append(image);
-    }
-    const name = document.createElement("span");
-    name.textContent = attachment.name;
-    const remove = document.createElement("button");
-    remove.type = "button";
-    remove.textContent = "x";
-    remove.title = `Remove ${attachment.name}`;
-    remove.onclick = () => { pendingAttachments = pendingAttachments.filter((candidate) => candidate.id !== attachment.id); renderPendingAttachments(); };
-    item.append(name, remove);
-    return item;
-  }));
+  attachmentList.replaceChildren(
+    ...pendingAttachments.map((attachment) => {
+      const item = document.createElement("div");
+      item.className = "pending-attachment";
+      if (attachment.kind === "image" && attachment.data) {
+        const image = document.createElement("img");
+        image.src = attachment.data;
+        image.alt = "";
+        item.append(image);
+      }
+      const name = document.createElement("span");
+      name.textContent = attachment.name;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.textContent = "x";
+      remove.title = `Remove ${attachment.name}`;
+      remove.onclick = () => {
+        pendingAttachments = pendingAttachments.filter(
+          (candidate) => candidate.id !== attachment.id,
+        );
+        renderPendingAttachments();
+      };
+      item.append(name, remove);
+      return item;
+    }),
+  );
 }
 
 async function addFiles(filesToAdd: Iterable<File>): Promise<void> {
   const selected = [...filesToAdd];
   if (!selected.length) return;
-  if (pendingAttachments.length + selected.length > maxAttachmentCount) { notify(`Attach up to ${maxAttachmentCount} files at once.`); return; }
-  if (pendingAttachments.reduce((total, attachment) => total + attachment.size, 0) + selected.reduce((total, file) => total + file.size, 0) > maxAttachmentTotalBytes) { notify("Attachments exceed the 12 MB total limit."); return; }
+  if (pendingAttachments.length + selected.length > maxAttachmentCount) {
+    notify(`Attach up to ${maxAttachmentCount} files at once.`);
+    return;
+  }
+  if (
+    pendingAttachments.reduce(
+      (total, attachment) => total + attachment.size,
+      0,
+    ) +
+      selected.reduce((total, file) => total + file.size, 0) >
+    maxAttachmentTotalBytes
+  ) {
+    notify("Attachments exceed the 12 MB total limit.");
+    return;
+  }
   try {
     const attachments = await Promise.all(selected.map(toAttachment));
     pendingAttachments = [...pendingAttachments, ...attachments];
@@ -1912,8 +2813,14 @@ function hideFileContextMenu(): void {
   fileContextTarget = undefined;
 }
 
-function requestWorkspaceEntry(options: { readonly title: string; readonly description: string; readonly initialValue: string; readonly confirmLabel: string }): Promise<string | undefined> {
-  if (resolveFileEntry) return Promise.reject(new Error("Finish the current file action first."));
+function requestWorkspaceEntry(options: {
+  readonly title: string;
+  readonly description: string;
+  readonly initialValue: string;
+  readonly confirmLabel: string;
+}): Promise<string | undefined> {
+  if (resolveFileEntry)
+    return Promise.reject(new Error("Finish the current file action first."));
   fileEntryTitle.textContent = options.title;
   fileEntryDescription.textContent = options.description;
   fileEntryInput.value = options.initialValue;
@@ -1923,7 +2830,9 @@ function requestWorkspaceEntry(options: { readonly title: string; readonly descr
     fileEntryInput.focus();
     fileEntryInput.select();
   });
-  return new Promise((resolve) => { resolveFileEntry = resolve; });
+  return new Promise((resolve) => {
+    resolveFileEntry = resolve;
+  });
 }
 
 fileEntryForm.addEventListener("submit", (event) => {
@@ -1934,19 +2843,27 @@ fileEntryForm.addEventListener("submit", (event) => {
   }
   fileEntryDialog.close("confirm");
 });
-element<HTMLButtonElement>("cancelFileEntry").onclick = () => fileEntryDialog.close("cancel");
-element<HTMLButtonElement>("closeFileEntry").onclick = () => fileEntryDialog.close("cancel");
+element<HTMLButtonElement>("cancelFileEntry").onclick = () =>
+  fileEntryDialog.close("cancel");
+element<HTMLButtonElement>("closeFileEntry").onclick = () =>
+  fileEntryDialog.close("cancel");
 fileEntryDialog.addEventListener("close", () => {
   const resolve = resolveFileEntry;
   resolveFileEntry = undefined;
-  resolve?.(fileEntryDialog.returnValue === "confirm" ? fileEntryInput.value : undefined);
+  resolve?.(
+    fileEntryDialog.returnValue === "confirm"
+      ? fileEntryInput.value
+      : undefined,
+  );
 });
 
 function normalizedWorkspaceEntry(value: string): string | undefined {
   const normalized = value.trim().replaceAll("\\", "/");
-  if (!normalized || normalized.startsWith("/") || /^[a-z]:/i.test(normalized)) return undefined;
+  if (!normalized || normalized.startsWith("/") || /^[a-z]:/i.test(normalized))
+    return undefined;
   const parts = normalized.split("/");
-  if (parts.some((part) => !part || part === "." || part === "..")) return undefined;
+  if (parts.some((part) => !part || part === "." || part === ".."))
+    return undefined;
   return normalized;
 }
 
@@ -1967,10 +2884,13 @@ function childEntryPath(parent: string, name: string): string | undefined {
 
 function removeOpenEditorEntries(path: string, includeChildren: boolean): void {
   const prefix = `${path}/`;
-  const removedActive = activeFile === path || (includeChildren && Boolean(activeFile?.startsWith(prefix)));
+  const removedActive =
+    activeFile === path ||
+    (includeChildren && Boolean(activeFile?.startsWith(prefix)));
   for (let index = openEditorTabs.length - 1; index >= 0; index -= 1) {
     const tabPath = openEditorTabs[index].path;
-    if (tabPath === path || (includeChildren && tabPath.startsWith(prefix))) openEditorTabs.splice(index, 1);
+    if (tabPath === path || (includeChildren && tabPath.startsWith(prefix)))
+      openEditorTabs.splice(index, 1);
   }
   if (!removedActive) {
     renderEditorTabs();
@@ -1992,7 +2912,14 @@ async function refreshWorkspaceAfterFileOperation(): Promise<void> {
   saveWorkspaceUiState();
 }
 
-function addFileContextAction(label: string, action: () => void | Promise<void>, options: { readonly danger?: boolean; readonly separatorBefore?: boolean } = {}): void {
+function addFileContextAction(
+  label: string,
+  action: () => void | Promise<void>,
+  options: {
+    readonly danger?: boolean;
+    readonly separatorBefore?: boolean;
+  } = {},
+): void {
   if (options.separatorBefore) {
     const separator = document.createElement("div");
     separator.className = "context-separator";
@@ -2005,21 +2932,27 @@ function addFileContextAction(label: string, action: () => void | Promise<void>,
   if (options.danger) button.classList.add("danger");
   button.onclick = () => {
     hideFileContextMenu();
-    void Promise.resolve(action()).catch((error) => notify(error instanceof Error ? error.message : String(error)));
+    void Promise.resolve(action()).catch((error) =>
+      notify(error instanceof Error ? error.message : String(error)),
+    );
   };
   fileContextMenu.append(button);
 }
 
-async function createWorkspaceEntry(kind: "file" | "folder", parent: string): Promise<void> {
+async function createWorkspaceEntry(
+  kind: "file" | "folder",
+  parent: string,
+): Promise<void> {
   const name = await requestWorkspaceEntry({
     title: kind === "file" ? "New file" : "New folder",
     description: "Enter a relative path inside the selected workspace folder.",
     initialValue: kind === "file" ? "untitled.txt" : "new-folder",
-    confirmLabel: kind === "file" ? "Create file" : "Create folder"
+    confirmLabel: kind === "file" ? "Create file" : "Create folder",
   });
   if (name === undefined) return;
   const path = childEntryPath(parent, name);
-  if (!path) throw new Error("Use a non-empty relative workspace path without '..'.");
+  if (!path)
+    throw new Error("Use a non-empty relative workspace path without '..'.");
   if (kind === "file") await window.trussDesktop.createWorkspaceFile(path);
   else await window.trussDesktop.createWorkspaceFolder(path);
   const parentPath = entryParent(path);
@@ -2034,11 +2967,12 @@ async function renameWorkspaceEntry(target: FileContextTarget): Promise<void> {
     title: "Rename entry",
     description: "Enter a new name in the same workspace folder.",
     initialValue: entryName(target.path),
-    confirmLabel: "Rename"
+    confirmLabel: "Rename",
   });
   if (name === undefined) return;
   const nextPath = childEntryPath(entryParent(target.path), name);
-  if (!nextPath) throw new Error("Use a non-empty name without path traversal.");
+  if (!nextPath)
+    throw new Error("Use a non-empty name without path traversal.");
   if (nextPath === target.path) return;
   await window.trussDesktop.renameWorkspaceEntry(target.path, nextPath);
   removeOpenEditorEntries(target.path, target.kind === "directory");
@@ -2054,84 +2988,144 @@ async function renameWorkspaceEntry(target: FileContextTarget): Promise<void> {
 
 async function pasteWorkspaceFile(target: FileContextTarget): Promise<void> {
   if (!copiedWorkspaceFile) return;
-  const parent = target.kind === "directory" ? target.path : target.kind === "file" ? entryParent(target.path) : "";
+  const parent =
+    target.kind === "directory"
+      ? target.path
+      : target.kind === "file"
+        ? entryParent(target.path)
+        : "";
   const sourceName = entryName(copiedWorkspaceFile);
   const extensionIndex = sourceName.lastIndexOf(".");
-  const suggested = extensionIndex > 0 ? `${sourceName.slice(0, extensionIndex)} copy${sourceName.slice(extensionIndex)}` : `${sourceName} copy`;
+  const suggested =
+    extensionIndex > 0
+      ? `${sourceName.slice(0, extensionIndex)} copy${sourceName.slice(extensionIndex)}`
+      : `${sourceName} copy`;
   const name = await requestWorkspaceEntry({
     title: "Copy file",
-    description: "Enter the name for the new copy in the selected workspace folder.",
+    description:
+      "Enter the name for the new copy in the selected workspace folder.",
     initialValue: suggested,
-    confirmLabel: "Copy file"
+    confirmLabel: "Copy file",
   });
   if (name === undefined) return;
   const destination = childEntryPath(parent, name);
-  if (!destination) throw new Error("Use a non-empty relative filename without '..'.");
-  await window.trussDesktop.copyWorkspaceEntry(copiedWorkspaceFile, destination);
+  if (!destination)
+    throw new Error("Use a non-empty relative filename without '..'.");
+  await window.trussDesktop.copyWorkspaceEntry(
+    copiedWorkspaceFile,
+    destination,
+  );
   await refreshWorkspaceAfterFileOperation();
   notify(`Copied to ${destination}`);
   await openFile(destination, false);
 }
 
 async function deleteWorkspaceEntry(target: FileContextTarget): Promise<void> {
-  const label = target.kind === "directory" ? "folder and all of its contents" : "file";
-  if (!window.confirm(`Delete ${label} "${target.path}"? This cannot be undone.`)) return;
+  const label =
+    target.kind === "directory" ? "folder and all of its contents" : "file";
+  if (
+    !window.confirm(`Delete ${label} "${target.path}"? This cannot be undone.`)
+  )
+    return;
   await window.trussDesktop.deleteWorkspaceEntry(target.path);
   removeOpenEditorEntries(target.path, target.kind === "directory");
   expandedDirectories.delete(target.path);
   loadedDirectoryContents.delete(target.path);
-  if (copiedWorkspaceFile === target.path || (target.kind === "directory" && copiedWorkspaceFile?.startsWith(`${target.path}/`))) copiedWorkspaceFile = undefined;
+  if (
+    copiedWorkspaceFile === target.path ||
+    (target.kind === "directory" &&
+      copiedWorkspaceFile?.startsWith(`${target.path}/`))
+  )
+    copiedWorkspaceFile = undefined;
   await refreshWorkspaceAfterFileOperation();
   notify(`Deleted ${target.path}`);
 }
 
-function showFileContextMenu(x: number, y: number, target: FileContextTarget): void {
+function showFileContextMenu(
+  x: number,
+  y: number,
+  target: FileContextTarget,
+): void {
   fileContextTarget = target;
   fileContextMenu.replaceChildren();
-  const parent = target.kind === "directory" ? target.path : target.kind === "file" ? entryParent(target.path) : "";
-  addFileContextAction("New File...", () => createWorkspaceEntry("file", parent));
-  addFileContextAction("New Folder...", () => createWorkspaceEntry("folder", parent));
+  const parent =
+    target.kind === "directory"
+      ? target.path
+      : target.kind === "file"
+        ? entryParent(target.path)
+        : "";
+  addFileContextAction("New File...", () =>
+    createWorkspaceEntry("file", parent),
+  );
+  addFileContextAction("New Folder...", () =>
+    createWorkspaceEntry("folder", parent),
+  );
   if (target.kind === "file") {
-    addFileContextAction("Open", () => openFile(target.path, false), { separatorBefore: true });
-    addFileContextAction("Copy", () => { copiedWorkspaceFile = target.path; notify(`Copied ${target.path}`); });
+    addFileContextAction("Open", () => openFile(target.path, false), {
+      separatorBefore: true,
+    });
+    addFileContextAction("Copy", () => {
+      copiedWorkspaceFile = target.path;
+      notify(`Copied ${target.path}`);
+    });
     addFileContextAction("Copy Relative Path", async () => {
       await navigator.clipboard.writeText(target.path);
       notify("Copied relative path.");
     });
   }
-  if (copiedWorkspaceFile) addFileContextAction("Paste File...", () => pasteWorkspaceFile(target), { separatorBefore: target.kind !== "file" });
+  if (copiedWorkspaceFile)
+    addFileContextAction("Paste File...", () => pasteWorkspaceFile(target), {
+      separatorBefore: target.kind !== "file",
+    });
   if (target.kind !== "root") {
-    addFileContextAction("Rename...", () => renameWorkspaceEntry(target), { separatorBefore: !copiedWorkspaceFile && target.kind !== "file" });
-    addFileContextAction("Reveal in File Manager", () => window.trussDesktop.revealWorkspaceEntry(target.path));
-    addFileContextAction("Delete...", () => deleteWorkspaceEntry(target), { danger: true, separatorBefore: true });
+    addFileContextAction("Rename...", () => renameWorkspaceEntry(target), {
+      separatorBefore: !copiedWorkspaceFile && target.kind !== "file",
+    });
+    addFileContextAction("Reveal in File Manager", () =>
+      window.trussDesktop.revealWorkspaceEntry(target.path),
+    );
+    addFileContextAction("Delete...", () => deleteWorkspaceEntry(target), {
+      danger: true,
+      separatorBefore: true,
+    });
   }
-  addFileContextAction("Refresh Explorer", refreshWorkspaceAfterFileOperation, { separatorBefore: target.kind === "root" });
+  addFileContextAction("Refresh Explorer", refreshWorkspaceAfterFileOperation, {
+    separatorBefore: target.kind === "root",
+  });
   fileContextMenu.hidden = false;
   const bounds = fileContextMenu.getBoundingClientRect();
   fileContextMenu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - bounds.width - 8))}px`;
   fileContextMenu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - bounds.height - 8))}px`;
 }
 
-function toolActivityView(conversationId: string, activities: readonly ToolActivity[]): HTMLElement {
+function toolActivityView(
+  conversationId: string,
+  activities: readonly ToolActivity[],
+): HTMLElement {
   const trace = document.createElement("details");
   trace.className = "tool-activity";
   trace.open = toolActivityExpandedByConversation.get(conversationId) ?? true;
-  trace.addEventListener("toggle", () => toolActivityExpandedByConversation.set(conversationId, trace.open));
+  trace.addEventListener("toggle", () =>
+    toolActivityExpandedByConversation.set(conversationId, trace.open),
+  );
   const summary = document.createElement("summary");
   const running = activities.find((activity) => activity.status === "running");
-  summary.textContent = running ? `Working: ${running.tool}` : `Activity: ${activities.length} tool call${activities.length === 1 ? "" : "s"}`;
+  summary.textContent = running
+    ? `Working: ${running.tool}`
+    : `Activity: ${activities.length} tool call${activities.length === 1 ? "" : "s"}`;
   const list = document.createElement("div");
   list.className = "tool-activity-list";
   for (const activity of activities) {
     const row = document.createElement("div");
     row.className = `tool-activity-row ${activity.status}`;
-    row.textContent = activity.status === "progress"
-      ? activity.tool
-      : activity.status === "running"
-      ? `${activity.tool} running`
-      : activity.status === "failed"
-        ? `${activity.tool} failed${activity.detail ? `: ${activity.detail}` : ""}`
-        : `${activity.tool} completed`;
+    row.textContent =
+      activity.status === "progress"
+        ? activity.tool
+        : activity.status === "running"
+          ? `${activity.tool} running`
+          : activity.status === "failed"
+            ? `${activity.tool} failed${activity.detail ? `: ${activity.detail}` : ""}`
+            : `${activity.tool} completed`;
     if (activity.detail) row.title = activity.detail;
     list.append(row);
   }
@@ -2140,14 +3134,26 @@ function toolActivityView(conversationId: string, activities: readonly ToolActiv
 }
 
 function pastedFileName(mimeType: string): string {
-  const extension = mimeType === "image/jpeg" ? "jpg" : mimeType === "image/webp" ? "webp" : mimeType === "image/gif" ? "gif" : "png";
+  const extension =
+    mimeType === "image/jpeg"
+      ? "jpg"
+      : mimeType === "image/webp"
+        ? "webp"
+        : mimeType === "image/gif"
+          ? "gif"
+          : "png";
   return `pasted-image-${Date.now()}.${extension}`;
 }
 
 async function sendChat(): Promise<void> {
-  const prompt = chatInput.value.trim() || (pendingAttachments.length ? "Review the attached files." : "");
+  const prompt =
+    chatInput.value.trim() ||
+    (pendingAttachments.length ? "Review the attached files." : "");
   if (!prompt || busy) return;
-  if (configuration().mode === "chat" && isDirectWorkspaceChangeRequest(prompt)) {
+  if (
+    configuration().mode === "chat" &&
+    isDirectWorkspaceChangeRequest(prompt)
+  ) {
     try {
       await applyConfiguration({ ...configuration(), mode: "edit" });
       notify("Switched to Agent mode for this workspace change.");
@@ -2164,10 +3170,22 @@ async function sendChat(): Promise<void> {
   const conversation = ensureConversation();
   const history = conversation.messages;
   const attachments = pendingAttachments;
-  const userMessage: DesktopMessage = { role: "user", content: prompt, ...(attachments.length ? { attachments } : {}) };
+  const userMessage: DesktopMessage = {
+    role: "user",
+    content: prompt,
+    ...(attachments.length ? { attachments } : {}),
+  };
   const assistantMessage: DesktopMessage = { role: "assistant", content: "" };
-  const title = conversation.title === "New conversation" ? prompt.replace(/\s+/g, " ").slice(0, 42) || conversation.title : conversation.title;
-  updateConversation(conversation.id, (current) => ({ ...current, title, messages: [...current.messages, userMessage, assistantMessage], updatedAt: new Date().toISOString() }));
+  const title =
+    conversation.title === "New conversation"
+      ? prompt.replace(/\s+/g, " ").slice(0, 42) || conversation.title
+      : conversation.title;
+  updateConversation(conversation.id, (current) => ({
+    ...current,
+    title,
+    messages: [...current.messages, userMessage, assistantMessage],
+    updatedAt: new Date().toISOString(),
+  }));
   desktopState = { ...desktopState, activeConversationId: conversation.id };
   chatInput.value = "";
   pendingAttachments = [];
@@ -2187,28 +3205,54 @@ async function sendChat(): Promise<void> {
       attachments,
       activeFilePath: activeWorkspaceFilePath(),
       attachedPaths: attachedPaths(prompt),
-      openFilePaths: openEditorTabs.filter((tab) => tab.mode !== "settings").map((tab) => tab.path)
+      openFilePaths: openEditorTabs
+        .filter((tab) => tab.mode !== "settings")
+        .map((tab) => tab.path),
     });
   } catch (error) {
-    updateConversation(conversation.id, (current) => ({ ...current, messages: [...current.messages.slice(0, -1), { role: "assistant", content: `Error: ${error instanceof Error ? error.message : String(error)}` }] }));
+    updateConversation(conversation.id, (current) => ({
+      ...current,
+      messages: [
+        ...current.messages.slice(0, -1),
+        {
+          role: "assistant",
+          content: `Error: ${error instanceof Error ? error.message : String(error)}`,
+        },
+      ],
+    }));
     setBusy(false);
     renderChat();
   }
 }
 
 function appendTerminal(text: string): void {
-  terminalOutput.textContent = `${terminalOutput.textContent}${text}`.slice(-50_000);
+  terminalOutput.textContent = `${terminalOutput.textContent}${text}`.slice(
+    -50_000,
+  );
   terminalOutput.scrollTop = terminalOutput.scrollHeight;
 }
 
 function handleEvent(message: DesktopEvent): void {
-  if (message.type === "update") { renderUpdate(message); return; }
-  if (message.type === "file-context-open") { showFileContextMenu(message.x, message.y, message.target); return; }
+  if (message.type === "agents") {
+    applyAgentsSnapshot(message.snapshot);
+    return;
+  }
+  if (message.type === "update") {
+    renderUpdate(message);
+    return;
+  }
+  if (message.type === "file-context-open") {
+    showFileContextMenu(message.x, message.y, message.target);
+    return;
+  }
   if (message.type === "chat-start") {
     runningConversationId = message.conversationId;
     setToolActivity(message.conversationId, []);
     toolActivityExpandedByConversation.set(message.conversationId, true);
-    updateConversation(message.conversationId, (current) => ({ ...current, lastRun: { status: "running", modifiedFiles: [] } }));
+    updateConversation(message.conversationId, (current) => ({
+      ...current,
+      lastRun: { status: "running", modifiedFiles: [] },
+    }));
     setBusy(true);
     renderChat();
     return;
@@ -2223,13 +3267,30 @@ function handleEvent(message: DesktopEvent): void {
   }
   if (message.type === "chat-error") {
     const conversation = conversationById(message.conversationId);
-    if (conversation) updateConversation(conversation.id, (current) => {
-      const last = current.messages.at(-1);
-      const messages = last?.role === "assistant" && !last.content.trim()
-        ? [...current.messages.slice(0, -1), { role: "assistant" as const, content: `The run stopped before completion: ${message.message}` }]
-        : current.messages;
-      return { ...current, messages, lastRun: { status: "failed", modifiedFiles: [], completedAt: new Date().toISOString() }, updatedAt: new Date().toISOString() };
-    });
+    if (conversation)
+      updateConversation(conversation.id, (current) => {
+        const last = current.messages.at(-1);
+        const messages =
+          last?.role === "assistant" && !last.content.trim()
+            ? [
+                ...current.messages.slice(0, -1),
+                {
+                  role: "assistant" as const,
+                  content: `The run stopped before completion: ${message.message}`,
+                },
+              ]
+            : current.messages;
+        return {
+          ...current,
+          messages,
+          lastRun: {
+            status: "failed",
+            modifiedFiles: [],
+            completedAt: new Date().toISOString(),
+          },
+          updatedAt: new Date().toISOString(),
+        };
+      });
     if (message.conversationId === runningConversationId) {
       runningConversationId = undefined;
       setBusy(false);
@@ -2238,7 +3299,10 @@ function handleEvent(message: DesktopEvent): void {
     saveConversations();
     return;
   }
-  if (message.type === "terminal-output") { appendTerminal(message.text); return; }
+  if (message.type === "terminal-output") {
+    appendTerminal(message.text);
+    return;
+  }
   if (message.type === "approval") {
     const approval = document.createElement("div");
     approval.className = "tool-message";
@@ -2249,8 +3313,14 @@ function handleEvent(message: DesktopEvent): void {
     allow.textContent = "Allow";
     const deny = document.createElement("button");
     deny.textContent = "Deny";
-    allow.onclick = () => { void window.trussDesktop.resolveApproval(message.callId, true); approval.textContent = `Allowed ${message.tool}`; };
-    deny.onclick = () => { void window.trussDesktop.resolveApproval(message.callId, false); approval.textContent = `Denied ${message.tool}`; };
+    allow.onclick = () => {
+      void window.trussDesktop.resolveApproval(message.callId, true);
+      approval.textContent = `Allowed ${message.tool}`;
+    };
+    deny.onclick = () => {
+      void window.trussDesktop.resolveApproval(message.callId, false);
+      approval.textContent = `Denied ${message.tool}`;
+    };
     actions.append(allow, deny);
     approval.append(actions);
     chatMessages.append(approval);
@@ -2259,19 +3329,31 @@ function handleEvent(message: DesktopEvent): void {
   }
   if (message.type !== "agent") return;
   const event = message.event;
-  const conversation = conversationById(message.conversationId) ?? conversationById(runningConversationId);
-  if (event.type === "plan_updated" && event.plan) { activePlan = event.plan; renderPlan(); return; }
+  const conversation =
+    conversationById(message.conversationId) ??
+    conversationById(runningConversationId);
+  if (event.type === "plan_updated" && event.plan) {
+    activePlan = event.plan;
+    renderPlan();
+    return;
+  }
   if (event.type === "run_completed") {
     if (conversation) {
       updateConversation(conversation.id, (current) => ({
         ...current,
-        lastRun: { status: "completed", modifiedFiles: event.modifiedFiles ?? [], completedAt: new Date().toISOString() },
-        updatedAt: new Date().toISOString()
+        lastRun: {
+          status: "completed",
+          modifiedFiles: event.modifiedFiles ?? [],
+          completedAt: new Date().toISOString(),
+        },
+        updatedAt: new Date().toISOString(),
       }));
       saveConversations();
       renderChat();
     }
-    const modified = new Set((event.modifiedFiles ?? []).map((path) => path.replaceAll("\\", "/")));
+    const modified = new Set(
+      (event.modifiedFiles ?? []).map((path) => path.replaceAll("\\", "/")),
+    );
     for (const tab of openEditorTabs) {
       if (!modified.has(tab.path.replaceAll("\\", "/"))) continue;
       if (tab.dirty) {
@@ -2280,7 +3362,8 @@ function handleEvent(message: DesktopEvent): void {
       }
       void loadEditorTab(tab);
     }
-    if (centerView === "preview" && browserView.getURL() !== "about:blank") browserView.reload();
+    if (centerView === "preview" && browserView.getURL() !== "about:blank")
+      browserView.reload();
     return;
   }
   if (event.type === "text_delta") {
@@ -2288,7 +3371,14 @@ function handleEvent(message: DesktopEvent): void {
     updateConversation(conversation.id, (current) => {
       const last = current.messages.at(-1);
       if (!last || last.role !== "assistant") return current;
-      return { ...current, messages: [...current.messages.slice(0, -1), { role: "assistant", content: last.content + (event.text ?? "") }], updatedAt: new Date().toISOString() };
+      return {
+        ...current,
+        messages: [
+          ...current.messages.slice(0, -1),
+          { role: "assistant", content: last.content + (event.text ?? "") },
+        ],
+        updatedAt: new Date().toISOString(),
+      };
     });
     if (!streamStartedAt) streamStartedAt = performance.now();
     streamedTextCharacters += (event.text ?? "").length;
@@ -2303,9 +3393,16 @@ function handleEvent(message: DesktopEvent): void {
     if (!note) return;
     const activities = toolActivityByConversation.get(conversation.id) ?? [];
     const previous = activities.at(-1);
-    const nextActivities: ToolActivity[] = previous?.status === "progress"
-      ? [...activities.slice(0, -1), { ...previous, tool: `${previous.tool}${note}` }]
-      : [...activities, { callId: createId(), tool: note, status: "progress" }];
+    const nextActivities: ToolActivity[] =
+      previous?.status === "progress"
+        ? [
+            ...activities.slice(0, -1),
+            { ...previous, tool: `${previous.tool}${note}` },
+          ]
+        : [
+            ...activities,
+            { callId: createId(), tool: note, status: "progress" },
+          ];
     setToolActivity(conversation.id, nextActivities);
     agentActivity = nextActivities.at(-1)?.tool.trim() || "Thinking";
     if (conversation.id === desktopState.activeConversationId) renderChat();
@@ -2317,7 +3414,14 @@ function handleEvent(message: DesktopEvent): void {
     renderRuntime();
     if (conversation) {
       const activities = toolActivityByConversation.get(conversation.id) ?? [];
-      setToolActivity(conversation.id, [...activities, { callId: event.callId ?? createId(), tool: event.tool ?? "unknown", status: "running" }]);
+      setToolActivity(conversation.id, [
+        ...activities,
+        {
+          callId: event.callId ?? createId(),
+          tool: event.tool ?? "unknown",
+          status: "running",
+        },
+      ]);
       if (conversation.id === desktopState.activeConversationId) renderChat();
     }
   }
@@ -2329,7 +3433,18 @@ function handleEvent(message: DesktopEvent): void {
     if (conversation) {
       const activities = toolActivityByConversation.get(conversation.id) ?? [];
       const detail = result.replace(/\s+/g, " ").trim().slice(0, 320);
-      setToolActivity(conversation.id, activities.map((activity) => activity.callId === event.callId ? { ...activity, status: event.result?.isError ? "failed" : "completed", detail } : activity));
+      setToolActivity(
+        conversation.id,
+        activities.map((activity) =>
+          activity.callId === event.callId
+            ? {
+                ...activity,
+                status: event.result?.isError ? "failed" : "completed",
+                detail,
+              }
+            : activity,
+        ),
+      );
       if (conversation.id === desktopState.activeConversationId) renderChat();
     }
   }
@@ -2339,17 +3454,25 @@ function clamp(value: number, minimum: number, maximum: number): number {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
-function bindPaneResize(id: string, axis: "x" | "y", createMove: () => (delta: number) => void): void {
+function bindPaneResize(
+  id: string,
+  axis: "x" | "y",
+  createMove: () => (delta: number) => void,
+): void {
   const splitter = element<HTMLDivElement>(id);
   splitter.tabIndex = 0;
-  splitter.setAttribute("aria-orientation", axis === "x" ? "vertical" : "horizontal");
+  splitter.setAttribute(
+    "aria-orientation",
+    axis === "x" ? "vertical" : "horizontal",
+  );
   splitter.addEventListener("pointerdown", (down) => {
     down.preventDefault();
     const start = axis === "x" ? down.clientX : down.clientY;
     const move = createMove();
     document.body.classList.add("resizing");
     splitter.setPointerCapture(down.pointerId);
-    const onMove = (event: PointerEvent): void => move((axis === "x" ? event.clientX : event.clientY) - start);
+    const onMove = (event: PointerEvent): void =>
+      move((axis === "x" ? event.clientX : event.clientY) - start);
     const onEnd = (): void => {
       document.body.classList.remove("resizing");
       window.removeEventListener("pointermove", onMove);
@@ -2361,21 +3484,35 @@ function bindPaneResize(id: string, axis: "x" | "y", createMove: () => (delta: n
     window.addEventListener("pointercancel", onEnd);
   });
   splitter.addEventListener("keydown", (event) => {
-    const increase = axis === "x" ? event.key === "ArrowRight" : event.key === "ArrowDown";
-    const decrease = axis === "x" ? event.key === "ArrowLeft" : event.key === "ArrowUp";
+    const increase =
+      axis === "x" ? event.key === "ArrowRight" : event.key === "ArrowDown";
+    const decrease =
+      axis === "x" ? event.key === "ArrowLeft" : event.key === "ArrowUp";
     if (!increase && !decrease) return;
     event.preventDefault();
-    createMove()(increase ? (event.shiftKey ? 48 : 12) : event.shiftKey ? -48 : -12);
+    createMove()(
+      increase ? (event.shiftKey ? 48 : 12) : event.shiftKey ? -48 : -12,
+    );
   });
 }
 
 bindPaneResize("sidebarSplitter", "x", () => {
   const initial = sidebar.getBoundingClientRect().width;
-  return (delta) => workbench.style.setProperty("--sidebar-width", `${clamp(initial + delta, 190, 520)}px`);
+  return (delta) =>
+    workbench.style.setProperty(
+      "--sidebar-width",
+      `${clamp(initial + delta, 190, 520)}px`,
+    );
 });
 bindPaneResize("chatSplitter", "x", () => {
-  const initial = document.querySelector<HTMLElement>(".chat-area")?.getBoundingClientRect().width ?? 390;
-  return (delta) => workbench.style.setProperty("--chat-width", `${clamp(initial - delta, 330, 680)}px`);
+  const initial =
+    document.querySelector<HTMLElement>(".chat-area")?.getBoundingClientRect()
+      .width ?? 390;
+  return (delta) =>
+    workbench.style.setProperty(
+      "--chat-width",
+      `${clamp(initial - delta, 330, 680)}px`,
+    );
 });
 bindPaneResize("gitSplitter", "y", () => {
   if (gitCollapsed) setGitCollapsed(false);
@@ -2383,14 +3520,22 @@ bindPaneResize("gitSplitter", "y", () => {
   return (delta) => {
     const applied = clamp(delta, 160 - initial.git, initial.files - 110);
     gitPanelHeight = initial.git + applied;
-    applySidebarTracks(gitPanelHeight, initial.files - applied, initial.history);
+    applySidebarTracks(
+      gitPanelHeight,
+      initial.files - applied,
+      initial.history,
+    );
   };
 });
 bindPaneResize("historySplitter", "y", () => {
   const initial = sidebarTracks();
   return (delta) => {
     const applied = clamp(delta, 110 - initial.files, initial.history - 110);
-    applySidebarTracks(initial.git, initial.files + applied, initial.history - applied);
+    applySidebarTracks(
+      initial.git,
+      initial.files + applied,
+      initial.history - applied,
+    );
   };
 });
 element<HTMLDivElement>("gitSplitter").ondblclick = resetSidebarTracks;
@@ -2417,40 +3562,65 @@ element<HTMLButtonElement>("chooseWorkspace").onclick = async () => {
   editorTitle.textContent = "Workspace";
   renderEditorTabs();
   renderEditorContent(undefined);
-  await Promise.all([loadFiles(), refreshGit(), window.trussDesktop.getPlan().then((plan) => { activePlan = plan; renderPlan(); })]);
+  await Promise.all([
+    loadFiles(),
+    refreshGit(),
+    window.trussDesktop.getPlan().then((plan) => {
+      activePlan = plan;
+      renderPlan();
+    }),
+  ]);
   await restoreWorkspaceUiState();
   renderConversations();
   renderChat();
   renderRuntime();
 };
 element<HTMLButtonElement>("refreshModels").onclick = () => {
-  void window.trussDesktop.refreshLocalModel()
+  void window.trussDesktop
+    .refreshLocalModel()
     .then(async (returned) => {
       desktopState = returned;
       populateSettings();
       await discover(returned.configuration);
       renderRuntime();
-      notify(`Detected ${returned.configuration?.provider ?? "local provider"} / ${returned.configuration?.model ?? "model"}`);
+      notify(
+        `Detected ${returned.configuration?.provider ?? "local provider"} / ${returned.configuration?.model ?? "model"}`,
+      );
     })
-    .catch((error) => notify(error instanceof Error ? error.message : String(error)));
+    .catch((error) =>
+      notify(error instanceof Error ? error.message : String(error)),
+    );
 };
 element<HTMLButtonElement>("refreshFiles").onclick = () => void loadFiles();
-fileSearch.oninput = () => { fileSearchQuery = fileSearch.value; renderFiles(); };
+fileSearch.oninput = () => {
+  fileSearchQuery = fileSearch.value;
+  renderFiles();
+};
 document.addEventListener("pointerdown", (event) => {
   // Do not let a secondary click close the menu before its contextmenu event
   // can replace it. This matters on Linux window managers that dispatch those
   // pointer events in a different order from Chromium on other platforms.
-  if (event.button === 0 && !fileContextMenu.hidden && !fileContextMenu.contains(event.target as Node)) hideFileContextMenu();
+  if (
+    event.button === 0 &&
+    !fileContextMenu.hidden &&
+    !fileContextMenu.contains(event.target as Node)
+  )
+    hideFileContextMenu();
 });
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !fileContextMenu.hidden) hideFileContextMenu();
 });
 fileTree.addEventListener("scroll", saveWorkspaceUiState, { passive: true });
-editor.addEventListener("scroll", () => {
-  const tab = activeEditorTab();
-  if (tab && !editor.querySelector("textarea")) tab.scrollTop = editor.scrollTop;
-  saveWorkspaceUiState();
-}, { passive: true });
+editor.addEventListener(
+  "scroll",
+  () => {
+    const tab = activeEditorTab();
+    if (tab && !editor.querySelector("textarea"))
+      tab.scrollTop = editor.scrollTop;
+    saveWorkspaceUiState();
+  },
+  { passive: true },
+);
 fileSearch.onkeydown = (event) => {
   if (event.key === "Escape") {
     event.preventDefault();
@@ -2459,26 +3629,52 @@ fileSearch.onkeydown = (event) => {
     renderFiles();
   }
 };
-clearFileSearch.onclick = () => { fileSearch.value = ""; fileSearchQuery = ""; renderFiles(); fileSearch.focus(); };
+clearFileSearch.onclick = () => {
+  fileSearch.value = "";
+  fileSearchQuery = "";
+  renderFiles();
+  fileSearch.focus();
+};
 element<HTMLButtonElement>("refreshGit").onclick = () => void refreshGit();
-element<HTMLButtonElement>("toggleGit").onclick = () => setGitCollapsed(!gitCollapsed);
+element<HTMLButtonElement>("toggleGit").onclick = () =>
+  setGitCollapsed(!gitCollapsed);
 element<HTMLButtonElement>("stageAll").onclick = () => {
-  const staged = gitStatus.files.filter((file) => file.indexStatus !== " " && file.indexStatus !== "?");
+  const staged = gitStatus.files.filter(
+    (file) => file.indexStatus !== " " && file.indexStatus !== "?",
+  );
   if (staged.length) {
-    void runGitAction("unstage", () => window.trussDesktop.gitUnstage(staged.map((file) => file.path)));
+    void runGitAction("unstage", () =>
+      window.trussDesktop.gitUnstage(staged.map((file) => file.path)),
+    );
     return;
   }
-  if (!gitStatus.files.length) { notify("No changed files to stage."); return; }
-  void runGitAction("stage", () => window.trussDesktop.gitStage(gitStatus.files.map((file) => file.path)));
+  if (!gitStatus.files.length) {
+    notify("No changed files to stage.");
+    return;
+  }
+  void runGitAction("stage", () =>
+    window.trussDesktop.gitStage(gitStatus.files.map((file) => file.path)),
+  );
 };
 element<HTMLButtonElement>("discardAll").onclick = () => {
-  if (!gitStatus.files.length) { notify("No uncommitted changes to discard."); return; }
-  if (window.confirm("Discard every uncommitted change in this workspace? This also removes untracked files and cannot be undone.")) {
-    void runGitAction("discard all", () => window.trussDesktop.gitDiscard(gitStatus.files.map((file) => file.path)));
+  if (!gitStatus.files.length) {
+    notify("No uncommitted changes to discard.");
+    return;
+  }
+  if (
+    window.confirm(
+      "Discard every uncommitted change in this workspace? This also removes untracked files and cannot be undone.",
+    )
+  ) {
+    void runGitAction("discard all", () =>
+      window.trussDesktop.gitDiscard(gitStatus.files.map((file) => file.path)),
+    );
   }
 };
-element<HTMLButtonElement>("pullGit").onclick = () => void runGitAction("pull", () => window.trussDesktop.gitPull());
-element<HTMLButtonElement>("pushGit").onclick = () => void runGitAction("push", () => window.trussDesktop.gitPush());
+element<HTMLButtonElement>("pullGit").onclick = () =>
+  void runGitAction("pull", () => window.trussDesktop.gitPull());
+element<HTMLButtonElement>("pushGit").onclick = () =>
+  void runGitAction("push", () => window.trussDesktop.gitPush());
 generateCommitMessage.onclick = () => {
   if (!configuration().model) {
     openSettings();
@@ -2487,7 +3683,8 @@ generateCommitMessage.onclick = () => {
   }
   generateCommitMessage.disabled = true;
   generateCommitMessage.textContent = "Generating...";
-  void window.trussDesktop.gitGenerateCommitMessage()
+  void window.trussDesktop
+    .gitGenerateCommitMessage()
     .then((message) => {
       commitMessage.value = message;
       commitMessage.focus();
@@ -2506,34 +3703,66 @@ generateCommitMessage.onclick = () => {
 element<HTMLFormElement>("commitForm").onsubmit = (event) => {
   event.preventDefault();
   const message = commitMessage.value.trim();
-  if (!message) { notify("Enter a commit message."); return; }
+  if (!message) {
+    notify("Enter a commit message.");
+    return;
+  }
   void runGitAction("commit", async () => {
     const output = await window.trussDesktop.gitCommit(message);
     commitMessage.value = "";
     return output;
   });
 };
-element<HTMLButtonElement>("newChat").onclick = () => { cancelActiveRunForNavigation(); createConversation(); renderConversations(); renderChat(); renderRuntime(); saveConversations(); };
-element<HTMLButtonElement>("fileButton").onclick = () => { const path = activeWorkspaceFilePath(); setCenterView("editor"); if (path) void openFile(path, false, true); };
-element<HTMLButtonElement>("diffButton").onclick = () => { const path = activeWorkspaceFilePath(); setCenterView("editor"); if (path) void openFile(path, !showingDiff, true); };
+element<HTMLButtonElement>("newChat").onclick = () => {
+  cancelActiveRunForNavigation();
+  createConversation();
+  renderConversations();
+  renderChat();
+  renderRuntime();
+  saveConversations();
+};
+element<HTMLButtonElement>("fileButton").onclick = () => {
+  const path = activeWorkspaceFilePath();
+  setCenterView("editor");
+  if (path) void openFile(path, false, true);
+};
+element<HTMLButtonElement>("diffButton").onclick = () => {
+  const path = activeWorkspaceFilePath();
+  setCenterView("editor");
+  if (path) void openFile(path, !showingDiff, true);
+};
 formatFileButton.onclick = () => void formatActiveFile();
-editorTabsElement.addEventListener("wheel", (event) => {
-  if (event.ctrlKey || event.defaultPrevented) return;
-  if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
-  event.preventDefault();
-  editorTabsElement.scrollBy({ left: event.deltaY, behavior: "smooth" });
-}, { passive: false });
-window.addEventListener("wheel", (event) => {
-  if (!event.ctrlKey || event.deltaY === 0) return;
-  event.preventDefault();
-  const now = Date.now();
-  if (now - lastZoomWheelAt < 140) return;
-  lastZoomWheelAt = now;
-  const direction: -1 | 1 = event.deltaY < 0 ? 1 : -1;
-  void window.trussDesktop.adjustZoom(direction)
-    .then((zoomFactor) => { desktopState = { ...desktopState, zoomFactor }; notify(`Zoom: ${Math.round(zoomFactor * 100)}%`); })
-    .catch((error: unknown) => notify(error instanceof Error ? error.message : String(error)));
-}, { passive: false, capture: true });
+editorTabsElement.addEventListener(
+  "wheel",
+  (event) => {
+    if (event.ctrlKey || event.defaultPrevented) return;
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+    event.preventDefault();
+    editorTabsElement.scrollBy({ left: event.deltaY, behavior: "smooth" });
+  },
+  { passive: false },
+);
+window.addEventListener(
+  "wheel",
+  (event) => {
+    if (!event.ctrlKey || event.deltaY === 0) return;
+    event.preventDefault();
+    const now = Date.now();
+    if (now - lastZoomWheelAt < 140) return;
+    lastZoomWheelAt = now;
+    const direction: -1 | 1 = event.deltaY < 0 ? 1 : -1;
+    void window.trussDesktop
+      .adjustZoom(direction)
+      .then((zoomFactor) => {
+        desktopState = { ...desktopState, zoomFactor };
+        notify(`Zoom: ${Math.round(zoomFactor * 100)}%`);
+      })
+      .catch((error: unknown) =>
+        notify(error instanceof Error ? error.message : String(error)),
+      );
+  },
+  { passive: false, capture: true },
+);
 element<HTMLButtonElement>("settingsButton").onclick = openSettings;
 element<HTMLButtonElement>("dialogRefresh").onclick = () => {
   const provider = providerSelect.value as "ollama" | "openai-compatible";
@@ -2544,101 +3773,297 @@ element<HTMLButtonElement>("applySettings").onclick = (event) => {
   try {
     const next = settingsConfiguration();
     void applyConfiguration(next)
-      .then(() => window.trussDesktop.configureUpdates({ checkOnLaunch: checkUpdatesOnLaunch.checked, autoDownload: autoDownloadUpdates.checked }))
-      .then((returned) => { desktopState = returned; notify("Settings applied."); })
-      .catch((error) => notify(error instanceof Error ? error.message : String(error)));
+      .then(() =>
+        window.trussDesktop.configureUpdates({
+          checkOnLaunch: checkUpdatesOnLaunch.checked,
+          autoDownload: autoDownloadUpdates.checked,
+        }),
+      )
+      .then((returned) => {
+        desktopState = returned;
+        notify("Settings applied.");
+      })
+      .catch((error) =>
+        notify(error instanceof Error ? error.message : String(error)),
+      );
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error));
   }
 };
 clearApiKey.onclick = () => {
-  void window.trussDesktop.clearCredential(byokProviderSelect.value as DesktopProvider)
-    .then(() => { apiKeyInput.value = ""; notify("Stored provider key removed."); })
-    .catch((error: unknown) => notify(error instanceof Error ? error.message : String(error)));
+  void window.trussDesktop
+    .clearCredential(byokProviderSelect.value as DesktopProvider)
+    .then(() => {
+      apiKeyInput.value = "";
+      notify("Stored provider key removed.");
+    })
+    .catch((error: unknown) =>
+      notify(error instanceof Error ? error.message : String(error)),
+    );
 };
 themeSelect.onchange = () => {
   renderCustomThemeControls();
   if (themeSelect.value === "custom") {
-    applyTheme({ name: "custom", custom: desktopState.theme.name === "custom" ? desktopState.theme.custom : {} });
+    applyTheme({
+      name: "custom",
+      custom:
+        desktopState.theme.name === "custom" ? desktopState.theme.custom : {},
+    });
     return;
   }
-  void saveTheme({ name: themeSelect.value as Exclude<DesktopThemePreference["name"], "custom"> }).catch((error: unknown) => notify(error instanceof Error ? error.message : String(error)));
+  void saveTheme({
+    name: themeSelect.value as Exclude<
+      DesktopThemePreference["name"],
+      "custom"
+    >,
+  }).catch((error: unknown) =>
+    notify(error instanceof Error ? error.message : String(error)),
+  );
 };
 customThemeInput.oninput = () => {
-  try { applyTheme({ name: "custom", custom: parseCustomTheme() }); } catch { /* Keep the previous preview until the JSON is valid. */ }
+  try {
+    applyTheme({ name: "custom", custom: parseCustomTheme() });
+  } catch {
+    /* Keep the previous preview until the JSON is valid. */
+  }
 };
 saveCustomTheme.onclick = () => {
-  try { void saveTheme({ name: "custom", custom: parseCustomTheme() }).catch((error: unknown) => notify(error instanceof Error ? error.message : String(error))); } catch (error) { notify(error instanceof Error ? error.message : String(error)); }
+  try {
+    void saveTheme({ name: "custom", custom: parseCustomTheme() }).catch(
+      (error: unknown) =>
+        notify(error instanceof Error ? error.message : String(error)),
+    );
+  } catch (error) {
+    notify(error instanceof Error ? error.message : String(error));
+  }
 };
-checkUpdates.onclick = () => void window.trussDesktop.checkForUpdates().catch((error) => renderUpdate({ type: "update", status: "error", message: error instanceof Error ? error.message : String(error) }));
-downloadUpdate.onclick = () => void window.trussDesktop.downloadUpdate().catch((error) => renderUpdate({ type: "update", status: "error", message: error instanceof Error ? error.message : String(error) }));
-installUpdate.onclick = () => { void window.trussDesktop.installUpdate().catch((error) => renderUpdate({ type: "update", status: "error", message: error instanceof Error ? error.message : String(error) })); };
-endpointSelect.onchange = () => { if (!endpointSelect.value) return; const selected = JSON.parse(endpointSelect.value) as DesktopEndpoint; providerSelect.value = selected.kind; baseUrlInput.value = selected.baseUrl; void discover({ provider: selected.kind, baseUrl: selected.baseUrl }); };
+checkUpdates.onclick = () =>
+  void window.trussDesktop
+    .checkForUpdates()
+    .catch((error) =>
+      renderUpdate({
+        type: "update",
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
+downloadUpdate.onclick = () =>
+  void window.trussDesktop
+    .downloadUpdate()
+    .catch((error) =>
+      renderUpdate({
+        type: "update",
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
+installUpdate.onclick = () => {
+  void window.trussDesktop
+    .installUpdate()
+    .catch((error) =>
+      renderUpdate({
+        type: "update",
+        status: "error",
+        message: error instanceof Error ? error.message : String(error),
+      }),
+    );
+};
+endpointSelect.onchange = () => {
+  if (!endpointSelect.value) return;
+  const selected = JSON.parse(endpointSelect.value) as DesktopEndpoint;
+  providerSelect.value = selected.kind;
+  baseUrlInput.value = selected.baseUrl;
+  void discover({ provider: selected.kind, baseUrl: selected.baseUrl });
+};
 providerSelect.onchange = () => {
-  if (!isLocalProvider(configuration().provider)) baseUrlInput.value = providerSelect.value === "ollama" ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234/v1";
+  if (!isLocalProvider(configuration().provider))
+    baseUrlInput.value =
+      providerSelect.value === "ollama"
+        ? "http://127.0.0.1:11434"
+        : "http://127.0.0.1:1234/v1";
 };
-byokProviderSelect.onchange = () => { byokBaseUrl.value = byokBaseUrlForSelectedProvider(); };
-document.querySelectorAll<HTMLButtonElement>("[data-settings-tab]").forEach((button) => {
-  button.onclick = () => setSettingsTab(button.dataset.settingsTab === "byok" ? "byok" : button.dataset.settingsTab === "other" ? "other" : "local");
-});
-quickModel.onchange = () => { const next = quickModel.value; if (!next || next === configuration().model) return; void applyConfiguration({ ...configuration(), model: next }).catch((error) => notify(error instanceof Error ? error.message : String(error))); };
-document.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((button) => button.onclick = () => void applyConfiguration({ ...configuration(), mode: button.dataset.mode as DesktopConfiguration["mode"] }).catch((error) => notify(error instanceof Error ? error.message : String(error))));
-element<HTMLFormElement>("chatForm").onsubmit = (event) => { event.preventDefault(); void sendChat(); };
-addAttachment.onclick = () => attachmentInput.click();
-attachmentInput.onchange = () => { void addFiles(Array.from(attachmentInput.files ?? [])); };
-chatInput.closest<HTMLFormElement>("form")?.addEventListener("dragover", (event) => { event.preventDefault(); });
-chatInput.closest<HTMLFormElement>("form")?.addEventListener("drop", (event) => {
+byokProviderSelect.onchange = () => {
+  byokBaseUrl.value = byokBaseUrlForSelectedProvider();
+};
+document
+  .querySelectorAll<HTMLButtonElement>("[data-settings-tab]")
+  .forEach((button) => {
+    button.onclick = () =>
+      setSettingsTab(
+        button.dataset.settingsTab === "byok"
+          ? "byok"
+          : button.dataset.settingsTab === "other"
+            ? "other"
+            : "local",
+      );
+  });
+quickModel.onchange = () => {
+  const next = quickModel.value;
+  if (!next || next === configuration().model) return;
+  void applyConfiguration({ ...configuration(), model: next }).catch((error) =>
+    notify(error instanceof Error ? error.message : String(error)),
+  );
+};
+document
+  .querySelectorAll<HTMLButtonElement>("[data-mode]")
+  .forEach(
+    (button) =>
+      (button.onclick = () =>
+        void applyConfiguration({
+          ...configuration(),
+          mode: button.dataset.mode as DesktopConfiguration["mode"],
+        }).catch((error) =>
+          notify(error instanceof Error ? error.message : String(error)),
+        )),
+  );
+element<HTMLFormElement>("chatForm").onsubmit = (event) => {
   event.preventDefault();
-  void addFiles(Array.from(event.dataTransfer?.files ?? []));
-});
-chatInput.oninput = () => { slashIndex = 0; renderSlashMenu(); };
+  void sendChat();
+};
+addAttachment.onclick = () => attachmentInput.click();
+attachmentInput.onchange = () => {
+  void addFiles(Array.from(attachmentInput.files ?? []));
+};
+chatInput
+  .closest<HTMLFormElement>("form")
+  ?.addEventListener("dragover", (event) => {
+    event.preventDefault();
+  });
+chatInput
+  .closest<HTMLFormElement>("form")
+  ?.addEventListener("drop", (event) => {
+    event.preventDefault();
+    void addFiles(Array.from(event.dataTransfer?.files ?? []));
+  });
+chatInput.oninput = () => {
+  slashIndex = 0;
+  renderSlashMenu();
+};
 chatInput.addEventListener("paste", (event) => {
   const clipboard = event.clipboardData;
   if (!clipboard) return;
-  const imageItem = Array.from(clipboard.items).find((item) => item.type.startsWith("image/"));
+  const imageItem = Array.from(clipboard.items).find((item) =>
+    item.type.startsWith("image/"),
+  );
   if (imageItem) {
     const image = imageItem.getAsFile();
     if (!image) return;
     event.preventDefault();
-    const namedImage = image.name ? image : new File([image], pastedFileName(image.type), { type: image.type });
+    const namedImage = image.name
+      ? image
+      : new File([image], pastedFileName(image.type), { type: image.type });
     void addFiles([namedImage]);
     return;
   }
   const text = clipboard.getData("text/plain");
   if (text.length < longPasteAttachmentThreshold) return;
   event.preventDefault();
-  const attachment = new File([text], `pasted-text-${Date.now()}.txt`, { type: "text/plain" });
+  const attachment = new File([text], `pasted-text-${Date.now()}.txt`, {
+    type: "text/plain",
+  });
   void addFiles([attachment]);
 });
 chatInput.onkeydown = (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") { event.preventDefault(); void sendChat(); return; }
+  if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+    event.preventDefault();
+    void sendChat();
+    return;
+  }
   if (slashMenu.hidden || !slashResults.length) return;
-  if (event.key === "ArrowDown") { event.preventDefault(); slashIndex = (slashIndex + 1) % slashResults.length; renderSlashMenu(); }
-  if (event.key === "ArrowUp") { event.preventDefault(); slashIndex = (slashIndex - 1 + slashResults.length) % slashResults.length; renderSlashMenu(); }
-  if ((event.key === "Enter" || event.key === "Tab") && slashResults[slashIndex]) { event.preventDefault(); insertSlashFile(slashResults[slashIndex].path); }
-  if (event.key === "Escape") { slashMenu.hidden = true; }
+  if (event.key === "ArrowDown") {
+    event.preventDefault();
+    slashIndex = (slashIndex + 1) % slashResults.length;
+    renderSlashMenu();
+  }
+  if (event.key === "ArrowUp") {
+    event.preventDefault();
+    slashIndex = (slashIndex - 1 + slashResults.length) % slashResults.length;
+    renderSlashMenu();
+  }
+  if (
+    (event.key === "Enter" || event.key === "Tab") &&
+    slashResults[slashIndex]
+  ) {
+    event.preventDefault();
+    insertSlashFile(slashResults[slashIndex].path);
+  }
+  if (event.key === "Escape") {
+    slashMenu.hidden = true;
+  }
 };
 stopChat.onclick = () => void window.trussDesktop.stopChat();
 cancelChatButton.onclick = () => void window.trussDesktop.stopChat();
-element<HTMLFormElement>("terminalForm").onsubmit = (event) => { event.preventDefault(); const input = element<HTMLInputElement>("terminalInput"); const command = input.value.trim(); if (!command) return; input.value = ""; appendTerminal(`\n> ${command}\n`); void window.trussDesktop.runTerminal(command); };
-connectTrussGo.onclick = () => void window.trussDesktop.connectTrussGo().then((pairing) => { trussGoQr.src = pairing.qrDataUrl; trussGoWorkspace.textContent = pairing.workspaceName; trussGoDialog.showModal(); }).catch((error: unknown) => notify(error instanceof Error ? error.message : String(error)));
-element<HTMLButtonElement>("closeTrussGo").onclick = () => trussGoDialog.close();
-element<HTMLButtonElement>("disconnectTrussGo").onclick = () => void window.trussDesktop.disconnectTrussGo().then(() => trussGoDialog.close());
-document.querySelectorAll<HTMLButtonElement>("[data-center-view]").forEach((button) => {
-  button.onclick = () => setCenterView(button.dataset.centerView === "preview" ? "preview" : "editor");
-});
-element<HTMLFormElement>("browserForm").onsubmit = (event) => { event.preventDefault(); navigatePreview(browserUrl.value); };
-browserBack.onclick = () => { if (browserView.canGoBack()) browserView.goBack(); };
-browserForward.onclick = () => { if (browserView.canGoForward()) browserView.goForward(); };
-browserReload.onclick = () => { if (browserView.getURL() !== "about:blank") browserView.reload(); };
-browserExternal.onclick = () => void window.trussDesktop.openExternal(browserUrl.value).catch((error) => notify(error instanceof Error ? error.message : String(error)));
+element<HTMLFormElement>("terminalForm").onsubmit = (event) => {
+  event.preventDefault();
+  const input = element<HTMLInputElement>("terminalInput");
+  const command = input.value.trim();
+  if (!command) return;
+  input.value = "";
+  appendTerminal(`\n> ${command}\n`);
+  void window.trussDesktop.runTerminal(command);
+};
+connectTrussGo.onclick = () =>
+  void window.trussDesktop
+    .connectTrussGo()
+    .then((pairing) => {
+      trussGoQr.src = pairing.qrDataUrl;
+      trussGoWorkspace.textContent = pairing.workspaceName;
+      trussGoDialog.showModal();
+    })
+    .catch((error: unknown) =>
+      notify(error instanceof Error ? error.message : String(error)),
+    );
+element<HTMLButtonElement>("closeTrussGo").onclick = () =>
+  trussGoDialog.close();
+element<HTMLButtonElement>("disconnectTrussGo").onclick = () =>
+  void window.trussDesktop
+    .disconnectTrussGo()
+    .then(() => trussGoDialog.close());
+document
+  .querySelectorAll<HTMLButtonElement>("[data-center-view]")
+  .forEach((button) => {
+    button.onclick = () =>
+      setCenterView(
+        button.dataset.centerView === "preview"
+          ? "preview"
+          : button.dataset.centerView === "agents"
+            ? "agents"
+            : "editor",
+      );
+  });
+element<HTMLFormElement>("browserForm").onsubmit = (event) => {
+  event.preventDefault();
+  navigatePreview(browserUrl.value);
+};
+browserBack.onclick = () => {
+  if (browserView.canGoBack()) browserView.goBack();
+};
+browserForward.onclick = () => {
+  if (browserView.canGoForward()) browserView.goForward();
+};
+browserReload.onclick = () => {
+  if (browserView.getURL() !== "about:blank") browserView.reload();
+};
+browserExternal.onclick = () =>
+  void window.trussDesktop
+    .openExternal(browserUrl.value)
+    .catch((error) =>
+      notify(error instanceof Error ? error.message : String(error)),
+    );
 browserView.addEventListener("dom-ready", updateBrowserNavigation);
 browserView.addEventListener("did-navigate", updateBrowserNavigation);
 browserView.addEventListener("did-navigate-in-page", updateBrowserNavigation);
 browserView.addEventListener("did-fail-load", (event) => {
-  const detail = event as Event & { readonly errorCode?: number; readonly errorDescription?: string };
+  const detail = event as Event & {
+    readonly errorCode?: number;
+    readonly errorDescription?: string;
+  };
   if (detail.errorCode === -3) return;
-  notify(detail.errorDescription ? `Preview failed: ${detail.errorDescription}` : "Preview failed to load.");
+  notify(
+    detail.errorDescription
+      ? `Preview failed: ${detail.errorDescription}`
+      : "Preview failed to load.",
+  );
 });
 window.addEventListener("keydown", (event) => {
   if (event.ctrlKey && event.key.toLowerCase() === "s") {
@@ -2646,19 +4071,37 @@ window.addEventListener("keydown", (event) => {
     void saveActiveFile();
     return;
   }
-  if (centerView === "editor" && event.ctrlKey && event.key.toLowerCase() === "w" && activeFile) {
+  if (
+    centerView === "editor" &&
+    event.ctrlKey &&
+    event.key.toLowerCase() === "w" &&
+    activeFile
+  ) {
     event.preventDefault();
     closeEditorTab(activeFile);
     return;
   }
-  if (centerView === "editor" && event.ctrlKey && event.key === "Tab" && openEditorTabs.length > 1) {
+  if (
+    centerView === "editor" &&
+    event.ctrlKey &&
+    event.key === "Tab" &&
+    openEditorTabs.length > 1
+  ) {
     event.preventDefault();
     const current = openEditorTabs.findIndex((tab) => tab.path === activeFile);
     const direction = event.shiftKey ? -1 : 1;
-    selectEditorTab(openEditorTabs[(current + direction + openEditorTabs.length) % openEditorTabs.length]);
+    selectEditorTab(
+      openEditorTabs[
+        (current + direction + openEditorTabs.length) % openEditorTabs.length
+      ],
+    );
     return;
   }
-  if (centerView === "preview" && event.ctrlKey && event.key.toLowerCase() === "l") {
+  if (
+    centerView === "preview" &&
+    event.ctrlKey &&
+    event.key.toLowerCase() === "l"
+  ) {
     event.preventDefault();
     browserUrl.focus();
     browserUrl.select();
@@ -2677,13 +4120,24 @@ window.trussDesktop.onEvent(handleEvent);
 window.setInterval(renderTerminalPrompt, 1_000);
 void (async () => {
   desktopState = await window.trussDesktop.initialState();
+  agentsSnapshot = await window.trussDesktop.listAgents();
   for (const conversation of desktopState.conversations) {
-    if (conversation.toolActivity?.length) toolActivityByConversation.set(conversation.id, [...conversation.toolActivity]);
+    if (conversation.toolActivity?.length)
+      toolActivityByConversation.set(conversation.id, [
+        ...conversation.toolActivity,
+      ]);
   }
   applyTheme(desktopState.theme);
   populateSettings();
   await discover(desktopState.configuration);
-  await Promise.all([loadFiles(), refreshGit(), window.trussDesktop.getPlan().then((plan) => { activePlan = plan; renderPlan(); })]);
+  await Promise.all([
+    loadFiles(),
+    refreshGit(),
+    window.trussDesktop.getPlan().then((plan) => {
+      activePlan = plan;
+      renderPlan();
+    }),
+  ]);
   await restoreWorkspaceUiState();
   resetSidebarTracks();
   renderConversations();
