@@ -460,6 +460,13 @@ button:focus-visible {
 .agent-card-actions { display: flex; gap: 7px; }
 .agent-approval { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 8px; border-left: 3px solid var(--desktop-warning); background: var(--desktop-panel); }
 .agents-empty { margin: 0; padding: 24px; border: 1px dashed var(--desktop-border); border-radius: 7px; color: var(--desktop-muted); }
+.agent-run-detail { display: grid; gap: 10px; margin-top: 16px; padding: 14px; border: 1px solid var(--desktop-border); border-radius: 7px; background: var(--desktop-surface); }
+.agent-run-detail-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.agent-run-detail-heading strong { display: block; }
+.agent-run-detail-heading span, .agent-run-detail p { color: var(--desktop-muted); }
+.agent-run-detail p { margin: 0; overflow-wrap: anywhere; font-family: Consolas, "Cascadia Code", monospace; font-size: 12px; }
+.agent-changed-files { display: flex; flex-wrap: wrap; gap: 7px; }
+.agent-changed-files button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 @media (max-width: 900px) { .agent-create { grid-template-columns: 1fr 1fr; } }
 
 .editor-content {

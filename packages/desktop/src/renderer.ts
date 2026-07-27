@@ -227,6 +227,7 @@ let agentActivity = "Ready";
 let runningConversationId: string | undefined;
 let centerView: "editor" | "preview" | "agents" = "editor";
 let agentsSnapshot: DesktopAgentsSnapshot = { profiles: [], runs: [] };
+let selectedAgentRunId: string | undefined;
 let pendingAttachments: ChatAttachment[] = [];
 type SettingsTab = "local" | "byok" | "other";
 let activeSettingsTab: SettingsTab = "local";
@@ -522,11 +523,15 @@ function renderAgents(): void {
   const cards = document.createElement("div");
   cards.className = "agent-cards";
   for (const profile of agentsSnapshot.profiles) {
-    const run = agentsSnapshot.runs.find(
-      (candidate) =>
-        candidate.agentId === profile.id &&
-        !["completed", "failed", "cancelled"].includes(candidate.state),
+    const profileRuns = agentsSnapshot.runs.filter(
+      (candidate) => candidate.agentId === profile.id,
     );
+    const activeRun = profileRuns.find((candidate) =>
+      ["queued", "running", "waiting_for_approval"].includes(
+        candidate.state,
+      ),
+    );
+    const latestRun = activeRun ?? profileRuns.at(-1);
     const card = document.createElement("section");
     card.className = "agent-card";
     const details = document.createElement("div");
@@ -534,20 +539,20 @@ function renderAgents(): void {
     const label = document.createElement("strong");
     label.textContent = profile.displayName;
     const status = document.createElement("span");
-    status.textContent = run?.state?.replaceAll("_", " ") ?? "idle";
+    status.textContent = latestRun?.state.replaceAll("_", " ") ?? "idle";
     details.append(label, status);
     const binding = document.createElement("p");
     binding.textContent = `${profile.provider.providerId} · ${profile.provider.modelId} · ${profile.mode}${profile.provider.endpointUrl ? ` · ${profile.provider.endpointUrl}` : ""}`;
     const prompt = document.createElement("textarea");
     prompt.rows = 2;
     prompt.placeholder = "Give this agent a focused task";
-    prompt.disabled = Boolean(run);
+    prompt.disabled = Boolean(activeRun);
     const actions = document.createElement("div");
     actions.className = "agent-card-actions";
     const start = document.createElement("button");
     start.className = "primary";
-    start.textContent = run ? "Running" : "Start";
-    start.disabled = Boolean(run);
+    start.textContent = activeRun ? "Running" : "Start";
+    start.disabled = Boolean(activeRun);
     start.onclick = () =>
       void window.trussDesktop
         .startAgent(profile.id, prompt.value)
@@ -557,18 +562,18 @@ function renderAgents(): void {
         );
     const stop = document.createElement("button");
     stop.textContent = "Stop";
-    stop.disabled = !run;
+    stop.disabled = !activeRun;
     stop.onclick = () =>
-      run &&
+      activeRun &&
       void window.trussDesktop
-        .stopAgent(run.id)
+        .stopAgent(activeRun.id)
         .then(applyAgentsSnapshot)
         .catch((error) =>
           notify(error instanceof Error ? error.message : String(error)),
         );
     const remove = document.createElement("button");
     remove.textContent = "Delete";
-    remove.disabled = Boolean(run);
+    remove.disabled = Boolean(activeRun);
     remove.onclick = () =>
       void window.trussDesktop
         .deleteAgent(profile.id)
@@ -576,11 +581,20 @@ function renderAgents(): void {
         .catch((error) =>
           notify(error instanceof Error ? error.message : String(error)),
         );
+    if (latestRun) {
+      const detail = document.createElement("button");
+      detail.textContent = "Details";
+      detail.onclick = () => {
+        selectedAgentRunId = latestRun.id;
+        renderAgents();
+      };
+      actions.append(detail);
+    }
     actions.append(start, stop, remove);
-    if (run?.state === "waiting_for_approval" && run.activeTool) {
+    if (activeRun?.state === "waiting_for_approval" && activeRun.activeTool) {
       const approval = document.createElement("div");
       approval.className = "agent-approval";
-      approval.textContent = `Approve ${run.activeTool.name}?`;
+      approval.textContent = `Approve ${activeRun.activeTool.name}?`;
       for (const [labelText, approved] of [
         ["Allow", true],
         ["Deny", false],
@@ -590,8 +604,8 @@ function renderAgents(): void {
         button.onclick = () =>
           void window.trussDesktop
             .resolveAgentApproval(
-              run.id,
-              run.activeTool?.callId ?? "",
+              activeRun.id,
+              activeRun.activeTool?.callId ?? "",
               approved,
             )
             .then(applyAgentsSnapshot);
@@ -601,7 +615,9 @@ function renderAgents(): void {
     }
     const progress = document.createElement("small");
     progress.textContent =
-      run?.latestProgress ?? run?.error?.message ?? "Ready for a task.";
+      latestRun?.latestProgress ??
+      latestRun?.error?.message ??
+      "Ready for a task.";
     card.append(details, binding, prompt, actions, progress);
     cards.append(card);
   }
@@ -612,7 +628,65 @@ function renderAgents(): void {
       "Create an agent to run a focused task with its own provider, model, and mode.";
     cards.append(empty);
   }
-  agentsPanel.append(heading, create, cards);
+  const selectedRun = selectedAgentRunId
+    ? agentsSnapshot.runs.find((run) => run.id === selectedAgentRunId)
+    : undefined;
+  if (!selectedRun) selectedAgentRunId = undefined;
+  const detailPanel = document.createElement("section");
+  detailPanel.className = "agent-run-detail";
+  detailPanel.hidden = !selectedRun;
+  if (selectedRun) {
+    const profile = agentsSnapshot.profiles.find(
+      (candidate) => candidate.id === selectedRun.agentId,
+    );
+    const detailHeading = document.createElement("div");
+    detailHeading.className = "agent-run-detail-heading";
+    const detailTitle = document.createElement("div");
+    const titleText = document.createElement("strong");
+    titleText.textContent = `${profile?.displayName ?? "Agent"} run`;
+    const state = document.createElement("span");
+    state.textContent = selectedRun.state.replaceAll("_", " ");
+    detailTitle.append(titleText, state);
+    const close = document.createElement("button");
+    close.textContent = "Close details";
+    close.onclick = () => {
+      selectedAgentRunId = undefined;
+      renderAgents();
+    };
+    detailHeading.append(detailTitle, close);
+    detailPanel.append(detailHeading);
+    const summary = document.createElement("p");
+    summary.textContent =
+      selectedRun.latestProgress ??
+      selectedRun.error?.message ??
+      "No additional progress has been reported for this run.";
+    detailPanel.append(summary);
+    if (selectedRun.activeTool) {
+      const tool = document.createElement("p");
+      tool.textContent = `Current tool: ${selectedRun.activeTool.name}`;
+      detailPanel.append(tool);
+    }
+    if (selectedRun.changedFiles.length) {
+      const changedHeading = document.createElement("strong");
+      changedHeading.textContent = "Verified changed files";
+      const files = document.createElement("div");
+      files.className = "agent-changed-files";
+      for (const path of selectedRun.changedFiles) {
+        const file = document.createElement("button");
+        file.textContent = path;
+        file.title = `Open ${path}`;
+        file.onclick = () =>
+          void openFile(path, false)
+            .then(() => setCenterView("editor"))
+            .catch((error) =>
+              notify(error instanceof Error ? error.message : String(error)),
+            );
+        files.append(file);
+      }
+      detailPanel.append(changedHeading, files);
+    }
+  }
+  agentsPanel.append(heading, create, cards, detailPanel);
 }
 
 function updateBrowserNavigation(): void {
