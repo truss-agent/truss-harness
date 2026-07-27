@@ -64,6 +64,10 @@
         "title": "Truss: Connect Truss Go"
       },
       {
+        "command": "trussHarness.manageAgents",
+        "title": "Truss: Manage Agent Profiles"
+      },
+      {
         "command": "trussHarness.configureByokProvider",
         "title": "Truss: Configure BYOK Provider"
       },
@@ -133,6 +137,7 @@
     "@types/qrcode": "^1.5.6",
     "qrcode": "^1.5.4",
     "@truss-harness/branding": "0.1.0",
+    "@truss-harness/cli": "0.1.8",
     "@truss-harness/provider-openai-compatible": "0.1.5",
     "@truss-harness/runtime": "0.1.5"
   },

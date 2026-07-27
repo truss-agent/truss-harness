@@ -5,6 +5,8 @@ import { promisify } from "node:util";
 import { createInterface } from "node:readline";
 import { cloudProviderDefinition, cloudProviderDefinitions, detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, isCloudProviderId, isLocalEndpointKind, listLocalModels, normalizeLocalBaseUrl, type ModelProviderKind, type LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import { brand } from "@truss-harness/branding";
+import { FileAgentProfileStore, profileFromConfiguration } from "@truss-harness/cli/agents";
+import type { ClientConfiguration } from "@truss-harness/cli/runtime";
 import { executeWorkspaceCommand, type ChatAttachment, type ContextBlock, type WorkspacePlan } from "@truss-harness/runtime";
 import { createPairingUri, detectLanAddress } from "@truss-harness/gateway";
 import QRCode from "qrcode";
@@ -666,6 +668,25 @@ ${diff}`);
     }
   }));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.openChat", () => vscode.commands.executeCommand("workbench.view.extension.trussHarness")));
+  context.subscriptions.push(vscode.commands.registerCommand("trussHarness.manageAgents", async () => {
+    if (!configuration.model) throw new Error("Choose a model before managing agents.");
+    const store = new FileAgentProfileStore(workspaceRoot());
+    const profiles = await store.list();
+    const choice = await vscode.window.showQuickPick([
+      { label: "$(add) Create profile from current settings", action: "create" as const },
+      ...profiles.map((profile) => ({ label: profile.displayName, description: `${profile.provider.providerId}/${profile.provider.modelId} · ${profile.mode}`, detail: profile.id, action: "show" as const }))
+    ], { placeHolder: "Manage workspace-local Truss agent profiles" });
+    if (!choice) return;
+    if (choice.action === "create") {
+      const name = await vscode.window.showInputBox({ prompt: "Agent profile name", validateInput: (value) => value.trim() ? undefined : "A name is required." });
+      if (!name?.trim()) return;
+      const runtime: ClientConfiguration = { workspaceRoot: workspaceRoot(), provider: configuration.provider, baseUrl: configuration.baseUrl, model: configuration.model, apiKey: await providerApiKey(), mode: configuration.mode, internetAccess: configuration.internetAccess, mcpServers: configuration.mcpServers };
+      const profile = await store.create(profileFromConfiguration(runtime, name));
+      void vscode.window.showInformationMessage(`${brand.productName} created agent profile ${profile.displayName}. Run it with '${brand.cliCommand} agents run ${profile.id} <task>'.`);
+      return;
+    }
+    await vscode.window.showInformationMessage(`${choice.label}: ${choice.description}. Run it from the integrated terminal with '${brand.cliCommand} agents run ${choice.detail} <task>'.`);
+  }));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.connectTrussGo", () => connectTrussGo().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.configureByokProvider", async () => {
     const selected = await vscode.window.showQuickPick(cloudProviderDefinitions.map((provider) => ({
