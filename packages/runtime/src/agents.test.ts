@@ -334,7 +334,13 @@ describe("AgentCoordinator", () => {
       () => coordinator.getRun(run.id)?.state === "running",
       "agent should start before it completes",
     );
-    factory.gates.get(profile.id)?.resolve();
+    await waitFor(
+      () => factory.gates.has(profile.id),
+      "first agent runtime should create its completion gate",
+    );
+    const firstGate = factory.gates.get(profile.id);
+    expect(firstGate).toBeDefined();
+    firstGate?.resolve();
     await waitFor(
       () => coordinator.getRun(run.id)?.state === "completed",
       "agent should complete before its run is saved",
@@ -348,7 +354,15 @@ describe("AgentCoordinator", () => {
       () => coordinator.getRun(newerRun.id)?.state === "running",
       "second agent run should start after the first completes",
     );
-    factory.gates.get(profile.id)?.resolve();
+    await waitFor(
+      () =>
+        factory.created.length === 2 &&
+        factory.gates.get(profile.id) !== firstGate,
+      "second agent runtime should create a new completion gate",
+    );
+    const secondGate = factory.gates.get(profile.id);
+    expect(secondGate).toBeDefined();
+    secondGate?.resolve();
     await waitFor(
       () => coordinator.getRun(newerRun.id)?.state === "completed",
       "second agent run should complete before history is restored",
