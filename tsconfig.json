@@ -5,6 +5,7 @@
     { "path": "./packages/runtime" },
     { "path": "./packages/mcp" },
     { "path": "./packages/provider-openai-compatible" },
+    { "path": "./packages/agent-host" },
     { "path": "./packages/gateway" },
     { "path": "./packages/cli" },
     { "path": "./packages/tui" },
