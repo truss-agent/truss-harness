@@ -1,7 +1,75 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { EventBus, type AgentCoordinatorEvent, type AgentRuntime, type RuntimeEvent } from "@truss-harness/runtime";
+import {
+  AgentCoordinator,
+  EventBus,
+  InMemoryAgentProfileStore,
+  type AgentCoordinatorEvent,
+  type AgentProfile,
+  type AgentRuntime,
+  type AgentRuntimeFactory,
+  type CreatedManagedAgentRuntime,
+  type RuntimeEvent,
+} from "@truss-harness/runtime";
 import WebSocket from "ws";
-import { startRemoteGateway, type GatewayAgentController, type RunningRemoteGateway } from "./index.js";
+import {
+  createGatewayAgentController,
+  startRemoteGateway,
+  type GatewayAgentController,
+  type RunningRemoteGateway,
+} from "./index.js";
+
+class PendingAgentFactory implements AgentRuntimeFactory {
+  disposed = 0;
+
+  async validate(_profile: AgentProfile): Promise<void> {}
+
+  async create(_profile: AgentProfile): Promise<CreatedManagedAgentRuntime> {
+    const events = new EventBus<RuntimeEvent>();
+    return {
+      events,
+      runtime: {
+        async createSession() {
+          const timestamp = new Date();
+          return {
+            id: "managed-session",
+            createdAt: timestamp,
+            updatedAt: timestamp,
+            messages: [],
+          };
+        },
+        async run(sessionId, _prompt, signal) {
+          await events.emit({ type: "run_started", sessionId });
+          await new Promise<void>((_resolve, reject) =>
+            signal?.addEventListener(
+              "abort",
+              () => reject(new Error("aborted")),
+              { once: true },
+            ),
+          );
+        },
+      },
+      dispose: async () => {
+        this.disposed += 1;
+      },
+    };
+  }
+}
+
+async function agentCommand(
+  gatewayUrl: string,
+  token: string,
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const response = await fetch(`${gatewayUrl}/v1/commands`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  return (await response.json()) as Record<string, unknown>;
+}
 
 describe("remote gateway", () => {
   let gateway: RunningRemoteGateway | undefined;
@@ -184,5 +252,128 @@ describe("remote gateway", () => {
       body: JSON.stringify({ version: 2, requestId: "start-denied", type: "start_agent", workspaceId: "workspace", agentId: "agent-1", prompt: "Review" }),
     });
     expect(await response.json()).toMatchObject({ requestId: "start-denied", type: "rejected", code: "not_authorized" });
+  });
+
+  it("runs and stops an authorized coordinator profile through the v2 gateway", async () => {
+    const profiles = new InMemoryAgentProfileStore();
+    const factory = new PendingAgentFactory();
+    const coordinator = new AgentCoordinator({
+      profiles,
+      runtimeFactory: factory,
+    });
+    const visibleProfile = await profiles.create({
+      displayName: "Remote review",
+      provider: { providerId: "fake", modelId: "fake-model" },
+      mode: "plan",
+    });
+    const hiddenProfile = await profiles.create({
+      displayName: "Host only",
+      provider: { providerId: "fake", modelId: "host-model" },
+      mode: "plan",
+    });
+    const token = "a-secure-test-token-with-enough-characters";
+    gateway = await startRemoteGateway({
+      token,
+      port: 0,
+      workspaces: [
+        {
+          id: "workspace",
+          displayName: "Test workspace",
+          agents: createGatewayAgentController(coordinator, {
+            allowStart: true,
+            allowedProfileIds: [visibleProfile.id],
+          }),
+          createRuntime: async () => {
+            throw new Error("not used");
+          },
+        },
+      ],
+    });
+
+    const socket = new WebSocket(`${gateway.url.replace(/^http/, "ws")}/v1/events`);
+    await new Promise<void>((resolve, reject) => {
+      socket.once("error", reject);
+      socket.once("open", () =>
+        socket.send(
+          JSON.stringify({ type: "authenticate", token, protocolVersions: [2] }),
+        ),
+      );
+      socket.on("message", (payload) => {
+        if ((JSON.parse(payload.toString()) as { type?: string }).type === "connected")
+          resolve();
+      });
+    });
+
+    const listed = await agentCommand(gateway.url, token, {
+      version: 2,
+      requestId: "list-agents",
+      type: "list_agents",
+      workspaceId: "workspace",
+    });
+    expect(listed).toMatchObject({
+      requestId: "list-agents",
+      type: "agents_listed",
+      profiles: [{ id: visibleProfile.id, modelId: "fake-model" }],
+    });
+    expect(JSON.stringify(listed)).not.toContain(hiddenProfile.id);
+    expect(JSON.stringify(listed)).not.toContain("endpointUrl");
+
+    const unauthorized = await agentCommand(gateway.url, token, {
+      version: 2,
+      requestId: "start-hidden",
+      type: "start_agent",
+      workspaceId: "workspace",
+      agentId: hiddenProfile.id,
+      prompt: "Do not run",
+    });
+    expect(unauthorized).toMatchObject({
+      requestId: "start-hidden",
+      type: "rejected",
+      code: "not_authorized",
+    });
+
+    const running = new Promise<string>((resolve) => {
+      socket.on("message", (payload) => {
+        const event = JSON.parse(payload.toString()) as {
+          readonly type?: string;
+          readonly run?: { readonly id?: string; readonly state?: string };
+        };
+        if (event.type === "agent_run_updated" && event.run?.state === "running")
+          resolve(event.run.id ?? "");
+      });
+    });
+    const started = await agentCommand(gateway.url, token, {
+      version: 2,
+      requestId: "start-visible",
+      type: "start_agent",
+      workspaceId: "workspace",
+      agentId: visibleProfile.id,
+      prompt: "Review the current diff",
+    });
+    expect(started).toMatchObject({
+      requestId: "start-visible",
+      type: "agent_run",
+      run: { agentId: visibleProfile.id },
+    });
+    expect(JSON.stringify(started)).not.toContain("Review the current diff");
+    const runId = await running;
+    expect(runId).toBeTruthy();
+
+    const stopped = await agentCommand(gateway.url, token, {
+      version: 2,
+      requestId: "stop-visible",
+      type: "stop_agent",
+      workspaceId: "workspace",
+      runId,
+    });
+    expect(stopped).toMatchObject({
+      requestId: "stop-visible",
+      type: "agent_run",
+      run: { id: runId, state: "cancelled" },
+    });
+    expect(factory.disposed).toBe(1);
+    expect(coordinator.getRun(runId)?.state).toBe("cancelled");
+    socket.close();
+    await coordinator.dispose();
   });
 });
