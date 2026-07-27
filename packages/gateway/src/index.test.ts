@@ -98,6 +98,7 @@ describe("remote gateway", () => {
       changedFiles: [] as const,
     };
     const agents: GatewayAgentController = {
+      access: { canStart: true, canStop: true, canResolveApproval: true },
       events: agentEvents,
       async listProfiles() {
         return [{ id: "agent-1", displayName: "Research", providerId: "ollama", modelId: "qwen", mode: "plan", approvalPolicy: "ask", internetAccess: false }];
@@ -123,7 +124,7 @@ describe("remote gateway", () => {
     });
 
     const listed = await fetch(`${gateway.url}/v1/workspaces`, { headers: { authorization: `Bearer ${token}` } });
-    expect(await listed.json()).toMatchObject({ workspaces: [{ id: "workspace", capabilities: { protocolVersions: [1, 2], supportsAgents: true } }] });
+    expect(await listed.json()).toMatchObject({ workspaces: [{ id: "workspace", capabilities: { protocolVersions: [1, 2], supportsAgents: true, agentActions: ["start", "stop", "approve"] } }] });
 
     const socket = new WebSocket(`${gateway.url.replace(/^http/, "ws")}/v1/events`);
     const connected = new Promise<void>((resolve, reject) => {
@@ -157,5 +158,31 @@ describe("remote gateway", () => {
     expect(await started.json()).toMatchObject({ requestId: "start-1", type: "agent_run", run: { id: "run-1" } });
     await updated;
     socket.close();
+  });
+
+  it("rejects agent actions that the host did not delegate", async () => {
+    const agents: GatewayAgentController = {
+      access: { canStart: false, canStop: true, canResolveApproval: true },
+      events: new EventBus<AgentCoordinatorEvent>(),
+      async listProfiles() {
+        return [{ id: "agent-1", displayName: "Review", providerId: "ollama", modelId: "qwen", mode: "plan", approvalPolicy: "ask", internetAccess: false }];
+      },
+      listRuns() { return []; },
+      async start() { throw new Error("must not start"); },
+      async stop() { throw new Error("not used"); },
+      async resolveApproval() { return false; },
+    };
+    const token = "a-secure-test-token-with-enough-characters";
+    gateway = await startRemoteGateway({
+      token,
+      port: 0,
+      workspaces: [{ id: "workspace", displayName: "Test workspace", agents, createRuntime: async () => { throw new Error("not used"); } }],
+    });
+    const response = await fetch(`${gateway.url}/v1/commands`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ version: 2, requestId: "start-denied", type: "start_agent", workspaceId: "workspace", agentId: "agent-1", prompt: "Review" }),
+    });
+    expect(await response.json()).toMatchObject({ requestId: "start-denied", type: "rejected", code: "not_authorized" });
   });
 });

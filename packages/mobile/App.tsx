@@ -22,7 +22,7 @@ type AgentMode = "chat" | "plan" | "edit";
 type ApprovalMode = "ask" | "auto-read" | "auto-all";
 type Screen = "home" | "settings" | "session" | "scanner" | "agents";
 type SavedGateway = { readonly id: string; readonly name: string; readonly url: string; readonly token: string };
-type Workspace = { readonly id: string; readonly displayName: string; readonly capabilities: { readonly protocolVersions?: readonly number[]; readonly modes: readonly AgentMode[]; readonly toolApprovalModes?: readonly ApprovalMode[]; readonly supportsAgents?: boolean } };
+type Workspace = { readonly id: string; readonly displayName: string; readonly capabilities: { readonly protocolVersions?: readonly number[]; readonly modes: readonly AgentMode[]; readonly toolApprovalModes?: readonly ApprovalMode[]; readonly supportsAgents?: boolean; readonly agentActions?: readonly ("start" | "stop" | "approve")[] } };
 type AgentProfile = { readonly id: string; readonly displayName: string; readonly providerId: string; readonly modelId: string; readonly mode: AgentMode; readonly approvalPolicy: ApprovalMode; readonly internetAccess: boolean };
 type AgentRun = { readonly id: string; readonly agentId: string; readonly state: "idle" | "queued" | "running" | "waiting_for_approval" | "completed" | "failed" | "cancelled"; readonly latestProgress?: string; readonly activeTool?: { readonly callId: string; readonly name: string }; readonly changedFiles: readonly string[]; readonly errorCode?: string };
 type RemoteEvent = { readonly type: string; readonly workspaceId?: string; readonly sessionId?: string; readonly text?: string; readonly message?: string; readonly callId?: string; readonly tool?: string; readonly input?: Record<string, unknown>; readonly result?: { readonly content: string; readonly isError?: boolean }; readonly modifiedFiles?: readonly string[]; readonly run?: AgentRun; readonly agentId?: string; readonly runId?: string; readonly event?: RemoteEvent };
@@ -300,6 +300,10 @@ export default function App() {
     selectedWorkspace?.capabilities.supportsAgents &&
       selectedWorkspace.capabilities.protocolVersions?.includes(2),
   );
+  const managedAgentActions = selectedWorkspace?.capabilities.agentActions ?? [];
+  const canStartManagedAgents = supportsManagedAgents && managedAgentActions.includes("start");
+  const canStopManagedAgents = supportsManagedAgents && managedAgentActions.includes("stop");
+  const canApproveManagedAgents = supportsManagedAgents && managedAgentActions.includes("approve");
   const availableApprovalModes = selectedWorkspace
     ? selectedWorkspace.capabilities.toolApprovalModes?.length ? selectedWorkspace.capabilities.toolApprovalModes : ["ask"] as const
     : allApprovalModes;
@@ -345,6 +349,10 @@ export default function App() {
   }, [refreshAgents, supportsManagedAgents]);
 
   const startAgent = useCallback(async () => {
+    if (!canStartManagedAgents) {
+      setStatus("Starting agents is disabled by this paired host.");
+      return;
+    }
     if (!workspaceId || !selectedAgentId || !agentPrompt.trim()) return;
     const task = agentPrompt.trim();
     setAgentPrompt("");
@@ -358,22 +366,30 @@ export default function App() {
       setAgentPrompt(task);
       setStatus(error instanceof Error ? error.message : "Unable to start agent.");
     }
-  }, [agentPrompt, command, ensureEventConnection, selectedAgentId, updateAgentRun, workspaceId]);
+  }, [agentPrompt, canStartManagedAgents, command, ensureEventConnection, selectedAgentId, updateAgentRun, workspaceId]);
 
   const stopAgent = useCallback(async (runId: string) => {
+    if (!canStopManagedAgents) {
+      setStatus("Stopping agents is disabled by this paired host.");
+      return;
+    }
     if (!workspaceId) return;
     const result = await command({ type: "stop_agent", workspaceId, runId }, 2);
     if (result.type !== "agent_run" || !result.run) throw new Error("The gateway did not stop the agent run.");
     updateAgentRun(result.run);
     setStatus("Stopping managed agent...");
-  }, [command, updateAgentRun, workspaceId]);
+  }, [canStopManagedAgents, command, updateAgentRun, workspaceId]);
 
   const decideAgentTool = useCallback(async (approved: boolean) => {
+    if (!canApproveManagedAgents) {
+      setStatus("Agent tool approvals are controlled by the paired host.");
+      return;
+    }
     if (!workspaceId || !agentApproval) return;
     await command({ type: "resolve_agent_approval", workspaceId, runId: agentApproval.runId, callId: agentApproval.callId, approved }, 2);
     setAgentApproval(undefined);
     setStatus(approved ? "Agent tool approved." : "Agent tool denied.");
-  }, [agentApproval, command, workspaceId]);
+  }, [agentApproval, canApproveManagedAgents, command, workspaceId]);
 
   const beginSession = useCallback(async () => {
     if (!workspaceId || !selectedWorkspace) {
@@ -579,11 +595,11 @@ export default function App() {
           <View style={styles.formCard}>
             <Text style={styles.agentTaskHint}>Runs use {selectedAgent.providerId}/{selectedAgent.modelId} with the host’s saved permissions.</Text>
             <TextInput style={[styles.input, styles.agentTaskInput]} multiline value={agentPrompt} onChangeText={setAgentPrompt} placeholder="Describe a focused task for this agent" placeholderTextColor="#71827c" />
-            <Pressable style={[styles.primaryButton, !agentPrompt.trim() && styles.disabled]} disabled={!agentPrompt.trim()} onPress={() => void startAgent()}><Text style={styles.primaryButtonText}>Start agent</Text><Text style={styles.primaryButtonArrow}>›</Text></Pressable>
+            <Pressable style={[styles.primaryButton, (!agentPrompt.trim() || !canStartManagedAgents) && styles.disabled]} disabled={!agentPrompt.trim() || !canStartManagedAgents} onPress={() => void startAgent()}><Text style={styles.primaryButtonText}>{canStartManagedAgents ? "Start agent" : "Host starts agents"}</Text><Text style={styles.primaryButtonArrow}>›</Text></Pressable>
           </View>
         </View>}
 
-        {agentApproval && <View style={styles.approvalSheet}>
+        {agentApproval && canApproveManagedAgents && <View style={styles.approvalSheet}>
           <View style={styles.approvalHeading}><View><Text style={styles.approvalKicker}>AGENT TOOL APPROVAL</Text><Text style={styles.approvalTitle}>Allow {agentApproval.tool.replaceAll("_", " ")}?</Text></View><Pill tone="warning">Action needed</Pill></View>
           <Text style={styles.approvalText}>The managed agent is waiting for permission from this paired device.</Text><Text style={styles.approvalInput}>{JSON.stringify(agentApproval.input, null, 2)}</Text>
           <View style={styles.approvalActions}><Pressable style={styles.denyButton} onPress={() => void decideAgentTool(false).catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to deny agent tool."))}><Text style={styles.denyButtonText}>Deny</Text></Pressable><Pressable style={styles.allowButton} onPress={() => void decideAgentTool(true).catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to approve agent tool."))}><Text style={styles.allowButtonText}>Allow tool</Text></Pressable></View>
@@ -594,7 +610,7 @@ export default function App() {
           {agentRuns.length === 0 ? <View style={styles.notice}><View style={styles.noticeDot} /><Text style={styles.noticeText}>Agent activity will appear here while this trusted gateway is connected.</Text></View> : <View style={styles.cardList}>{agentRuns.map((run) => {
             const profile = agentProfiles.find((candidate) => candidate.id === run.agentId);
             const active = run.state === "queued" || run.state === "running" || run.state === "waiting_for_approval";
-            return <View key={run.id} style={styles.agentRunCard}><View style={styles.agentRunHeading}><View><Text style={styles.agentRunTitle}>{profile?.displayName ?? "Managed agent"}</Text><Text style={styles.agentRunState}>{run.state.replaceAll("_", " ")}</Text></View>{active ? <Pill tone={run.state === "waiting_for_approval" ? "warning" : "success"}>{run.state === "waiting_for_approval" ? "Needs approval" : "Running"}</Pill> : <Pill>{run.state}</Pill>}</View>{run.latestProgress && <Text style={styles.agentRunProgress} numberOfLines={3}>{run.latestProgress}</Text>}{run.changedFiles.length > 0 && <Text style={styles.agentRunFiles}>{run.changedFiles.length} changed file{run.changedFiles.length === 1 ? "" : "s"}</Text>}{run.errorCode && <Text style={styles.agentRunError}>Failed: {run.errorCode}</Text>}{active && <Pressable style={styles.agentStopButton} onPress={() => void stopAgent(run.id).catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to stop agent."))}><Text style={styles.agentStopButtonText}>Stop agent</Text></Pressable>}</View>;
+            return <View key={run.id} style={styles.agentRunCard}><View style={styles.agentRunHeading}><View><Text style={styles.agentRunTitle}>{profile?.displayName ?? "Managed agent"}</Text><Text style={styles.agentRunState}>{run.state.replaceAll("_", " ")}</Text></View>{active ? <Pill tone={run.state === "waiting_for_approval" ? "warning" : "success"}>{run.state === "waiting_for_approval" ? "Needs approval" : "Running"}</Pill> : <Pill>{run.state}</Pill>}</View>{run.latestProgress && <Text style={styles.agentRunProgress} numberOfLines={3}>{run.latestProgress}</Text>}{run.changedFiles.length > 0 && <Text style={styles.agentRunFiles}>{run.changedFiles.length} changed file{run.changedFiles.length === 1 ? "" : "s"}</Text>}{run.errorCode && <Text style={styles.agentRunError}>Failed: {run.errorCode}</Text>}{active && <Pressable disabled={!canStopManagedAgents} style={[styles.agentStopButton, !canStopManagedAgents && styles.disabled]} onPress={() => void stopAgent(run.id).catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to stop agent."))}><Text style={styles.agentStopButtonText}>{canStopManagedAgents ? "Stop agent" : "Host controls stop"}</Text></Pressable>}</View>;
           })}</View>}
         </View>
       </ScrollView>}

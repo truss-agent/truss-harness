@@ -559,7 +559,9 @@ async function main(): Promise<void> {
         return {
           id,
           displayName: basename(workspaceRoot),
-          agents: createGatewayAgentController(coordinator),
+          agents: createGatewayAgentController(coordinator, {
+            allowStart: true,
+          }),
           createRuntime: async (
             mode: "chat" | "plan" | "edit",
             toolApprovalMode?: PermissionMode,
