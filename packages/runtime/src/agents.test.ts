@@ -6,6 +6,8 @@ import {
   InMemoryAgentProfileStore,
   InMemoryWorkspaceWriteLease,
   type AgentProfile,
+  type AgentRunHistoryStore,
+  type AgentRunSummary,
   type AgentRuntimeFactory,
   type CreatedManagedAgentRuntime,
   type RuntimeEvent,
@@ -88,6 +90,18 @@ class FakeFactory implements AgentRuntimeFactory {
     this.gates.set(profile.id, gate);
     this.runtimes.set(profile.id, runtime);
     return { runtime, events, async dispose() {} };
+  }
+}
+
+class InMemoryAgentRunHistoryStore implements AgentRunHistoryStore {
+  runs: readonly AgentRunSummary[] = [];
+
+  async load(): Promise<readonly AgentRunSummary[]> {
+    return this.runs;
+  }
+
+  async save(runs: readonly AgentRunSummary[]): Promise<void> {
+    this.runs = [...runs];
   }
 }
 
@@ -262,5 +276,68 @@ describe("AgentCoordinator", () => {
     await coordinator.stop(firstRun.id);
     expect(lease.holder()).toBeUndefined();
     await expect(coordinator.deleteProfile(first.id)).resolves.toBe(true);
+  });
+
+  it("persists and restores only the newest bounded terminal run history", async () => {
+    const profiles = new InMemoryAgentProfileStore();
+    const history = new InMemoryAgentRunHistoryStore();
+    const factory = new FakeFactory();
+    const coordinator = new AgentCoordinator({
+      profiles,
+      runtimeFactory: factory,
+      history,
+      maxRunHistory: 1,
+    });
+    const profile = await createProfile(profiles, "Research");
+    const run = await coordinator.start({
+      agentId: profile.id,
+      prompt: "Inspect the workspace",
+    });
+    await waitFor(
+      () => coordinator.getRun(run.id)?.state === "running",
+      "agent should start before it completes",
+    );
+    factory.gates.get(profile.id)?.resolve();
+    await waitFor(
+      () => coordinator.getRun(run.id)?.state === "completed",
+      "agent should complete before its run is saved",
+    );
+
+    const newerRun = await coordinator.start({
+      agentId: profile.id,
+      prompt: "Review the diff",
+    });
+    await waitFor(
+      () => coordinator.getRun(newerRun.id)?.state === "running",
+      "second agent run should start after the first completes",
+    );
+    factory.gates.get(profile.id)?.resolve();
+    await waitFor(
+      () => coordinator.getRun(newerRun.id)?.state === "completed",
+      "second agent run should complete before history is restored",
+    );
+
+    expect(history.runs).toHaveLength(1);
+    expect(history.runs[0]).toMatchObject({
+      id: newerRun.id,
+      agentId: profile.id,
+      state: "completed",
+      prompt: "Review the diff",
+    });
+
+    const restored = new AgentCoordinator({
+      profiles,
+      runtimeFactory: new FakeFactory(),
+      history,
+      maxRunHistory: 1,
+    });
+    await restored.restoreHistory();
+
+    expect(restored.getRun(run.id)).toBeUndefined();
+    expect(restored.getRun(newerRun.id)).toMatchObject({
+      id: newerRun.id,
+      state: "completed",
+    });
+    expect(restored.listRuns()).toHaveLength(1);
   });
 });

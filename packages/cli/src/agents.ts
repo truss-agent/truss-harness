@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { AgentHost } from "@truss-harness/agent-host";
 import {
@@ -7,6 +7,7 @@ import {
   AgentCoordinator,
   type AgentProfile,
   type AgentProfileStore,
+  type AgentRunHistoryStore,
   type AgentRunSummary,
   type CreateAgentProfileInput,
   type CredentialProvider,
@@ -17,9 +18,14 @@ import { isCloudProviderId } from "@truss-harness/provider-openai-compatible";
 import type { ClientConfiguration } from "./runtime.js";
 
 const profilesFileName = "agents.json";
+const runHistoryFileName = "runs.json";
 
 export function agentProfilesPath(workspaceRoot: string): string {
   return join(workspaceRoot, ".truss-harness", profilesFileName);
+}
+
+export function agentRunHistoryPath(workspaceRoot: string): string {
+  return join(workspaceRoot, ".truss-harness", "agents", runHistoryFileName);
 }
 
 function validProfile(value: unknown): value is AgentProfile {
@@ -42,6 +48,38 @@ function validProfile(value: unknown): value is AgentProfile {
     typeof profile.internetAccess === "boolean" &&
     typeof profile.createdAt === "string" &&
     typeof profile.updatedAt === "string"
+  );
+}
+
+function validRunSummary(value: unknown): value is AgentRunSummary {
+  if (!value || typeof value !== "object") return false;
+  const run = value as Partial<AgentRunSummary>;
+  return (
+    typeof run.id === "string" &&
+    typeof run.agentId === "string" &&
+    typeof run.prompt === "string" &&
+    (run.state === "completed" ||
+      run.state === "failed" ||
+      run.state === "cancelled") &&
+    Array.isArray(run.changedFiles) &&
+    run.changedFiles.every((path) => typeof path === "string") &&
+    (run.sessionId === undefined || typeof run.sessionId === "string") &&
+    (run.startedAt === undefined || typeof run.startedAt === "string") &&
+    (run.completedAt === undefined || typeof run.completedAt === "string") &&
+    (run.latestProgress === undefined ||
+      typeof run.latestProgress === "string") &&
+    (run.activeTool === undefined ||
+      (typeof run.activeTool.callId === "string" &&
+        typeof run.activeTool.name === "string")) &&
+    (run.error === undefined ||
+      (typeof run.error.message === "string" &&
+        [
+          "aborted",
+          "conflict",
+          "invalid_profile",
+          "provider_unavailable",
+          "runtime_error",
+        ].includes(run.error.code)))
   );
 }
 
@@ -145,6 +183,39 @@ export class FileAgentProfileStore implements AgentProfileStore {
   }
 }
 
+/**
+ * Workspace-local terminal run history. It deliberately stores summaries
+ * only: never profile bindings, credentials, runtime instances, or tool I/O.
+ */
+export class FileAgentRunHistoryStore implements AgentRunHistoryStore {
+  constructor(private readonly workspaceRoot: string) {}
+
+  async load(): Promise<readonly AgentRunSummary[]> {
+    try {
+      const parsed: unknown = JSON.parse(
+        await readFile(agentRunHistoryPath(this.workspaceRoot), "utf8"),
+      );
+      return Array.isArray(parsed) ? parsed.filter(validRunSummary) : [];
+    } catch {
+      // Treat a missing or malformed local history as empty. The next completed
+      // run atomically replaces it with a valid document.
+      return [];
+    }
+  }
+
+  async save(runs: readonly AgentRunSummary[]): Promise<void> {
+    const path = agentRunHistoryPath(this.workspaceRoot);
+    await mkdir(dirname(path), { recursive: true });
+    const temporaryPath = `${path}.${randomUUID()}.tmp`;
+    await writeFile(
+      temporaryPath,
+      `${JSON.stringify(runs.filter(validRunSummary), null, 2)}\n`,
+      "utf8",
+    );
+    await rename(temporaryPath, path);
+  }
+}
+
 function approval(profile: AgentProfile): ToolApproval {
   return {
     async approve(call: ToolCall): Promise<boolean> {
@@ -184,6 +255,7 @@ export function createCliAgentCoordinator(
   return new AgentCoordinator({
     profiles,
     runtimeFactory: host.createRuntimeFactory(),
+    history: new FileAgentRunHistoryStore(configuration.workspaceRoot),
   });
 }
 
