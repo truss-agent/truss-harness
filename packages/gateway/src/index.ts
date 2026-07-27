@@ -233,6 +233,7 @@ export async function startRemoteGateway(options: RemoteGatewayOptions): Promise
   };
   const broadcast = (event: RuntimeEvent): void => broadcastPayload(toRemoteSessionEvent(event, ++sequence));
   const broadcastAgentEvent = (workspaceId: string, event: AgentCoordinatorEvent): void => {
+    if (event.type === "lifecycle") return;
     const remoteEvent: RemoteAgentEvent = event.type === "run_updated"
       ? { version: 2, sequence: ++sequence, type: "agent_run_updated", workspaceId, run: remoteRun(event.run) }
       : {

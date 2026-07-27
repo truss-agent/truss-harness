@@ -110,9 +110,35 @@ export interface ManagedAgentEvent {
   readonly event: RuntimeEvent;
 }
 
+/**
+ * A secret-safe operational record for host telemetry and diagnostics. Prompt
+ * content, model/provider bindings, tool inputs, and credentials are never
+ * included so hosts can safely forward these records to their own logger.
+ */
+export interface AgentLifecycleRecord {
+  readonly phase:
+    | "queued"
+    | "write_lease_acquired"
+    | "started"
+    | "waiting_for_approval"
+    | "approval_resolved"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "cleanup_completed";
+  readonly runId: AgentRunId;
+  readonly agentId: AgentId;
+  readonly state: AgentRunState;
+  readonly occurredAt: string;
+  readonly runDurationMs?: number;
+  readonly cleanupDurationMs?: number;
+  readonly errorCode?: AgentRunError["code"];
+}
+
 export type AgentCoordinatorEvent =
   | { readonly type: "run_updated"; readonly run: AgentRunSummary }
-  | { readonly type: "runtime"; readonly event: ManagedAgentEvent };
+  | { readonly type: "runtime"; readonly event: ManagedAgentEvent }
+  | { readonly type: "lifecycle"; readonly record: AgentLifecycleRecord };
 
 export interface AgentProfileStore {
   list(): Promise<readonly AgentProfile[]>;
@@ -474,6 +500,7 @@ export class AgentCoordinator {
     this.runs.set(run.id, run);
     this.runsByAgent.set(run.agentId, run.id);
     await this.publishRun(run);
+    await this.publishLifecycle(run, "queued");
     await this.pump();
     return this.summary(run);
   }
@@ -511,6 +538,7 @@ export class AgentCoordinator {
     if (resolved && run.state === "waiting_for_approval") {
       run.state = "running";
       await this.publishRun(run);
+      await this.publishLifecycle(run, "approval_resolved");
     }
     return resolved;
   }
@@ -535,10 +563,12 @@ export class AgentCoordinator {
       if (run.profile.mode === "edit") {
         if (!this.writeLease.tryAcquire(run.id)) continue;
         run.ownsWriteLease = true;
+        await this.publishLifecycle(run, "write_lease_acquired");
       }
       run.state = "running";
       run.startedAt = now();
       await this.publishRun(run);
+      await this.publishLifecycle(run, "started");
       void this.launch(run);
     }
   }
@@ -592,8 +622,10 @@ export class AgentCoordinator {
     if (event.type === "progress_delta") run.latestProgress = event.text;
     if (event.type === "tool_call_requested") {
       run.activeTool = { callId: event.callId, name: event.tool };
-      if (run.profile.approvalPolicy === "ask")
+      if (run.profile.approvalPolicy === "ask") {
         run.state = "waiting_for_approval";
+        await this.publishLifecycle(run, "waiting_for_approval");
+      }
     }
     if (event.type === "tool_completed") {
       run.activeTool = undefined;
@@ -634,11 +666,17 @@ export class AgentCoordinator {
     const created = run.created;
     run.created = undefined;
     run.controller = undefined;
+    const cleanupStartedAt = Date.now();
     if (created) await created.dispose().catch(() => undefined);
+    const cleanupDurationMs = Date.now() - cleanupStartedAt;
     await this.publishRun(run);
+    await this.publishLifecycle(run, state);
     this.rememberTerminalRun(run);
     await this.persistHistory();
     this.pruneTerminalRunCache();
+    await this.publishLifecycle(run, "cleanup_completed", {
+      cleanupDurationMs,
+    });
     await this.pump();
   }
 
@@ -701,6 +739,37 @@ export class AgentCoordinator {
   private summaryTimestamp(run: AgentRunSummary): number {
     const timestamp = run.completedAt ?? run.startedAt;
     return timestamp ? Date.parse(timestamp) || 0 : 0;
+  }
+
+  private async publishLifecycle(
+    run: ActiveRun,
+    phase: AgentLifecycleRecord["phase"],
+    details: Pick<AgentLifecycleRecord, "cleanupDurationMs"> = {},
+  ): Promise<void> {
+    const occurredAt = now();
+    const startedAt = run.startedAt ? Date.parse(run.startedAt) : undefined;
+    const occurredAtMs = Date.parse(occurredAt);
+    const runDurationMs =
+      startedAt !== undefined && Number.isFinite(startedAt)
+        ? Math.max(0, occurredAtMs - startedAt)
+        : undefined;
+    await this.events
+      .emit({
+        type: "lifecycle",
+        record: {
+          phase,
+          runId: run.id,
+          agentId: run.agentId,
+          state: run.state,
+          occurredAt,
+          ...(runDurationMs !== undefined ? { runDurationMs } : {}),
+          ...(details.cleanupDurationMs !== undefined
+            ? { cleanupDurationMs: details.cleanupDurationMs }
+            : {}),
+          ...(run.error ? { errorCode: run.error.code } : {}),
+        },
+      })
+      .catch(() => undefined);
   }
 
   private summary(run: ActiveRun): AgentRunSummary {

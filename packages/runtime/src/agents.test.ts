@@ -6,6 +6,7 @@ import {
   InMemoryAgentProfileStore,
   InMemoryWorkspaceWriteLease,
   type AgentProfile,
+  type AgentLifecycleRecord,
   type AgentRunHistoryStore,
   type AgentRunSummary,
   type AgentRuntimeFactory,
@@ -29,6 +30,7 @@ class Deferred {
 
 class FakeRuntime {
   private sessionNumber = 0;
+  private activeSessionId: string | undefined;
   readonly started = new Deferred();
 
   constructor(
@@ -39,8 +41,9 @@ class FakeRuntime {
   async createSession() {
     this.sessionNumber += 1;
     const timestamp = new Date();
+    this.activeSessionId = `session-${this.sessionNumber}`;
     return {
-      id: `session-${this.sessionNumber}`,
+      id: this.activeSessionId,
       createdAt: timestamp,
       updatedAt: timestamp,
       messages: [],
@@ -73,10 +76,35 @@ class FakeRuntime {
       modifiedFiles: [],
     });
   }
+
+  async requestApproval(): Promise<void> {
+    if (!this.activeSessionId) throw new Error("Runtime has not started.");
+    await this.events.emit({
+      type: "tool_call_requested",
+      sessionId: this.activeSessionId,
+      callId: "call-1",
+      tool: "write_file",
+      input: { path: "example.ts" },
+    });
+  }
+}
+
+class FakeApproval {
+  denied = 0;
+
+  resolve(): boolean {
+    return false;
+  }
+
+  denyAll(): void {
+    this.denied += 1;
+  }
 }
 
 class FakeFactory implements AgentRuntimeFactory {
   readonly created: string[] = [];
+  readonly approvals = new Map<string, FakeApproval>();
+  readonly disposed = new Map<string, number>();
   readonly runtimes = new Map<string, FakeRuntime>();
   readonly gates = new Map<string, Deferred>();
 
@@ -87,9 +115,18 @@ class FakeFactory implements AgentRuntimeFactory {
     const events = new EventBus<RuntimeEvent>();
     const gate = new Deferred();
     const runtime = new FakeRuntime(events, gate);
+    const approval = new FakeApproval();
     this.gates.set(profile.id, gate);
     this.runtimes.set(profile.id, runtime);
-    return { runtime, events, async dispose() {} };
+    this.approvals.set(profile.id, approval);
+    return {
+      runtime,
+      events,
+      approval,
+      dispose: async () => {
+        this.disposed.set(profile.id, (this.disposed.get(profile.id) ?? 0) + 1);
+      },
+    };
   }
 }
 
@@ -339,5 +376,91 @@ describe("AgentCoordinator", () => {
       state: "completed",
     });
     expect(restored.listRuns()).toHaveLength(1);
+  });
+
+  it("cancels a pending approval, releases the write lease, and emits secret-safe lifecycle records", async () => {
+    const profiles = new InMemoryAgentProfileStore();
+    const factory = new FakeFactory();
+    const lease = new InMemoryWorkspaceWriteLease();
+    const coordinator = new AgentCoordinator({
+      profiles,
+      runtimeFactory: factory,
+      writeLease: lease,
+    });
+    const records: AgentLifecycleRecord[] = [];
+    coordinator.events.subscribe((event) => {
+      if (event.type === "lifecycle") records.push(event.record);
+    });
+    const profile = await createProfile(profiles, "Writer", "edit");
+    const run = await coordinator.start({
+      agentId: profile.id,
+      prompt: "Update the file",
+    });
+    await waitFor(
+      () => coordinator.getRun(run.id)?.state === "running",
+      "writer should start",
+    );
+    await waitFor(
+      () => factory.runtimes.has(profile.id),
+      "writer runtime should be created before requesting approval",
+    );
+    await factory.runtimes.get(profile.id)?.requestApproval();
+    await waitFor(
+      () => coordinator.getRun(run.id)?.state === "waiting_for_approval",
+      "writer should wait for its tool approval",
+    );
+
+    await coordinator.stop(run.id);
+
+    expect(coordinator.getRun(run.id)?.state).toBe("cancelled");
+    expect(lease.holder()).toBeUndefined();
+    expect(factory.approvals.get(profile.id)?.denied).toBe(1);
+    expect(factory.disposed.get(profile.id)).toBe(1);
+    expect(records.map((record) => record.phase)).toEqual([
+      "queued",
+      "write_lease_acquired",
+      "started",
+      "waiting_for_approval",
+      "cancelled",
+      "cleanup_completed",
+    ]);
+    expect(records.every((record) => !("prompt" in record))).toBe(true);
+    expect(records.every((record) => !("provider" in record))).toBe(true);
+    expect(records.every((record) => !("input" in record))).toBe(true);
+    expect(records.at(-1)?.cleanupDurationMs).toBeTypeOf("number");
+  });
+
+  it("cleans up every started runtime when concurrent work is stopped", async () => {
+    const profiles = new InMemoryAgentProfileStore();
+    const factory = new FakeFactory();
+    const coordinator = new AgentCoordinator({
+      profiles,
+      runtimeFactory: factory,
+      maxConcurrentRuns: 3,
+    });
+    const agents = await Promise.all(
+      ["Research", "Review", "Test", "Document", "Refactor", "Audit"].map(
+        (name) => createProfile(profiles, name),
+      ),
+    );
+    const runs = await Promise.all(
+      agents.map((profile) =>
+        coordinator.start({ agentId: profile.id, prompt: `Run ${profile.id}` }),
+      ),
+    );
+    await waitFor(
+      () => factory.created.length === 3,
+      "only the configured concurrency limit should start",
+    );
+
+    await coordinator.dispose();
+
+    expect(runs.map((run) => coordinator.getRun(run.id)?.state)).toEqual(
+      Array.from({ length: runs.length }, () => "cancelled"),
+    );
+    expect([...factory.disposed.values()]).toHaveLength(factory.created.length);
+    expect([...factory.disposed.values()].every((count) => count === 1)).toBe(
+      true,
+    );
   });
 });
