@@ -2,7 +2,11 @@
 
 All notable desktop release changes are documented in this file.
 
-## [0.1.14] - Unreleased
+## [0.1.15] - Unreleased
+
+### Fixed
+
+- Made runtime tool execution more tolerant of numeric-string limits from smaller local models and added recovery guidance after a failed tool call, including a clear reminder to use workspace file tools instead of web fetch for local files.
 
 ### Added
 

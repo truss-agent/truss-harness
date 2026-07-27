@@ -22,6 +22,12 @@ function isFileWrite(call: ToolCall): boolean {
   return call.name === "write_file" || call.name === "replace_in_file";
 }
 
+function toolFailureRecovery(tool: string): string {
+  if (tool === "web_fetch") return "Do not infer page or file contents from this failure. web_fetch reads only public HTTP/HTTPS URLs; to inspect a workspace file, retry with read_file using its workspace-relative path.";
+  if (tool === "web_search") return "Do not infer search results from this failure. Correct the tool arguments and retry, or use a workspace tool when the request concerns local files.";
+  return "Do not infer a result from this failure. Correct the arguments and retry the appropriate tool before answering.";
+}
+
 function hasEditIntent(prompt: string): boolean {
   return /\b(?:add|change|create|delete|edit|fix|implement|modify|overhaul|refactor|remove|rename|replace|rewrite|rework|update|write|error|exception|stack trace|uncaught|referenceerror|typeerror|syntaxerror|not working|doesn['’]t work|broken|failed)\b/i.test(prompt);
 }
@@ -214,7 +220,10 @@ export class AgentRuntime {
       try {
         result = await implementation.execute(input, { workspaceRoot: this.options.workspaceRoot, signal });
       } catch (error) {
-        result = { content: `Tool execution failed: ${error instanceof Error ? error.message : String(error)}`, isError: true };
+        result = {
+          content: `Tool execution failed: ${error instanceof Error ? error.message : String(error)}\n\nRECOVERY: ${toolFailureRecovery(tool)}`,
+          isError: true
+        };
       }
     }
     session.messages.push({ role: "tool", name: tool, toolCallId: callId, content: result.content });

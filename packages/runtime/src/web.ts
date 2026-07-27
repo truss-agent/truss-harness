@@ -25,10 +25,15 @@ function stringInput(input: JsonObject, key: string): string {
 function positiveInteger(input: JsonObject, key: string, fallback: number, maximum: number): number {
   const value = input[key];
   if (value === undefined) return fallback;
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+  const normalized = typeof value === "number"
+    ? value
+    : typeof value === "string" && /^\d+$/.test(value.trim())
+      ? Number(value.trim())
+      : Number.NaN;
+  if (!Number.isFinite(normalized) || normalized <= 0) {
     throw new Error(`'${key}' must be a positive number`);
   }
-  return Math.min(maximum, Math.floor(value));
+  return Math.min(maximum, Math.floor(normalized));
 }
 
 function isPrivateIpv4(address: string): boolean {
