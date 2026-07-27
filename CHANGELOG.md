@@ -2,6 +2,16 @@
 
 All notable desktop release changes are documented in this file.
 
+## [Unreleased]
+
+### Added
+
+- Added a Desktop Agents control center for independent workspace-local
+  profiles, concurrent Chat and Plan work, serialized Edit work, approvals,
+  per-run controls, and recent run details.
+- Added bounded local run history and secret-safe lifecycle diagnostics for
+  managed-agent cleanup.
+
 ## [0.1.15] - Unreleased
 
 ### Fixed

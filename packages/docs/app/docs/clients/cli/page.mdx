@@ -27,6 +27,20 @@ The global installer prints the first commands to run. `truss-cli` and `truss-cl
 | <CliCommand /> `clear-memory` | Reset durable workspace memory |
 | <CliCommand /> `commands` | Print shared slash commands |
 | <CliCommand /> `serve` | Host the JSONL runtime protocol |
+| <CliCommand /> `agents list` | List workspace-local managed-agent profiles |
+| <CliCommand /> `agents add <name>` | Create a profile from the selected configuration |
+| <CliCommand /> `agents run <id> <task>` | Run a managed profile and stream its status |
+| <CliCommand /> `agents remove <id>` | Remove an idle profile |
+
+## Managed agents
+
+Use `agents add` to create a focused workspace-local profile from the current
+configuration, then pass its ID to `agents run`. Profiles can use different
+providers, models, modes, and approval policies; credentials remain in the
+host configuration rather than the profile file. The CLI keeps the newest 50
+terminal summaries in `.truss-harness/agents/runs.json` for other control
+surfaces to inspect after restart. See [Managed Agents](/docs/runtime/managed-agents)
+for concurrency and Edit-run safety rules.
 
 ## Workspace commands
 
