@@ -4,6 +4,14 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "0.1.19",
+    label: "BYOK provider reliability",
+    changes: [
+      "Accepted streaming SSE and ordinary JSON responses from OpenAI-compatible BYOK providers, including content-part arrays and complete tool calls.",
+      "Stopped sending empty tool definitions in plain Chat mode and replaced silent empty completions with a clear provider-response error."
+    ]
+  },
+  {
     version: "0.1.18",
     label: "Desktop conversation focus",
     changes: [
