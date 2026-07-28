@@ -16,7 +16,7 @@ describe("OpenAICompatibleProvider", () => {
       model: "local-model",
       fetch: async (url) => {
         requestUrl = String(url);
-        return new Response('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n');
+        return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\n');
       }
     });
 
@@ -69,6 +69,102 @@ describe("OpenAICompatibleProvider", () => {
     ]);
   });
 
+  it("accepts a non-streaming JSON response when a compatible provider ignores streaming", async () => {
+    let request: Record<string, unknown> | undefined;
+    const provider = new OpenAICompatibleProvider({
+      baseUrl: "https://example.com/v1",
+      model: "third-party-model",
+      fetch: async (_url, init) => {
+        request = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(JSON.stringify({
+          choices: [{
+            message: {
+              content: [
+                { type: "text", text: "Hello " },
+                { type: "output_text", text: { value: "from BYOK" } }
+              ]
+            },
+            finish_reason: "stop"
+          }]
+        }), { headers: { "content-type": "application/json" } });
+      }
+    });
+
+    const events = [];
+    for await (const event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) events.push(event);
+
+    expect(request).not.toHaveProperty("tools");
+    expect(events).toEqual([
+      { type: "text_delta", text: "Hello from BYOK" },
+      { type: "finish", reason: "stop" }
+    ]);
+  });
+
+  it("accepts complete tool calls from a non-streaming compatible response", async () => {
+    const provider = new OpenAICompatibleProvider({
+      baseUrl: "https://example.com/v1",
+      model: "third-party-model",
+      fetch: async () => new Response(JSON.stringify({
+        choices: [{
+          message: {
+            content: null,
+            tool_calls: [{
+              id: "call_1",
+              function: { name: "read_file", arguments: "{\"path\":\"README.md\"}" }
+            }]
+          },
+          finish_reason: "tool_calls"
+        }]
+      }), { headers: { "content-type": "application/json" } })
+    });
+
+    const events = [];
+    for await (const event of provider.stream({ messages: [{ role: "user", content: "read it" }], tools: [] })) events.push(event);
+
+    expect(events).toEqual([
+      { type: "tool_call", id: "call_1", name: "read_file", input: { path: "README.md" } },
+      { type: "finish", reason: "tool_calls" }
+    ]);
+  });
+
+  it("accepts newline-delimited SSE without blank event separators", async () => {
+    const body = [
+      'data: {"choices":[{"delta":{"content":"Hello "}}]}',
+      'data: {"choices":[{"delta":{"content":"world"},"finish_reason":"stop"}]}',
+      "data: [DONE]"
+    ].join("\n");
+    const provider = new OpenAICompatibleProvider({
+      baseUrl: "https://example.com/v1",
+      model: "third-party-model",
+      fetch: async () => new Response(body, { headers: { "content-type": "text/event-stream" } })
+    });
+
+    const events = [];
+    for await (const event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) events.push(event);
+
+    expect(events).toEqual([
+      { type: "text_delta", text: "Hello " },
+      { type: "text_delta", text: "world" },
+      { type: "finish", reason: "stop" }
+    ]);
+  });
+
+  it("fails visibly when a successful response contains no text or tool calls", async () => {
+    const provider = new OpenAICompatibleProvider({
+      baseUrl: "https://example.com/v1",
+      model: "third-party-model",
+      fetch: async () => new Response(JSON.stringify({
+        choices: [{ message: { content: null }, finish_reason: "stop" }]
+      }), { headers: { "content-type": "application/json" } })
+    });
+
+    const consume = async (): Promise<void> => {
+      for await (const _event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
+    };
+
+    await expect(consume()).rejects.toThrow("Model response did not include text or tool calls.");
+  });
+
   it("forwards image attachments and bounded text files through the provider contract", async () => {
     let request: Record<string, unknown> | undefined;
     const provider = new OpenAICompatibleProvider({
@@ -76,7 +172,7 @@ describe("OpenAICompatibleProvider", () => {
       model: "vision-model",
       fetch: async (_url, init) => {
         request = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return new Response('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+        return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
       }
     });
 
@@ -92,7 +188,8 @@ describe("OpenAICompatibleProvider", () => {
       tools: []
     })) { /* Consume stream. */ }
 
-    expect((request?.messages as readonly { readonly content: readonly Record<string, unknown>[] }[])[0]?.content).toEqual([
+    const messages = request?.messages as readonly { readonly content: readonly Record<string, unknown>[] }[] | undefined;
+    expect(messages?.[0]?.content).toEqual([
       { type: "text", text: "Review these.\n\nAttached file: notes.md (text/markdown, 7 bytes)\n\n# Notes" },
       { type: "image_url", image_url: { url: "data:image/png;base64,AA==" } }
     ]);
@@ -115,7 +212,7 @@ describe("OpenAICompatibleProvider", () => {
         authorizations.push(new Headers(init?.headers).get("authorization") ?? "");
         return authorizations.length === 1
           ? new Response("sensitive upstream error", { status: 401 })
-          : new Response('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+          : new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
       }
     });
 
@@ -147,7 +244,7 @@ describe("OpenAICompatibleProvider", () => {
       credential: { id: "gemini-key", async resolve() { return { kind: "bearer", token: "secret" }; } },
       fetch: async (input) => {
         url = String(input);
-        return new Response('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+        return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
       }
     });
 

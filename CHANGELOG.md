@@ -2,6 +2,15 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.19] - 2026-07-28
+
+### Fixed
+
+- Made BYOK and OpenAI-compatible responses resilient across streaming SSE,
+  ordinary JSON completions, content-part arrays, and complete tool calls.
+- Omitted empty tool definitions from plain chat requests and surfaced a clear
+  error when a successful provider response contains no usable output.
+
 ## [0.1.18] - 2026-07-27
 
 ### Fixed

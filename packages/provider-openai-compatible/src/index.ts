@@ -111,18 +111,32 @@ export interface CloudModelConfiguration {
   readonly fetch?: typeof globalThis.fetch;
 }
 
+type OpenAIContent = string | null | readonly {
+  readonly type?: string;
+  readonly text?: string | { readonly value?: string };
+}[];
+
+interface OpenAIToolCallChunk {
+  readonly index?: number;
+  readonly id?: string;
+  readonly function?: { readonly name?: string; readonly arguments?: string };
+}
+
+interface OpenAIChoice {
+  readonly delta?: {
+    readonly content?: OpenAIContent;
+    readonly tool_calls?: readonly OpenAIToolCallChunk[];
+  };
+  readonly message?: {
+    readonly content?: OpenAIContent;
+    readonly tool_calls?: readonly OpenAIToolCallChunk[];
+  };
+  readonly finish_reason?: string | null;
+}
+
 interface OpenAIChunk {
-  readonly choices?: readonly {
-    readonly delta?: {
-      readonly content?: string | null;
-      readonly tool_calls?: readonly {
-        readonly index: number;
-        readonly id?: string;
-        readonly function?: { readonly name?: string; readonly arguments?: string };
-      }[];
-    };
-    readonly finish_reason?: "stop" | "tool_calls" | "length" | null;
-  }[];
+  readonly choices?: readonly OpenAIChoice[];
+  readonly error?: unknown;
 }
 
 interface PartialToolCall {
@@ -219,10 +233,17 @@ function toOllamaMessage(message: ChatMessage): JsonObject {
   };
 }
 
-function finishReason(reason: OpenAIChunk["choices"] extends readonly (infer T)[] | undefined
-  ? T extends { readonly finish_reason?: infer R } ? R : never
-  : never): "stop" | "tool_calls" | "length" {
+function finishReason(reason: string | null | undefined): "stop" | "tool_calls" | "length" {
   return reason === "tool_calls" || reason === "length" ? reason : "stop";
+}
+
+function contentText(content: OpenAIContent | undefined): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((part) => {
+    if (typeof part.text === "string") return part.text;
+    return part.text?.value ?? "";
+  }).join("");
 }
 
 function parseToolCalls(partial: Map<number, PartialToolCall>): ToolCall[] {
@@ -245,14 +266,16 @@ function parseToolCalls(partial: Map<number, PartialToolCall>): ToolCall[] {
   });
 }
 
-function appendChunk(partial: Map<number, PartialToolCall>, chunk: NonNullable<OpenAIChunk["choices"]>[number]): void {
-  for (const call of chunk.delta?.tool_calls ?? []) {
-    const current = partial.get(call.index) ?? { arguments: "" };
+function appendChunk(partial: Map<number, PartialToolCall>, choice: OpenAIChoice): void {
+  const calls = choice.delta?.tool_calls ?? choice.message?.tool_calls ?? [];
+  calls.forEach((call, position) => {
+    const index = call.index ?? position;
+    const current = partial.get(index) ?? { arguments: "" };
     current.id ??= call.id;
     current.name ??= call.function?.name;
     current.arguments += call.function?.arguments ?? "";
-    partial.set(call.index, current);
-  }
+    partial.set(index, current);
+  });
 }
 
 function applyCredential(headers: Headers, credential: Exclude<ResolvedCredential, { readonly kind: "request-signer" }>): void {
@@ -277,12 +300,13 @@ export class OpenAICompatibleProvider implements ModelProvider {
   }
 
   private async send(request: ModelRequest): Promise<Response> {
-    const body = JSON.stringify({
+    const payload = {
       model: this.options.model,
       stream: true,
       messages: request.messages.map(toOpenAIMessage),
-      tools: request.tools.map(toOpenAITool)
-    });
+      ...(request.tools.length ? { tools: request.tools.map(toOpenAITool) } : {})
+    };
+    const body = JSON.stringify(payload);
     const credential = this.credential();
     const attempt = async (): Promise<Response> => {
       const headers = new Headers({ "content-type": "application/json", accept: "text/event-stream", ...this.options.headers });
@@ -309,33 +333,69 @@ export class OpenAICompatibleProvider implements ModelProvider {
     if (!response.ok) throw new Error(`Model request failed (${response.status}).`);
     if (!response.body) throw new Error("Model response did not include a stream");
 
-    const decoder = new TextDecoder();
     const partialCalls = new Map<number, PartialToolCall>();
-    let buffered = "";
     let finalReason: "stop" | "tool_calls" | "length" = "stop";
     let receivedChunk = false;
+    let receivedText = false;
+
+    const processData = (data: string): { readonly done: boolean; readonly text?: string } => {
+      if (data === "[DONE]") return { done: true };
+
+      let chunk: OpenAIChunk;
+      try {
+        chunk = JSON.parse(data) as OpenAIChunk;
+      } catch {
+        throw new Error("Model response contained invalid JSON.");
+      }
+      if (chunk.error !== undefined) throw new Error("Model provider returned an error response.");
+
+      const choice = chunk.choices?.[0];
+      if (!choice) return { done: false };
+      receivedChunk = true;
+      const text = contentText(choice.delta?.content ?? choice.message?.content);
+      if (text) receivedText = true;
+      appendChunk(partialCalls, choice);
+      if (choice.finish_reason) finalReason = finishReason(choice.finish_reason);
+      return { done: false, ...(text ? { text } : {}) };
+    };
+
+    const finish = (): { readonly calls: ToolCall[]; readonly reason: "stop" | "tool_calls" | "length" } => {
+      const calls = parseToolCalls(partialCalls);
+      if (!receivedText && calls.length === 0) {
+        throw new Error("Model response did not include text or tool calls.");
+      }
+      return { calls, reason: finalReason };
+    };
+
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (contentType.includes("application/json") || contentType.includes("+json")) {
+      const result = processData(await response.text());
+      if (result.text) yield { type: "text_delta", text: result.text };
+      const completed = finish();
+      for (const call of completed.calls) yield { type: "tool_call", ...call };
+      yield { type: "finish", reason: completed.reason };
+      return;
+    }
+
+    const decoder = new TextDecoder();
+    let buffered = "";
 
     for await (const bytes of response.body) {
       buffered += decoder.decode(bytes, { stream: true });
-      const events = buffered.split(/\r?\n\r?\n/);
-      buffered = events.pop() ?? "";
+      const lines = buffered.split(/\r?\n/);
+      buffered = lines.pop() ?? "";
 
-      for (const event of events) {
-        const data = event.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
+      for (const line of lines) {
+        const data = line.startsWith("data:") ? line.slice(5).trim() : "";
         if (!data) continue;
-        if (data === "[DONE]") {
-          for (const call of parseToolCalls(partialCalls)) yield { type: "tool_call", ...call };
-          yield { type: "finish", reason: finalReason };
+        const result = processData(data);
+        if (result.text) yield { type: "text_delta", text: result.text };
+        if (result.done) {
+          const completed = finish();
+          for (const call of completed.calls) yield { type: "tool_call", ...call };
+          yield { type: "finish", reason: completed.reason };
           return;
         }
-
-        const chunk = JSON.parse(data) as OpenAIChunk;
-        receivedChunk = true;
-        const choice = chunk.choices?.[0];
-        if (!choice) continue;
-        if (choice.delta?.content) yield { type: "text_delta", text: choice.delta.content };
-        appendChunk(partialCalls, choice);
-        if (choice.finish_reason) finalReason = finishReason(choice.finish_reason);
       }
     }
 
@@ -343,25 +403,22 @@ export class OpenAICompatibleProvider implements ModelProvider {
     // than sending the optional OpenAI [DONE] marker. Process that buffered event
     // and accept a clean close after at least one valid chunk.
     buffered += decoder.decode();
-    const trailingData = buffered.split(/\r?\n/).filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
-    if (trailingData === "[DONE]") {
-      for (const call of parseToolCalls(partialCalls)) yield { type: "tool_call", ...call };
-      yield { type: "finish", reason: finalReason };
-      return;
-    }
-    if (trailingData) {
-      const chunk = JSON.parse(trailingData) as OpenAIChunk;
-      receivedChunk = true;
-      const choice = chunk.choices?.[0];
-      if (choice?.delta?.content) yield { type: "text_delta", text: choice.delta.content };
-      if (choice) {
-        appendChunk(partialCalls, choice);
-        if (choice.finish_reason) finalReason = finishReason(choice.finish_reason);
+    const trailingLines = buffered.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    for (const line of trailingLines) {
+      const data = line.startsWith("data:") ? line.slice(5).trim() : line;
+      const result = processData(data);
+      if (result.text) yield { type: "text_delta", text: result.text };
+      if (result.done) {
+        const completed = finish();
+        for (const call of completed.calls) yield { type: "tool_call", ...call };
+        yield { type: "finish", reason: completed.reason };
+        return;
       }
     }
     if (receivedChunk) {
-      for (const call of parseToolCalls(partialCalls)) yield { type: "tool_call", ...call };
-      yield { type: "finish", reason: finalReason };
+      const completed = finish();
+      for (const call of completed.calls) yield { type: "tool_call", ...call };
+      yield { type: "finish", reason: completed.reason };
       return;
     }
 
