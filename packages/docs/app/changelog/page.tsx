@@ -4,6 +4,13 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "0.1.18",
+    label: "Desktop conversation focus",
+    changes: [
+      "Kept chat, editor, terminal, and file-action inputs usable after creating, switching, or deleting Desktop conversations on Linux."
+    ]
+  },
+  {
     version: "0.1.17",
     label: "Multi-agent control center",
     changes: [

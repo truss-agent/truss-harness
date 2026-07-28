@@ -17,6 +17,7 @@ import {
   type DesktopToolActivity,
   type DesktopWorkspaceUiState,
 } from "./shared.js";
+import { scheduleConversationNavigation } from "./conversation-navigation.js";
 
 declare global {
   interface Window {
@@ -1275,6 +1276,7 @@ function renderConversations(): void {
     const row = document.createElement("div");
     row.className = "conversation-row";
     const select = document.createElement("button");
+    select.type = "button";
     select.textContent = conversation.title;
     select.title = conversation.title;
     if (conversation.id === desktopState.activeConversationId)
@@ -1283,12 +1285,10 @@ function renderConversations(): void {
       if (conversation.id !== desktopState.activeConversationId)
         cancelActiveRunForNavigation();
       desktopState = { ...desktopState, activeConversationId: conversation.id };
-      renderConversations();
-      renderChat();
-      renderRuntime();
-      saveConversations();
+      finishConversationNavigation();
     };
     const remove = document.createElement("button");
+    remove.type = "button";
     remove.className = "delete";
     remove.textContent = "x";
     remove.title = "Delete conversation";
@@ -1307,14 +1307,35 @@ function renderConversations(): void {
             ? remaining[0]?.id
             : desktopState.activeConversationId,
       };
-      renderConversations();
-      renderChat();
-      renderRuntime();
-      saveConversations();
+      finishConversationNavigation();
     };
     row.append(select, remove);
     conversations.append(row);
   });
+}
+
+let conversationNavigationFrame = 0;
+
+function finishConversationNavigation(): void {
+  conversationNavigationFrame = scheduleConversationNavigation(
+    conversationNavigationFrame,
+    {
+      save: saveConversations,
+      cancelFrame: (frame) => window.cancelAnimationFrame(frame),
+      requestFrame: (callback) => window.requestAnimationFrame(callback),
+      render: () => {
+        // Rebuilding the list during its own click can leave Chromium focused
+        // on a detached button on Linux, freezing keyboard input app-wide.
+        renderConversations();
+        renderChat();
+        renderRuntime();
+      },
+      restoreFocus: () => {
+        window.focus();
+        chatInput.focus({ preventScroll: true });
+      },
+    },
+  );
 }
 
 function workspaceFileReference(path: string): string | undefined {
@@ -3824,10 +3845,7 @@ element<HTMLFormElement>("commitForm").onsubmit = (event) => {
 element<HTMLButtonElement>("newChat").onclick = () => {
   cancelActiveRunForNavigation();
   createConversation();
-  renderConversations();
-  renderChat();
-  renderRuntime();
-  saveConversations();
+  finishConversationNavigation();
 };
 element<HTMLButtonElement>("fileButton").onclick = () => {
   const path = activeWorkspaceFilePath();
