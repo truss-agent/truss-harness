@@ -2,6 +2,14 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.18] - 2026-07-27
+
+### Fixed
+
+- Preserved keyboard focus across Desktop conversation creation, switching,
+  and deletion so chat, editor, terminal, and file-action inputs remain usable
+  on Linux.
+
 ## [0.1.17] - 2026-07-27
 
 ### Added
