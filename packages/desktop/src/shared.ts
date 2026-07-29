@@ -135,6 +135,8 @@ export interface DesktopState {
   readonly conversations: readonly DesktopConversation[];
   readonly activeConversationId?: string;
   readonly mcpStatuses?: readonly McpServerStatus[];
+  /** Safe startup/configuration failure text; never contains provider response bodies or keys. */
+  readonly runtimeError?: string;
   readonly workspaceUiState?: DesktopWorkspaceUiState;
   /** Workspace-local profiles; provider credentials remain in encrypted host storage. */
   readonly agentProfiles?: readonly AgentProfile[];
@@ -233,6 +235,10 @@ export interface DesktopBridge {
     apiKey?: string,
   ): Promise<ProviderConnectionResult>;
   credentialStorage(): Promise<DesktopCredentialStorage>;
+  testMcpServer(
+    name: string,
+    configuration: McpStdioServerConfiguration,
+  ): Promise<McpServerStatus>;
   clearCredential(provider: DesktopProvider): Promise<void>;
   configureTheme(theme: DesktopThemePreference): Promise<DesktopState>;
   adjustZoom(direction: -1 | 1): Promise<number>;
@@ -312,4 +318,5 @@ import type { WorkspacePlan } from "@truss-harness/runtime";
 import type {
   McpServerConfigurations,
   McpServerStatus,
+  McpStdioServerConfiguration,
 } from "@truss-harness/mcp";

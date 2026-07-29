@@ -16,9 +16,17 @@ export type McpServerConfigurations = Readonly<Record<string, McpStdioServerConf
 
 export interface McpServerStatus {
   readonly name: string;
-  readonly state: "connected" | "failed";
+  readonly state: "idle" | "disabled" | "connecting" | "connected" | "failed";
   readonly toolCount: number;
   readonly error?: string;
+  readonly tools?: readonly McpToolSummary[];
+}
+
+/** Safe, provider-independent tool metadata for client status surfaces. */
+export interface McpToolSummary {
+  readonly name: string;
+  readonly description?: string;
+  readonly readOnly: boolean;
 }
 
 export interface McpConnections {
@@ -27,6 +35,12 @@ export interface McpConnections {
 }
 
 const startupTimeoutMs = 10_000;
+
+type McpToolDefinition = {
+  readonly name: string;
+  readonly description?: string;
+  readonly inputSchema: unknown;
+};
 
 function safeName(value: string): string {
   const normalized = value.replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
@@ -99,11 +113,7 @@ function mcpTool(
   };
 }
 
-async function listAllTools(client: Client): Promise<readonly {
-  readonly name: string;
-  readonly description?: string;
-  readonly inputSchema: unknown;
-}[]> {
+async function listAllTools(client: Client): Promise<readonly McpToolDefinition[]> {
   const tools = [];
   let cursor: string | undefined;
   do {
@@ -114,6 +124,124 @@ async function listAllTools(client: Client): Promise<readonly {
   return tools;
 }
 
+function safeMcpError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/ENOENT|spawn/i.test(message)) return "The configured executable could not be started.";
+  if (/timed out|timeout/i.test(message)) return "The server did not finish starting before the timeout.";
+  if (/collision/i.test(message)) return "A server tool conflicts with an existing tool name.";
+  return "The MCP server could not be started.";
+}
+
+/**
+ * Owns MCP connection lifecycle for a single runtime. It emits only safe
+ * statuses and tool descriptions; command environment values never leave it.
+ */
+export class McpServerManager {
+  private readonly clients = new Map<string, Client>();
+  private readonly toolNames = new Map<string, readonly string[]>();
+  private readonly statusByName = new Map<string, McpServerStatus>();
+  private readonly listeners = new Set<(statuses: readonly McpServerStatus[]) => void>();
+  private readonly environment: NodeJS.ProcessEnv;
+
+  constructor(
+    private readonly registry: ToolRegistry,
+    private readonly configurations: McpServerConfigurations | undefined,
+    private readonly options: { readonly workspaceRoot: string; readonly environment?: NodeJS.ProcessEnv },
+  ) {
+    this.environment = options.environment ?? process.env;
+    for (const [name, configuration] of Object.entries(configurations ?? {})) {
+      if (configuration.enabled === false)
+        this.statusByName.set(name, { name, state: "disabled", toolCount: 0 });
+    }
+  }
+
+  get statuses(): readonly McpServerStatus[] {
+    return Object.keys(this.configurations ?? {}).map((name) =>
+      this.statusByName.get(name) ?? { name, state: "idle", toolCount: 0 },
+    );
+  }
+
+  subscribe(listener: (statuses: readonly McpServerStatus[]) => void): () => void {
+    this.listeners.add(listener);
+    listener(this.statuses);
+    return () => this.listeners.delete(listener);
+  }
+
+  async connectAll(): Promise<readonly McpServerStatus[]> {
+    for (const name of Object.keys(this.configurations ?? {})) await this.connect(name);
+    return this.statuses;
+  }
+
+  async connect(name: string): Promise<McpServerStatus | undefined> {
+    const configuration = this.configurations?.[name];
+    if (!configuration) return undefined;
+    if (configuration.enabled === false) {
+      await this.disconnect(name);
+      return this.setStatus({ name, state: "disabled", toolCount: 0 });
+    }
+    if (!configuration.command.trim())
+      return this.setStatus({ name, state: "failed", toolCount: 0, error: "The server command is missing." });
+    await this.disconnect(name);
+    this.setStatus({ name, state: "connecting", toolCount: 0 });
+    const client = new Client({ name: "truss-harness", version: "0.1.0" });
+    try {
+      const transport = new StdioClientTransport({
+        command: configuration.command,
+        args: [...(configuration.args ?? [])],
+        cwd: configuration.cwd ? resolve(this.options.workspaceRoot, configuration.cwd) : this.options.workspaceRoot,
+        env: resolvedEnvironment(configuration.env, this.environment),
+        stderr: "pipe",
+      });
+      transport.stderr?.on("data", () => undefined);
+      await client.connect(transport, { timeout: startupTimeoutMs });
+      const definitions = await listAllTools(client);
+      const tools = definitions.map((definition) => mcpTool(name, client, definition));
+      const names = new Set<string>();
+      for (const tool of tools) {
+        if (names.has(tool.name) || this.registry.get(tool.name)) throw new Error(`MCP tool name collision: ${tool.name}`);
+        names.add(tool.name);
+      }
+      for (const tool of tools) this.registry.register(tool);
+      this.clients.set(name, client);
+      this.toolNames.set(name, tools.map((tool) => tool.name));
+      return this.setStatus({
+        name,
+        state: "connected",
+        toolCount: definitions.length,
+        tools: definitions.map((tool) => ({ name: tool.name, description: tool.description, readOnly: configuration.readOnly === true })),
+      });
+    } catch (error) {
+      await client.close().catch(() => undefined);
+      return this.setStatus({ name, state: "failed", toolCount: 0, error: safeMcpError(error) });
+    }
+  }
+
+  async reconnect(name: string): Promise<McpServerStatus | undefined> {
+    await this.disconnect(name);
+    return this.connect(name);
+  }
+
+  async disconnect(name: string): Promise<void> {
+    for (const toolName of this.toolNames.get(name) ?? []) this.registry.unregister(toolName);
+    this.toolNames.delete(name);
+    const client = this.clients.get(name);
+    this.clients.delete(name);
+    await client?.close().catch(() => undefined);
+    if (this.configurations?.[name])
+      this.setStatus({ name, state: "disabled", toolCount: 0 });
+  }
+
+  async close(): Promise<void> {
+    await Promise.all([...this.clients.keys()].map((name) => this.disconnect(name)));
+  }
+
+  private setStatus(status: McpServerStatus): McpServerStatus {
+    this.statusByName.set(status.name, status);
+    for (const listener of this.listeners) listener(this.statuses);
+    return status;
+  }
+}
+
 export async function registerMcpServers(
   registry: ToolRegistry,
   configurations: McpServerConfigurations | undefined,
@@ -122,54 +250,12 @@ export async function registerMcpServers(
     readonly environment?: NodeJS.ProcessEnv;
   },
 ): Promise<McpConnections> {
-  const clients: Client[] = [];
-  const statuses: McpServerStatus[] = [];
-  const environment = options.environment ?? process.env;
-
-  for (const [serverName, configuration] of Object.entries(configurations ?? {})) {
-    if (configuration.enabled === false) continue;
-    if (!configuration.command.trim()) {
-      statuses.push({ name: serverName, state: "failed", toolCount: 0, error: "command must be a non-empty string" });
-      continue;
-    }
-
-    const client = new Client({ name: "truss-harness", version: "0.1.0" });
-    try {
-      const transport = new StdioClientTransport({
-        command: configuration.command,
-        args: [...(configuration.args ?? [])],
-        cwd: configuration.cwd ? resolve(options.workspaceRoot, configuration.cwd) : options.workspaceRoot,
-        env: resolvedEnvironment(configuration.env, environment),
-        stderr: "pipe",
-      });
-      transport.stderr?.on("data", () => undefined);
-      await client.connect(transport, { timeout: startupTimeoutMs });
-      const definitions = await listAllTools(client);
-      const tools = definitions.map((definition) => mcpTool(serverName, client, definition));
-      const names = new Set<string>();
-      for (const tool of tools) {
-        if (names.has(tool.name) || registry.get(tool.name)) throw new Error(`MCP tool name collision: ${tool.name}`);
-        names.add(tool.name);
-      }
-      for (const tool of tools) registry.register(tool);
-      clients.push(client);
-      statuses.push({ name: serverName, state: "connected", toolCount: definitions.length });
-    } catch (error) {
-      await client.close().catch(() => undefined);
-      statuses.push({
-        name: serverName,
-        state: "failed",
-        toolCount: 0,
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
+  const manager = new McpServerManager(registry, configurations, options);
+  await manager.connectAll();
 
   return {
-    statuses,
-    async close(): Promise<void> {
-      await Promise.allSettled(clients.map((client) => client.close()));
-    },
+    statuses: manager.statuses,
+    close: () => manager.close(),
   };
 }
 

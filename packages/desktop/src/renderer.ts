@@ -1,4 +1,8 @@
 import type { ChatAttachment, WorkspacePlan } from "@truss-harness/runtime";
+import type {
+  McpServerStatus,
+  McpStdioServerConfiguration,
+} from "@truss-harness/mcp";
 import hljs from "highlight.js/lib/common";
 import {
   desktopThemeNames,
@@ -161,6 +165,15 @@ const autocompleteModel = element<HTMLInputElement>("autocompleteModel");
 const formatOnSave = element<HTMLInputElement>("formatOnSave");
 const mcpServersInput = element<HTMLTextAreaElement>("mcpServersInput");
 const mcpStatus = element<HTMLDivElement>("mcpStatus");
+const mcpServerList = element<HTMLDivElement>("mcpServerList");
+const mcpServerEditor = element<HTMLElement>("mcpServerEditor");
+const mcpEditorTitle = element<HTMLElement>("mcpEditorTitle");
+const mcpNameInput = element<HTMLInputElement>("mcpNameInput");
+const mcpCommandInput = element<HTMLInputElement>("mcpCommandInput");
+const mcpArgsInput = element<HTMLTextAreaElement>("mcpArgsInput");
+const mcpCwdInput = element<HTMLInputElement>("mcpCwdInput");
+const mcpEnabledInput = element<HTMLInputElement>("mcpEnabledInput");
+const mcpReadOnlyInput = element<HTMLInputElement>("mcpReadOnlyInput");
 const checkUpdatesOnLaunch = element<HTMLInputElement>("checkUpdatesOnLaunch");
 const autoDownloadUpdates = element<HTMLInputElement>("autoDownloadUpdates");
 const themeSelect = element<HTMLSelectElement>("themeSelect");
@@ -183,6 +196,9 @@ let desktopState: DesktopState = {
   conversations: [],
 };
 let credentialStorage: DesktopCredentialStorage = "secure";
+let mcpDraft: Record<string, McpStdioServerConfiguration> = {};
+let editingMcpName: string | undefined;
+const testedMcpStatuses = new Map<string, McpServerStatus>();
 let endpoints: readonly DesktopEndpoint[] = [];
 let models: readonly string[] = [];
 let files: readonly DesktopFile[] = [];
@@ -2552,14 +2568,7 @@ function settingsConfiguration(): DesktopConfiguration {
     throw new Error(
       "Choose a provider endpoint and model before applying agent settings.",
     );
-  let mcpServers: DesktopConfiguration["mcpServers"] = {};
-  const mcpSource = mcpServersInput.value.trim();
-  if (mcpSource) {
-    const parsed = JSON.parse(mcpSource) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-      throw new Error("MCP servers must be a JSON object.");
-    mcpServers = parsed as DesktopConfiguration["mcpServers"];
-  }
+  const mcpServers = mcpConfigurationsFromAdvancedJson();
   return {
     provider,
     baseUrl,
@@ -2582,6 +2591,113 @@ function settingsConfiguration(): DesktopConfiguration {
     formatOnSave: formatOnSave.checked,
     mcpServers,
   };
+}
+
+function mcpConfigurationsFromAdvancedJson(): Record<string, McpStdioServerConfiguration> {
+  const source = mcpServersInput.value.trim();
+  if (!source) return {};
+  const parsed = JSON.parse(source) as unknown;
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+    throw new Error("MCP servers must be a JSON object.");
+  return parsed as Record<string, McpStdioServerConfiguration>;
+}
+
+function syncMcpAdvancedJson(): void {
+  mcpServersInput.value = Object.keys(mcpDraft).length
+    ? JSON.stringify(mcpDraft, null, 2)
+    : "";
+}
+
+function openMcpEditor(name?: string): void {
+  editingMcpName = name;
+  const configuration = name ? mcpDraft[name] : undefined;
+  mcpEditorTitle.textContent = configuration ? `Edit ${name}` : "Add MCP server";
+  mcpNameInput.value = name ?? "";
+  mcpNameInput.disabled = Boolean(configuration);
+  mcpCommandInput.value = configuration?.command ?? "";
+  mcpArgsInput.value = configuration?.args?.join("\n") ?? "";
+  mcpCwdInput.value = configuration?.cwd ?? "";
+  mcpEnabledInput.checked = configuration?.enabled !== false;
+  mcpReadOnlyInput.checked = configuration?.readOnly === true;
+  mcpServerEditor.hidden = false;
+  (configuration ? mcpCommandInput : mcpNameInput).focus();
+}
+
+function closeMcpEditor(): void {
+  editingMcpName = undefined;
+  mcpServerEditor.hidden = true;
+}
+
+function renderMcpManager(): void {
+  const runtimeStatuses = new Map((desktopState.mcpStatuses ?? []).map((status) => [status.name, status]));
+  const names = Object.keys(mcpDraft).sort((left, right) => left.localeCompare(right));
+  if (!names.length) {
+    const empty = document.createElement("p");
+    empty.className = "mcp-empty";
+    empty.textContent = "No MCP servers configured. Add one to connect local tools.";
+    mcpServerList.replaceChildren(empty);
+    mcpStatus.textContent = "No MCP servers configured.";
+    return;
+  }
+  mcpServerList.replaceChildren(...names.map((name) => {
+    const configuration = mcpDraft[name];
+    const status = testedMcpStatuses.get(name) ?? runtimeStatuses.get(name) ?? {
+      name,
+      state: configuration.enabled === false ? "disabled" as const : "idle" as const,
+      toolCount: 0,
+    };
+    const card = document.createElement("article");
+    card.className = "mcp-server-card";
+    const heading = document.createElement("div");
+    heading.className = "mcp-server-card-heading";
+    const identity = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = name;
+    const command = document.createElement("span");
+    command.textContent = configuration.command;
+    identity.append(title, command);
+    const badge = document.createElement("span");
+    badge.className = `mcp-state ${status.state}`;
+    badge.textContent = status.state;
+    heading.append(identity, badge);
+    const actions = document.createElement("div");
+    actions.className = "mcp-server-actions";
+    for (const [action, label] of [
+      ["test", status.state === "connected" ? "Reconnect" : "Test"],
+      ["edit", "Edit"],
+      ["toggle", configuration.enabled === false ? "Enable" : "Disable"],
+      ["remove", "Remove"],
+    ] as const) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.dataset.mcpAction = action;
+      button.dataset.mcpName = name;
+      button.textContent = label;
+      actions.append(button);
+    }
+    card.append(heading, actions);
+    if (status.error) {
+      const error = document.createElement("p");
+      error.className = "mcp-card-error";
+      error.textContent = status.error;
+      card.append(error);
+    }
+    if (status.tools?.length) {
+      const details = document.createElement("details");
+      const summary = document.createElement("summary");
+      summary.textContent = `${status.toolCount} tool${status.toolCount === 1 ? "" : "s"}`;
+      const list = document.createElement("ul");
+      for (const tool of status.tools) {
+        const item = document.createElement("li");
+        item.textContent = `${tool.name}${tool.readOnly ? " (read-only)" : ""}${tool.description ? ` — ${tool.description}` : ""}`;
+        list.append(item);
+      }
+      details.append(summary, list);
+      card.append(details);
+    }
+    return card;
+  }));
+  mcpStatus.textContent = "Changes take effect when you Apply settings.";
 }
 
 function providerConnectionConfiguration(): DesktopConfiguration {
@@ -2621,24 +2737,7 @@ function renderCredentialStorageStatus(): void {
 }
 
 function renderMcpStatus(): void {
-  const statuses = desktopState.mcpStatuses ?? [];
-  if (!statuses.length) {
-    mcpStatus.textContent = Object.keys(configuration().mcpServers).length
-      ? "MCP servers connect when Agent or eligible Plan mode starts."
-      : "No MCP servers configured.";
-    return;
-  }
-  mcpStatus.replaceChildren(
-    ...statuses.map((status) => {
-      const item = document.createElement("span");
-      item.className = status.state;
-      item.textContent =
-        status.state === "connected"
-          ? `${status.name}: ${status.toolCount} tools`
-          : `${status.name}: ${status.error ?? "connection failed"}`;
-      return item;
-    }),
-  );
+  renderMcpManager();
 }
 
 function renderUpdate(
@@ -2683,9 +2782,9 @@ function populateSettings(): void {
   autocompleteEnabled.checked = current.autocomplete?.enabled ?? false;
   autocompleteModel.value = current.autocomplete?.model ?? "";
   formatOnSave.checked = current.formatOnSave ?? false;
-  mcpServersInput.value = Object.keys(current.mcpServers).length
-    ? JSON.stringify(current.mcpServers, null, 2)
-    : "";
+  mcpDraft = { ...current.mcpServers };
+  testedMcpStatuses.clear();
+  syncMcpAdvancedJson();
   checkUpdatesOnLaunch.checked = desktopState.updates.checkOnLaunch;
   autoDownloadUpdates.checked = desktopState.updates.autoDownload;
   themeSelect.value = desktopThemeNames.includes(desktopState.theme.name)
@@ -4006,6 +4105,90 @@ testProviderConnection.onclick = () => {
       testProviderConnection.textContent = "Test connection";
     });
 };
+element<HTMLButtonElement>("addMcpServer").onclick = () => openMcpEditor();
+element<HTMLButtonElement>("cancelMcpServer").onclick = closeMcpEditor;
+element<HTMLButtonElement>("saveMcpServer").onclick = () => {
+  const name = (editingMcpName ?? mcpNameInput.value).trim();
+  const command = mcpCommandInput.value.trim();
+  if (!name || !command) {
+    notify("Enter a name and command for the MCP server.");
+    return;
+  }
+  if (!editingMcpName && mcpDraft[name]) {
+    notify(`An MCP server named ${name} already exists.`);
+    return;
+  }
+  const previous = editingMcpName ? mcpDraft[editingMcpName] : undefined;
+  mcpDraft = {
+    ...mcpDraft,
+    [name]: {
+      command,
+      args: mcpArgsInput.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
+      cwd: mcpCwdInput.value.trim() || undefined,
+      enabled: mcpEnabledInput.checked,
+      readOnly: mcpReadOnlyInput.checked,
+      ...(previous?.env ? { env: previous.env } : {}),
+    },
+  };
+  testedMcpStatuses.delete(name);
+  syncMcpAdvancedJson();
+  closeMcpEditor();
+  renderMcpManager();
+};
+mcpServerList.onclick = (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-mcp-action]");
+  const name = button?.dataset.mcpName;
+  const action = button?.dataset.mcpAction;
+  if (!button || !name || !action || !mcpDraft[name]) return;
+  if (action === "edit") {
+    openMcpEditor(name);
+    return;
+  }
+  if (action === "toggle") {
+    mcpDraft = {
+      ...mcpDraft,
+      [name]: { ...mcpDraft[name], enabled: mcpDraft[name].enabled === false },
+    };
+    testedMcpStatuses.delete(name);
+    syncMcpAdvancedJson();
+    renderMcpManager();
+    return;
+  }
+  if (action === "remove") {
+    const { [name]: _removed, ...remaining } = mcpDraft;
+    mcpDraft = remaining;
+    testedMcpStatuses.delete(name);
+    syncMcpAdvancedJson();
+    if (editingMcpName === name) closeMcpEditor();
+    renderMcpManager();
+    return;
+  }
+  if (action === "test") {
+    button.disabled = true;
+    testedMcpStatuses.set(name, { name, state: "connecting", toolCount: 0 });
+    renderMcpManager();
+    void window.trussDesktop
+      .testMcpServer(name, mcpDraft[name])
+      .then((status) => testedMcpStatuses.set(name, status))
+      .catch(() => testedMcpStatuses.set(name, {
+        name,
+        state: "failed",
+        toolCount: 0,
+        error: "The MCP server test could not start.",
+      }))
+      .finally(renderMcpManager);
+  }
+};
+mcpServersInput.onchange = () => {
+  try {
+    mcpDraft = mcpConfigurationsFromAdvancedJson();
+    testedMcpStatuses.clear();
+    closeMcpEditor();
+    renderMcpManager();
+  } catch (error) {
+    notify(error instanceof Error ? error.message : String(error));
+  }
+};
 for (const input of [byokProviderSelect, byokBaseUrl, byokModelInput, apiKeyInput]) {
   input.addEventListener("input", clearProviderConnectionResult);
   input.addEventListener("change", clearProviderConnectionResult);
@@ -4341,6 +4524,10 @@ void (async () => {
   }
   applyTheme(desktopState.theme);
   populateSettings();
+  if (desktopState.runtimeError) {
+    openSettings();
+    notify(desktopState.runtimeError);
+  }
   await discover(desktopState.configuration);
   await Promise.all([
     loadFiles(),

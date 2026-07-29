@@ -44,7 +44,12 @@ import {
   startRemoteGateway,
   type RunningRemoteGateway,
 } from "@truss-harness/gateway";
-import { parseMcpServerConfigurations } from "@truss-harness/mcp";
+import {
+  McpServerManager,
+  parseMcpServerConfigurations,
+  type McpServerStatus,
+  type McpStdioServerConfiguration,
+} from "@truss-harness/mcp";
 import {
   cloudProviderDefinition,
   detectActiveLocalModel,
@@ -62,6 +67,7 @@ import {
   ApiKeyCredential,
   executeWorkspaceCommand,
   FileWorkspacePlanStore,
+  ToolRegistry,
   type AgentProfile,
   type AgentProfileStore,
   type ChatAttachment,
@@ -857,7 +863,11 @@ async function configureRuntime(
   runtimeClient = await createClientRuntime(
     await clientConfiguration(configuration),
   );
-  persisted = { ...persisted, mcpStatuses: runtimeClient.mcpServers };
+  persisted = {
+    ...persisted,
+    mcpStatuses: runtimeClient.mcpServers,
+    runtimeError: undefined,
+  };
   unsubscribeEvents = runtimeClient.events.subscribe((event) =>
     send({
       type: "agent",
@@ -865,6 +875,35 @@ async function configureRuntime(
       event,
     }),
   );
+}
+
+function safeRuntimeConfigurationError(
+  configuration: DesktopConfiguration,
+  error: unknown,
+): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (
+    isCloudProviderId(configuration.provider) &&
+    /requires a configured credential/i.test(message)
+  ) {
+    return `Enter an API key for ${cloudProviderDefinition(configuration.provider).label}.`;
+  }
+  return "The configured model runtime could not be started. Review Settings and try again.";
+}
+
+async function configureStartupRuntime(
+  configuration: DesktopConfiguration,
+): Promise<void> {
+  try {
+    await configureRuntime(configuration);
+  } catch (error) {
+    await disposeRuntime();
+    persisted = {
+      ...persisted,
+      mcpStatuses: [],
+      runtimeError: safeRuntimeConfigurationError(configuration, error),
+    };
+  }
 }
 
 function ensurePathInsideWorkspace(path: string): string {
@@ -1378,16 +1417,23 @@ async function createMainWindow(): Promise<void> {
 if (process.platform === "win32")
   app.setAppUserModelId(`com.${brand.productSlug}.desktop`);
 
-app.whenReady().then(async () => {
+void app.whenReady().then(async () => {
   await loadPersistedState();
   protocol.handle("truss-media", workspaceMediaResponse);
   await configureAgentCoordinator();
-  if (persisted.configuration) await configureRuntime(persisted.configuration);
+  if (persisted.configuration)
+    await configureStartupRuntime(persisted.configuration);
   await createMainWindow();
   configureUpdater();
   app.on("activate", () => {
     if (!mainWindow) void createMainWindow();
   });
+}).catch((error: unknown) => {
+  console.error(
+    "Desktop startup failed:",
+    error instanceof Error ? error.message : String(error),
+  );
+  app.quit();
 });
 
 app.on("window-all-closed", () => {
@@ -1400,6 +1446,37 @@ app.on("before-quit", () => {
 });
 
 ipcMain.handle("truss:initial-state", (): DesktopState => persisted);
+ipcMain.handle(
+  "truss:test-mcp-server",
+  async (
+    _event,
+    name: string,
+    input: McpStdioServerConfiguration,
+  ): Promise<McpServerStatus> => {
+    const normalizedName = name.trim();
+    if (!normalizedName) throw new Error("An MCP server name is required.");
+    const configurations = parseMcpServerConfigurations({
+      [normalizedName]: { ...input, enabled: true },
+    });
+    const manager = new McpServerManager(
+      new ToolRegistry(),
+      configurations,
+      { workspaceRoot: persisted.workspaceRoot },
+    );
+    try {
+      return (
+        (await manager.connect(normalizedName)) ?? {
+          name: normalizedName,
+          state: "failed",
+          toolCount: 0,
+          error: "The MCP server could not be tested.",
+        }
+      );
+    } finally {
+      await manager.close();
+    }
+  },
+);
 ipcMain.handle(
   "truss:credential-storage",
   (): DesktopCredentialStorage =>

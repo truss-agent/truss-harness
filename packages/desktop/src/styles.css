@@ -1344,6 +1344,104 @@ dialog::backdrop {
     color: #f09b86;
 }
 
+.mcp-manager {
+    display: grid;
+    grid-column: 1 / -1;
+    gap: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #2b383f;
+}
+
+.mcp-manager-heading,
+.mcp-server-card-heading,
+.mcp-server-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.mcp-manager-heading > div,
+.mcp-server-card-heading > div {
+    display: grid;
+    gap: 2px;
+    min-width: 0;
+}
+
+.mcp-manager-heading span,
+.mcp-server-card-heading span,
+.mcp-empty,
+.mcp-server-card details,
+.mcp-card-error {
+    color: #9badb5;
+    font-size: 11px;
+}
+
+.mcp-server-list {
+    display: grid;
+    gap: 8px;
+}
+
+.mcp-server-card,
+.mcp-server-editor {
+    display: grid;
+    gap: 9px;
+    padding: 10px;
+    border: 1px solid #34464e;
+    border-radius: 7px;
+    background: #10171b;
+}
+
+.mcp-server-editor {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mcp-server-editor[hidden] {
+    display: none;
+}
+
+.mcp-server-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+}
+
+.mcp-state {
+    flex: 0 0 auto;
+    padding: 2px 7px;
+    border: 1px solid #42545c;
+    border-radius: 999px;
+    text-transform: capitalize;
+}
+
+.mcp-state.connected { color: #69d6b5; border-color: #397f6c; }
+.mcp-state.connecting { color: #f4c968; border-color: #846d3a; }
+.mcp-state.failed { color: #f09b86; border-color: #884c44; }
+.mcp-state.idle { color: #9badb5; }
+.mcp-state.disabled { color: #9badb5; }
+
+.mcp-card-error {
+    margin: 0;
+    color: #f09b86;
+}
+
+.mcp-server-card details ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+}
+
+.mcp-advanced {
+    color: #9badb5;
+    font-size: 11px;
+}
+
+.mcp-advanced > summary {
+    cursor: pointer;
+}
+
+.mcp-advanced .mcp-setting {
+    margin-top: 8px;
+}
+
 .checkbox-setting input {
     width: 16px;
     height: 16px;
@@ -1478,6 +1576,7 @@ dialog::backdrop {
 }
 
 :root[data-desktop-theme] .mcp-status .connected,
+:root[data-desktop-theme] .mcp-state.connected,
 :root[data-desktop-theme] .provider-connection-result.connected,
 :root[data-desktop-theme] .run-result.completed {
     color: var(--desktop-accent);
@@ -1492,6 +1591,8 @@ dialog::backdrop {
 }
 
 :root[data-desktop-theme] .mcp-status .failed,
+:root[data-desktop-theme] .mcp-state.failed,
+:root[data-desktop-theme] .mcp-card-error,
 :root[data-desktop-theme] .provider-connection-result.failed,
 :root[data-desktop-theme] .run-result.failed,
 :root[data-desktop-theme] .editor-content.error {
@@ -1514,6 +1615,19 @@ dialog::backdrop {
     border-color: var(--desktop-border);
 }
 
+:root[data-desktop-theme] .mcp-manager,
+:root[data-desktop-theme] .mcp-server-card,
+:root[data-desktop-theme] .mcp-server-editor,
+:root[data-desktop-theme] .mcp-state {
+    border-color: var(--desktop-border);
+}
+
+:root[data-desktop-theme] .mcp-server-card,
+:root[data-desktop-theme] .mcp-server-editor {
+    color: var(--desktop-text);
+    background: var(--desktop-panel);
+}
+
 :root[data-desktop-theme] #runtimeStatus,
 :root[data-desktop-theme] .app-brand,
 :root[data-desktop-theme] .section-heading,
@@ -1522,6 +1636,11 @@ dialog::backdrop {
 :root[data-desktop-theme] .settings-form label,
 :root[data-desktop-theme] .settings-panel-intro,
 :root[data-desktop-theme] .mcp-status,
+:root[data-desktop-theme] .mcp-manager-heading span,
+:root[data-desktop-theme] .mcp-server-card-heading span,
+:root[data-desktop-theme] .mcp-empty,
+:root[data-desktop-theme] .mcp-server-card details,
+:root[data-desktop-theme] .mcp-advanced,
 :root[data-desktop-theme] #contextMeter,
 :root[data-desktop-theme] #rateMeter {
     color: var(--desktop-muted);

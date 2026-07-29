@@ -33,6 +33,8 @@ const bridge: DesktopBridge = {
   ) =>
     ipcRenderer.invoke("truss:test-provider-connection", configuration, apiKey),
   credentialStorage: () => ipcRenderer.invoke("truss:credential-storage"),
+  testMcpServer: (name, configuration) =>
+    ipcRenderer.invoke("truss:test-mcp-server", name, configuration),
   clearCredential: (provider) =>
     ipcRenderer.invoke("truss:clear-credential", provider),
   configureTheme: (theme) => ipcRenderer.invoke("truss:configure-theme", theme),
