@@ -1,10 +1,13 @@
 import {
+  AgentHost,
   createHostedRuntime,
   parseMcpServerConfigurations,
   type AgentMode,
   type HostedRuntime,
   type HostedRuntimeOptions,
+  type ProviderConnectionResult,
 } from "@truss-harness/agent-host";
+import { ApiKeyCredential } from "@truss-harness/runtime";
 import {
   cloudProviderDefinition,
   isCloudProviderId,
@@ -21,6 +24,28 @@ export async function createClientRuntime(
   return createHostedRuntime(options);
 }
 export interface ClientConfiguration extends ClientRuntimeOptions {}
+
+/** Tests the configured provider without starting a chat session or MCP server. */
+export async function testClientProviderConnection(
+  options: ClientRuntimeOptions,
+): Promise<ProviderConnectionResult> {
+  const credential =
+    options.credential ??
+    (options.apiKey
+      ? new ApiKeyCredential(`${options.provider}-api-key`, options.apiKey)
+      : undefined);
+  const host = new AgentHost({
+    workspaceRoot: options.workspaceRoot,
+    providerRegistry: options.providerRegistry,
+    credentialResolver: { resolve: async () => credential },
+  });
+  return host.testProviderConnection({
+    providerId: options.provider,
+    endpointUrl: options.baseUrl,
+    modelId: options.model,
+    ...(credential ? { credentialRef: "direct" } : {}),
+  });
+}
 
 export function configurationFromEnvironment(
   workspaceRoot: string,

@@ -25,6 +25,7 @@
     "onCommand:trussHarness.openAgentControlCenter",
     "onCommand:trussHarness.connectTrussGo",
     "onCommand:trussHarness.configureByokProvider",
+    "onCommand:trussHarness.testProviderConnection",
     "onCommand:trussHarness.removeByokCredential",
     "onCommand:trussHarness.generateCommitMessage",
     "onCommand:trussHarness.initializeWorkspace",
@@ -75,6 +76,10 @@
       {
         "command": "trussHarness.configureByokProvider",
         "title": "Truss: Configure BYOK Provider"
+      },
+      {
+        "command": "trussHarness.testProviderConnection",
+        "title": "Truss: Test Provider Connection"
       },
       {
         "command": "trussHarness.removeByokCredential",
