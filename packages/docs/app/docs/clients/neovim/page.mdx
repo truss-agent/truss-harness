@@ -1,0 +1,59 @@
+# <Brand /> for Neovim
+
+`truss.nvim` is the keyboard-first Neovim client for the same provider-neutral
+runtime used by the CLI, VS Code, Desktop, and TUI. The initial preview targets
+Neovim 0.10 or newer.
+
+## Architecture
+
+Lua owns the split panel, editor commands, keymaps, and explicit context
+selection. It connects to `truss-cli serve` over the versioned newline-delimited
+JSON-RPC protocol. The local TypeScript service continues to own model
+requests, credentials, tools, MCP connections, approvals, and workspace
+policy.
+
+Opening Neovim or the Truss panel sends no workspace content. `TrussChat`
+attaches only the current buffer or visual selection, bounded in Lua and again
+at the service boundary.
+
+## Install the preview
+
+Install and configure the CLI:
+
+```sh
+npm install --global @truss-harness/cli
+truss-cli setup
+```
+
+Until `truss.nvim` moves to its standalone distribution repository, load its
+monorepo subdirectory with `lazy.nvim`:
+
+```lua
+{
+  "truss-agent/truss-harness",
+  config = function(plugin)
+    vim.opt.rtp:prepend(plugin.dir .. "/packages/neovim")
+    require("truss").setup({
+      arguments = { "--profile", "ollama" },
+    })
+  end,
+  keys = {
+    { "<leader>tc", "<cmd>TrussChat<cr>", desc = "Truss chat" },
+    { "<leader>ts", "<cmd>TrussStop<cr>", desc = "Stop Truss" },
+  },
+}
+```
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `:TrussOpen` | Open or focus the Truss split |
+| `:TrussChat [prompt]` | Stream a chat using bounded current-buffer context |
+| `:'<,'>TrussChat` | Prompt with only the selected lines attached |
+| `:TrussStop` | Cancel the active run |
+| `:TrussNew` | Start a fresh conversation |
+| `:TrussStatus` | Show local-service and run state |
+
+Inside the panel, Enter prompts again, Ctrl-C stops the active run, and `q`
+closes the split without killing the reusable local service.
