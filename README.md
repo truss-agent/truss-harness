@@ -4,7 +4,7 @@
 
 Truss is a local-first, provider-neutral coding-agent platform. Use the same
 models, tools, permissions, workspace memory, and plans from the command line,
-terminal, VS Code, or a dedicated desktop workspace.
+terminal, Neovim, VS Code, or a dedicated desktop workspace.
 
 Create multiple workspace-local managed-agent profiles when a task benefits
 from separate models or providers. Chat and Plan agents can work concurrently;
@@ -21,6 +21,7 @@ control plane.
 | --- | --- | --- |
 | CLI | Scripts and focused coding tasks | npm install --global @truss-harness/cli |
 | Terminal UI | Keyboard-first work in the terminal | npm install --global @truss-harness/tui |
+| Neovim (preview) | Streaming chat with explicit buffer or selection context | [Install truss.nvim from this repository](packages/neovim/README.md) |
 | VS Code | Chat, file context, completions, and approvals in the editor | [Install from the Marketplace](https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode) |
 | Desktop | A dedicated workspace with files, diffs, terminal, Git, and chat | [Download Truss Desktop](https://truss-agent.com/download) |
 | Truss Go | Continue a trusted Desktop or VS Code session from Android | [Explore Truss Go](https://truss-agent.com/truss-go) |
@@ -62,6 +63,15 @@ truss-tui
 ![Truss running inside VS Code](packages/docs/public/screenshots/vscode.png)
 
 Install the [Truss VS Code extension](https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode), open the Truss Activity Bar view, then select a detected local server or enter your endpoint and model. The extension supports streaming chat, focused file context, inline completions, agent modes, Git-aware actions, and tool approvals.
+
+### Neovim
+
+The initial [`truss.nvim`](packages/neovim/README.md) preview uses the same
+local Truss service as other editor clients. It provides a native split,
+streaming chat, bounded current-buffer or visual-selection context, persistent
+sessions, cancellation, and clean shutdown on Neovim exit. Model requests,
+credentials, tools, and policy remain in `truss-cli`; Lua only owns the editor
+experience.
 
 ### Desktop
 

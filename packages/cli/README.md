@@ -136,6 +136,17 @@ values, or credentials.
 
 ## Service mode
 
-`truss-cli serve` starts the newline-delimited JSON runtime protocol used by clients such as the VS Code extension. Standard output is reserved for protocol messages.
+`truss-cli serve` starts the versioned newline-delimited JSON-RPC 2.0 runtime
+protocol used by editor clients such as `truss.nvim`. Standard output is
+reserved for protocol messages; diagnostics use standard error.
+
+A versioned client starts with `initialize`, passing its supported protocol
+versions. Protocol v1 advertises streaming, sessions, bounded context and
+attachments, cancellation, approvals, and changed-file events. Run lifecycle
+and runtime events are JSON-RPC notifications. `run/cancel` and
+`service/shutdown` provide deterministic cleanup.
+
+Released VS Code clients using the original JSON-lines message shape remain
+compatible during the protocol migration.
 
 Run `truss-cli help` for every command, flag, environment variable, mode, permission policy, and example.

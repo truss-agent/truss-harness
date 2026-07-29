@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/cli",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Command-line client and runtime service for Truss.",
   "type": "module",
   "exports": {
@@ -19,6 +19,10 @@
     "./mcp": {
       "types": "./dist/mcp.d.ts",
       "default": "./dist/mcp.js"
+    },
+    "./protocol": {
+      "types": "./dist/protocol.d.ts",
+      "default": "./dist/protocol.js"
     }
   },
   "bin": {
