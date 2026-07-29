@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "CLI 0.1.13 · truss.nvim 0.2.0",
+    label: "Native Neovim agent workflows",
+    changes: [
+      "Expanded truss.nvim with Chat, Plan, and Edit commands, rendered plans and tool activity, bounded diagnostics and active-file Git diff context, and safe changed-file navigation.",
+      "Added host-routed approval prompts with native write previews, named CLI profile selection, provider connection testing, credential-free MCP status, and opt-in LazyVim mappings.",
+      "Extended the versioned local-service capability handshake without moving credentials, provider policy, MCP execution, or runtime logic into Lua.",
+    ],
+  },
+  {
     version: "CLI 0.1.12",
     label: "Neovim chat preview",
     changes: [

@@ -66,10 +66,11 @@ Install the [Truss VS Code extension](https://marketplace.visualstudio.com/items
 
 ### Neovim
 
-The initial [`truss.nvim`](packages/neovim/README.md) preview uses the same
-local Truss service as other editor clients. It provides a native split,
-streaming chat, bounded current-buffer or visual-selection context, persistent
-sessions, cancellation, and clean shutdown on Neovim exit. Model requests,
+The [`truss.nvim`](packages/neovim/README.md) preview uses the same local Truss
+service as other editor clients. It provides native Chat, Plan, and Edit
+workflows, host-routed approvals with diff previews, plans and tool activity,
+changed-file navigation, provider checks, profile selection, safe MCP status,
+bounded editor context, cancellation, and clean shutdown. Model requests,
 credentials, tools, and policy remain in `truss-cli`; Lua only owns the editor
 experience.
 

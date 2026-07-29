@@ -1,8 +1,8 @@
 # <Brand /> for Neovim
 
 `truss.nvim` is the keyboard-first Neovim client for the same provider-neutral
-runtime used by the CLI, VS Code, Desktop, and TUI. The initial preview targets
-Neovim 0.10 or newer.
+runtime used by the CLI, VS Code, Desktop, and TUI. The preview targets Neovim
+0.10 or newer and includes native Chat, Plan, and Edit workflows.
 
 ## Architecture
 
@@ -12,9 +12,11 @@ JSON-RPC protocol. The local TypeScript service continues to own model
 requests, credentials, tools, MCP connections, approvals, and workspace
 policy.
 
-Opening Neovim or the Truss panel sends no workspace content. `TrussChat`
-attaches only the current buffer or visual selection, bounded in Lua and again
-at the service boundary.
+Opening Neovim or the Truss panel sends no workspace content. A normal Chat,
+Plan, or Edit command explicitly attaches the current buffer plus available
+diagnostics and the active file's Git diff. A visual command sends the
+selection instead. Every source is bounded in Lua and again at the service
+boundary.
 
 ## Install the preview
 
@@ -36,11 +38,8 @@ monorepo subdirectory with `lazy.nvim`:
     require("truss").setup({
       arguments = { "--profile", "ollama" },
     })
+    require("truss.lazy").setup()
   end,
-  keys = {
-    { "<leader>tc", "<cmd>TrussChat<cr>", desc = "Truss chat" },
-    { "<leader>ts", "<cmd>TrussStop<cr>", desc = "Stop Truss" },
-  },
 }
 ```
 
@@ -50,10 +49,34 @@ monorepo subdirectory with `lazy.nvim`:
 | --- | --- |
 | `:TrussOpen` | Open or focus the Truss split |
 | `:TrussChat [prompt]` | Stream a chat using bounded current-buffer context |
+| `:TrussPlan [prompt]` | Run a read-only plan and render its checklist |
+| `:TrussEdit [prompt]` | Run an editing agent with host-routed approvals |
 | `:'<,'>TrussChat` | Prompt with only the selected lines attached |
 | `:TrussStop` | Cancel the active run |
 | `:TrussNew` | Start a fresh conversation |
 | `:TrussStatus` | Show local-service and run state |
+| `:TrussTestConnection` | Test the configured provider safely |
+| `:TrussMcp` | Render credential-free MCP server status |
+| `:TrussProfile` | Select a named CLI configuration profile |
 
 Inside the panel, Enter prompts again, Ctrl-C stops the active run, and `q`
-closes the split without killing the reusable local service.
+closes the split without killing the reusable local service. Changed files are
+listed after a run; press `gf` or Enter on a file to open or focus it.
+
+## Edit approvals
+
+The runtime remains responsible for deciding when a tool needs approval.
+Neovim receives a dedicated approval request only when the selected permission
+policy does not auto-allow that tool. Proposed `write_file` and
+`replace_in_file` calls offer a native unified diff preview before the user
+approves or denies execution.
+
+The plugin verifies changed-file and preview paths against the current
+workspace. Provider credentials, MCP commands and environment values, and raw
+provider responses never cross into Lua.
+
+## LazyVim mappings
+
+`require("truss.lazy").setup()` opts into `<leader>tc` for Chat, `<leader>tp`
+for Plan, `<leader>te` for Edit, `<leader>to` for the panel, `<leader>ts` to
+stop, and `<leader>tP` for profiles. Existing mappings are left untouched.
