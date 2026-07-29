@@ -22,7 +22,8 @@ type AgentMode = "chat" | "plan" | "edit";
 type ApprovalMode = "ask" | "auto-read" | "auto-all";
 type Screen = "home" | "settings" | "session" | "scanner" | "agents";
 type SavedGateway = { readonly id: string; readonly name: string; readonly url: string; readonly token: string };
-type Workspace = { readonly id: string; readonly displayName: string; readonly capabilities: { readonly protocolVersions?: readonly number[]; readonly modes: readonly AgentMode[]; readonly toolApprovalModes?: readonly ApprovalMode[]; readonly supportsAgents?: boolean; readonly agentActions?: readonly ("start" | "stop" | "approve")[] } };
+type McpServerStatus = { readonly name: string; readonly state: "idle" | "disabled" | "connecting" | "connected" | "failed"; readonly toolCount: number; readonly error?: string; readonly tools?: readonly { readonly name: string; readonly description?: string; readonly readOnly: boolean }[] };
+type Workspace = { readonly id: string; readonly displayName: string; readonly capabilities: { readonly protocolVersions?: readonly number[]; readonly modes: readonly AgentMode[]; readonly toolApprovalModes?: readonly ApprovalMode[]; readonly supportsAgents?: boolean; readonly agentActions?: readonly ("start" | "stop" | "approve")[]; readonly supportsMcpStatus?: boolean }; readonly mcpServers?: readonly McpServerStatus[] };
 type AgentProfile = { readonly id: string; readonly displayName: string; readonly providerId: string; readonly modelId: string; readonly mode: AgentMode; readonly approvalPolicy: ApprovalMode; readonly internetAccess: boolean };
 type AgentRun = { readonly id: string; readonly agentId: string; readonly state: "idle" | "queued" | "running" | "waiting_for_approval" | "completed" | "failed" | "cancelled"; readonly latestProgress?: string; readonly output?: string; readonly activeTool?: { readonly callId: string; readonly name: string }; readonly changedFiles: readonly string[]; readonly errorCode?: string };
 type RemoteEvent = { readonly type: string; readonly workspaceId?: string; readonly sessionId?: string; readonly text?: string; readonly message?: string; readonly callId?: string; readonly tool?: string; readonly input?: Record<string, unknown>; readonly result?: { readonly content: string; readonly isError?: boolean }; readonly modifiedFiles?: readonly string[]; readonly run?: AgentRun; readonly agentId?: string; readonly runId?: string; readonly event?: RemoteEvent };
@@ -220,7 +221,7 @@ export default function App() {
       clearTimeout(timeout);
       reject(new Error(message));
     };
-    socket.onopen = () => socket.send(JSON.stringify({ type: "authenticate", token, protocolVersions: [2, 1] }));
+    socket.onopen = () => socket.send(JSON.stringify({ type: "authenticate", token, protocolVersions: [3, 2, 1] }));
     socket.onmessage = ({ data }) => {
       let event: RemoteEvent;
       try { event = JSON.parse(String(data)) as RemoteEvent; } catch { return; }
@@ -572,6 +573,21 @@ export default function App() {
           <View style={styles.pageIntro}><Pill tone="success">Gateway connected</Pill><Text style={styles.screenTitle}>Choose where to work.</Text><Text style={styles.screenIntro}>Your files and model remain on the paired computer.</Text></View>
           <View style={styles.section}><Text style={styles.sectionEyebrow}>WORKSPACE</Text><View style={styles.cardList}>{workspaces.map((workspace) => <Pressable key={workspace.id} style={[styles.workspaceCard, workspaceId === workspace.id && styles.workspaceCardSelected]} onPress={() => chooseWorkspace(workspace)}><View style={styles.workspaceIcon}><Text style={styles.workspaceIconText}>⌘</Text></View><View style={styles.gatewayCopy}><Text style={styles.gatewayName}>{workspace.displayName}</Text><Text style={styles.gatewayUrl}>{workspace.capabilities.modes.map((item) => modeCopy[item].title).join(" · ")}</Text></View>{workspaceId === workspace.id && <Text style={styles.selectedMark}>✓</Text>}</Pressable>)}</View></View>
           <View style={styles.section}><Text style={styles.sectionEyebrow}>WORKING MODE</Text>{renderModeSelector(setMode)}</View>
+          {selectedWorkspace?.capabilities.supportsMcpStatus && <View style={styles.section}>
+            <Text style={styles.sectionEyebrow}>MCP CONNECTIONS</Text>
+            <Text style={styles.screenIntro}>Read-only status from the paired computer. Server commands and credentials stay on the host.</Text>
+            <View style={styles.cardList}>
+              {(selectedWorkspace.mcpServers ?? []).map((server) => <View key={server.name} style={styles.agentProfileCard}>
+                <View style={styles.workspaceIcon}><Text style={styles.workspaceIconText}>M</Text></View>
+                <View style={styles.gatewayCopy}>
+                  <Text style={styles.gatewayName}>{server.name}</Text>
+                  <Text style={styles.gatewayUrl}>{server.state} · {server.toolCount} tool{server.toolCount === 1 ? "" : "s"}</Text>
+                  {server.error ? <Text style={styles.agentProfileDetail}>{server.error}</Text> : server.tools?.length ? <Text style={styles.agentProfileDetail}>{server.tools.map((tool) => tool.name).join(" · ")}</Text> : null}
+                </View>
+              </View>)}
+              {!selectedWorkspace.mcpServers?.length && <View style={styles.notice}><View style={styles.noticeDot} /><Text style={styles.noticeText}>No MCP servers are configured for this workspace.</Text></View>}
+            </View>
+          </View>}
           {supportsManagedAgents && <Pressable style={styles.outlineButton} onPress={() => void openAgents()}><Text style={styles.outlineButtonText}>Open agent control center</Text></Pressable>}
           <Pressable style={styles.primaryButton} onPress={() => void beginSession()}><Text style={styles.primaryButtonText}>Open workspace</Text><Text style={styles.primaryButtonArrow}>›</Text></Pressable>
         </>}

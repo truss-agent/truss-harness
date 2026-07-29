@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "0.1.21",
+    label: "Managed MCP connections",
+    changes: [
+      "Added managed MCP controls in Desktop and VS Code for configuration, enable/disable, isolated connection testing, reconnect, removal, and safe tool inspection.",
+      "Added CLI and TUI MCP status surfaces plus read-only gateway protocol v3 visibility in Truss Go without exposing executable configuration or credentials.",
+      "Removed stale tools during MCP reconnects and made Desktop recover safely when a session-only Linux provider key expires."
+    ]
+  },
+  {
     version: "0.1.20",
     label: "Provider connection checks",
     changes: [

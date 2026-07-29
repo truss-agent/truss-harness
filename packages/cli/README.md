@@ -122,6 +122,18 @@ Anthropic's current compatibility endpoint is intended primarily for evaluation;
 
 MCP stdio servers can be defined under `mcpServers`. User-level definitions load normally. Workspace definitions can launch local processes and are ignored unless the user configuration sets `"allowWorkspaceMcpServers": true`. Plan mode loads only servers marked `"readOnly": true`; Agent mode loads all enabled servers. MCP calls follow the selected approval policy.
 
+Inspect connections without starting an agent:
+
+```sh
+truss-cli mcp status
+truss-cli mcp tools
+truss-cli mcp reconnect filesystem
+```
+
+Add `--json` to `status` or `tools` for credential-safe structured output.
+These commands never print server commands, working directories, environment
+values, or credentials.
+
 ## Service mode
 
 `truss-cli serve` starts the newline-delimited JSON runtime protocol used by clients such as the VS Code extension. Standard output is reserved for protocol messages.

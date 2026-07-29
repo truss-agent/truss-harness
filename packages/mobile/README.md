@@ -4,6 +4,10 @@ Expo/React Native client for a trusted Truss workspace gateway. The computer
 running Truss, not the phone, owns the workspace, agent tools, provider
 credentials, and approval policy.
 
+When a paired host supports gateway protocol v3, the workspace screen shows
+read-only MCP connection and tool status. Configuration and credentials remain
+on the paired computer.
+
 ```sh
 npm --workspace @truss-harness/mobile run start
 ```

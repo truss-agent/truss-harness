@@ -159,9 +159,9 @@ or **Auto-allow all tools** only in a workspace you trust.
 
 ## MCP servers
 
-Truss can load local Model Context Protocol servers over stdio. Add them to
-your shared CLI/TUI configuration, or paste the same object into the Desktop or
-VS Code MCP settings:
+Truss can load local Model Context Protocol servers over stdio. Desktop has an
+MCP manager in Settings, and VS Code provides **Truss: Manage MCP Servers**.
+CLI/TUI users can add the same definitions to their shared configuration:
 
 ~~~json
 {
@@ -182,6 +182,12 @@ readOnly; Edit mode loads every enabled server. Workspace MCP definitions are
 ignored by default because they can start local processes; explicitly trust
 them with "allowWorkspaceMcpServers": true in your user configuration when
 appropriate.
+
+Use `truss-cli mcp status`, `truss-cli mcp tools`, or
+`truss-cli mcp reconnect <name>` for safe terminal diagnostics. The TUI opens
+the same credential-safe server/tool status with `c`. Paired Truss Go clients
+can view status, but server commands, environment values, and credentials stay
+on the host.
 
 ## Learn more
 

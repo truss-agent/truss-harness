@@ -42,6 +42,8 @@ import {
   createGatewayAgentController,
   startRemoteGateway,
 } from "@truss-harness/gateway";
+import type { McpServerStatus } from "@truss-harness/mcp";
+import { formatMcpStatuses } from "./mcp.js";
 import qrcode from "qrcode-terminal";
 
 const help = `${brand.productName} CLI
@@ -63,6 +65,9 @@ Commands:
   chat [prompt]          Stream one response or open persistent chat
   setup                 Interactively save local-model or cloud BYOK defaults
   test-connection       Verify the configured provider, model, and credential
+  mcp status            Show safe MCP connection state
+  mcp tools             Show MCP connection state and discovered tools
+  mcp reconnect <name>  Restart one configured MCP server
   models                List detected local servers and models
   config path           Print user and workspace configuration paths
   config init           Create a workspace configuration template
@@ -563,6 +568,18 @@ async function main(): Promise<void> {
           new FileAgentProfileStore(workspaceRoot),
         );
         await coordinator.restoreHistory();
+        const mcpStatuses = new Map<string, McpServerStatus>(
+          Object.entries(configuration.mcpServers ?? {}).map(
+            ([name, server]) => [
+              name,
+              {
+                name,
+                state: server.enabled === false ? "disabled" : "idle",
+                toolCount: 0,
+              } satisfies McpServerStatus,
+            ],
+          ),
+        );
         agentCoordinators.push(coordinator);
         return {
           id,
@@ -570,6 +587,13 @@ async function main(): Promise<void> {
           agents: createGatewayAgentController(coordinator, {
             allowStart: true,
           }),
+          ...(mcpStatuses.size
+            ? {
+                mcp: {
+                  list: () => [...mcpStatuses.values()],
+                },
+              }
+            : {}),
           createRuntime: async (
             mode: "chat" | "plan" | "edit",
             toolApprovalMode?: PermissionMode,
@@ -590,6 +614,8 @@ async function main(): Promise<void> {
               mode,
               approval,
             });
+            for (const status of client.mcpServers)
+              mcpStatuses.set(status.name, status);
             clients.set(key, { client, approval });
             return { runtime: client.runtime, events: client.events, approval };
           },
@@ -765,6 +791,45 @@ async function main(): Promise<void> {
     workspaceRoot: cwd(),
     overrides,
   });
+
+  if (command === "mcp") {
+    const positional = args.filter((argument) => argument !== "--json");
+    const [action = "status", name] = positional;
+    if (
+      action !== "status" &&
+      action !== "tools" &&
+      action !== "reconnect"
+    )
+      throw new Error(
+        `Use ${brand.cliCommand} mcp status, tools, or reconnect <name>.`,
+      );
+    const client = await createClientRuntime({
+      ...configuration,
+      // Status inspection connects servers but never starts an agent or invokes a tool.
+      mode: "edit",
+    });
+    try {
+      if (action === "reconnect") {
+        if (!name)
+          throw new Error(
+            `Provide a server name: ${brand.cliCommand} mcp reconnect <name>`,
+          );
+        const status = await client.mcp.reconnect(name);
+        if (!status)
+          throw new Error(`No MCP server named '${name}' is configured.`);
+      }
+      if (args.includes("--json")) {
+        process.stdout.write(`${JSON.stringify(client.mcpServers, null, 2)}\n`);
+      } else {
+        process.stdout.write(
+          `${formatMcpStatuses(client.mcpServers, { includeTools: action === "tools" })}\n`,
+        );
+      }
+    } finally {
+      await client.dispose();
+    }
+    return;
+  }
 
   if (command === "serve") {
     const approval = new ProtocolToolApproval(configuration.permission);

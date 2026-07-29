@@ -8,7 +8,8 @@ import { brand } from "@truss-harness/branding";
 import { FileAgentProfileStore, FileAgentRunHistoryStore, profileFromConfiguration } from "@truss-harness/cli/agents";
 import type { ClientConfiguration } from "@truss-harness/cli/runtime";
 import { AgentHost } from "@truss-harness/agent-host";
-import { AgentCoordinator, ApiKeyCredential, executeWorkspaceCommand, type AgentProfile, type AgentRunSummary, type ChatAttachment, type ContextBlock, type ToolApproval, type ToolCall, type WorkspacePlan } from "@truss-harness/runtime";
+import { McpServerManager, type McpServerConfigurations, type McpServerStatus, type McpStdioServerConfiguration } from "@truss-harness/mcp";
+import { AgentCoordinator, ApiKeyCredential, executeWorkspaceCommand, ToolRegistry, type AgentProfile, type AgentRunSummary, type ChatAttachment, type ContextBlock, type ToolApproval, type ToolCall, type WorkspacePlan } from "@truss-harness/runtime";
 import { createPairingUri, detectLanAddress } from "@truss-harness/gateway";
 import QRCode from "qrcode";
 import * as vscode from "vscode";
@@ -17,15 +18,6 @@ const execFile = promisify(execFileCallback);
 
 type AgentMode = "chat" | "plan" | "edit";
 type PermissionMode = "ask" | "auto-read" | "auto-all";
-type McpServerConfigurations = Readonly<Record<string, {
-  readonly command: string;
-  readonly args?: readonly string[];
-  readonly cwd?: string;
-  readonly env?: Readonly<Record<string, string>>;
-  readonly enabled?: boolean;
-  readonly readOnly?: boolean;
-}>>;
-
 interface ModelConfiguration {
   readonly provider: ModelProviderKind;
   readonly baseUrl: string;
@@ -169,7 +161,8 @@ type WebviewRequest =
   | { readonly type: "deleteConversation"; readonly conversationId: string }
   | { readonly type: "saveConversations"; readonly state: StoredConversationState }
   | { readonly type: "toolApproval"; readonly callId: string; readonly approved: boolean }
-  | { readonly type: "connectTrussGo" };
+  | { readonly type: "connectTrussGo" }
+  | { readonly type: "manageMcp" };
 
 type AgentDashboardRequest =
   | { readonly type: "ready" }
@@ -483,6 +476,233 @@ export function activate(context: vscode.ExtensionContext): void {
       void vscode.window.showInformationMessage(message);
     } else {
       void vscode.window.showWarningMessage(message);
+    }
+  };
+  const persistMcpServers = async (
+    mcpServers: McpServerConfigurations,
+  ): Promise<void> => {
+    configuration = { ...configuration, mcpServers };
+    await context.workspaceState.update("modelConfiguration", configuration);
+    disposeService();
+    await disposeAgentCoordinator();
+    post({ type: "runtimeReset" });
+    await sendState();
+  };
+  const editMcpServer = async (
+    existingName?: string,
+  ): Promise<
+    | {
+        readonly name: string;
+        readonly configuration: McpStdioServerConfiguration;
+      }
+    | undefined
+  > => {
+    const existing = existingName
+      ? configuration.mcpServers[existingName]
+      : undefined;
+    const name = await vscode.window.showInputBox({
+      prompt: "MCP server name",
+      value: existingName ?? "",
+      validateInput(value) {
+        const normalized = value.trim();
+        if (!normalized) return "A server name is required.";
+        if (!/^[A-Za-z0-9_-]+$/.test(normalized))
+          return "Use letters, numbers, dashes, or underscores.";
+        if (
+          normalized !== existingName &&
+          configuration.mcpServers[normalized]
+        )
+          return "A server with this name already exists.";
+        return undefined;
+      },
+    });
+    if (!name?.trim()) return undefined;
+    const command = await vscode.window.showInputBox({
+      prompt: "Executable used to start this MCP server",
+      value: existing?.command ?? "",
+      validateInput: (value) =>
+        value.trim() ? undefined : "A command is required.",
+    });
+    if (!command?.trim()) return undefined;
+    const args = await vscode.window.showInputBox({
+      prompt: "Arguments, one per line",
+      value: (existing?.args ?? []).join("\n"),
+    });
+    if (args === undefined) return undefined;
+    const cwd = await vscode.window.showInputBox({
+      prompt: "Working directory relative to this workspace (optional)",
+      value: existing?.cwd ?? "",
+    });
+    if (cwd === undefined) return undefined;
+    const trust = await vscode.window.showQuickPick(
+      [
+        {
+          label: "Approval-controlled tools",
+          description: "Treat tools as potentially mutating.",
+          readOnly: false,
+        },
+        {
+          label: "Read-only tools",
+          description: "Expose this server in Plan mode.",
+          readOnly: true,
+        },
+      ],
+      {
+        placeHolder: "How should Truss classify this server's tools?",
+      },
+    );
+    if (!trust) return undefined;
+    return {
+      name: name.trim(),
+      configuration: {
+        command: command.trim(),
+        args: args
+          .split(/\r?\n/)
+          .map((value) => value.trim())
+          .filter(Boolean),
+        cwd: cwd.trim() || undefined,
+        env: existing?.env,
+        enabled: existing?.enabled !== false,
+        readOnly: trust.readOnly,
+      },
+    };
+  };
+  const testMcpServer = async (
+    name: string,
+    server: McpStdioServerConfiguration,
+  ): Promise<McpServerStatus> => {
+    const manager = new McpServerManager(
+      new ToolRegistry(),
+      { [name]: { ...server, enabled: true } },
+      { workspaceRoot: workspaceRoot() },
+    );
+    try {
+      return (
+        (await manager.connect(name)) ?? {
+          name,
+          state: "failed",
+          toolCount: 0,
+          error: "The MCP server is no longer configured.",
+        }
+      );
+    } finally {
+      await manager.close();
+    }
+  };
+  const manageMcpServers = async (): Promise<void> => {
+    for (;;) {
+      const servers = Object.entries(configuration.mcpServers);
+      const selected = await vscode.window.showQuickPick(
+        [
+          {
+            label: "$(add) Add MCP server",
+            description: "Configure a local stdio server.",
+            name: undefined,
+          },
+          ...servers.map(([name, server]) => ({
+            label: `${server.enabled === false ? "$(circle-slash)" : "$(plug)"} ${name}`,
+            description:
+              server.enabled === false
+                ? "disabled"
+                : server.readOnly
+                  ? "enabled · read-only"
+                  : "enabled · approval-controlled",
+            detail: server.command,
+            name,
+          })),
+        ],
+        {
+          placeHolder:
+            "Manage MCP servers. Commands and environment values stay on this host.",
+        },
+      );
+      if (!selected) return;
+      if (!selected.name) {
+        const created = await editMcpServer();
+        if (!created) continue;
+        await persistMcpServers({
+          ...configuration.mcpServers,
+          [created.name]: created.configuration,
+        });
+        continue;
+      }
+      const name = selected.name;
+      const server = configuration.mcpServers[name];
+      if (!server) continue;
+      const action = await vscode.window.showQuickPick(
+        [
+          { label: "$(debug-start) Test and inspect tools", action: "test" },
+          {
+            label:
+              server.enabled === false
+                ? "$(check) Enable"
+                : "$(circle-slash) Disable",
+            action: "toggle",
+          },
+          { label: "$(edit) Edit", action: "edit" },
+          { label: "$(trash) Remove", action: "remove" },
+        ],
+        { placeHolder: `MCP server: ${name}` },
+      );
+      if (!action) continue;
+      if (action.action === "test") {
+        const status = await testMcpServer(name, server);
+        if (status.state !== "connected") {
+          void vscode.window.showWarningMessage(
+            `${name}: ${status.error ?? "The MCP server could not connect."}`,
+          );
+          continue;
+        }
+        const tools = status.tools ?? [];
+        await vscode.window.showQuickPick(
+          tools.length
+            ? tools.map((tool) => ({
+                label: tool.name,
+                description: tool.readOnly
+                  ? "read-only"
+                  : "approval-controlled",
+                detail: tool.description,
+              }))
+            : [
+                {
+                  label: "No tools discovered.",
+                  description: "",
+                  detail: undefined,
+                },
+              ],
+          {
+            placeHolder: `${name} connected with ${status.toolCount} tool${status.toolCount === 1 ? "" : "s"}`,
+          },
+        );
+        continue;
+      }
+      if (action.action === "toggle") {
+        await persistMcpServers({
+          ...configuration.mcpServers,
+          [name]: { ...server, enabled: server.enabled === false },
+        });
+        continue;
+      }
+      if (action.action === "edit") {
+        const edited = await editMcpServer(name);
+        if (!edited) continue;
+        const { [name]: _old, ...remaining } = configuration.mcpServers;
+        await persistMcpServers({
+          ...remaining,
+          [edited.name]: edited.configuration,
+        });
+        continue;
+      }
+      const confirmed = await vscode.window.showWarningMessage(
+        `Remove MCP server '${name}'?`,
+        { modal: true },
+        "Remove",
+      );
+      if (confirmed === "Remove") {
+        const { [name]: _removed, ...remaining } =
+          configuration.mcpServers;
+        await persistMcpServers(remaining);
+      }
     }
   };
   const runtimeEnvironment = async (): Promise<NodeJS.ProcessEnv> => {
@@ -862,6 +1082,14 @@ ${diff}`);
         case "connectTrussGo":
           await connectTrussGo().catch((error: unknown) => post({ type: "error", message: error instanceof Error ? error.message : String(error) }));
           break;
+        case "manageMcp":
+          await manageMcpServers().catch((error: unknown) =>
+            post({
+              type: "error",
+              message: error instanceof Error ? error.message : String(error),
+            }),
+          );
+          break;
       }
     }, undefined, context.subscriptions);
   };
@@ -897,6 +1125,7 @@ ${diff}`);
     await openAgentControlCenter();
   }));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.connectTrussGo", () => connectTrussGo().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
+  context.subscriptions.push(vscode.commands.registerCommand("trussHarness.manageMcpServers", () => manageMcpServers().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.testProviderConnection", () => testProviderConnection().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.configureByokProvider", async () => {
     const selected = await vscode.window.showQuickPick(cloudProviderDefinitions.map((provider) => ({
@@ -1103,7 +1332,7 @@ function webviewHtml(webview: vscode.Webview): string {
   @media (max-width: 700px) { #settings.open { grid-template-columns: repeat(2, minmax(0, 1fr)); } } @media (max-width: 560px) { header { padding: 8px; } .brand-row { flex-wrap: wrap; } #telemetry { width: 100%; } #workspace { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } #history { display: flex; gap: 4px; overflow-x: auto; overflow-y: hidden; padding: 5px; border-right: 0; border-bottom: 1px solid var(--vscode-panel-border); } .history-title { display: none; } .conversation-row { display: flex; min-width: 122px; } .conversation { width: auto; min-width: 96px; } #settings.open { grid-template-columns: 1fr; } #composer { grid-template-columns: minmax(0, 1fr) auto; } #stop, #send { grid-column: 2; } #agentControls { grid-template-columns: 1fr; } .quick-model { grid-template-columns: auto minmax(0, 1fr); } }
 </style></head><body>
 <header><div class="brand-row"><span class="brand">${brand.productName}</span><button id="new" title="New conversation">New</button><button id="help" title="Show local workspace commands">Help</button><button id="settingsButton" title="Model and agent settings">Settings</button></div><div id="telemetry"><div class="telemetry-context" title="Estimated from the active conversation. Local model servers do not consistently report prompt-token usage."><span class="telemetry-label">CONTEXT</span><span id="contextValue">0 / 8.2k</span><div class="meter"><span id="contextMeter"></span></div></div><div title="Estimated from streamed response text"><span class="telemetry-label">SPEED </span><span id="rateValue">-- tok/s</span></div></div></header>
-<section id="settings"><label>Detected server<select id="server"><option value="">Custom / manual</option></select></label><label>Provider<select id="provider"><option value="ollama">Ollama</option><option value="openai-compatible">Compatible API</option><option value="openai">OpenAI (use Configure BYOK Provider)</option><option value="anthropic">Anthropic (use Configure BYOK Provider)</option><option value="openrouter">OpenRouter (use Configure BYOK Provider)</option><option value="groq">Groq (use Configure BYOK Provider)</option><option value="together">Together AI (use Configure BYOK Provider)</option><option value="gemini">Gemini (use Configure BYOK Provider)</option><option value="xai">xAI (use Configure BYOK Provider)</option><option value="mistral">Mistral AI (use Configure BYOK Provider)</option><option value="deepseek">DeepSeek (use Configure BYOK Provider)</option><option value="perplexity">Perplexity (use Configure BYOK Provider)</option><option value="fireworks">Fireworks AI (use Configure BYOK Provider)</option><option value="nvidia-nim">NVIDIA NIM (use Configure BYOK Provider)</option></select></label><label>Endpoint<input id="endpoint" placeholder="http://127.0.0.1:11434"></label><label>Model<input id="model" list="models" placeholder="Refresh to discover models"><datalist id="models"></datalist></label><label>Context window<input id="contextWindow" type="number" min="512" max="1000000" step="512" value="8192"></label><label>Tool permissions<select id="permission"><option value="ask">Ask every time</option><option value="auto-read">Auto-allow read-only</option><option value="auto-all">Auto-allow all tools</option></select></label><label>Internet research<select id="internetAccess"><option value="false">Disabled</option><option value="true">Enabled</option></select></label><label class="mcp-setting">MCP servers (JSON)<textarea id="mcpServers" rows="7" spellcheck="false" placeholder='{"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]}}'></textarea></label><div id="mcpStatus">No MCP servers configured.</div><div class="actions"><button id="refresh">Refresh</button><button id="apply" class="primary">Apply</button></div></section>
+<section id="settings"><label>Detected server<select id="server"><option value="">Custom / manual</option></select></label><label>Provider<select id="provider"><option value="ollama">Ollama</option><option value="openai-compatible">Compatible API</option><option value="openai">OpenAI (use Configure BYOK Provider)</option><option value="anthropic">Anthropic (use Configure BYOK Provider)</option><option value="openrouter">OpenRouter (use Configure BYOK Provider)</option><option value="groq">Groq (use Configure BYOK Provider)</option><option value="together">Together AI (use Configure BYOK Provider)</option><option value="gemini">Gemini (use Configure BYOK Provider)</option><option value="xai">xAI (use Configure BYOK Provider)</option><option value="mistral">Mistral AI (use Configure BYOK Provider)</option><option value="deepseek">DeepSeek (use Configure BYOK Provider)</option><option value="perplexity">Perplexity (use Configure BYOK Provider)</option><option value="fireworks">Fireworks AI (use Configure BYOK Provider)</option><option value="nvidia-nim">NVIDIA NIM (use Configure BYOK Provider)</option></select></label><label>Endpoint<input id="endpoint" placeholder="http://127.0.0.1:11434"></label><label>Model<input id="model" list="models" placeholder="Refresh to discover models"><datalist id="models"></datalist></label><label>Context window<input id="contextWindow" type="number" min="512" max="1000000" step="512" value="8192"></label><label>Tool permissions<select id="permission"><option value="ask">Ask every time</option><option value="auto-read">Auto-allow read-only</option><option value="auto-all">Auto-allow all tools</option></select></label><label>Internet research<select id="internetAccess"><option value="false">Disabled</option><option value="true">Enabled</option></select></label><label class="mcp-setting">Advanced MCP JSON import/export<textarea id="mcpServers" rows="7" spellcheck="false" placeholder='{"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]}}'></textarea></label><div id="mcpStatus">No MCP servers configured.</div><div class="actions"><button id="manageMcp" type="button">Manage MCP</button><button id="refresh">Refresh</button><button id="apply" class="primary">Apply</button></div></section>
 <main id="workspace"><aside id="history"><div class="history-title">Conversations</div></aside><section id="chat"><div class="empty">Select a local model in Settings, then ask about the workspace. Use Plan for read-only investigation and Agent when you want the agent to change files or run commands.</div></section></main>
 <form id="composer"><div id="slashMenu" role="listbox" hidden></div><div id="attachments" hidden></div><textarea id="prompt" placeholder="Ask about this workspace. Type @/ to attach a file; /help for commands." rows="2"></textarea><input id="attachmentInput" type="file" multiple hidden><button id="attach" type="button" title="Attach images or text files">Attach</button><button id="stop" type="button">Cancel</button><button id="send" class="primary" type="submit">Send</button></form>
 <section id="agentControls" aria-label="Agent controls"><div class="segmented" aria-label="Agent mode"><button data-mode="chat">Chat</button><button data-mode="plan">Plan</button><button data-mode="edit">Agent</button></div><label class="quick-model"><span>MODEL</span><select id="quickModel" title="Switch local model"></select></label><span id="modelStatus">Choose a local model</span></section>
@@ -1140,7 +1369,7 @@ function webviewHtml(webview: vscode.Webview): string {
   const addFiles = async (files) => { const selected = [...files]; if (!selected.length) return; if (pendingAttachments.length + selected.length > 5) { status.textContent = 'Attach up to five files.'; return; } if (pendingAttachments.reduce((total, item) => total + item.size, 0) + selected.reduce((total, item) => total + item.size, 0) > 12 * 1024 * 1024) { status.textContent = 'Attachments exceed the 12 MB total limit.'; return; } try { pendingAttachments = [...pendingAttachments, ...await Promise.all(selected.map(toAttachment))]; renderAttachments(); } catch (error) { status.textContent = error && error.message ? error.message : String(error); } };
   const sendChat = (text) => { const conversation = current(); const history = conversation.messages.map((message) => ({ role: message.role, content: message.content, ...(message.attachments ? { attachments: message.attachments } : {}) })); const attachments = pendingAttachments; addMessage('user', text, attachments); addMessage('assistant', ''); prompt.value = ''; attachmentInput.value = ''; pendingAttachments = []; renderAttachments(); slashMenu.hidden = true; beginStream(); document.body.classList.add('streaming'); vscode.postMessage({ type: 'send', prompt: text, conversationId: conversation.id, history, attachments, attachedPaths: attachedPaths(text) }); };
   const connectGo = document.createElement('button'); connectGo.textContent = 'Truss Go'; connectGo.title = 'Connect this workspace to Truss Go on the same Wi-Fi'; connectGo.onclick = () => vscode.postMessage({ type: 'connectTrussGo' }); document.querySelector('.brand-row').prepend(connectGo);
-  document.getElementById('settingsButton').onclick = () => settings.classList.toggle('open'); document.getElementById('new').onclick = () => { addConversation(); renderHistory(); renderChat(); vscode.postMessage({ type: 'newConversation' }); }; document.getElementById('help').onclick = () => sendChat('/help');
+  document.getElementById('settingsButton').onclick = () => settings.classList.toggle('open'); document.getElementById('new').onclick = () => { addConversation(); renderHistory(); renderChat(); vscode.postMessage({ type: 'newConversation' }); }; document.getElementById('help').onclick = () => sendChat('/help'); document.getElementById('manageMcp').onclick = () => vscode.postMessage({ type: 'manageMcp' });
   document.getElementById('refresh').onclick = () => { try { vscode.postMessage({ type: 'discover', configuration: configurationValue() }); } catch (error) { mcpStatus.textContent = error.message || String(error); } }; document.getElementById('apply').onclick = () => { try { mcpStatus.textContent = 'MCP connections restart when the agent runs.'; postConfigure(); } catch (error) { mcpStatus.textContent = error.message || String(error); } };
   contextWindow.oninput = renderTelemetry;
   const setMode = (mode) => { configuration = { ...(configuration || configurationValue()), mode }; document.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode)); postConfigure(); };

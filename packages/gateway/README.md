@@ -5,6 +5,11 @@ authenticated HTTP command endpoint and a WebSocket event stream. It is a
 host-side adapter; it does not contain model-provider credentials or a mobile
 UI.
 
+Protocol v3 adds optional, read-only MCP server and tool summaries to workspace
+discovery. The gateway boundary never includes executable commands, working
+directories, environment values, or credentials, and paired clients cannot
+change MCP configuration.
+
 The CLI starts it for the current workspace:
 
 ```sh
