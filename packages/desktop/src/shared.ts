@@ -1,4 +1,5 @@
 import type { ModelProviderKind } from "@truss-harness/provider-openai-compatible";
+import type { ProviderConnectionResult } from "@truss-harness/agent-host";
 import type {
   AgentProfile,
   AgentRunSummary,
@@ -8,6 +9,7 @@ import type {
 
 export type DesktopProvider = ModelProviderKind;
 export type DesktopLocalProvider = "ollama" | "openai-compatible";
+export type DesktopCredentialStorage = "secure" | "session-only";
 export type DesktopMode = "chat" | "plan" | "edit";
 export type DesktopPermission = "ask" | "auto-read" | "auto-all";
 export const desktopThemeNames = [
@@ -226,6 +228,11 @@ export interface DesktopBridge {
     configuration: DesktopConfiguration,
     apiKey?: string,
   ): Promise<DesktopState>;
+  testProviderConnection(
+    configuration: DesktopConfiguration,
+    apiKey?: string,
+  ): Promise<ProviderConnectionResult>;
+  credentialStorage(): Promise<DesktopCredentialStorage>;
   clearCredential(provider: DesktopProvider): Promise<void>;
   configureTheme(theme: DesktopThemePreference): Promise<DesktopState>;
   adjustZoom(direction: -1 | 1): Promise<number>;

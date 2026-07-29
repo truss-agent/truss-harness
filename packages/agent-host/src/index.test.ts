@@ -154,7 +154,9 @@ describe("AgentHost", () => {
       },
     });
 
-    await expect(host.testProviderConnection(profile().provider)).resolves.toEqual({
+    await expect(
+      host.testProviderConnection(profile().provider),
+    ).resolves.toEqual({
       status: "connected",
       providerId: "test-provider",
       modelId: "test-model",
@@ -163,16 +165,54 @@ describe("AgentHost", () => {
     expect(created).toEqual([profile().provider]);
   });
 
+  it("uses a temporary connection-test credential without resolving the stored one", async () => {
+    const created: AgentProfile["provider"][] = [];
+    const registry = new AgentProviderRegistry();
+    registry.register(testProviderFactory(created));
+    let resolvedStoredCredential = false;
+    const temporaryCredential: CredentialProvider = {
+      id: "typed-in-settings",
+      async resolve() {
+        return { kind: "bearer", token: "temporary-secret" };
+      },
+    };
+    const host = new AgentHost({
+      workspaceRoot: process.cwd(),
+      providerRegistry: registry,
+      credentialResolver: {
+        async resolve() {
+          resolvedStoredCredential = true;
+          return undefined;
+        },
+      },
+    });
+
+    await expect(
+      host.testProviderConnection(
+        profile().provider,
+        undefined,
+        temporaryCredential,
+      ),
+    ).resolves.toMatchObject({ status: "connected" });
+    expect(resolvedStoredCredential).toBe(false);
+  });
+
   it("maps safe provider connection failures without exposing upstream details", async () => {
     const registry = new AgentProviderRegistry();
     registry.register({
-      descriptor: { id: "test-provider", label: "Test provider", requiresCredential: true },
+      descriptor: {
+        id: "test-provider",
+        label: "Test provider",
+        requiresCredential: true,
+      },
       async validate() {},
       async create() {
         return {
           id: "test-provider",
           async *stream(): AsyncIterable<ModelStreamEvent> {
-            throw new Error("Model request failed (402). sensitive upstream details");
+            throw new Error(
+              "Model request failed (402). sensitive upstream details",
+            );
           },
         } satisfies ModelProvider;
       },
@@ -182,11 +222,14 @@ describe("AgentHost", () => {
       providerRegistry: registry,
     });
 
-    await expect(host.testProviderConnection(profile().provider)).resolves.toEqual({
+    await expect(
+      host.testProviderConnection(profile().provider),
+    ).resolves.toEqual({
       status: "payment_required",
       providerId: "test-provider",
       modelId: "test-model",
-      message: "The API key was accepted, but this account or key has insufficient credit.",
+      message:
+        "The API key was accepted, but this account or key has insufficient credit.",
     });
   });
 

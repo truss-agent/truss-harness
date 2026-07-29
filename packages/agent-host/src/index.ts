@@ -181,22 +181,58 @@ function providerConnectionFailure(
 ): ProviderConnectionResult {
   const raw = error instanceof Error ? error.message : String(error);
   const status = /\((\d{3})\)/.exec(raw)?.[1];
-  const result = (connectionStatus: ProviderConnectionStatus, message: string): ProviderConnectionResult => ({
+  const result = (
+    connectionStatus: ProviderConnectionStatus,
+    message: string,
+  ): ProviderConnectionResult => ({
     status: connectionStatus,
     providerId: binding.providerId,
     modelId: binding.modelId,
     message,
   });
-  if (timedOut) return result("network_error", "The provider did not respond before the connection test timed out.");
-  if (status === "401" || status === "403") return result("authentication_failed", "The provider rejected the configured API key.");
-  if (status === "402") return result("payment_required", "The API key was accepted, but this account or key has insufficient credit.");
-  if (status === "404") return result("model_unavailable", "The selected model is unavailable from this provider.");
-  if (status === "429") return result("rate_limited", "The provider is rate limiting this account or model. Try again shortly.");
-  if (/requires (a model|a configured credential)|valid HTTP or HTTPS endpoint/i.test(raw))
-    return result("invalid_configuration", "Check the provider, endpoint, model ID, and API key configuration.");
+  if (timedOut)
+    return result(
+      "network_error",
+      "The provider did not respond before the connection test timed out.",
+    );
+  if (status === "401" || status === "403")
+    return result(
+      "authentication_failed",
+      "The provider rejected the configured API key.",
+    );
+  if (status === "402")
+    return result(
+      "payment_required",
+      "The API key was accepted, but this account or key has insufficient credit.",
+    );
+  if (status === "404")
+    return result(
+      "model_unavailable",
+      "The selected model is unavailable from this provider.",
+    );
+  if (status === "429")
+    return result(
+      "rate_limited",
+      "The provider is rate limiting this account or model. Try again shortly.",
+    );
+  if (
+    /requires (a model|a configured credential)|valid HTTP or HTTPS endpoint/i.test(
+      raw,
+    )
+  )
+    return result(
+      "invalid_configuration",
+      "Check the provider, endpoint, model ID, and API key configuration.",
+    );
   if (/abort|fetch|network|ECONN|ENOTFOUND|timed out/i.test(raw))
-    return result("network_error", "Truss could not reach the provider endpoint.");
-  return result("provider_error", "The provider could not complete the connection test.");
+    return result(
+      "network_error",
+      "Truss could not reach the provider endpoint.",
+    );
+  return result(
+    "provider_error",
+    "The provider could not complete the connection test.",
+  );
 }
 
 function endpoint(
@@ -380,10 +416,16 @@ export class AgentHost {
   async testProviderConnection(
     binding: AgentProviderBinding,
     options?: ProviderConnectionOptions,
+    credentialOverride?: CredentialProvider,
   ): Promise<ProviderConnectionResult> {
-    return this.registry.testConnection(binding, {
-      credential: await this.resolveCredential(binding),
-    }, options);
+    return this.registry.testConnection(
+      binding,
+      {
+        credential:
+          credentialOverride ?? (await this.resolveCredential(binding)),
+      },
+      options,
+    );
   }
 
   async createRuntime(profile: AgentProfile): Promise<HostedRuntime> {

@@ -5,6 +5,7 @@ import {
   type DesktopAgentsSnapshot,
   type DesktopConfiguration,
   type DesktopConversation,
+  type DesktopCredentialStorage,
   type DesktopEndpoint,
   type DesktopEvent,
   type DesktopFile,
@@ -142,6 +143,15 @@ const byokBaseUrl = element<HTMLInputElement>("byokBaseUrl");
 const byokModelInput = element<HTMLInputElement>("byokModelInput");
 const apiKeyInput = element<HTMLInputElement>("apiKeyInput");
 const clearApiKey = element<HTMLButtonElement>("clearApiKey");
+const testProviderConnection = element<HTMLButtonElement>(
+  "testProviderConnection",
+);
+const providerConnectionResult = element<HTMLParagraphElement>(
+  "providerConnectionResult",
+);
+const credentialStorageStatus = element<HTMLParagraphElement>(
+  "credentialStorageStatus",
+);
 const modelOptions = element<HTMLDataListElement>("modelOptions");
 const contextInput = element<HTMLInputElement>("contextInput");
 const permissionSelect = element<HTMLSelectElement>("permissionSelect");
@@ -172,6 +182,7 @@ let desktopState: DesktopState = {
   theme: { name: "default" },
   conversations: [],
 };
+let credentialStorage: DesktopCredentialStorage = "secure";
 let endpoints: readonly DesktopEndpoint[] = [];
 let models: readonly string[] = [];
 let files: readonly DesktopFile[] = [];
@@ -2573,6 +2584,42 @@ function settingsConfiguration(): DesktopConfiguration {
   };
 }
 
+function providerConnectionConfiguration(): DesktopConfiguration {
+  const current = configuration();
+  const provider = selectedSettingsProvider();
+  const reusingCurrentProvider = provider === current.provider;
+  const baseUrl = isLocalProvider(provider)
+    ? baseUrlInput.value.trim() ||
+      (reusingCurrentProvider ? current.baseUrl : "")
+    : byokBaseUrlForSelectedProvider() ||
+      (reusingCurrentProvider ? current.baseUrl : "");
+  const model =
+    (modelSettingsTab === "byok"
+      ? byokModelInput.value
+      : modelInput.value
+    ).trim() || (reusingCurrentProvider ? current.model : "");
+  if (!baseUrl || !model)
+    throw new Error("Choose a provider endpoint and model before testing.");
+  return { ...current, provider, baseUrl, model };
+}
+
+function clearProviderConnectionResult(): void {
+  providerConnectionResult.hidden = true;
+  providerConnectionResult.textContent = "";
+  providerConnectionResult.className = "provider-connection-result";
+}
+
+function renderCredentialStorageStatus(): void {
+  const sessionOnly = credentialStorage === "session-only";
+  credentialStorageStatus.hidden = !sessionOnly;
+  credentialStorageStatus.className = sessionOnly
+    ? "provider-connection-result failed"
+    : "provider-connection-result";
+  credentialStorageStatus.textContent = sessionOnly
+    ? "Secure credential storage is unavailable. Keys are available for this app session only and are forgotten when Truss closes."
+    : "";
+}
+
 function renderMcpStatus(): void {
   const statuses = desktopState.mcpStatuses ?? [];
   if (!statuses.length) {
@@ -2650,6 +2697,7 @@ function populateSettings(): void {
       : "";
   renderCustomThemeControls();
   renderMcpStatus();
+  renderCredentialStorageStatus();
 }
 
 async function restoreWorkspaceUiState(): Promise<void> {
@@ -3927,6 +3975,41 @@ clearApiKey.onclick = () => {
       notify(error instanceof Error ? error.message : String(error)),
     );
 };
+testProviderConnection.onclick = () => {
+  let next: DesktopConfiguration;
+  try {
+    next = providerConnectionConfiguration();
+  } catch (error) {
+    notify(error instanceof Error ? error.message : String(error));
+    return;
+  }
+  testProviderConnection.disabled = true;
+  testProviderConnection.textContent = "Testing...";
+  providerConnectionResult.hidden = false;
+  providerConnectionResult.className = "provider-connection-result";
+  providerConnectionResult.textContent = "Contacting the provider...";
+  void window.trussDesktop
+    .testProviderConnection(next, apiKeyInput.value || undefined)
+    .then((result) => {
+      providerConnectionResult.className = `provider-connection-result ${
+        result.status === "connected" ? "connected" : "failed"
+      }`;
+      providerConnectionResult.textContent = result.message;
+    })
+    .catch(() => {
+      providerConnectionResult.className = "provider-connection-result failed";
+      providerConnectionResult.textContent =
+        "The connection test could not start. Check the provider settings and try again.";
+    })
+    .finally(() => {
+      testProviderConnection.disabled = false;
+      testProviderConnection.textContent = "Test connection";
+    });
+};
+for (const input of [byokProviderSelect, byokBaseUrl, byokModelInput, apiKeyInput]) {
+  input.addEventListener("input", clearProviderConnectionResult);
+  input.addEventListener("change", clearProviderConnectionResult);
+}
 themeSelect.onchange = () => {
   renderCustomThemeControls();
   if (themeSelect.value === "custom") {
@@ -4245,7 +4328,10 @@ window.addEventListener("keydown", (event) => {
 window.trussDesktop.onEvent(handleEvent);
 window.setInterval(renderTerminalPrompt, 1_000);
 void (async () => {
-  desktopState = await window.trussDesktop.initialState();
+  [desktopState, credentialStorage] = await Promise.all([
+    window.trussDesktop.initialState(),
+    window.trussDesktop.credentialStorage(),
+  ]);
   agentsSnapshot = await window.trussDesktop.listAgents();
   for (const conversation of desktopState.conversations) {
     if (conversation.toolActivity?.length)

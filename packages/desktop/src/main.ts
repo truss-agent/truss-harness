@@ -28,7 +28,10 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 import { promisify } from "node:util";
 import { brand } from "@truss-harness/branding";
-import { AgentHost } from "@truss-harness/agent-host";
+import {
+  AgentHost,
+  type ProviderConnectionResult,
+} from "@truss-harness/agent-host";
 import {
   createClientRuntime,
   type ClientConfiguration,
@@ -74,6 +77,7 @@ import {
   type DesktopAgentsSnapshot,
   type DesktopConfiguration,
   type DesktopConversation,
+  type DesktopCredentialStorage,
   type DesktopEndpoint,
   type DesktopEvent,
   type DesktopFile,
@@ -1397,6 +1401,11 @@ app.on("before-quit", () => {
 
 ipcMain.handle("truss:initial-state", (): DesktopState => persisted);
 ipcMain.handle(
+  "truss:credential-storage",
+  (): DesktopCredentialStorage =>
+    safeStorage.isEncryptionAvailable() ? "secure" : "session-only",
+);
+ipcMain.handle(
   "truss:configure-theme",
   async (_event, theme: DesktopThemePreference): Promise<DesktopState> => {
     if (!isThemePreference(theme))
@@ -1628,6 +1637,38 @@ ipcMain.handle(
       void releaseOllamaModel(previous);
     await persistState();
     return persisted;
+  },
+);
+ipcMain.handle(
+  "truss:test-provider-connection",
+  async (
+    _event,
+    input: DesktopConfiguration,
+    apiKey?: string,
+  ): Promise<ProviderConnectionResult> => {
+    const configuration = normalizeConfiguration(input);
+    if (!configuration.baseUrl || !configuration.model)
+      throw new Error("Choose a provider endpoint and model before testing.");
+    if (!agentHost) await configureAgentCoordinator();
+    const credential =
+      apiKey?.trim() && isCloudProviderId(configuration.provider)
+        ? new ApiKeyCredential(
+            `desktop:test:${configuration.provider}`,
+            apiKey.trim(),
+          )
+        : undefined;
+    return agentHost!.testProviderConnection(
+      {
+        providerId: configuration.provider,
+        endpointUrl: configuration.baseUrl,
+        modelId: configuration.model,
+        ...(isCloudProviderId(configuration.provider)
+          ? { credentialRef: configuration.provider }
+          : {}),
+      },
+      undefined,
+      credential,
+    );
   },
 );
 ipcMain.handle(
