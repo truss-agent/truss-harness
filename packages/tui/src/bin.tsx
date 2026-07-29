@@ -81,6 +81,10 @@ const tuiControlHelp = [
     "Enter sends; a opens saved multi-agent profiles; Up/Down scroll chat; n starts a new conversation outside the chat input.",
   ],
   [
+    "MCP",
+    "c opens credential-safe server and tool status; R tests configured servers.",
+  ],
+  [
     "TERMINAL",
     "Type directly and press Enter; Up/Down scroll output; slash commands run through Truss.",
   ],
@@ -160,7 +164,8 @@ type Screen =
   | "approval"
   | "help"
   | "file-search"
-  | "agents";
+  | "agents"
+  | "mcp";
 type SettingsField = "server" | "endpoint" | "model" | "internet" | "theme";
 type RunStatus = "ready" | "thinking" | "tool" | "waiting";
 type ChatMessage = {
@@ -420,6 +425,17 @@ function App({
   const [client, setClient] = useState<
     Awaited<ReturnType<typeof createClientRuntime>> | undefined
   >();
+  const [mcpStatuses, setMcpStatuses] = useState<
+    Awaited<ReturnType<typeof createClientRuntime>>["mcpServers"]
+  >(() =>
+    Object.entries(initialConfiguration?.mcpServers ?? {}).map(
+      ([name, server]) => ({
+        name,
+        state: server.enabled === false ? "disabled" : "idle",
+        toolCount: 0,
+      }),
+    ),
+  );
   const [sessionId, setSessionId] = useState<string>();
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [fileIndex, setFileIndex] = useState(0);
@@ -702,6 +718,15 @@ function App({
 
   useEffect(() => {
     if (!client) return;
+    const unsubscribeMcp = client.mcp.subscribe((statuses) =>
+      setMcpStatuses((current) => {
+        const merged = new Map(
+          current.map((status) => [status.name, status]),
+        );
+        for (const status of statuses) merged.set(status.name, status);
+        return [...merged.values()];
+      }),
+    );
     const unsubscribe = client.events.subscribe((event) => {
       if (event.type === "text_delta") {
         setRunStatus("thinking");
@@ -745,6 +770,7 @@ function App({
     });
     return () => {
       unsubscribe();
+      unsubscribeMcp();
       void client.dispose();
     };
   }, [client]);
@@ -835,6 +861,7 @@ function App({
       systemPrompt: process.env.TRUSS_HARNESS_SYSTEM_PROMPT,
       mode: agentMode,
       internetAccess,
+      mcpServers: initialConfiguration?.mcpServers,
       approval: {
         approve: async (call) => {
           const readOnly = [
@@ -1083,6 +1110,26 @@ function App({
           );
       return;
     }
+    if (screen === "mcp") {
+      if (key.escape || input.toLowerCase() === "c") {
+        setScreen("workspace");
+        return;
+      }
+      if (input.toLowerCase() === "r" && configuration) {
+        void createClientRuntime({ ...configuration, mode: "edit" })
+          .then(async (inspection) => {
+            setMcpStatuses(inspection.mcpServers);
+            appendTerminal("[mcp] Tested configured servers.");
+            await inspection.dispose();
+          })
+          .catch((error: unknown) =>
+            appendTerminal(
+              `[mcp] ${error instanceof Error ? error.message : String(error)}`,
+            ),
+          );
+      }
+      return;
+    }
     if (screen === "settings") {
       if (key.escape) {
         setScreen("workspace");
@@ -1239,6 +1286,10 @@ function App({
     }
     if (input === "m" && focus !== "chat") {
       setScreen("settings");
+      return;
+    }
+    if (input.toLowerCase() === "c" && focus !== "chat") {
+      setScreen("mcp");
       return;
     }
     if (input === "n" && focus !== "chat") {
@@ -1589,8 +1640,8 @@ function App({
       </Box>
       <Box height={1} marginTop={1} justifyContent="space-between">
         <Text color={theme.muted} wrap="truncate-end">
-          Tab focus | Ctrl+Left/Right pane | / find | a agents | m settings |
-          Esc cancel run | Ctrl+C exit idle
+          Tab focus | Ctrl+Left/Right pane | / find | a agents | c MCP | m
+          settings | Esc cancel run | Ctrl+C exit idle
         </Text>
         <Text color={theme.muted}>
           {sessionId ? `session ${sessionId.slice(0, 8)}` : "new session"}
@@ -1767,6 +1818,60 @@ function App({
             )}
           </Box>
           <Text color={theme.muted}>R refreshes. A or Escape closes.</Text>
+        </Box>
+      )}
+      {screen === "mcp" && (
+        <Box
+          position="absolute"
+          flexDirection="column"
+          borderStyle="double"
+          borderColor={theme.focus}
+          paddingX={2}
+          paddingY={1}
+          width={overlayWidth}
+          marginLeft={2}
+          marginTop={6}
+          backgroundColor={theme.overlay}
+        >
+          <Text bold color={theme.accent}>
+            MCP CONNECTIONS
+          </Text>
+          <Text color={theme.muted}>
+            Status and discovered tools only. Commands, environment values, and
+            credentials remain hidden.
+          </Text>
+          <Box flexDirection="column" marginTop={1}>
+            {mcpStatuses.map((server) => (
+              <Box key={server.name} flexDirection="column">
+                <Text
+                  color={
+                    server.state === "failed"
+                      ? theme.error
+                      : server.state === "connected"
+                        ? theme.success
+                        : theme.warning
+                  }
+                >
+                  <Text bold>{server.name}</Text> {server.state}
+                  {server.error
+                    ? ` — ${server.error}`
+                    : ` — ${server.toolCount} tool${server.toolCount === 1 ? "" : "s"}`}
+                </Text>
+                {(server.tools ?? []).map((tool) => (
+                  <Text key={`${server.name}:${tool.name}`} color={theme.muted}>
+                    {"  "}
+                    {tool.name} [{tool.readOnly ? "read-only" : "approval"}]
+                  </Text>
+                ))}
+              </Box>
+            ))}
+            {!mcpStatuses.length && (
+              <Text color={theme.warning}>No MCP servers configured.</Text>
+            )}
+          </Box>
+          <Text color={theme.muted}>
+            R tests configured servers. C or Escape closes.
+          </Text>
         </Box>
       )}
       {screen === "help" && (

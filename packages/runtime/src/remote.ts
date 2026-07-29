@@ -5,10 +5,13 @@ import type { WorkspacePlan } from "./plans.js";
 export const REMOTE_SESSION_PROTOCOL_VERSION = 1 as const;
 /** The protocol revision that adds workspace-scoped managed-agent controls. */
 export const REMOTE_AGENT_PROTOCOL_VERSION = 2 as const;
+/** The protocol revision that advertises credential-safe MCP server status. */
+export const REMOTE_MCP_PROTOCOL_VERSION = 3 as const;
 /** Protocol revisions a host may negotiate with a remote client. */
 export const REMOTE_PROTOCOL_VERSIONS = [
   REMOTE_SESSION_PROTOCOL_VERSION,
   REMOTE_AGENT_PROTOCOL_VERSION,
+  REMOTE_MCP_PROTOCOL_VERSION,
 ] as const;
 export type RemoteProtocolVersion = (typeof REMOTE_PROTOCOL_VERSIONS)[number];
 
@@ -22,6 +25,29 @@ export interface RemoteWorkspace {
   readonly id: string;
   readonly displayName: string;
   readonly capabilities: RemoteHostCapabilities;
+  /** Optional live MCP state; never contains commands, environment values, or credentials. */
+  readonly mcpServers?: readonly RemoteMcpServerStatus[];
+}
+
+/** Credential-safe MCP tool metadata for paired read-only status views. */
+export interface RemoteMcpToolSummary {
+  readonly name: string;
+  readonly description?: string;
+  readonly readOnly: boolean;
+}
+
+/** Credential-safe MCP lifecycle state for paired read-only status views. */
+export interface RemoteMcpServerStatus {
+  readonly name: string;
+  readonly state:
+    | "idle"
+    | "disabled"
+    | "connecting"
+    | "connected"
+    | "failed";
+  readonly toolCount: number;
+  readonly error?: string;
+  readonly tools?: readonly RemoteMcpToolSummary[];
 }
 
 /** Features a host is willing to expose to a connected client. */
@@ -38,6 +64,8 @@ export interface RemoteHostCapabilities {
   readonly supportsAgents: boolean;
   /** Managed-agent actions authorized by this host for the paired client. */
   readonly agentActions: readonly RemoteAgentAction[];
+  /** Whether the host exposes read-only, credential-safe MCP status. */
+  readonly supportsMcpStatus?: boolean;
 }
 
 /** Metadata used by a transport during pairing and connection setup. Authentication remains transport-owned. */

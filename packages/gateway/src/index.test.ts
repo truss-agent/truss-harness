@@ -156,7 +156,7 @@ describe("remote gateway", () => {
     socket.close();
   });
 
-  it("negotiates v2 and scopes managed-agent commands to an enabled workspace", async () => {
+  it("negotiates v3 and scopes managed-agent commands and MCP status to an enabled workspace", async () => {
     const agentEvents = new EventBus<AgentCoordinatorEvent>();
     const run = {
       id: "run-1",
@@ -187,21 +187,57 @@ describe("remote gateway", () => {
         id: "workspace",
         displayName: "Test workspace",
         agents,
+        mcp: {
+          list: () => [
+            {
+              name: "filesystem",
+              state: "connected",
+              toolCount: 1,
+              tools: [
+                {
+                  name: "read_file",
+                  description: "Read a workspace file.",
+                  readOnly: true,
+                },
+              ],
+            },
+          ],
+        },
         createRuntime: async () => { throw new Error("not used"); },
       }],
     });
 
     const listed = await fetch(`${gateway.url}/v1/workspaces`, { headers: { authorization: `Bearer ${token}` } });
-    expect(await listed.json()).toMatchObject({ workspaces: [{ id: "workspace", capabilities: { protocolVersions: [1, 2], supportsAgents: true, agentActions: ["start", "stop", "approve"] } }] });
+    expect(await listed.json()).toMatchObject({
+      workspaces: [
+        {
+          id: "workspace",
+          capabilities: {
+            protocolVersions: [1, 2, 3],
+            supportsAgents: true,
+            agentActions: ["start", "stop", "approve"],
+            supportsMcpStatus: true,
+          },
+          mcpServers: [
+            {
+              name: "filesystem",
+              state: "connected",
+              toolCount: 1,
+              tools: [{ name: "read_file", readOnly: true }],
+            },
+          ],
+        },
+      ],
+    });
 
     const socket = new WebSocket(`${gateway.url.replace(/^http/, "ws")}/v1/events`);
     const connected = new Promise<void>((resolve, reject) => {
       socket.once("error", reject);
-      socket.once("open", () => socket.send(JSON.stringify({ type: "authenticate", token, protocolVersions: [2, 1] })));
+      socket.once("open", () => socket.send(JSON.stringify({ type: "authenticate", token, protocolVersions: [3, 2, 1] })));
       socket.on("message", (payload) => {
         const event = JSON.parse(payload.toString()) as { type: string; protocolVersion?: number };
         if (event.type === "connected") {
-          expect(event.protocolVersion).toBe(2);
+          expect(event.protocolVersion).toBe(3);
           resolve();
         }
       });

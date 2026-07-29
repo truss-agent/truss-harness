@@ -31,6 +31,9 @@ export interface McpToolSummary {
 
 export interface McpConnections {
   readonly statuses: readonly McpServerStatus[];
+  subscribe(listener: (statuses: readonly McpServerStatus[]) => void): () => void;
+  reconnect(name: string): Promise<McpServerStatus | undefined>;
+  disconnect(name: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -227,12 +230,18 @@ export class McpServerManager {
     const client = this.clients.get(name);
     this.clients.delete(name);
     await client?.close().catch(() => undefined);
-    if (this.configurations?.[name])
-      this.setStatus({ name, state: "disabled", toolCount: 0 });
+    const configuration = this.configurations?.[name];
+    if (configuration)
+      this.setStatus({
+        name,
+        state: configuration.enabled === false ? "disabled" : "idle",
+        toolCount: 0,
+      });
   }
 
   async close(): Promise<void> {
     await Promise.all([...this.clients.keys()].map((name) => this.disconnect(name)));
+    this.listeners.clear();
   }
 
   private setStatus(status: McpServerStatus): McpServerStatus {
@@ -252,11 +261,7 @@ export async function registerMcpServers(
 ): Promise<McpConnections> {
   const manager = new McpServerManager(registry, configurations, options);
   await manager.connectAll();
-
-  return {
-    statuses: manager.statuses,
-    close: () => manager.close(),
-  };
+  return manager;
 }
 
 export function parseMcpServerConfigurations(value: unknown): McpServerConfigurations {

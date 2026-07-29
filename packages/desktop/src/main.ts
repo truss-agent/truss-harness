@@ -774,6 +774,9 @@ async function connectTrussGo(): Promise<{
     );
   await stopTrussGo();
   const token = randomBytes(32).toString("hex");
+  const configuredMcpServers = Object.entries(
+    configuration.mcpServers ?? {},
+  );
   trussGoGateway = await startRemoteGateway({
     token,
     host: address,
@@ -787,6 +790,26 @@ async function connectTrussGo(): Promise<{
               agents: createGatewayAgentController(agentCoordinator, {
                 allowStart: true,
               }),
+            }
+          : {}),
+        ...(configuredMcpServers.length
+          ? {
+              mcp: {
+                list: () =>
+                  configuredMcpServers.map(([name, server]) => {
+                    const live = runtimeClient?.mcpServers.find(
+                      (status) => status.name === name,
+                    );
+                    return (
+                      live ?? {
+                        name,
+                        state:
+                          server.enabled === false ? "disabled" : "idle",
+                        toolCount: 0,
+                      }
+                    );
+                  }),
+              },
             }
           : {}),
         createRuntime: async (mode, toolApprovalMode) => {

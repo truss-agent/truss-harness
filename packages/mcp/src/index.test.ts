@@ -58,6 +58,11 @@ describe("MCP tool adapter", () => {
 
     await manager.disconnect("fixture");
     expect(registry.get("mcp_fixture_echo-value")).toBeUndefined();
+    expect(manager.statuses[1]).toMatchObject({
+      name: "fixture",
+      state: "idle",
+      toolCount: 0,
+    });
     await manager.reconnect("fixture");
     expect(registry.get("mcp_fixture_echo-value")).toBeDefined();
     expect(snapshots.some((states) => states.includes("connecting"))).toBe(true);

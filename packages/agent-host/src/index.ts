@@ -9,6 +9,7 @@ import {
 import {
   parseMcpServerConfigurations,
   registerMcpServers,
+  type McpConnections,
   type McpServerConfigurations,
   type McpServerStatus,
 } from "@truss-harness/mcp";
@@ -356,6 +357,9 @@ export interface AgentHostOptions {
 export interface HostedRuntime {
   readonly runtime: AgentRuntime;
   readonly events: EventBus<RuntimeEvent>;
+  /** Live, credential-safe MCP lifecycle controls for trusted local clients. */
+  readonly mcp: McpConnections;
+  /** Compatibility snapshot accessor for clients that only render status. */
   readonly mcpServers: readonly McpServerStatus[];
   /** Present only when the host supplied an approval controller. */
   readonly approval?: ToolApproval;
@@ -500,7 +504,10 @@ export class AgentHost {
     });
     return {
       events,
-      mcpServers: mcp.statuses,
+      mcp,
+      get mcpServers() {
+        return mcp.statuses;
+      },
       ...(approval ? { approval } : {}),
       dispose: () => mcp.close(),
       runtime: new AgentRuntime({

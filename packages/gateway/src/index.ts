@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
-import type { AgentCoordinator, AgentCoordinatorEvent, AgentRunSummary, AgentRuntime, RemoteAgentAction, RemoteAgentEvent, RemoteAgentProfile, RemoteAgentRunSummary, RemoteCommandResult, RemoteHostCapabilities, RemoteToolApprovalMode, RemoteWorkspace, RuntimeEvent, ToolApproval } from "@truss-harness/runtime";
+import type { AgentCoordinator, AgentCoordinatorEvent, AgentRunSummary, AgentRuntime, RemoteAgentAction, RemoteAgentEvent, RemoteAgentProfile, RemoteAgentRunSummary, RemoteCommandResult, RemoteHostCapabilities, RemoteMcpServerStatus, RemoteToolApprovalMode, RemoteWorkspace, RuntimeEvent, ToolApproval } from "@truss-harness/runtime";
 import { toRemoteSessionEvent } from "@truss-harness/runtime";
 export { createPairingUri, detectLanAddress } from "./pairing.js";
 
@@ -37,6 +37,11 @@ export interface GatewayAgentAccessOptions {
   readonly allowStop?: boolean;
   /** Resolving a visible run's pending tool approval is allowed by default. */
   readonly allowApproval?: boolean;
+}
+
+/** Host-owned, read-only MCP state. Secrets and executable configuration stay behind this boundary. */
+export interface GatewayMcpController {
+  list(): readonly RemoteMcpServerStatus[];
 }
 
 class GatewayAgentAccessError extends Error {
@@ -135,6 +140,7 @@ export interface GatewayWorkspace {
   readonly displayName: string;
   readonly capabilities?: RemoteHostCapabilities;
   readonly agents?: GatewayAgentController;
+  readonly mcp?: GatewayMcpController;
   readonly createRuntime: (mode: "chat" | "plan" | "edit", toolApprovalMode?: RemoteToolApprovalMode) => Promise<GatewayRuntime>;
 }
 
@@ -162,18 +168,20 @@ interface SessionContext {
 interface ConfiguredWorkspace {
   readonly remote: RemoteWorkspace;
   readonly agents?: GatewayAgentController;
+  readonly mcp?: GatewayMcpController;
   readonly createRuntime: GatewayWorkspace["createRuntime"];
 }
 
 const defaultCapabilities: RemoteHostCapabilities = {
-  protocolVersions: [1, 2],
+  protocolVersions: [1, 2, 3],
   modes: ["chat", "plan", "edit"],
   toolApprovalModes: ["ask", "auto-read", "auto-all"],
   supportsAttachments: false,
   supportsDiffs: false,
   supportsToolApproval: true,
   supportsAgents: false,
-  agentActions: []
+  agentActions: [],
+  supportsMcpStatus: false,
 };
 
 function isApprovalMode(value: unknown): value is RemoteToolApprovalMode {
@@ -211,10 +219,12 @@ export async function startRemoteGateway(options: RemoteGatewayOptions): Promise
       ...(workspace.agents
         ? { supportsAgents: true, agentActions: agentActions(workspace.agents) }
         : {}),
+      ...(workspace.mcp ? { supportsMcpStatus: true } : {}),
     };
     workspaces.set(workspace.id, {
       remote: { id: workspace.id, displayName: workspace.displayName, capabilities },
       ...(workspace.agents ? { agents: workspace.agents } : {}),
+      ...(workspace.mcp ? { mcp: workspace.mcp } : {}),
       createRuntime: workspace.createRuntime,
     });
   }
@@ -292,7 +302,7 @@ export async function startRemoteGateway(options: RemoteGatewayOptions): Promise
     if (!value || typeof value !== "object") return reject("unknown", "invalid_command", "Command must be a JSON object.");
     const input = value as Record<string, unknown>;
     const requestId = typeof input.requestId === "string" ? input.requestId : "unknown";
-    if ((input.version !== 1 && input.version !== 2) || typeof input.type !== "string") return reject(requestId, "invalid_command", "Unsupported remote-session command.");
+    if ((input.version !== 1 && input.version !== 2 && input.version !== 3) || typeof input.type !== "string") return reject(requestId, "invalid_command", "Unsupported remote-session command.");
 
     const agentWorkspace = (): { readonly workspace: ConfiguredWorkspace; readonly agents: GatewayAgentController } | RemoteCommandResult => {
       const workspace = typeof input.workspaceId === "string" ? workspaces.get(input.workspaceId) : undefined;
@@ -326,7 +336,7 @@ export async function startRemoteGateway(options: RemoteGatewayOptions): Promise
 
     if (input.type === "create_session") {
       const workspace = typeof input.workspaceId === "string" ? workspaces.get(input.workspaceId) : undefined;
-      if (!workspace?.remote.capabilities.protocolVersions.includes(input.version as 1 | 2) || (input.mode !== "chat" && input.mode !== "plan" && input.mode !== "edit") || !workspace.remote.capabilities.modes.includes(input.mode)) {
+      if (!workspace?.remote.capabilities.protocolVersions.includes(input.version as 1 | 2 | 3) || (input.mode !== "chat" && input.mode !== "plan" && input.mode !== "edit") || !workspace.remote.capabilities.modes.includes(input.mode)) {
         return reject(requestId, "not_authorized", "The requested workspace or mode is unavailable.");
       }
       if (input.toolApprovalMode !== undefined && (!isApprovalMode(input.toolApprovalMode) || !workspace.remote.capabilities.toolApprovalModes.includes(input.toolApprovalMode))) {
@@ -395,7 +405,12 @@ export async function startRemoteGateway(options: RemoteGatewayOptions): Promise
     if (!authorize(request)) return reply(response, 401, { error: "Unauthorized" });
 
     if (request.method === "GET" && url.pathname === "/v1/workspaces") {
-      return reply(response, 200, { workspaces: [...workspaces.values()].map(({ remote }) => remote) });
+      return reply(response, 200, {
+        workspaces: [...workspaces.values()].map(({ remote, mcp }) => ({
+          ...remote,
+          ...(mcp ? { mcpServers: mcp.list() } : {}),
+        })),
+      });
     }
     if (request.method === "GET" && url.pathname === "/v1/events") {
       const versionHeader = request.headers["truss-protocol-versions"];
