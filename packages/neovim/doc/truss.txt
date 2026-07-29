@@ -1,0 +1,49 @@
+*truss.txt*                    Truss coding agents for Neovim
+
+==============================================================================
+INTRODUCTION                                                     *truss.nvim*
+
+truss.nvim is a keyboard-first client for the provider-neutral Truss runtime.
+The plugin renders the interface in Lua while model access, tools, approvals,
+credentials, and workspace policy stay in the local truss-cli service.
+
+Requirements:
+
+- Neovim 0.10 or newer
+- Node.js 20 or newer
+- truss-cli installed and configured
+
+==============================================================================
+SETUP                                                          *truss-setup*
+
+>
+  require("truss").setup({
+    command = "truss-cli",
+    arguments = {},
+    attach_current_buffer = true,
+    maximum_context_characters = 100000,
+    panel = { position = "right", width = 52 },
+  })
+<
+
+The current buffer or visual selection is attached only when the user invokes
+`:TrussChat`. Opening Neovim or the Truss panel never sends workspace content.
+API keys stay in the CLI environment or user-level Truss configuration.
+
+==============================================================================
+COMMANDS                                                    *truss-commands*
+
+`:TrussOpen`             Open or focus the Truss split.
+`:TrussChat [prompt]`    Start or continue a streaming chat.
+`:'<,'>TrussChat`        Attach the selected lines to the prompt.
+`:TrussStop`             Cancel the active request.
+`:TrussNew`              Clear the panel and start a new session.
+`:TrussStatus`           Show connection and run status.
+
+Inside the Truss panel:
+
+`<Enter>`                Prompt for another message.
+`<C-c>`                  Stop the active run.
+`q`                      Close the panel without stopping the service.
+
+vim:tw=78:ts=8:noet:ft=help:norl:

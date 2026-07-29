@@ -24,7 +24,7 @@ jobs:
           node <<'NODE'
           const body = process.env.PR_BODY ?? '';
           const branch = process.env.HEAD_REF ?? '';
-          const hasClient = /-\s*\[[xX]\]\s*(?:VS Code|Desktop|CLI|TUI|Mobile|Documentation site|Repository infrastructure \(no client\))(?=\s|$)/m.test(body);
+          const hasClient = /-\s*\[[xX]\]\s*(?:VS Code|Desktop|CLI|TUI|Neovim|Mobile|Documentation site|Repository infrastructure \(no client\))(?=\s|$)/m.test(body);
           const hasIssue = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#\d+\b/i.test(body);
           const errors = [];
 
@@ -92,4 +92,17 @@ jobs:
 
           if affects "^packages/docs/" || affects "^(package(-lock)?\.json|scripts/|packages/branding/)"; then
             npm --workspace @truss-harness/docs run build
+          fi
+
+          if affects "^packages/neovim/" || affects "^packages/cli/src/protocol"; then
+            nvim_archive="$RUNNER_TEMP/nvim-linux-x86_64.tar.gz"
+            nvim_checksum="$RUNNER_TEMP/nvim-linux-x86_64.tar.gz.sha256sum"
+            curl -fsSL "https://github.com/neovim/neovim/releases/download/v0.10.4/nvim-linux-x86_64.tar.gz" -o "$nvim_archive"
+            curl -fsSL "https://github.com/neovim/neovim/releases/download/v0.10.4/nvim-linux-x86_64.tar.gz.sha256sum" -o "$nvim_checksum"
+            (
+              cd "$RUNNER_TEMP"
+              sha256sum --check "$(basename "$nvim_checksum")"
+            )
+            tar -xzf "$nvim_archive" -C "$RUNNER_TEMP"
+            PATH="$RUNNER_TEMP/nvim-linux-x86_64/bin:$PATH" npm --workspace truss.nvim test
           fi
