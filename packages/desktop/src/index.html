@@ -94,8 +94,22 @@
         <label class="checkbox-setting settings-wide"><input id="autocompleteEnabled" type="checkbox"><span>Enable inline Tab autocomplete</span></label>
         <label class="settings-wide">Autocomplete model <input id="autocompleteModel" list="modelOptions" placeholder="Use chat model"></label>
         <label class="checkbox-setting settings-wide"><input id="formatOnSave" type="checkbox"><span>Format supported files when saving</span></label>
-        <label class="mcp-setting">MCP servers (JSON)<textarea id="mcpServersInput" rows="8" spellcheck="false" placeholder='{"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]}}'></textarea></label>
-        <div id="mcpStatus" class="mcp-status">No MCP servers configured.</div>
+        <section class="mcp-manager" aria-label="MCP servers">
+          <div class="mcp-manager-heading"><div><strong>MCP servers</strong><span>Connect tools from trusted local servers.</span></div><button id="addMcpServer" type="button">Add server</button></div>
+          <div id="mcpServerList" class="mcp-server-list"></div>
+          <section id="mcpServerEditor" class="mcp-server-editor" hidden>
+            <strong id="mcpEditorTitle">Add MCP server</strong>
+            <label>Name<input id="mcpNameInput" autocomplete="off" placeholder="filesystem"></label>
+            <label>Command<input id="mcpCommandInput" autocomplete="off" placeholder="npx"></label>
+            <label class="settings-wide">Arguments (one per line)<textarea id="mcpArgsInput" rows="4" spellcheck="false" placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;."></textarea></label>
+            <label class="settings-wide">Working directory (optional)<input id="mcpCwdInput" autocomplete="off" placeholder="Relative to the workspace"></label>
+            <label class="checkbox-setting"><input id="mcpEnabledInput" type="checkbox" checked><span>Enabled</span></label>
+            <label class="checkbox-setting"><input id="mcpReadOnlyInput" type="checkbox"><span>Read-only server</span></label>
+            <div class="settings-panel-actions"><button id="cancelMcpServer" type="button">Cancel</button><button id="saveMcpServer" class="primary" type="button">Save server</button></div>
+          </section>
+          <details class="mcp-advanced"><summary>Advanced JSON import/export</summary><p>Reference secrets with ${env:VARIABLE_NAME}; never paste API keys directly into configuration.</p><label class="mcp-setting">MCP servers (JSON)<textarea id="mcpServersInput" rows="8" spellcheck="false" placeholder='{"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]}}'></textarea></label></details>
+          <div id="mcpStatus" class="mcp-status">No MCP servers configured.</div>
+        </section>
         <section class="update-settings" aria-label="Desktop updates">
           <strong>Desktop updates</strong>
           <label class="checkbox-setting"><input id="checkUpdatesOnLaunch" type="checkbox"><span>Check for updates when Truss starts</span></label>

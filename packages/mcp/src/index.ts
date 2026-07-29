@@ -16,7 +16,7 @@ export type McpServerConfigurations = Readonly<Record<string, McpStdioServerConf
 
 export interface McpServerStatus {
   readonly name: string;
-  readonly state: "disabled" | "connecting" | "connected" | "failed";
+  readonly state: "idle" | "disabled" | "connecting" | "connected" | "failed";
   readonly toolCount: number;
   readonly error?: string;
   readonly tools?: readonly McpToolSummary[];
@@ -157,7 +157,7 @@ export class McpServerManager {
 
   get statuses(): readonly McpServerStatus[] {
     return Object.keys(this.configurations ?? {}).map((name) =>
-      this.statusByName.get(name) ?? { name, state: "disabled", toolCount: 0 },
+      this.statusByName.get(name) ?? { name, state: "idle", toolCount: 0 },
     );
   }
 

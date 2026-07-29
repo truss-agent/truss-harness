@@ -44,7 +44,12 @@ import {
   startRemoteGateway,
   type RunningRemoteGateway,
 } from "@truss-harness/gateway";
-import { parseMcpServerConfigurations } from "@truss-harness/mcp";
+import {
+  McpServerManager,
+  parseMcpServerConfigurations,
+  type McpServerStatus,
+  type McpStdioServerConfiguration,
+} from "@truss-harness/mcp";
 import {
   cloudProviderDefinition,
   detectActiveLocalModel,
@@ -62,6 +67,7 @@ import {
   ApiKeyCredential,
   executeWorkspaceCommand,
   FileWorkspacePlanStore,
+  ToolRegistry,
   type AgentProfile,
   type AgentProfileStore,
   type ChatAttachment,
@@ -1400,6 +1406,37 @@ app.on("before-quit", () => {
 });
 
 ipcMain.handle("truss:initial-state", (): DesktopState => persisted);
+ipcMain.handle(
+  "truss:test-mcp-server",
+  async (
+    _event,
+    name: string,
+    input: McpStdioServerConfiguration,
+  ): Promise<McpServerStatus> => {
+    const normalizedName = name.trim();
+    if (!normalizedName) throw new Error("An MCP server name is required.");
+    const configurations = parseMcpServerConfigurations({
+      [normalizedName]: { ...input, enabled: true },
+    });
+    const manager = new McpServerManager(
+      new ToolRegistry(),
+      configurations,
+      { workspaceRoot: persisted.workspaceRoot },
+    );
+    try {
+      return (
+        (await manager.connect(normalizedName)) ?? {
+          name: normalizedName,
+          state: "failed",
+          toolCount: 0,
+          error: "The MCP server could not be tested.",
+        }
+      );
+    } finally {
+      await manager.close();
+    }
+  },
+);
 ipcMain.handle(
   "truss:credential-storage",
   (): DesktopCredentialStorage =>

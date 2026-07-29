@@ -233,6 +233,10 @@ export interface DesktopBridge {
     apiKey?: string,
   ): Promise<ProviderConnectionResult>;
   credentialStorage(): Promise<DesktopCredentialStorage>;
+  testMcpServer(
+    name: string,
+    configuration: McpStdioServerConfiguration,
+  ): Promise<McpServerStatus>;
   clearCredential(provider: DesktopProvider): Promise<void>;
   configureTheme(theme: DesktopThemePreference): Promise<DesktopState>;
   adjustZoom(direction: -1 | 1): Promise<number>;
@@ -312,4 +316,5 @@ import type { WorkspacePlan } from "@truss-harness/runtime";
 import type {
   McpServerConfigurations,
   McpServerStatus,
+  McpStdioServerConfiguration,
 } from "@truss-harness/mcp";
