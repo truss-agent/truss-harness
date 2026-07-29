@@ -135,6 +135,61 @@ describe("AgentHost", () => {
     await created.dispose();
   });
 
+  it("tests a provider connection through the selected provider without exposing its credential", async () => {
+    const created: AgentProfile["provider"][] = [];
+    const registry = new AgentProviderRegistry();
+    registry.register(testProviderFactory(created));
+    const host = new AgentHost({
+      workspaceRoot: process.cwd(),
+      providerRegistry: registry,
+      credentialResolver: {
+        async resolve() {
+          return {
+            id: "credential",
+            async resolve() {
+              return { kind: "bearer", token: "not-exposed" };
+            },
+          };
+        },
+      },
+    });
+
+    await expect(host.testProviderConnection(profile().provider)).resolves.toEqual({
+      status: "connected",
+      providerId: "test-provider",
+      modelId: "test-model",
+      message: "Connected successfully.",
+    });
+    expect(created).toEqual([profile().provider]);
+  });
+
+  it("maps safe provider connection failures without exposing upstream details", async () => {
+    const registry = new AgentProviderRegistry();
+    registry.register({
+      descriptor: { id: "test-provider", label: "Test provider", requiresCredential: true },
+      async validate() {},
+      async create() {
+        return {
+          id: "test-provider",
+          async *stream(): AsyncIterable<ModelStreamEvent> {
+            throw new Error("Model request failed (402). sensitive upstream details");
+          },
+        } satisfies ModelProvider;
+      },
+    });
+    const host = new AgentHost({
+      workspaceRoot: process.cwd(),
+      providerRegistry: registry,
+    });
+
+    await expect(host.testProviderConnection(profile().provider)).resolves.toEqual({
+      status: "payment_required",
+      providerId: "test-provider",
+      modelId: "test-model",
+      message: "The API key was accepted, but this account or key has insufficient credit.",
+    });
+  });
+
   it("registers distinct local endpoint adapters alongside cloud providers", () => {
     const providerIds = createDefaultAgentProviderRegistry()
       .list()

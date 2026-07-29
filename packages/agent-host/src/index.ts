@@ -55,6 +55,29 @@ export interface AgentProviderFactoryContext {
   readonly credential?: CredentialProvider;
 }
 
+export type ProviderConnectionStatus =
+  | "connected"
+  | "invalid_configuration"
+  | "authentication_failed"
+  | "payment_required"
+  | "model_unavailable"
+  | "rate_limited"
+  | "network_error"
+  | "provider_error";
+
+export interface ProviderConnectionResult {
+  readonly status: ProviderConnectionStatus;
+  readonly providerId: string;
+  readonly modelId: string;
+  /** Safe for UI and logs; never includes a key or raw upstream response. */
+  readonly message: string;
+}
+
+export interface ProviderConnectionOptions {
+  /** Bounded because this is an interactive settings check, not an agent run. */
+  readonly timeoutMs?: number;
+}
+
 /** A host-side factory. Runtime contracts never import these provider adapters. */
 export interface AgentProviderFactory {
   readonly descriptor: AgentProviderDescriptor;
@@ -111,6 +134,69 @@ export class AgentProviderRegistry {
     await factory.validate(binding, context);
     return factory.create(binding, context);
   }
+
+  async testConnection(
+    binding: AgentProviderBinding,
+    context: AgentProviderFactoryContext,
+    options: ProviderConnectionOptions = {},
+  ): Promise<ProviderConnectionResult> {
+    const timeoutMs = options.timeoutMs ?? 15_000;
+    const controller = new AbortController();
+    let timedOut = false;
+    const timeout = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+
+    try {
+      const provider = await this.create(binding, context);
+      let finished = false;
+      for await (const event of provider.stream({
+        messages: [{ role: "user", content: "Reply with exactly: OK" }],
+        tools: [],
+        signal: controller.signal,
+      })) {
+        if (event.type === "finish") finished = true;
+      }
+      if (!finished)
+        throw new Error("Model response ended without completing the request.");
+      return {
+        status: "connected",
+        providerId: binding.providerId,
+        modelId: binding.modelId,
+        message: "Connected successfully.",
+      };
+    } catch (error) {
+      return providerConnectionFailure(binding, error, timedOut);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+function providerConnectionFailure(
+  binding: AgentProviderBinding,
+  error: unknown,
+  timedOut: boolean,
+): ProviderConnectionResult {
+  const raw = error instanceof Error ? error.message : String(error);
+  const status = /\((\d{3})\)/.exec(raw)?.[1];
+  const result = (connectionStatus: ProviderConnectionStatus, message: string): ProviderConnectionResult => ({
+    status: connectionStatus,
+    providerId: binding.providerId,
+    modelId: binding.modelId,
+    message,
+  });
+  if (timedOut) return result("network_error", "The provider did not respond before the connection test timed out.");
+  if (status === "401" || status === "403") return result("authentication_failed", "The provider rejected the configured API key.");
+  if (status === "402") return result("payment_required", "The API key was accepted, but this account or key has insufficient credit.");
+  if (status === "404") return result("model_unavailable", "The selected model is unavailable from this provider.");
+  if (status === "429") return result("rate_limited", "The provider is rate limiting this account or model. Try again shortly.");
+  if (/requires (a model|a configured credential)|valid HTTP or HTTPS endpoint/i.test(raw))
+    return result("invalid_configuration", "Check the provider, endpoint, model ID, and API key configuration.");
+  if (/abort|fetch|network|ECONN|ENOTFOUND|timed out/i.test(raw))
+    return result("network_error", "Truss could not reach the provider endpoint.");
+  return result("provider_error", "The provider could not complete the connection test.");
 }
 
 function endpoint(
@@ -289,6 +375,15 @@ export class AgentHost {
     await this.registry.validate(profile.provider, {
       credential: await this.resolveCredential(profile.provider),
     });
+  }
+
+  async testProviderConnection(
+    binding: AgentProviderBinding,
+    options?: ProviderConnectionOptions,
+  ): Promise<ProviderConnectionResult> {
+    return this.registry.testConnection(binding, {
+      credential: await this.resolveCredential(binding),
+    }, options);
   }
 
   async createRuntime(profile: AgentProfile): Promise<HostedRuntime> {

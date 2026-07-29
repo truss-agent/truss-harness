@@ -51,6 +51,7 @@ import {
   isCloudProviderId,
   isLocalEndpointKind,
   listLocalModels,
+  type CloudProviderId,
   type LocalModelEndpoint,
 } from "@truss-harness/provider-openai-compatible";
 import {
@@ -143,6 +144,10 @@ const sessionConversationIds = new Map<string, string>();
 let agentHost: AgentHost | undefined;
 let agentCoordinator: AgentCoordinator | undefined;
 let unsubscribeAgentEvents: (() => void) | undefined;
+// Some Linux desktop sessions do not expose a Secret Service-compatible
+// keyring to Electron. Keep keys in memory in that case rather than writing
+// plaintext credentials to disk. They disappear when the app exits.
+const sessionCredentials = new Map<CloudProviderId, string>();
 
 class DesktopAgentProfileStore implements AgentProfileStore {
   async list(): Promise<readonly AgentProfile[]> {
@@ -401,16 +406,13 @@ async function readCredentials(): Promise<Readonly<Record<string, string>>> {
   }
 }
 
-function ensureSecureStorage(): void {
-  if (!safeStorage.isEncryptionAvailable())
-    throw new Error("Secure credential storage is unavailable on this system.");
-}
-
 async function storedCredential(
   provider: DesktopProvider,
 ): Promise<string | undefined> {
   if (!isCloudProviderId(provider)) return undefined;
-  ensureSecureStorage();
+  const sessionCredential = sessionCredentials.get(provider);
+  if (sessionCredential) return sessionCredential;
+  if (!safeStorage.isEncryptionAvailable()) return undefined;
   const encoded = (await readCredentials())[provider];
   if (!encoded) return undefined;
   try {
@@ -427,7 +429,11 @@ async function saveCredential(
   value: string,
 ): Promise<void> {
   if (!isCloudProviderId(provider)) return;
-  ensureSecureStorage();
+  if (!safeStorage.isEncryptionAvailable()) {
+    sessionCredentials.set(provider, value);
+    return;
+  }
+  sessionCredentials.delete(provider);
   const credentials = await readCredentials();
   await writeFile(
     credentialPath(),
@@ -438,6 +444,7 @@ async function saveCredential(
 
 async function removeCredential(provider: DesktopProvider): Promise<void> {
   if (!isCloudProviderId(provider)) return;
+  sessionCredentials.delete(provider);
   const credentials = await readCredentials();
   const { [provider]: _removed, ...remaining } = credentials;
   await writeFile(
