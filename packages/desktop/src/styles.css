@@ -1247,13 +1247,30 @@ dialog::backdrop {
 }
 
 .settings-wide,
-.settings-panel-actions {
+.settings-panel-actions,
+.provider-connection-result {
     grid-column: 1 / -1;
 }
 
 .settings-panel-actions {
     display: flex;
     justify-content: flex-start;
+    gap: 8px;
+}
+
+.provider-connection-result {
+    margin: 0;
+    color: #9badb5;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.provider-connection-result.connected {
+    color: #69d6b5;
+}
+
+.provider-connection-result.failed {
+    color: #f09b86;
 }
 
 #byokBaseUrl {
@@ -1461,6 +1478,7 @@ dialog::backdrop {
 }
 
 :root[data-desktop-theme] .mcp-status .connected,
+:root[data-desktop-theme] .provider-connection-result.connected,
 :root[data-desktop-theme] .run-result.completed {
     color: var(--desktop-accent);
     border-color: var(--desktop-accent);
@@ -1474,6 +1492,7 @@ dialog::backdrop {
 }
 
 :root[data-desktop-theme] .mcp-status .failed,
+:root[data-desktop-theme] .provider-connection-result.failed,
 :root[data-desktop-theme] .run-result.failed,
 :root[data-desktop-theme] .editor-content.error {
     color: var(--desktop-error);

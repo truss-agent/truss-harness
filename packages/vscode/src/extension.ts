@@ -455,6 +455,36 @@ export function activate(context: vscode.ExtensionContext): void {
   const providerApiKey = async (provider = configuration.provider): Promise<string | undefined> => {
     return isCloudProviderId(provider) ? context.secrets.get(credentialKey(provider)) : undefined;
   };
+  const testProviderConnection = async (): Promise<void> => {
+    if (!configuration.model.trim()) {
+      throw new Error("Choose a provider model before testing the connection.");
+    }
+    const apiKey = isCloudProviderId(configuration.provider)
+      ? await providerApiKey()
+      : undefined;
+    const host = new AgentHost({
+      workspaceRoot: workspaceRoot(),
+      credentialResolver: {
+        async resolve() {
+          return apiKey
+            ? new ApiKeyCredential("vscode-connection-test", apiKey)
+            : undefined;
+        },
+      },
+    });
+    const result = await host.testProviderConnection({
+      providerId: configuration.provider,
+      endpointUrl: configuration.baseUrl,
+      modelId: configuration.model,
+      ...(apiKey ? { credentialRef: "configuration" } : {}),
+    });
+    const message = `${brand.productName}: ${result.message}`;
+    if (result.status === "connected") {
+      void vscode.window.showInformationMessage(message);
+    } else {
+      void vscode.window.showWarningMessage(message);
+    }
+  };
   const runtimeEnvironment = async (): Promise<NodeJS.ProcessEnv> => {
     const environment: NodeJS.ProcessEnv = {
       ...process.env,
@@ -867,6 +897,7 @@ ${diff}`);
     await openAgentControlCenter();
   }));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.connectTrussGo", () => connectTrussGo().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
+  context.subscriptions.push(vscode.commands.registerCommand("trussHarness.testProviderConnection", () => testProviderConnection().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.configureByokProvider", async () => {
     const selected = await vscode.window.showQuickPick(cloudProviderDefinitions.map((provider) => ({
       label: provider.label,

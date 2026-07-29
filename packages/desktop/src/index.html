@@ -78,7 +78,9 @@
         <label>Endpoint<input id="byokBaseUrl" readonly></label>
         <label class="settings-wide">Model ID<input id="byokModelInput" placeholder="Enter the provider's model ID"></label>
         <label class="settings-wide">API key<input id="apiKeyInput" type="password" autocomplete="new-password" placeholder="Stored securely; enter a replacement key"></label>
-        <div class="settings-panel-actions"><button id="clearApiKey" type="button">Remove stored provider key</button></div>
+        <p id="credentialStorageStatus" class="provider-connection-result" hidden></p>
+        <div class="settings-panel-actions"><button id="testProviderConnection" type="button">Test connection</button><button id="clearApiKey" type="button">Remove stored provider key</button></div>
+        <p id="providerConnectionResult" class="provider-connection-result" role="status" hidden></p>
       </section>
       <section id="settingsPanelOther" class="settings-panel" role="tabpanel" aria-labelledby="settingsTabOther" hidden>
         <p class="settings-panel-intro">Set runtime permissions, integrations, and desktop update preferences.</p>

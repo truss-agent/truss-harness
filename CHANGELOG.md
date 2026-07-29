@@ -2,6 +2,22 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.20] - 2026-07-28
+
+### Added
+
+- Added a safe **Test connection** action for Desktop BYOK settings, plus
+  equivalent `truss-cli test-connection` and VS Code commands.
+- Added clear provider-connection outcomes for valid credentials, rejected
+  keys, insufficient provider credit, unavailable models, rate limits, and
+  network failures without exposing API keys or upstream response bodies.
+
+### Fixed
+
+- Kept Desktop provider keys usable for the open app session on Linux systems
+  without available encrypted credential storage, while clearly disclosing
+  that they are forgotten when Truss closes.
+
 ## [0.1.19] - 2026-07-28
 
 ### Fixed

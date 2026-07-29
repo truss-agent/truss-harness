@@ -28,7 +28,10 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { Readable } from "node:stream";
 import { promisify } from "node:util";
 import { brand } from "@truss-harness/branding";
-import { AgentHost } from "@truss-harness/agent-host";
+import {
+  AgentHost,
+  type ProviderConnectionResult,
+} from "@truss-harness/agent-host";
 import {
   createClientRuntime,
   type ClientConfiguration,
@@ -51,6 +54,7 @@ import {
   isCloudProviderId,
   isLocalEndpointKind,
   listLocalModels,
+  type CloudProviderId,
   type LocalModelEndpoint,
 } from "@truss-harness/provider-openai-compatible";
 import {
@@ -73,6 +77,7 @@ import {
   type DesktopAgentsSnapshot,
   type DesktopConfiguration,
   type DesktopConversation,
+  type DesktopCredentialStorage,
   type DesktopEndpoint,
   type DesktopEvent,
   type DesktopFile,
@@ -143,6 +148,10 @@ const sessionConversationIds = new Map<string, string>();
 let agentHost: AgentHost | undefined;
 let agentCoordinator: AgentCoordinator | undefined;
 let unsubscribeAgentEvents: (() => void) | undefined;
+// Some Linux desktop sessions do not expose a Secret Service-compatible
+// keyring to Electron. Keep keys in memory in that case rather than writing
+// plaintext credentials to disk. They disappear when the app exits.
+const sessionCredentials = new Map<CloudProviderId, string>();
 
 class DesktopAgentProfileStore implements AgentProfileStore {
   async list(): Promise<readonly AgentProfile[]> {
@@ -401,16 +410,13 @@ async function readCredentials(): Promise<Readonly<Record<string, string>>> {
   }
 }
 
-function ensureSecureStorage(): void {
-  if (!safeStorage.isEncryptionAvailable())
-    throw new Error("Secure credential storage is unavailable on this system.");
-}
-
 async function storedCredential(
   provider: DesktopProvider,
 ): Promise<string | undefined> {
   if (!isCloudProviderId(provider)) return undefined;
-  ensureSecureStorage();
+  const sessionCredential = sessionCredentials.get(provider);
+  if (sessionCredential) return sessionCredential;
+  if (!safeStorage.isEncryptionAvailable()) return undefined;
   const encoded = (await readCredentials())[provider];
   if (!encoded) return undefined;
   try {
@@ -427,7 +433,11 @@ async function saveCredential(
   value: string,
 ): Promise<void> {
   if (!isCloudProviderId(provider)) return;
-  ensureSecureStorage();
+  if (!safeStorage.isEncryptionAvailable()) {
+    sessionCredentials.set(provider, value);
+    return;
+  }
+  sessionCredentials.delete(provider);
   const credentials = await readCredentials();
   await writeFile(
     credentialPath(),
@@ -438,6 +448,7 @@ async function saveCredential(
 
 async function removeCredential(provider: DesktopProvider): Promise<void> {
   if (!isCloudProviderId(provider)) return;
+  sessionCredentials.delete(provider);
   const credentials = await readCredentials();
   const { [provider]: _removed, ...remaining } = credentials;
   await writeFile(
@@ -1390,6 +1401,11 @@ app.on("before-quit", () => {
 
 ipcMain.handle("truss:initial-state", (): DesktopState => persisted);
 ipcMain.handle(
+  "truss:credential-storage",
+  (): DesktopCredentialStorage =>
+    safeStorage.isEncryptionAvailable() ? "secure" : "session-only",
+);
+ipcMain.handle(
   "truss:configure-theme",
   async (_event, theme: DesktopThemePreference): Promise<DesktopState> => {
     if (!isThemePreference(theme))
@@ -1621,6 +1637,38 @@ ipcMain.handle(
       void releaseOllamaModel(previous);
     await persistState();
     return persisted;
+  },
+);
+ipcMain.handle(
+  "truss:test-provider-connection",
+  async (
+    _event,
+    input: DesktopConfiguration,
+    apiKey?: string,
+  ): Promise<ProviderConnectionResult> => {
+    const configuration = normalizeConfiguration(input);
+    if (!configuration.baseUrl || !configuration.model)
+      throw new Error("Choose a provider endpoint and model before testing.");
+    if (!agentHost) await configureAgentCoordinator();
+    const credential =
+      apiKey?.trim() && isCloudProviderId(configuration.provider)
+        ? new ApiKeyCredential(
+            `desktop:test:${configuration.provider}`,
+            apiKey.trim(),
+          )
+        : undefined;
+    return agentHost!.testProviderConnection(
+      {
+        providerId: configuration.provider,
+        endpointUrl: configuration.baseUrl,
+        modelId: configuration.model,
+        ...(isCloudProviderId(configuration.provider)
+          ? { credentialRef: configuration.provider }
+          : {}),
+      },
+      undefined,
+      credential,
+    );
   },
 );
 ipcMain.handle(

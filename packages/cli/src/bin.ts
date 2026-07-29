@@ -14,7 +14,11 @@ import {
   executeWorkspaceCommand,
   workspaceCommandHelp,
 } from "@truss-harness/runtime";
-import { createClientRuntime, type ClientRuntime } from "./runtime.js";
+import {
+  createClientRuntime,
+  testClientProviderConnection,
+  type ClientRuntime,
+} from "./runtime.js";
 import {
   configurationPaths,
   initializeWorkspaceConfiguration,
@@ -58,6 +62,7 @@ Quick start:
 Commands:
   chat [prompt]          Stream one response or open persistent chat
   setup                 Interactively save local-model or cloud BYOK defaults
+  test-connection       Verify the configured provider, model, and credential
   models                List detected local servers and models
   config path           Print user and workspace configuration paths
   config init           Create a workspace configuration template
@@ -774,6 +779,13 @@ async function main(): Promise<void> {
     } finally {
       await client.dispose();
     }
+    return;
+  }
+
+  if (command === "test-connection") {
+    const result = await testClientProviderConnection(configuration);
+    process.stdout.write(`${result.status}: ${result.message}\n`);
+    if (result.status !== "connected") process.exitCode = 1;
     return;
   }
 

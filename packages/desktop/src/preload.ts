@@ -27,6 +27,12 @@ const bridge: DesktopBridge = {
   refreshLocalModel: () => ipcRenderer.invoke("truss:refresh-local-model"),
   configure: (configuration: DesktopConfiguration, apiKey?: string) =>
     ipcRenderer.invoke("truss:configure", configuration, apiKey),
+  testProviderConnection: (
+    configuration: DesktopConfiguration,
+    apiKey?: string,
+  ) =>
+    ipcRenderer.invoke("truss:test-provider-connection", configuration, apiKey),
+  credentialStorage: () => ipcRenderer.invoke("truss:credential-storage"),
   clearCredential: (provider) =>
     ipcRenderer.invoke("truss:clear-credential", provider),
   configureTheme: (theme) => ipcRenderer.invoke("truss:configure-theme", theme),
