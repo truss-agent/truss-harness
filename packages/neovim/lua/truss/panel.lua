@@ -13,6 +13,11 @@ function Panel.new(options)
     active_text = "",
     activity = {},
     context = nil,
+    mode = "chat",
+    profile = nil,
+    plan = nil,
+    changed_files = {},
+    file_lines = {},
   }, Panel)
 end
 
@@ -50,8 +55,19 @@ function Panel:open()
     require("truss").stop()
   end, { buffer = self.buffer, silent = true, desc = "Stop Truss run" })
   vim.keymap.set("n", "<CR>", function()
-    require("truss").chat()
+    local path = self.file_lines[vim.api.nvim_win_get_cursor(0)[1]]
+    if path then
+      require("truss").open_changed_file(path)
+    else
+      require("truss").chat()
+    end
   end, { buffer = self.buffer, silent = true, desc = "Ask Truss" })
+  vim.keymap.set("n", "gf", function()
+    local path = self.file_lines[vim.api.nvim_win_get_cursor(0)[1]]
+    if path then
+      require("truss").open_changed_file(path)
+    end
+  end, { buffer = self.buffer, silent = true, desc = "Open changed file" })
   self:render()
 end
 
@@ -75,6 +91,8 @@ end
 function Panel:start_response()
   self.active_text = ""
   self.activity = {}
+  self.plan = nil
+  self.changed_files = {}
   self:render()
 end
 
@@ -85,6 +103,22 @@ end
 
 function Panel:add_activity(text)
   table.insert(self.activity, text)
+  self:render()
+end
+
+function Panel:set_mode(mode, profile)
+  self.mode = mode
+  self.profile = profile
+  self:render()
+end
+
+function Panel:set_plan(plan)
+  self.plan = plan
+  self:render()
+end
+
+function Panel:set_changed_files(paths)
+  self.changed_files = vim.deepcopy(paths or {})
   self:render()
 end
 
@@ -101,6 +135,8 @@ function Panel:clear()
   self.active_text = ""
   self.activity = {}
   self.context = nil
+  self.plan = nil
+  self.changed_files = {}
   self.status = "Ready"
   self:render()
 end
@@ -116,11 +152,14 @@ function Panel:render()
   if not self.buffer or not vim.api.nvim_buf_is_valid(self.buffer) then
     return
   end
+  local mode = self.mode:gsub("^%l", string.upper)
+  local profile = self.profile and (" · " .. self.profile) or ""
   local lines = {
     " Truss",
-    " " .. self.status,
+    string.format(" %s · %s%s", self.status, mode, profile),
     string.rep("─", 48),
   }
+  self.file_lines = {}
   if self.context then
     local suffix = self.context.truncated and " (truncated)" or ""
     table.insert(lines, string.format(" Context: %s%s", self.context.source, suffix))
@@ -139,8 +178,25 @@ function Panel:render()
   for _, activity in ipairs(self.activity) do
     table.insert(lines, " · " .. activity)
   end
+  if self.plan then
+    table.insert(lines, "")
+    table.insert(lines, " Plan: " .. (self.plan.title or "Current plan"))
+    for _, step in ipairs(self.plan.steps or {}) do
+      local marker = step.status == "completed" and "[x]"
+        or (step.status == "in_progress" and "[..]" or "[ ]")
+      table.insert(lines, string.format(" %s %s", marker, step.content or ""))
+    end
+  end
+  if #self.changed_files > 0 then
+    table.insert(lines, "")
+    table.insert(lines, " Changed files")
+    for _, path in ipairs(self.changed_files) do
+      table.insert(lines, " ↳ " .. path)
+      self.file_lines[#lines] = path
+    end
+  end
   table.insert(lines, "")
-  table.insert(lines, " <Enter> ask  <C-c> stop  q close")
+  table.insert(lines, " <Enter> ask/open  gf file  <C-c> stop  q close")
 
   vim.bo[self.buffer].modifiable = true
   vim.api.nvim_buf_set_lines(self.buffer, 0, -1, false, lines)

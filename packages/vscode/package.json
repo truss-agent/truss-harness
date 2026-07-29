@@ -153,7 +153,7 @@
     "@types/qrcode": "^1.5.6",
     "qrcode": "^1.5.4",
     "@truss-harness/branding": "0.1.0",
-    "@truss-harness/cli": "0.1.12",
+    "@truss-harness/cli": "0.1.13",
     "@truss-harness/mcp": "0.1.7",
     "@truss-harness/provider-openai-compatible": "0.1.7",
     "@truss-harness/runtime": "0.1.7"

@@ -1,6 +1,7 @@
 local M = {}
 
 M.protocol_version = 1
+M.client_version = "0.2.0"
 
 local function default_encode(value)
   return vim.json.encode(value)
@@ -33,6 +34,7 @@ function Client.new(options)
     spawn = options.spawn or vim.system,
     on_event = options.on_event or function() end,
     on_lifecycle = options.on_lifecycle or function() end,
+    on_approval = options.on_approval or function() end,
     on_diagnostic = options.on_diagnostic or function() end,
     on_exit = options.on_exit or function() end,
     pending = {},
@@ -79,6 +81,8 @@ function Client:_message(message)
     self.on_event(params.event, params.requestId)
   elseif message.jsonrpc == "2.0" and message.method == "run/lifecycle" then
     self.on_lifecycle(message.params or {})
+  elseif message.jsonrpc == "2.0" and message.method == "approval/requested" then
+    self.on_approval(message.params or {})
   elseif message.jsonrpc == "2.0" and (message.result or message.error) then
     self:_finish_pending(message)
   elseif message.type == "event" then
@@ -218,7 +222,7 @@ function Client:start(callback)
     method = "initialize",
     params = {
       protocolVersions = { M.protocol_version },
-      client = { name = "truss.nvim", version = "0.1.0" },
+      client = { name = "truss.nvim", version = M.client_version },
     },
   }, function(error_message, response)
     if error_message then
@@ -234,6 +238,18 @@ function Client:start(callback)
     self.capabilities = result.capabilities or {}
     finish(nil)
   end)
+end
+
+function Client:request(method, params, callback)
+  local handler = callback and function(error_message, response)
+    callback(error_message, response and response.result or nil)
+  end or nil
+  return self:_write({
+    jsonrpc = "2.0",
+    id = self:_next_id("request"),
+    method = method,
+    params = params or {},
+  }, handler)
 end
 
 function Client:run(input, callback)
@@ -274,19 +290,29 @@ function Client:cancel(callback)
   }, callback)
 end
 
-function Client:approve(call_id, approved)
+function Client:approve(call_id, approved, callback)
   if not self.active_request then
+    if callback then
+      callback({ message = "No Truss run is active." })
+    end
     return
   end
-  self:_write({
-    jsonrpc = "2.0",
-    id = self:_next_id("approval"),
-    method = "approval/resolve",
-    params = {
-      callId = call_id,
-      approved = approved,
-    },
-  })
+  self:request("approval/resolve", {
+    callId = call_id,
+    approved = approved,
+  }, callback)
+end
+
+function Client:test_connection(callback)
+  self:request("provider/test", {}, callback)
+end
+
+function Client:list_profiles(callback)
+  self:request("profiles/list", {}, callback)
+end
+
+function Client:mcp_status(callback)
+  self:request("mcp/status", {}, callback)
 end
 
 function Client:shutdown()

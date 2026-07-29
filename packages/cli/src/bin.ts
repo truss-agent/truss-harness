@@ -22,6 +22,7 @@ import {
 import {
   configurationPaths,
   initializeWorkspaceConfiguration,
+  listConfigurationProfiles,
   parseConfigurationOverrides,
   resolveConfiguration,
   saveUserProfile,
@@ -44,6 +45,7 @@ import {
 } from "@truss-harness/gateway";
 import type { McpServerStatus } from "@truss-harness/mcp";
 import { formatMcpStatuses } from "./mcp.js";
+import { CLI_VERSION } from "./version.js";
 import qrcode from "qrcode-terminal";
 
 const help = `${brand.productName} CLI
@@ -795,11 +797,7 @@ async function main(): Promise<void> {
   if (command === "mcp") {
     const positional = args.filter((argument) => argument !== "--json");
     const [action = "status", name] = positional;
-    if (
-      action !== "status" &&
-      action !== "tools" &&
-      action !== "reconnect"
-    )
+    if (action !== "status" && action !== "tools" && action !== "reconnect")
       throw new Error(
         `Use ${brand.cliCommand} mcp status, tools, or reconnect <name>.`,
       );
@@ -840,7 +838,20 @@ async function main(): Promise<void> {
       );
     }
     try {
-      await runService(client.runtime, client.events, approval);
+      await runService(client.runtime, client.events, approval, {
+        serverVersion: CLI_VERSION,
+        host: {
+          testProviderConnection: () =>
+            testClientProviderConnection(configuration),
+          listProfiles: () =>
+            listConfigurationProfiles({
+              workspaceRoot: configuration.workspaceRoot,
+              selectedProfile: configuration.profile,
+              paths: configuration.paths,
+            }),
+          listMcpServers: () => client.mcp.statuses,
+        },
+      });
     } finally {
       await client.dispose();
     }

@@ -142,9 +142,12 @@ reserved for protocol messages; diagnostics use standard error.
 
 A versioned client starts with `initialize`, passing its supported protocol
 versions. Protocol v1 advertises streaming, sessions, bounded context and
-attachments, cancellation, approvals, and changed-file events. Run lifecycle
-and runtime events are JSON-RPC notifications. `run/cancel` and
-`service/shutdown` provide deterministic cleanup.
+attachments, cancellation, approvals, changed-file events, provider
+preflight, named configuration profiles, and safe MCP status according to the
+host capabilities available. Run lifecycle, runtime events, and pending
+approvals are JSON-RPC notifications. Provider checks, profile summaries, and
+MCP responses never contain credentials or executable configuration.
+`run/cancel` and `service/shutdown` provide deterministic cleanup.
 
 Released VS Code clients using the original JSON-lines message shape remain
 compatible during the protocol migration.

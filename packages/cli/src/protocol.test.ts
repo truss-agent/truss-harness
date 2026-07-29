@@ -11,6 +11,7 @@ import {
   LOCAL_SERVICE_PROTOCOL_VERSION,
   ProtocolToolApproval,
   RuntimeService,
+  type RuntimeServiceHost,
   type RuntimeServiceMessage,
   type RuntimeServiceRuntime,
   type RuntimeServiceWireMessage,
@@ -57,6 +58,7 @@ function harness(
     readonly runtime?: FakeRuntime;
     readonly approval?: ProtocolToolApproval;
     readonly allowLegacyRequests?: boolean;
+    readonly host?: RuntimeServiceHost;
   } = {},
 ) {
   const messages: RuntimeServiceMessage[] = [];
@@ -66,6 +68,7 @@ function harness(
     runtime,
     events,
     approval: options.approval,
+    host: options.host,
     allowLegacyRequests: options.allowLegacyRequests,
     serverVersion: "test",
     write: (message) => messages.push(message as RuntimeServiceMessage),
@@ -125,6 +128,18 @@ describe("ProtocolToolApproval", () => {
     await expect(first).resolves.toBe(false);
     expect(approval.resolve("second", true)).toBe(true);
     await expect(second).resolves.toBe(true);
+  });
+
+  it("notifies subscribers only when a tool needs client approval", async () => {
+    const approval = new ProtocolToolApproval("auto-read");
+    const pending: string[] = [];
+    approval.subscribe((call) => pending.push(call.id));
+
+    await expect(approval.approve(readCall, session())).resolves.toBe(true);
+    const write = approval.approve(writeCall, session());
+    expect(pending).toEqual(["write"]);
+    approval.resolve("write", true);
+    await expect(write).resolves.toBe(true);
   });
 });
 
@@ -306,6 +321,175 @@ describe("RuntimeService", () => {
     expect(runtime.lastContext).toEqual([
       { source: "current-buffer:README.md", content: "Truss" },
     ]);
+    await service.close();
+  });
+
+  it("routes pending approvals to JSON-RPC clients", async () => {
+    const messages: RuntimeServiceWireMessage[] = [];
+    const runtime = new FakeRuntime();
+    const events = new EventBus<RuntimeEvent>();
+    const approval = new ProtocolToolApproval();
+    runtime.runImplementation = async (sessionId) => {
+      await events.emit({
+        type: "tool_call_requested",
+        sessionId,
+        callId: writeCall.id,
+        tool: writeCall.name,
+        input: writeCall.input,
+      });
+      await approval.approve(writeCall, session(sessionId));
+    };
+    const service = new RuntimeService({
+      runtime,
+      events,
+      approval,
+      write: (message) => messages.push(message),
+    });
+    await service.handleLine(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: "init",
+        method: "initialize",
+        params: { protocolVersions: [LOCAL_SERVICE_PROTOCOL_VERSION] },
+      }),
+    );
+    await service.handleLine(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: "run-approval",
+        method: "run/start",
+        params: { prompt: "Edit the readme" },
+      }),
+    );
+    await waitFor(
+      () =>
+        messages.some(
+          (message) =>
+            "method" in message && message.method === "approval/requested",
+        ),
+      "approval request should reach the client",
+    );
+    expect(messages).toContainEqual({
+      jsonrpc: "2.0",
+      method: "approval/requested",
+      params: {
+        requestId: "run-approval",
+        sessionId: "session-1",
+        callId: "write",
+        tool: "write_file",
+        input: { path: "README.md", content: "updated" },
+      },
+    });
+    await service.handleLine(
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: "approve-write",
+        method: "approval/resolve",
+        params: { callId: "write", approved: true },
+      }),
+    );
+    await waitFor(
+      () =>
+        messages.some(
+          (message) =>
+            "id" in message &&
+            message.id === "run-approval" &&
+            "result" in message,
+        ),
+      "approved run should complete",
+    );
+    await service.close();
+  });
+
+  it("exposes safe provider, profile, and MCP host status", async () => {
+    const { messages, service } = harness({
+      allowLegacyRequests: false,
+      host: {
+        async testProviderConnection() {
+          return {
+            status: "connected",
+            providerId: "ollama",
+            modelId: "qwen3:8b",
+            message: "Connected successfully.",
+          };
+        },
+        async listProfiles() {
+          return [
+            {
+              name: "local",
+              selected: true,
+              provider: "ollama",
+              model: "qwen3:8b",
+            },
+          ];
+        },
+        listMcpServers() {
+          return [
+            {
+              name: "filesystem",
+              state: "connected",
+              toolCount: 2,
+            },
+          ];
+        },
+      },
+    });
+    await service.handleLine(
+      JSON.stringify({
+        type: "initialize",
+        requestId: "init",
+        protocolVersions: [LOCAL_SERVICE_PROTOCOL_VERSION],
+      }),
+    );
+    await service.handleLine(
+      JSON.stringify({ type: "test_provider", requestId: "provider" }),
+    );
+    await service.handleLine(
+      JSON.stringify({ type: "list_profiles", requestId: "profiles" }),
+    );
+    await service.handleLine(
+      JSON.stringify({ type: "mcp_status", requestId: "mcp" }),
+    );
+
+    expect(messages).toContainEqual({
+      type: "response",
+      requestId: "provider",
+      result: {
+        providerConnection: {
+          status: "connected",
+          providerId: "ollama",
+          modelId: "qwen3:8b",
+          message: "Connected successfully.",
+        },
+      },
+    });
+    expect(messages).toContainEqual({
+      type: "response",
+      requestId: "profiles",
+      result: {
+        profiles: [
+          {
+            name: "local",
+            selected: true,
+            provider: "ollama",
+            model: "qwen3:8b",
+          },
+        ],
+      },
+    });
+    expect(messages).toContainEqual({
+      type: "response",
+      requestId: "mcp",
+      result: {
+        mcpServers: [
+          {
+            name: "filesystem",
+            state: "connected",
+            toolCount: 2,
+          },
+        ],
+      },
+    });
     await service.close();
   });
 

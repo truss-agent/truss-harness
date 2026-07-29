@@ -14,8 +14,10 @@ import {
   type RuntimeServiceCapabilities,
   type RuntimeServiceErrorCode,
   type RuntimeServiceEventSource,
+  type RuntimeServiceHost,
   type RuntimeServiceJsonRpcMessage,
   type RuntimeServiceMessage,
+  type RuntimeServiceResult,
   type RuntimeServiceRuntime,
   type RuntimeServiceWireMessage,
   type SerializableRuntimeEvent,
@@ -37,6 +39,7 @@ export interface RuntimeServiceOptions {
   readonly events: RuntimeServiceEventSource;
   readonly write: (message: RuntimeServiceWireMessage) => void;
   readonly approval?: ProtocolToolApproval;
+  readonly host?: RuntimeServiceHost;
   readonly serverVersion?: string;
   readonly capabilities?: Partial<RuntimeServiceCapabilities>;
   /** Kept during migration so released VS Code clients can still connect. */
@@ -54,9 +57,12 @@ interface PendingApproval {
   readonly resolve: (approved: boolean) => void;
 }
 
+type ApprovalListener = (call: ToolCall, session: Session) => void;
+
 /** Bridges runtime approval requests to a client using the JSONL service protocol. */
 export class ProtocolToolApproval implements ToolApproval {
   private readonly pending = new Map<string, PendingApproval>();
+  private readonly listeners = new Set<ApprovalListener>();
 
   constructor(private readonly mode: PermissionMode = "ask") {}
 
@@ -64,9 +70,16 @@ export class ProtocolToolApproval implements ToolApproval {
     if (this.mode === "auto-all") return Promise.resolve(true);
     if (this.mode === "auto-read" && readOnlyTools.has(call.name))
       return Promise.resolve(true);
-    return new Promise((resolve) =>
+    const result = new Promise<boolean>((resolve) =>
       this.pending.set(call.id, { sessionId: session.id, resolve }),
     );
+    for (const listener of this.listeners) listener(call, session);
+    return result;
+  }
+
+  subscribe(listener: ApprovalListener): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   resolve(callId: string, approved: boolean): boolean {
@@ -103,9 +116,10 @@ function serviceCapabilities(
     attachments: ["file", "image"],
     changedFiles: true,
     providerDiscovery: false,
-    providerPreflight: false,
+    providerPreflight: Boolean(options.host?.testProviderConnection),
+    configurationProfiles: Boolean(options.host?.listProfiles),
     agentProfiles: false,
-    mcpStatus: false,
+    mcpStatus: Boolean(options.host?.listMcpServers),
     ...options.capabilities,
   };
 }
@@ -131,6 +145,7 @@ export class RuntimeService {
   private readonly activeRequestIds = new Set<string>();
   private readonly activeRuns = new Set<Promise<void>>();
   private readonly unsubscribe: () => void;
+  private readonly unsubscribeApproval?: () => void;
   private readonly capabilities: RuntimeServiceCapabilities;
   private initialized = false;
   private closed = false;
@@ -145,6 +160,18 @@ export class RuntimeService {
         type: "event",
         requestId,
         event: serializeEvent(event),
+      });
+    });
+    this.unsubscribeApproval = options.approval?.subscribe((call, session) => {
+      const requestId = this.activeRequestBySession.get(session.id);
+      if (!requestId || this.closed) return;
+      this.send({
+        type: "approval_request",
+        requestId,
+        sessionId: session.id,
+        callId: call.id,
+        tool: call.name,
+        input: call.input,
       });
     });
   }
@@ -282,6 +309,37 @@ export class RuntimeService {
           });
         return "continue";
       }
+      if (request.type === "test_provider") {
+        const testProviderConnection =
+          this.options.host?.testProviderConnection;
+        if (!testProviderConnection)
+          return this.unavailableCapability(
+            requestId,
+            "Provider connection testing",
+          );
+        await this.hostResponse(requestId, async () => ({
+          providerConnection: await testProviderConnection(),
+        }));
+        return "continue";
+      }
+      if (request.type === "list_profiles") {
+        const listProfiles = this.options.host?.listProfiles;
+        if (!listProfiles)
+          return this.unavailableCapability(requestId, "Profile discovery");
+        await this.hostResponse(requestId, async () => ({
+          profiles: await listProfiles(),
+        }));
+        return "continue";
+      }
+      if (request.type === "mcp_status") {
+        const listMcpServers = this.options.host?.listMcpServers;
+        if (!listMcpServers)
+          return this.unavailableCapability(requestId, "MCP status");
+        await this.hostResponse(requestId, async () => ({
+          mcpServers: await listMcpServers(),
+        }));
+        return "continue";
+      }
     } catch (error) {
       this.sendError("invalid_request", requestError(error), requestId);
       return "continue";
@@ -299,6 +357,7 @@ export class RuntimeService {
     if (this.closed) return;
     this.closed = true;
     this.unsubscribe();
+    this.unsubscribeApproval?.();
     for (const controller of this.controllers.values()) controller.abort();
     this.options.approval?.denyAll();
     if (this.activeRuns.size) {
@@ -393,6 +452,12 @@ export class RuntimeService {
     if (request.method === "run/cancel") return { ...common, type: "cancel" };
     if (request.method === "approval/resolve")
       return { ...common, type: "tool_approval" };
+    if (request.method === "provider/test")
+      return { ...common, type: "test_provider" };
+    if (request.method === "profiles/list")
+      return { ...common, type: "list_profiles" };
+    if (request.method === "mcp/status")
+      return { ...common, type: "mcp_status" };
     if (request.method === "service/ping") return { ...common, type: "ping" };
     if (request.method === "service/shutdown")
       return { ...common, type: "shutdown" };
@@ -600,6 +665,18 @@ export class RuntimeService {
           event: message.event,
         },
       };
+    if (message.type === "approval_request")
+      return {
+        jsonrpc: "2.0",
+        method: "approval/requested",
+        params: {
+          requestId: message.requestId,
+          sessionId: message.sessionId,
+          callId: message.callId,
+          tool: message.tool,
+          input: message.input,
+        },
+      };
     return {
       jsonrpc: "2.0",
       method: "run/lifecycle",
@@ -623,6 +700,33 @@ export class RuntimeService {
       message,
     });
   }
+
+  private unavailableCapability(
+    requestId: string,
+    capability: string,
+  ): "continue" {
+    this.sendError(
+      "method_not_found",
+      `${capability} is unavailable from this service.`,
+      requestId,
+    );
+    return "continue";
+  }
+
+  private async hostResponse(
+    requestId: string,
+    load: () => Promise<RuntimeServiceResult>,
+  ): Promise<void> {
+    try {
+      this.send({
+        type: "response",
+        requestId,
+        result: await load(),
+      });
+    } catch (error) {
+      this.sendError("internal_error", requestError(error), requestId);
+    }
+  }
 }
 
 function jsonRpcErrorCode(code: RuntimeServiceErrorCode): number {
@@ -643,6 +747,7 @@ export async function runService(
   options: {
     readonly serverVersion?: string;
     readonly capabilities?: Partial<RuntimeServiceCapabilities>;
+    readonly host?: RuntimeServiceHost;
   } = {},
 ): Promise<void> {
   const service = new RuntimeService({
@@ -652,6 +757,7 @@ export async function runService(
     write: (message) => stdout.write(`${JSON.stringify(message)}\n`),
     serverVersion: options.serverVersion,
     capabilities: options.capabilities,
+    host: options.host,
   });
   const lines = createInterface({ input: stdin, crlfDelay: Infinity });
   try {

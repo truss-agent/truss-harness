@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/cli",
-  "version": "0.1.12",
+  "version": "0.1.13",
   "description": "Command-line client and runtime service for Truss.",
   "type": "module",
   "exports": {
