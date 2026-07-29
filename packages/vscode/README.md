@@ -12,7 +12,11 @@ Install [**Truss for VS Code**](https://marketplace.visualstudio.com/items?itemN
 
 In **Settings**, select a detected local server or enter an endpoint, refresh models, and set the context window, permission policy, and optional internet research access. Use the bottom control bar to switch models and agent modes during a session. Agent responses render Markdown and formatted code blocks. Type `@/` in the chat composer to fuzzy-search workspace files; choose a file with arrow keys and Enter or Tab to attach its bounded contents to the next prompt. Slash commands such as `/status`, `/update`, and `/help` remain reserved for local workspace actions.
 
-To add local MCP tools, enter an `mcpServers` JSON object in the MCP settings field. The extension passes it to its runtime service; Agent mode loads enabled servers and Plan mode loads only servers marked `readOnly`. Connections restart after settings change and their status is shown in the panel.
+Use **Truss: Manage MCP Servers** or the **Manage MCP** Settings button to add,
+edit, enable/disable, test, inspect, or remove local stdio servers. Testing is
+isolated from the active agent and reports only safe lifecycle/tool metadata.
+The JSON field remains available as an advanced import/export path. Agent mode
+loads enabled servers and Plan mode loads only servers marked `readOnly`.
 
 ## Side panel
 

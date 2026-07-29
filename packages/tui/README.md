@@ -29,7 +29,12 @@ The default `forest` theme uses restrained green, sage, and teal accents with so
 
 Inside the TUI, open settings with `m`, Tab to **Theme**, and use Left or Right to preview a preset for the current session.
 
-Configured MCP stdio servers are connected when an Agent session starts, and their connection status appears in the Terminal pane. Plan mode loads only servers explicitly marked `readOnly`. Run `truss-cli config path` to locate the shared user and workspace configuration files.
+Configured MCP stdio servers are connected when an Agent session starts, and
+their connection status appears in the Terminal pane. Press `c` outside the
+chat/terminal panes to inspect safe server and tool status, then `R` to test
+the configured servers. Plan mode loads only servers explicitly marked
+`readOnly`. Run `truss-cli config path` to locate the shared user and workspace
+configuration files.
 
 ## Controls
 
@@ -41,6 +46,7 @@ Configured MCP stdio servers are connected when an Agent session starts, and the
 | `Enter` | Send the chat input or open the selected file. |
 | `Left` / `Right` | Collapse or expand the selected directory. |
 | `m` | Open local model settings outside the chat pane. |
+| `c` | Open credential-safe MCP server and tool status. |
 | `d` | Toggle the selected file's Git diff. |
 | Type directly | Enter a command while the terminal pane has focus. |
 | `?` | Open workspace command help. |

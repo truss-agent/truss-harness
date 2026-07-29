@@ -2,6 +2,27 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.21] - 2026-07-29
+
+### Added
+
+- Added a managed Desktop MCP experience with add/edit, enable/disable,
+  isolated connection testing, reconnect, removal, and credential-safe tool
+  inspection.
+- Added **Truss: Manage MCP Servers** in VS Code plus `truss-cli mcp status`,
+  `tools`, and `reconnect` commands and a TUI MCP connection inspector.
+- Added gateway protocol v3 so paired Truss Go clients can view safe,
+  read-only MCP server and tool status while executable configuration and
+  credentials remain on the host.
+
+### Fixed
+
+- Removed stale MCP tools when a server disconnects or reconnects and exposed
+  live lifecycle state to trusted local clients.
+- Recovered Desktop startup when a session-only Linux provider credential has
+  expired by opening Settings for key re-entry instead of raising an unhandled
+  rejection.
+
 ## [0.1.20] - 2026-07-28
 
 ### Added
