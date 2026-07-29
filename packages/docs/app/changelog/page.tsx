@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "0.1.20",
+    label: "Provider connection checks",
+    changes: [
+      "Added a safe Test connection action in Desktop BYOK settings, plus matching CLI and VS Code commands.",
+      "Explained invalid keys, insufficient provider credit, unavailable models, rate limits, and network failures without exposing secrets or provider response bodies.",
+      "Kept Desktop keys available for the current app session when Linux encrypted credential storage is unavailable, with a clear session-only disclosure."
+    ]
+  },
+  {
     version: "0.1.19",
     label: "BYOK provider reliability",
     changes: [
