@@ -2,31 +2,55 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { resolveConfiguration } from "./config.js";
+import { listConfigurationProfiles, resolveConfiguration } from "./config.js";
 
 describe("resolveConfiguration", () => {
   it("merges environment, user profiles, workspace profiles, and explicit overrides in precedence order", async () => {
     const root = join(process.cwd(), ".test-workspaces", randomUUID());
-    const paths = { user: join(root, "user.json"), workspace: join(root, "workspace.json") };
+    const paths = {
+      user: join(root, "user.json"),
+      workspace: join(root, "workspace.json"),
+    };
     await mkdir(root, { recursive: true });
     try {
-      await writeFile(paths.user, JSON.stringify({
-        defaultProfile: "local",
-        profiles: {
-          local: { provider: "ollama", baseUrl: "http://user:11434", model: "user-model", permission: "ask", tuiTheme: "sage" }
-        }
-      }));
-      await writeFile(paths.workspace, JSON.stringify({
-        profiles: {
-          local: { baseUrl: "http://workspace:11434", model: "workspace-model", mode: "edit", permission: "auto-read", internetAccess: true }
-        }
-      }));
+      await writeFile(
+        paths.user,
+        JSON.stringify({
+          defaultProfile: "local",
+          profiles: {
+            local: {
+              provider: "ollama",
+              baseUrl: "http://user:11434",
+              model: "user-model",
+              permission: "ask",
+              tuiTheme: "sage",
+            },
+          },
+        }),
+      );
+      await writeFile(
+        paths.workspace,
+        JSON.stringify({
+          profiles: {
+            local: {
+              baseUrl: "http://workspace:11434",
+              model: "workspace-model",
+              mode: "edit",
+              permission: "auto-read",
+              internetAccess: true,
+            },
+          },
+        }),
+      );
 
       const resolved = await resolveConfiguration({
         workspaceRoot: root,
         paths,
-        environment: { TRUSS_HARNESS_MODEL: "environment-model", TRUSS_HARNESS_AGENT_MODE: "plan" },
-        overrides: { model: "flag-model", permission: "auto-all" }
+        environment: {
+          TRUSS_HARNESS_MODEL: "environment-model",
+          TRUSS_HARNESS_AGENT_MODE: "plan",
+        },
+        overrides: { model: "flag-model", permission: "auto-all" },
       });
 
       expect(resolved).toMatchObject({
@@ -37,7 +61,7 @@ describe("resolveConfiguration", () => {
         permission: "auto-all",
         internetAccess: true,
         profile: "local",
-        tuiTheme: "sage"
+        tuiTheme: "sage",
       });
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -46,11 +70,18 @@ describe("resolveConfiguration", () => {
 
   it("accepts a valid terminal theme from the environment", async () => {
     const root = join(process.cwd(), ".test-workspaces", randomUUID());
-    const paths = { user: join(root, "user.json"), workspace: join(root, "workspace.json") };
+    const paths = {
+      user: join(root, "user.json"),
+      workspace: join(root, "workspace.json"),
+    };
     await mkdir(root, { recursive: true });
     try {
       await writeFile(paths.user, JSON.stringify({ model: "test-model" }));
-      const resolved = await resolveConfiguration({ workspaceRoot: root, paths, environment: { TRUSS_HARNESS_TUI_THEME: "dusk" } });
+      const resolved = await resolveConfiguration({
+        workspaceRoot: root,
+        paths,
+        environment: { TRUSS_HARNESS_TUI_THEME: "dusk" },
+      });
       expect(resolved.tuiTheme).toBe("dusk");
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -59,17 +90,27 @@ describe("resolveConfiguration", () => {
 
   it("resolves a cloud provider endpoint and its conventional BYOK environment variable", async () => {
     const root = join(process.cwd(), ".test-workspaces", randomUUID());
-    const paths = { user: join(root, "user.json"), workspace: join(root, "workspace.json") };
+    const paths = {
+      user: join(root, "user.json"),
+      workspace: join(root, "workspace.json"),
+    };
     await mkdir(root, { recursive: true });
     try {
-      await writeFile(paths.user, JSON.stringify({ provider: "groq", model: "llama-test" }));
-      const resolved = await resolveConfiguration({ workspaceRoot: root, paths, environment: { GROQ_API_KEY: "private-key" } });
+      await writeFile(
+        paths.user,
+        JSON.stringify({ provider: "groq", model: "llama-test" }),
+      );
+      const resolved = await resolveConfiguration({
+        workspaceRoot: root,
+        paths,
+        environment: { GROQ_API_KEY: "private-key" },
+      });
 
       expect(resolved).toMatchObject({
         provider: "groq",
         baseUrl: "https://api.groq.com/openai/v1",
         model: "llama-test",
-        apiKey: "private-key"
+        apiKey: "private-key",
       });
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -78,39 +119,116 @@ describe("resolveConfiguration", () => {
 
   it("ignores workspace MCP commands until the user explicitly trusts them", async () => {
     const root = join(process.cwd(), ".test-workspaces", randomUUID());
-    const paths = { user: join(root, "user.json"), workspace: join(root, "workspace.json") };
+    const paths = {
+      user: join(root, "user.json"),
+      workspace: join(root, "workspace.json"),
+    };
     await mkdir(root, { recursive: true });
     try {
-      await writeFile(paths.user, JSON.stringify({
-        model: "test-model",
-        mcpServers: { user: { command: "user-server" } }
-      }));
-      await writeFile(paths.workspace, JSON.stringify({
-        mcpServers: { workspace: { command: "workspace-server" } }
-      }));
+      await writeFile(
+        paths.user,
+        JSON.stringify({
+          model: "test-model",
+          mcpServers: { user: { command: "user-server" } },
+        }),
+      );
+      await writeFile(
+        paths.workspace,
+        JSON.stringify({
+          mcpServers: { workspace: { command: "workspace-server" } },
+        }),
+      );
 
       const untrusted = await resolveConfiguration({
         workspaceRoot: root,
         paths,
-        environment: {}
+        environment: {},
       });
       expect(untrusted.mcpServers).toEqual({
-        user: { command: "user-server", enabled: true, readOnly: false }
+        user: { command: "user-server", enabled: true, readOnly: false },
       });
 
-      await writeFile(paths.user, JSON.stringify({
-        model: "test-model",
-        allowWorkspaceMcpServers: true,
-        mcpServers: { user: { command: "user-server" } }
-      }));
+      await writeFile(
+        paths.user,
+        JSON.stringify({
+          model: "test-model",
+          allowWorkspaceMcpServers: true,
+          mcpServers: { user: { command: "user-server" } },
+        }),
+      );
       const trusted = await resolveConfiguration({
         workspaceRoot: root,
         paths,
-        environment: {}
+        environment: {},
       });
       expect(trusted.mcpServers).toEqual({
-        workspace: { command: "workspace-server", enabled: true, readOnly: false }
+        workspace: {
+          command: "workspace-server",
+          enabled: true,
+          readOnly: false,
+        },
       });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("listConfigurationProfiles", () => {
+  it("returns merged credential-safe profile summaries", async () => {
+    const root = join(process.cwd(), ".test-workspaces", randomUUID());
+    const paths = {
+      user: join(root, "user.json"),
+      workspace: join(root, "workspace.json"),
+    };
+    await mkdir(root, { recursive: true });
+    try {
+      await writeFile(
+        paths.user,
+        JSON.stringify({
+          defaultProfile: "cloud",
+          profiles: {
+            cloud: {
+              provider: "openrouter",
+              model: "provider/model",
+              mode: "chat",
+              apiKeyEnv: "OPENROUTER_API_KEY",
+            },
+            local: { provider: "ollama", model: "qwen3:8b" },
+          },
+        }),
+      );
+      await writeFile(
+        paths.workspace,
+        JSON.stringify({
+          profiles: {
+            cloud: { mode: "edit", permission: "ask" },
+          },
+        }),
+      );
+
+      await expect(
+        listConfigurationProfiles({
+          workspaceRoot: root,
+          paths,
+          environment: { OPENROUTER_API_KEY: "never-return-this" },
+        }),
+      ).resolves.toEqual([
+        {
+          name: "cloud",
+          selected: true,
+          provider: "openrouter",
+          model: "provider/model",
+          mode: "edit",
+          permission: "ask",
+        },
+        {
+          name: "local",
+          selected: false,
+          provider: "ollama",
+          model: "qwen3:8b",
+        },
+      ]);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

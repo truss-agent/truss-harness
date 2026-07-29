@@ -2,8 +2,17 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { brand } from "@truss-harness/branding";
-import { parseMcpServerConfigurations, type McpServerConfigurations } from "@truss-harness/mcp";
-import { cloudProviderDefinition, detectActiveLocalModel, isCloudProviderId, isLocalEndpointKind, type ModelProviderKind } from "@truss-harness/provider-openai-compatible";
+import {
+  parseMcpServerConfigurations,
+  type McpServerConfigurations,
+} from "@truss-harness/mcp";
+import {
+  cloudProviderDefinition,
+  detectActiveLocalModel,
+  isCloudProviderId,
+  isLocalEndpointKind,
+  type ModelProviderKind,
+} from "@truss-harness/provider-openai-compatible";
 import type { AgentMode, ClientConfiguration } from "./runtime.js";
 import type { PermissionMode } from "./protocol.js";
 
@@ -47,24 +56,43 @@ export interface ConfigurationPaths {
   readonly workspace: string;
 }
 
+export interface ConfigurationProfileSummary {
+  readonly name: string;
+  readonly selected: boolean;
+  readonly provider?: ModelProviderKind;
+  readonly model?: string;
+  readonly mode?: AgentMode;
+  readonly permission?: PermissionMode;
+}
+
 function validProvider(value: unknown): ModelProviderKind | undefined {
-  return isLocalEndpointKind(value) || isCloudProviderId(value) ? value : undefined;
+  return isLocalEndpointKind(value) || isCloudProviderId(value)
+    ? value
+    : undefined;
 }
 
 function validMode(value: unknown): AgentMode | undefined {
-  return value === "chat" || value === "plan" || value === "edit" ? value : undefined;
+  return value === "chat" || value === "plan" || value === "edit"
+    ? value
+    : undefined;
 }
 
 function validPermission(value: unknown): PermissionMode | undefined {
-  return value === "ask" || value === "auto-read" || value === "auto-all" ? value : undefined;
+  return value === "ask" || value === "auto-read" || value === "auto-all"
+    ? value
+    : undefined;
 }
 
 function validTuiTheme(value: unknown): TuiThemeName | undefined {
-  return value === "forest" || value === "sage" || value === "dusk" ? value : undefined;
+  return value === "forest" || value === "sage" || value === "dusk"
+    ? value
+    : undefined;
 }
 
 function object(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 function parseProfile(value: unknown): ProfileConfiguration {
@@ -76,11 +104,19 @@ function parseProfile(value: unknown): ProfileConfiguration {
     model: typeof source.model === "string" ? source.model : undefined,
     mode: validMode(source.mode),
     permission: validPermission(source.permission),
-    internetAccess: typeof source.internetAccess === "boolean" ? source.internetAccess : undefined,
-    systemPrompt: typeof source.systemPrompt === "string" ? source.systemPrompt : undefined,
-    apiKeyEnv: typeof source.apiKeyEnv === "string" ? source.apiKeyEnv : undefined,
-    mcpServers: source.mcpServers === undefined ? undefined : parseMcpServerConfigurations(source.mcpServers),
-    tuiTheme: validTuiTheme(source.tuiTheme)
+    internetAccess:
+      typeof source.internetAccess === "boolean"
+        ? source.internetAccess
+        : undefined,
+    systemPrompt:
+      typeof source.systemPrompt === "string" ? source.systemPrompt : undefined,
+    apiKeyEnv:
+      typeof source.apiKeyEnv === "string" ? source.apiKeyEnv : undefined,
+    mcpServers:
+      source.mcpServers === undefined
+        ? undefined
+        : parseMcpServerConfigurations(source.mcpServers),
+    tuiTheme: validTuiTheme(source.tuiTheme),
   };
 }
 
@@ -89,33 +125,52 @@ function parseConfiguration(value: unknown): HarnessConfiguration {
   if (!source) throw new Error("Configuration root must be a JSON object.");
   const profilesSource = object(source.profiles);
   const profiles = profilesSource
-    ? Object.fromEntries(Object.entries(profilesSource).map(([name, profile]) => [name, parseProfile(profile)]))
+    ? Object.fromEntries(
+        Object.entries(profilesSource).map(([name, profile]) => [
+          name,
+          parseProfile(profile),
+        ]),
+      )
     : undefined;
   return {
     ...parseProfile(source),
-    defaultProfile: typeof source.defaultProfile === "string" ? source.defaultProfile : undefined,
+    defaultProfile:
+      typeof source.defaultProfile === "string"
+        ? source.defaultProfile
+        : undefined,
     profiles,
-    allowWorkspaceMcpServers: source.allowWorkspaceMcpServers === true
+    allowWorkspaceMcpServers: source.allowWorkspaceMcpServers === true,
   };
 }
 
 async function readConfiguration(path: string): Promise<HarnessConfiguration> {
   try {
-    return parseConfiguration(JSON.parse(await readFile(path, "utf8")) as unknown);
+    return parseConfiguration(
+      JSON.parse(await readFile(path, "utf8")) as unknown,
+    );
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") return {};
+    if (error instanceof Error && "code" in error && error.code === "ENOENT")
+      return {};
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`Unable to read ${brand.productName} configuration at ${path}: ${message}`);
+    throw new Error(
+      `Unable to read ${brand.productName} configuration at ${path}: ${message}`,
+    );
   }
 }
 
-function environmentConfiguration(environment: NodeJS.ProcessEnv): ProfileConfiguration {
+function environmentConfiguration(
+  environment: NodeJS.ProcessEnv,
+): ProfileConfiguration {
   let mcpServers: McpServerConfigurations | undefined;
   if (environment.TRUSS_HARNESS_MCP_SERVERS) {
     try {
-      mcpServers = parseMcpServerConfigurations(JSON.parse(environment.TRUSS_HARNESS_MCP_SERVERS) as unknown);
+      mcpServers = parseMcpServerConfigurations(
+        JSON.parse(environment.TRUSS_HARNESS_MCP_SERVERS) as unknown,
+      );
     } catch (error) {
-      throw new Error(`TRUSS_HARNESS_MCP_SERVERS must contain valid MCP server JSON: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `TRUSS_HARNESS_MCP_SERVERS must contain valid MCP server JSON: ${error instanceof Error ? error.message : String(error)}`,
+      );
     }
   }
   return {
@@ -124,13 +179,17 @@ function environmentConfiguration(environment: NodeJS.ProcessEnv): ProfileConfig
     model: environment.TRUSS_HARNESS_MODEL,
     mode: validMode(environment.TRUSS_HARNESS_AGENT_MODE),
     permission: validPermission(environment.TRUSS_HARNESS_PERMISSION_MODE),
-    internetAccess: environment.TRUSS_HARNESS_INTERNET_ACCESS === undefined
-      ? undefined
-      : environment.TRUSS_HARNESS_INTERNET_ACCESS === "true" || environment.TRUSS_HARNESS_INTERNET_ACCESS === "1",
+    internetAccess:
+      environment.TRUSS_HARNESS_INTERNET_ACCESS === undefined
+        ? undefined
+        : environment.TRUSS_HARNESS_INTERNET_ACCESS === "true" ||
+          environment.TRUSS_HARNESS_INTERNET_ACCESS === "1",
     systemPrompt: environment.TRUSS_HARNESS_SYSTEM_PROMPT,
-    apiKeyEnv: environment.TRUSS_HARNESS_API_KEY ? "TRUSS_HARNESS_API_KEY" : undefined,
+    apiKeyEnv: environment.TRUSS_HARNESS_API_KEY
+      ? "TRUSS_HARNESS_API_KEY"
+      : undefined,
     mcpServers,
-    tuiTheme: validTuiTheme(environment.TRUSS_HARNESS_TUI_THEME)
+    tuiTheme: validTuiTheme(environment.TRUSS_HARNESS_TUI_THEME),
   };
 }
 
@@ -144,10 +203,12 @@ const profileKeys = [
   "systemPrompt",
   "apiKeyEnv",
   "mcpServers",
-  "tuiTheme"
+  "tuiTheme",
 ] as const satisfies readonly (keyof ProfileConfiguration)[];
 
-function mergeProfiles(...sources: readonly (ProfileConfiguration | undefined)[]): ProfileConfiguration {
+function mergeProfiles(
+  ...sources: readonly (ProfileConfiguration | undefined)[]
+): ProfileConfiguration {
   const merged: Record<string, unknown> = {};
   for (const source of sources) {
     if (!source) continue;
@@ -159,13 +220,17 @@ function mergeProfiles(...sources: readonly (ProfileConfiguration | undefined)[]
   return merged as ProfileConfiguration;
 }
 
-export function configurationPaths(workspaceRoot: string, environment: NodeJS.ProcessEnv = process.env): ConfigurationPaths {
-  const userRoot = process.platform === "win32"
-    ? environment.APPDATA ?? join(homedir(), "AppData", "Roaming")
-    : environment.XDG_CONFIG_HOME ?? join(homedir(), ".config");
+export function configurationPaths(
+  workspaceRoot: string,
+  environment: NodeJS.ProcessEnv = process.env,
+): ConfigurationPaths {
+  const userRoot =
+    process.platform === "win32"
+      ? (environment.APPDATA ?? join(homedir(), "AppData", "Roaming"))
+      : (environment.XDG_CONFIG_HOME ?? join(homedir(), ".config"));
   return {
     user: join(userRoot, brand.productSlug, "config.json"),
-    workspace: join(workspaceRoot, brand.workspaceDirectory, "config.json")
+    workspace: join(workspaceRoot, brand.workspaceDirectory, "config.json"),
   };
 }
 
@@ -176,43 +241,75 @@ export async function resolveConfiguration(options: {
   readonly paths?: ConfigurationPaths;
 }): Promise<ResolvedConfiguration> {
   const environment = options.environment ?? process.env;
-  const paths = options.paths ?? configurationPaths(options.workspaceRoot, environment);
-  const [user, workspace] = await Promise.all([readConfiguration(paths.user), readConfiguration(paths.workspace)]);
-  const profile = options.overrides?.profile ?? workspace.defaultProfile ?? user.defaultProfile ?? environment.TRUSS_HARNESS_PROFILE;
+  const paths =
+    options.paths ?? configurationPaths(options.workspaceRoot, environment);
+  const [user, workspace] = await Promise.all([
+    readConfiguration(paths.user),
+    readConfiguration(paths.workspace),
+  ]);
+  const profile =
+    options.overrides?.profile ??
+    workspace.defaultProfile ??
+    user.defaultProfile ??
+    environment.TRUSS_HARNESS_PROFILE;
   const userProfile = profile ? user.profiles?.[profile] : undefined;
   const workspaceProfile = profile ? workspace.profiles?.[profile] : undefined;
   const environmentProfile = environmentConfiguration(environment);
-  const merged = mergeProfiles(environmentProfile, user, userProfile, workspace, workspaceProfile, options.overrides);
+  const merged = mergeProfiles(
+    environmentProfile,
+    user,
+    userProfile,
+    workspace,
+    workspaceProfile,
+    options.overrides,
+  );
   const workspaceMcpServers = user.allowWorkspaceMcpServers
-    ? workspaceProfile?.mcpServers ?? workspace.mcpServers
+    ? (workspaceProfile?.mcpServers ?? workspace.mcpServers)
     : undefined;
-  const mcpServers = options.overrides?.mcpServers
-    ?? workspaceMcpServers
-    ?? userProfile?.mcpServers
-    ?? user.mcpServers
-    ?? environmentProfile.mcpServers;
+  const mcpServers =
+    options.overrides?.mcpServers ??
+    workspaceMcpServers ??
+    userProfile?.mcpServers ??
+    user.mcpServers ??
+    environmentProfile.mcpServers;
   let provider = merged.provider ?? "ollama";
   let baseUrl = merged.baseUrl;
   let model = merged.model;
   if (!model) {
-    const hasConfiguredEndpoint = merged.provider !== undefined || baseUrl !== undefined;
+    const hasConfiguredEndpoint =
+      merged.provider !== undefined || baseUrl !== undefined;
     if (!isLocalEndpointKind(provider)) {
       baseUrl ??= cloudProviderDefinition(provider).baseUrl;
     }
-    const configuredEndpoint = hasConfiguredEndpoint ? [{
-      id: "configured",
-      label: "Configured endpoint",
-      kind: isLocalEndpointKind(provider) ? provider : "openai-compatible",
-      baseUrl: baseUrl ?? (provider === "ollama" ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234/v1")
-    }] : undefined;
-    const detected = isLocalEndpointKind(provider) ? await detectActiveLocalModel({ endpoints: configuredEndpoint }) : undefined;
+    const configuredEndpoint = hasConfiguredEndpoint
+      ? [
+          {
+            id: "configured",
+            label: "Configured endpoint",
+            kind: isLocalEndpointKind(provider)
+              ? provider
+              : "openai-compatible",
+            baseUrl:
+              baseUrl ??
+              (provider === "ollama"
+                ? "http://127.0.0.1:11434"
+                : "http://127.0.0.1:1234/v1"),
+          },
+        ]
+      : undefined;
+    const detected = isLocalEndpointKind(provider)
+      ? await detectActiveLocalModel({ endpoints: configuredEndpoint })
+      : undefined;
     if (detected) {
       provider = detected.endpoint.kind;
       baseUrl = detected.endpoint.baseUrl;
       model = detected.model.name;
     }
   }
-  if (!model) throw new Error(`Set a model with --model, TRUSS_HARNESS_MODEL, a ${brand.productName} config profile, or start a local model server.`);
+  if (!model)
+    throw new Error(
+      `Set a model with --model, TRUSS_HARNESS_MODEL, a ${brand.productName} config profile, or start a local model server.`,
+    );
   const apiKey = merged.apiKeyEnv
     ? environment[merged.apiKeyEnv]
     : isCloudProviderId(provider)
@@ -221,7 +318,13 @@ export async function resolveConfiguration(options: {
   return {
     workspaceRoot: options.workspaceRoot,
     provider,
-    baseUrl: baseUrl ?? (provider === "ollama" ? "http://127.0.0.1:11434" : provider === "openai-compatible" ? "http://127.0.0.1:1234/v1" : cloudProviderDefinition(provider).baseUrl),
+    baseUrl:
+      baseUrl ??
+      (provider === "ollama"
+        ? "http://127.0.0.1:11434"
+        : provider === "openai-compatible"
+          ? "http://127.0.0.1:1234/v1"
+          : cloudProviderDefinition(provider).baseUrl),
     model,
     mode: merged.mode ?? "chat",
     permission: merged.permission ?? "ask",
@@ -231,46 +334,101 @@ export async function resolveConfiguration(options: {
     mcpServers,
     profile,
     tuiTheme: merged.tuiTheme,
-    paths
+    paths,
   };
 }
 
-export async function initializeWorkspaceConfiguration(workspaceRoot: string, paths = configurationPaths(workspaceRoot)): Promise<string> {
+/**
+ * Lists credential-safe named profiles visible to a local client. Workspace
+ * profile values override user profile values in the same way resolution does,
+ * but environment variable names and secrets never cross the service boundary.
+ */
+export async function listConfigurationProfiles(options: {
+  readonly workspaceRoot: string;
+  readonly selectedProfile?: string;
+  readonly environment?: NodeJS.ProcessEnv;
+  readonly paths?: ConfigurationPaths;
+}): Promise<readonly ConfigurationProfileSummary[]> {
+  const environment = options.environment ?? process.env;
+  const paths =
+    options.paths ?? configurationPaths(options.workspaceRoot, environment);
+  const [user, workspace] = await Promise.all([
+    readConfiguration(paths.user),
+    readConfiguration(paths.workspace),
+  ]);
+  const selected =
+    options.selectedProfile ??
+    workspace.defaultProfile ??
+    user.defaultProfile ??
+    environment.TRUSS_HARNESS_PROFILE;
+  const names = new Set([
+    ...Object.keys(user.profiles ?? {}),
+    ...Object.keys(workspace.profiles ?? {}),
+  ]);
+  return [...names].sort().map((name) => {
+    const profile = mergeProfiles(
+      user.profiles?.[name],
+      workspace.profiles?.[name],
+    );
+    return {
+      name,
+      selected: name === selected,
+      ...(profile.provider ? { provider: profile.provider } : {}),
+      ...(profile.model ? { model: profile.model } : {}),
+      ...(profile.mode ? { mode: profile.mode } : {}),
+      ...(profile.permission ? { permission: profile.permission } : {}),
+    };
+  });
+}
+
+export async function initializeWorkspaceConfiguration(
+  workspaceRoot: string,
+  paths = configurationPaths(workspaceRoot),
+): Promise<string> {
   try {
     await access(paths.workspace);
     throw new Error(`Configuration already exists at ${paths.workspace}`);
   } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT"))
+      throw error;
   }
   await mkdir(dirname(paths.workspace), { recursive: true });
-  await writeFile(paths.workspace, `${JSON.stringify({
-    defaultProfile: "ollama",
-    profiles: {
-      ollama: {
-        provider: "ollama",
-        baseUrl: "http://127.0.0.1:11434",
-        model: "qwen3:8b",
-        mode: "edit",
-        permission: "ask",
-        internetAccess: false
+  await writeFile(
+    paths.workspace,
+    `${JSON.stringify(
+      {
+        defaultProfile: "ollama",
+        profiles: {
+          ollama: {
+            provider: "ollama",
+            baseUrl: "http://127.0.0.1:11434",
+            model: "qwen3:8b",
+            mode: "edit",
+            permission: "ask",
+            internetAccess: false,
+          },
+          "lm-studio": {
+            provider: "openai-compatible",
+            baseUrl: "http://127.0.0.1:1234/v1",
+            model: "local-model-id",
+            mode: "plan",
+            permission: "auto-read",
+          },
+        },
+        mcpServers: {
+          filesystem: {
+            enabled: false,
+            command: "npx",
+            args: ["-y", "@modelcontextprotocol/server-filesystem", "."],
+            readOnly: false,
+          },
+        },
       },
-      "lm-studio": {
-        provider: "openai-compatible",
-        baseUrl: "http://127.0.0.1:1234/v1",
-        model: "local-model-id",
-        mode: "plan",
-        permission: "auto-read"
-      }
-    },
-    mcpServers: {
-      filesystem: {
-        enabled: false,
-        command: "npx",
-        args: ["-y", "@modelcontextprotocol/server-filesystem", "."],
-        readOnly: false
-      }
-    }
-  }, null, 2)}\n`, "utf8");
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
   return paths.workspace;
 }
 
@@ -279,35 +437,58 @@ export async function saveUserProfile(
   workspaceRoot: string,
   profileName: string,
   profile: ProfileConfiguration,
-  paths = configurationPaths(workspaceRoot)
+  paths = configurationPaths(workspaceRoot),
 ): Promise<string> {
   const existing = await readConfiguration(paths.user);
   await mkdir(dirname(paths.user), { recursive: true });
-  await writeFile(paths.user, JSON.stringify({
-    ...existing,
-    defaultProfile: profileName,
-    profiles: {
-      ...existing.profiles,
-      [profileName]: profile
-    }
-  }, null, 2) + "\n", "utf8");
+  await writeFile(
+    paths.user,
+    JSON.stringify(
+      {
+        ...existing,
+        defaultProfile: profileName,
+        profiles: {
+          ...existing.profiles,
+          [profileName]: profile,
+        },
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  );
   return paths.user;
 }
 
-export function parseConfigurationOverrides(arguments_: readonly string[]): { readonly overrides: ConfigurationOverrides; readonly rest: readonly string[] } {
-  const overrides: { profile?: string; provider?: ModelProviderKind; baseUrl?: string; model?: string; mode?: AgentMode; permission?: PermissionMode; internetAccess?: boolean } = {};
+export function parseConfigurationOverrides(arguments_: readonly string[]): {
+  readonly overrides: ConfigurationOverrides;
+  readonly rest: readonly string[];
+} {
+  const overrides: {
+    profile?: string;
+    provider?: ModelProviderKind;
+    baseUrl?: string;
+    model?: string;
+    mode?: AgentMode;
+    permission?: PermissionMode;
+    internetAccess?: boolean;
+  } = {};
   const rest: string[] = [];
   for (let index = 0; index < arguments_.length; index++) {
     const argument = arguments_[index];
     const value = (): string => {
       const next = arguments_[++index];
-      if (!next || next.startsWith("--")) throw new Error(`Missing value for ${argument}`);
+      if (!next || next.startsWith("--"))
+        throw new Error(`Missing value for ${argument}`);
       return next;
     };
     if (argument === "--profile") overrides.profile = value();
     else if (argument === "--provider") {
       const provider = validProvider(value());
-      if (!provider) throw new Error("--provider must be a supported local or cloud provider; run truss-cli --help for the list.");
+      if (!provider)
+        throw new Error(
+          "--provider must be a supported local or cloud provider; run truss-cli --help for the list.",
+        );
       overrides.provider = provider;
     } else if (argument === "--base-url") overrides.baseUrl = value();
     else if (argument === "--model") overrides.model = value();
@@ -317,7 +498,8 @@ export function parseConfigurationOverrides(arguments_: readonly string[]): { re
       overrides.mode = mode;
     } else if (argument === "--permission") {
       const permission = validPermission(value());
-      if (!permission) throw new Error("--permission must be ask, auto-read, or auto-all");
+      if (!permission)
+        throw new Error("--permission must be ask, auto-read, or auto-all");
       overrides.permission = permission;
     } else if (argument === "--internet-access") {
       overrides.internetAccess = true;

@@ -2,9 +2,12 @@ import type {
   ChatAttachment,
   ChatMessage,
   ContextBlock,
+  JsonObject,
   RuntimeEvent,
   Session,
 } from "@truss-harness/runtime";
+import type { ProviderConnectionResult } from "@truss-harness/agent-host";
+import type { McpServerStatus } from "@truss-harness/mcp";
 
 export const LOCAL_SERVICE_PROTOCOL_VERSION = 1;
 export const LOCAL_SERVICE_PROTOCOL_VERSIONS = [
@@ -21,6 +24,7 @@ export interface RuntimeServiceCapabilities {
   readonly changedFiles: true;
   readonly providerDiscovery: boolean;
   readonly providerPreflight: boolean;
+  readonly configurationProfiles: boolean;
   readonly agentProfiles: boolean;
   readonly mcpStatus: boolean;
 }
@@ -28,6 +32,31 @@ export interface RuntimeServiceCapabilities {
 export interface RuntimeServiceClient {
   readonly name: string;
   readonly version?: string;
+}
+
+export interface RuntimeServiceProfile {
+  readonly name: string;
+  readonly selected: boolean;
+  readonly provider?: string;
+  readonly model?: string;
+  readonly mode?: "chat" | "plan" | "edit";
+  readonly permission?: PermissionMode;
+}
+
+export interface RuntimeServiceHost {
+  testProviderConnection?(): Promise<ProviderConnectionResult>;
+  listProfiles?(): Promise<readonly RuntimeServiceProfile[]>;
+  listMcpServers?():
+    | readonly McpServerStatus[]
+    | Promise<readonly McpServerStatus[]>;
+}
+
+export interface RuntimeServiceApprovalRequest {
+  readonly requestId: string;
+  readonly sessionId: string;
+  readonly callId: string;
+  readonly tool: string;
+  readonly input: JsonObject;
 }
 
 export type RuntimeServiceRequest =
@@ -63,6 +92,9 @@ export type RuntimeServiceRequest =
       readonly callId: string;
       readonly approved: boolean;
     }
+  | { readonly type: "test_provider"; readonly requestId: string }
+  | { readonly type: "list_profiles"; readonly requestId: string }
+  | { readonly type: "mcp_status"; readonly requestId: string }
   | { readonly type: "ping"; readonly requestId: string }
   | { readonly type: "shutdown"; readonly requestId: string };
 
@@ -94,6 +126,9 @@ export interface RuntimeServiceResult {
   readonly pong?: boolean;
   readonly shutdown?: boolean;
   readonly approvalResolved?: boolean;
+  readonly providerConnection?: ProviderConnectionResult;
+  readonly profiles?: readonly RuntimeServiceProfile[];
+  readonly mcpServers?: readonly McpServerStatus[];
 }
 
 export type RuntimeServiceErrorCode =
@@ -116,6 +151,14 @@ export type RuntimeServiceMessage =
       readonly requestId: string;
       readonly state: RuntimeServiceLifecycleState;
       readonly sessionId?: string;
+    }
+  | {
+      readonly type: "approval_request";
+      readonly requestId: string;
+      readonly sessionId: string;
+      readonly callId: string;
+      readonly tool: string;
+      readonly input: JsonObject;
     }
   | {
       readonly type: "response";
@@ -166,6 +209,11 @@ export type RuntimeServiceJsonRpcMessage =
         readonly state: RuntimeServiceLifecycleState;
         readonly sessionId?: string;
       };
+    }
+  | {
+      readonly jsonrpc: "2.0";
+      readonly method: "approval/requested";
+      readonly params: RuntimeServiceApprovalRequest;
     };
 
 export type RuntimeServiceWireMessage =
