@@ -4524,6 +4524,10 @@ void (async () => {
   }
   applyTheme(desktopState.theme);
   populateSettings();
+  if (desktopState.runtimeError) {
+    openSettings();
+    notify(desktopState.runtimeError);
+  }
   await discover(desktopState.configuration);
   await Promise.all([
     loadFiles(),

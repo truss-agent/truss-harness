@@ -135,6 +135,8 @@ export interface DesktopState {
   readonly conversations: readonly DesktopConversation[];
   readonly activeConversationId?: string;
   readonly mcpStatuses?: readonly McpServerStatus[];
+  /** Safe startup/configuration failure text; never contains provider response bodies or keys. */
+  readonly runtimeError?: string;
   readonly workspaceUiState?: DesktopWorkspaceUiState;
   /** Workspace-local profiles; provider credentials remain in encrypted host storage. */
   readonly agentProfiles?: readonly AgentProfile[];
