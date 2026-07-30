@@ -5,10 +5,16 @@ import { SiteFooter, SiteHeader } from "../site-chrome";
 import { createPageMetadata } from "../site-metadata";
 import { DownloadClient } from "./download-client";
 
-export const metadata = createPageMetadata({ title: "Download", description: `Download ${brand.productName} Desktop for Windows or Linux.`, path: "/download" });
+export const metadata = createPageMetadata({
+  title: "Download",
+  description: `Download ${brand.productName} Desktop for Windows or Linux.`,
+  path: "/download",
+});
 
 function getReleaseApiUrl(repositoryUrl: string) {
-  const repository = repositoryUrl.replace(/^https:\/\/github\.com\//, "").replace(/\/$/, "");
+  const repository = repositoryUrl
+    .replace(/^https:\/\/github\.com\//, "")
+    .replace(/\/$/, "");
   return `https://api.github.com/repos/${repository}/releases?per_page=100`;
 }
 
@@ -45,13 +51,25 @@ export default function DownloadPage() {
         <section className="download-help">
           <div>
             <p className="site-eyebrow">Other clients</p>
-            <h2>Prefer the terminal or VS Code?</h2>
-            <p>The CLI and TUI install through npm. The VS Code extension installs from the Marketplace or a VSIX.</p>
+            <h2>Prefer the terminal, Neovim, or VS Code?</h2>
+            <p>
+              The CLI and TUI install through npm, truss.nvim installs through
+              your Neovim plugin manager, and the VS Code extension installs
+              from the Marketplace or a VSIX.
+            </p>
           </div>
           <div className="site-card-links">
-            <a className="site-text-link" href="https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode" target="_blank" rel="noreferrer">
+            <a
+              className="site-text-link"
+              href="https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode"
+              target="_blank"
+              rel="noreferrer"
+            >
               Get VS Code extension
             </a>
+            <Link className="site-text-link" href="/docs/clients/neovim">
+              Install truss.nvim
+            </Link>
             <Link className="site-text-link" href="/docs/getting-started">
               View installation guide
             </Link>

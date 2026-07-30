@@ -1,6 +1,6 @@
 # <Brand />
 
-<Brand /> is a local-first runtime for coding agents. It separates agent execution from clients, so the same runtime powers a CLI, full-screen terminal workspace, desktop app, and VS Code side panel without coupling agent behavior to any one interface.
+<Brand /> is a local-first runtime for coding agents. It separates agent execution from clients, so the same runtime powers a CLI, full-screen terminal workspace, Neovim client, desktop app, and VS Code side panel without coupling agent behavior to any one interface.
 
 ## What works today
 
@@ -9,7 +9,7 @@
 - Streaming chat, native tool calling, approvals, and interruption
 - Filesystem search, file reads and writes, grep, and terminal execution
 - Optional bounded public web search and page reading
-- CLI, full-screen terminal UI, desktop app, and VS Code side-panel client
+- CLI, full-screen terminal UI, Neovim, desktop app, and VS Code side-panel clients
 - Workspace configuration profiles and persistent project memory
 - Independent managed-agent profiles with provider-neutral model bindings,
   safe Edit-run serialization, approvals, and bounded run history
@@ -22,6 +22,7 @@
 | Configure Ollama, LM Studio, or llama.cpp | [Local Models](/docs/local-models) |
 | Use commands or service mode | [CLI](/docs/clients/cli) |
 | Use the terminal workspace | [Terminal UI](/docs/clients/tui) |
+| Work inside Neovim or LazyVim | [truss.nvim](/docs/clients/neovim) |
 | Use the standalone workspace | [Desktop App](/docs/clients/desktop) |
 | Use the VS Code side panel | [VS Code Extension](/docs/clients/vscode) |
 | Run several focused profiles in one workspace | [Managed Agents](/docs/runtime/managed-agents) |

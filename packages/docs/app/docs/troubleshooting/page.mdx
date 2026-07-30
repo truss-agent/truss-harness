@@ -42,6 +42,23 @@ Internet research is disabled by default. Enable `internetAccess` in a profile, 
 
 Update to the latest Truss extension and reload the VS Code window. The extension includes its runtime service. If `trussHarness.command` contains an old or unavailable CLI path, clear that setting to restore the bundled service. Check **View → Output → Truss** for runtime diagnostics.
 
+## Neovim cannot connect to Truss
+
+Run `:checkhealth truss` first. It verifies Neovim, the configured
+`truss-cli` executable and version, workspace access, and optional Git support
+without starting the service or contacting a provider.
+
+truss.nvim 0.2.1 requires Neovim 0.10 or newer and `truss-cli` 0.1.14 or
+newer. Confirm the installed CLI directly:
+
+```sh
+truss-cli --version
+```
+
+After the local health check passes, run `:TrussTestConnection` to test the
+configured provider, model, and credential. See the
+[Neovim client guide](/docs/clients/neovim) for installation and profiles.
+
 ## Get the effective configuration
 
 Run:
