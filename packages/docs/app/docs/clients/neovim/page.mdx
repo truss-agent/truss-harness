@@ -1,8 +1,8 @@
 # <Brand /> for Neovim
 
 `truss.nvim` is the keyboard-first Neovim client for the same provider-neutral
-runtime used by the CLI, VS Code, Desktop, and TUI. The preview targets Neovim
-0.10 or newer and includes native Chat, Plan, and Edit workflows.
+runtime used by the CLI, VS Code, Desktop, and TUI. It targets Neovim 0.10 or
+newer and includes native Chat, Plan, and Edit workflows.
 
 ## Architecture
 
@@ -18,30 +18,37 @@ diagnostics and the active file's Git diff. A visual command sends the
 selection instead. Every source is bounded in Lua and again at the service
 boundary.
 
-## Install the preview
+## Install
 
 Install and configure the CLI:
 
 ```sh
-npm install --global @truss-harness/cli
+npm install --global @truss-harness/cli@^0.1.14
 truss-cli setup
 ```
 
-Until `truss.nvim` moves to its standalone distribution repository, load its
-monorepo subdirectory with `lazy.nvim`:
+The generated `neovim-release` branch keeps the plugin at the repository root,
+so lazy.nvim can install it directly:
 
 ```lua
 {
   "truss-agent/truss-harness",
-  config = function(plugin)
-    vim.opt.rtp:prepend(plugin.dir .. "/packages/neovim")
-    require("truss").setup({
-      arguments = { "--profile", "ollama" },
-    })
+  branch = "neovim-release",
+  name = "truss.nvim",
+  opts = {
+    arguments = { "--profile", "ollama" },
+  },
+  config = function(_, opts)
+    require("truss").setup(opts)
     require("truss.lazy").setup()
   end,
 }
 ```
+
+Replace `branch` with `tag = "nvim-v0.2.1"` to pin that release. Run
+`:checkhealth truss` after installation or an update. The health check verifies
+local versions, executable resolution, workspace access, and optional Git
+support without starting the service or contacting a provider.
 
 ## Commands
 
@@ -58,6 +65,7 @@ monorepo subdirectory with `lazy.nvim`:
 | `:TrussTestConnection` | Test the configured provider safely |
 | `:TrussMcp` | Render credential-free MCP server status |
 | `:TrussProfile` | Select a named CLI configuration profile |
+| `:checkhealth truss` | Verify local compatibility without contacting a provider |
 
 Inside the panel, Enter prompts again, Ctrl-C stops the active run, and `q`
 closes the split without killing the reusable local service. Changed files are
@@ -80,3 +88,10 @@ provider responses never cross into Lua.
 `require("truss.lazy").setup()` opts into `<leader>tc` for Chat, `<leader>tp`
 for Plan, `<leader>te` for Edit, `<leader>to` for the panel, `<leader>ts` to
 stop, and `<leader>tP` for profiles. Existing mappings are left untouched.
+
+## Compatibility
+
+truss.nvim 0.2.1 requires `truss-cli` 0.1.14 or newer and Neovim 0.10 or
+newer. The client and service negotiate protocol v1 before any run. Optional
+features are guarded by negotiated capability flags, while a protocol mismatch
+fails before workspace context is sent.

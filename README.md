@@ -21,7 +21,7 @@ control plane.
 | --- | --- | --- |
 | CLI | Scripts and focused coding tasks | npm install --global @truss-harness/cli |
 | Terminal UI | Keyboard-first work in the terminal | npm install --global @truss-harness/tui |
-| Neovim (preview) | Streaming chat with explicit buffer or selection context | [Install truss.nvim from this repository](packages/neovim/README.md) |
+| Neovim | Native Chat, Plan, and Edit with explicit bounded editor context | [Install truss.nvim](packages/neovim/README.md) |
 | VS Code | Chat, file context, completions, and approvals in the editor | [Install from the Marketplace](https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode) |
 | Desktop | A dedicated workspace with files, diffs, terminal, Git, and chat | [Download Truss Desktop](https://truss-agent.com/download) |
 | Truss Go | Continue a trusted Desktop or VS Code session from Android | [Explore Truss Go](https://truss-agent.com/truss-go) |
@@ -66,13 +66,14 @@ Install the [Truss VS Code extension](https://marketplace.visualstudio.com/items
 
 ### Neovim
 
-The [`truss.nvim`](packages/neovim/README.md) preview uses the same local Truss
+The [`truss.nvim`](packages/neovim/README.md) client uses the same local Truss
 service as other editor clients. It provides native Chat, Plan, and Edit
 workflows, host-routed approvals with diff previews, plans and tool activity,
 changed-file navigation, provider checks, profile selection, safe MCP status,
 bounded editor context, cancellation, and clean shutdown. Model requests,
 credentials, tools, and policy remain in `truss-cli`; Lua only owns the editor
-experience.
+experience. It installs from the generated `neovim-release` branch and includes
+`:checkhealth truss` compatibility diagnostics.
 
 ### Desktop
 
