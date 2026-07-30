@@ -104,5 +104,15 @@ jobs:
               sha256sum --check "$(basename "$nvim_checksum")"
             )
             tar -xzf "$nvim_archive" -C "$RUNNER_TEMP"
-            PATH="$RUNNER_TEMP/nvim-linux-x86_64/bin:$PATH" npm --workspace truss.nvim test
+            nvim_path="$RUNNER_TEMP/nvim-linux-x86_64/bin"
+            PATH="$nvim_path:$PATH" npm --workspace truss.nvim test
+            npm --workspace truss.nvim run validate:release
+
+            lazy_path="$RUNNER_TEMP/lazy.nvim"
+            git clone --filter=blob:none https://github.com/folke/lazy.nvim.git "$lazy_path"
+            git -C "$lazy_path" checkout --detach 306a05526ada86a7b30af95c5cc81ffba93fef97
+            PATH="$nvim_path:$PATH" \
+              TRUSS_LAZY_PATH="$lazy_path" \
+              TRUSS_PLUGIN_PATH="$GITHUB_WORKSPACE/packages/neovim" \
+              npm --workspace truss.nvim run test:lazy
           fi
