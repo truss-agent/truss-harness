@@ -4,36 +4,47 @@
 Truss runtime. Lua owns the split-panel experience; `truss-cli serve` owns
 models, credentials, tools, MCP connections, approvals, and workspace policy.
 
-The preview supports Neovim 0.10+, Chat, Plan, and Edit modes, a streaming
+The plugin supports Neovim 0.10+, Chat, Plan, and Edit modes, a streaming
 split, host-routed approvals with write previews, plan and tool activity,
 clickable changed files, provider checks, named profiles, safe MCP status,
 bounded editor context, cancellation, and clean service shutdown.
 
 ## Install with lazy.nvim
 
-Until the plugin moves to its standalone distribution repository, point
-`lazy.nvim` at the monorepo and add `packages/neovim` to the runtime path:
+Install and configure the local service first:
+
+```sh
+npm install --global @truss-harness/cli@^0.1.14
+truss-cli setup
+```
+
+The `neovim-release` branch is generated from this monorepo with the plugin at
+the repository root, so no monorepo runtime-path workaround is required:
 
 ```lua
 {
   "truss-agent/truss-harness",
-  config = function(plugin)
-    vim.opt.rtp:prepend(plugin.dir .. "/packages/neovim")
-    require("truss").setup()
+  branch = "neovim-release",
+  name = "truss.nvim",
+  opts = {
+    arguments = { "--profile", "ollama" },
+  },
+  config = function(_, opts)
+    require("truss").setup(opts)
     require("truss.lazy").setup()
   end,
 }
 ```
 
-Install and configure the service first:
+To pin a specific plugin release, replace `branch` with a release tag:
 
-```sh
-npm install --global @truss-harness/cli
-truss-cli setup
+```lua
+tag = "nvim-v0.2.1"
 ```
 
-Then run `:TrussChat Explain this buffer`, `:TrussPlan Refactor this module`,
-or `:TrussEdit Add validation`. A visual command attaches only the selected
+Run `:checkhealth truss` once after installation. Then use
+`:TrussChat Explain this buffer`, `:TrussPlan Refactor this module`, or
+`:TrussEdit Add validation`. A visual command attaches only the selected
 lines. Merely opening Neovim or `:TrussOpen` sends no workspace content.
 
 ## Configure
@@ -69,6 +80,11 @@ Use `:TrussTestConnection` to safely test the active provider and
 `:TrussMcp` to render credential-free MCP state. `:TrussProfile` selects a
 named CLI configuration profile and restarts the reusable service without
 moving keys into Lua.
+
+`:checkhealth truss` verifies the local Neovim and CLI versions, executable
+resolution, workspace access, and optional Git integration without starting
+the service or contacting a provider. See the
+[compatibility table](COMPATIBILITY.md) for supported version pairs.
 
 Edit-mode write and replace requests remain blocked until the host asks for
 approval. Choose **Preview diff** to inspect the proposed text in a native
