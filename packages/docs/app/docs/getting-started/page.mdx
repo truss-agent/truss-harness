@@ -25,6 +25,28 @@ truss-tui
 
 The npm global install prints a short CLI checklist. Running `truss-cli` with no arguments always displays the full command reference.
 
+### Install truss.nvim
+
+Neovim users run the same local CLI service. After installing the CLI above,
+add the generated plugin distribution with lazy.nvim:
+
+```lua
+{
+  "truss-agent/truss-harness",
+  branch = "neovim-release",
+  name = "truss.nvim",
+  config = function()
+    require("truss").setup()
+    require("truss.lazy").setup()
+  end,
+}
+```
+
+Run `:checkhealth truss` after installation, then
+`:TrussTestConnection` to intentionally test the selected provider. See the
+[complete Neovim guide](/docs/clients/neovim) for profiles, commands, mappings,
+context rules, and version compatibility.
+
 ## Interactive setup
 
 ```sh
@@ -59,7 +81,7 @@ Run Agent/Edit mode only inside a workspace you trust. Direct CLI chat is non-in
 truss-cli chat --mode edit "Read README.md and add one concise sentence describing the CLI. Make no other changes."
 ```
 
-Use the TUI, desktop app, or VS Code extension when you want interactive approval prompts and persistent conversation controls.
+Use Neovim, the TUI, desktop app, or VS Code extension when you want interactive approval prompts and persistent conversation controls.
 
 ## Continue setup
 
