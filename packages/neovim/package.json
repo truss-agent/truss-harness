@@ -1,14 +1,22 @@
 {
   "name": "truss.nvim",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Keyboard-first Neovim client for the Truss agent runtime.",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/truss-agent/truss-harness"
+    "url": "https://github.com/truss-agent/truss-harness",
+    "directory": "packages/neovim"
+  },
+  "truss": {
+    "minimumCliVersion": "0.1.14",
+    "minimumNeovimVersion": "0.10.0",
+    "protocolVersion": 1
   },
   "scripts": {
-    "test": "nvim --headless -u NONE -l tests/run.lua"
+    "test": "nvim --headless -u NONE -l tests/run.lua && nvim --headless -u NONE -l tests/health.lua && nvim --headless -u tests/minimal-init.lua -l tests/smoke.lua",
+    "test:lazy": "nvim --headless -u tests/lazy-init.lua -l tests/lazy-smoke.lua",
+    "validate:release": "node scripts/validate-release.mjs"
   }
 }

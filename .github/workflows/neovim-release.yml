@@ -1,0 +1,122 @@
+name: Neovim release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: neovim-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Validate CLI and plugin release metadata
+        run: |
+          npm --workspace @truss-harness/cli run build
+          node packages/cli/dist/bin.js --version
+          npm --workspace truss.nvim run validate:release
+      - name: Confirm the required CLI release is published
+        shell: bash
+        run: |
+          minimum_cli="$(node -p "require('./packages/neovim/package.json').truss.minimumCliVersion")"
+          published="$(npm view "@truss-harness/cli@$minimum_cli" version)"
+          test "$published" = "$minimum_cli"
+      - name: Test plain Neovim and lazy.nvim integration
+        shell: bash
+        run: |
+          nvim_archive="$RUNNER_TEMP/nvim-linux-x86_64.tar.gz"
+          nvim_checksum="$RUNNER_TEMP/nvim-linux-x86_64.tar.gz.sha256sum"
+          curl -fsSL "https://github.com/neovim/neovim/releases/download/v0.10.4/nvim-linux-x86_64.tar.gz" -o "$nvim_archive"
+          curl -fsSL "https://github.com/neovim/neovim/releases/download/v0.10.4/nvim-linux-x86_64.tar.gz.sha256sum" -o "$nvim_checksum"
+          (
+            cd "$RUNNER_TEMP"
+            sha256sum --check "$(basename "$nvim_checksum")"
+          )
+          tar -xzf "$nvim_archive" -C "$RUNNER_TEMP"
+          nvim_path="$RUNNER_TEMP/nvim-linux-x86_64/bin"
+          PATH="$nvim_path:$PATH" npm --workspace truss.nvim test
+
+          lazy_path="$RUNNER_TEMP/lazy.nvim"
+          git clone --filter=blob:none https://github.com/folke/lazy.nvim.git "$lazy_path"
+          git -C "$lazy_path" checkout --detach 306a05526ada86a7b30af95c5cc81ffba93fef97
+          PATH="$nvim_path:$PATH" \
+            TRUSS_LAZY_PATH="$lazy_path" \
+            TRUSS_PLUGIN_PATH="$GITHUB_WORKSPACE/packages/neovim" \
+            npm --workspace truss.nvim run test:lazy
+      - name: Build standalone distribution
+        id: distribution
+        shell: bash
+        run: |
+          version="$(node -p "require('./packages/neovim/package.json').version")"
+          minimum_cli="$(node -p "require('./packages/neovim/package.json').truss.minimumCliVersion")"
+          tag="nvim-v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+            echo "Tag $tag already exists." >&2
+            exit 1
+          fi
+
+          split_commit="$(git subtree split --prefix=packages/neovim)"
+          remote_commit="$(
+            git ls-remote --heads origin refs/heads/neovim-release |
+              awk '{ print $1 }'
+          )"
+          if test -n "$remote_commit"; then
+            git fetch --no-tags origin "$remote_commit"
+            if ! git merge-base --is-ancestor "$remote_commit" "$split_commit"; then
+              echo "Generated distribution would not fast-forward neovim-release." >&2
+              exit 1
+            fi
+          fi
+
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git tag -a "$tag" "$split_commit" -m "truss.nvim $version"
+
+          mkdir -p dist/neovim-release
+          archive="dist/neovim-release/truss.nvim-$version.tar.gz"
+          git archive \
+            --format=tar.gz \
+            --prefix="truss.nvim-$version/" \
+            --output="$archive" \
+            "$split_commit"
+          (
+            cd dist/neovim-release
+            sha256sum "$(basename "$archive")" > SHA256SUMS.txt
+          )
+
+          {
+            echo "version=$version"
+            echo "minimum_cli=$minimum_cli"
+            echo "tag=$tag"
+            echo "split_commit=$split_commit"
+            echo "archive=$archive"
+          } >> "$GITHUB_OUTPUT"
+      - name: Publish distribution branch and tag
+        shell: bash
+        run: |
+          git push --atomic origin \
+            "${{ steps.distribution.outputs.split_commit }}:refs/heads/neovim-release" \
+            "refs/tags/${{ steps.distribution.outputs.tag }}"
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.distribution.outputs.tag }}" \
+            "${{ steps.distribution.outputs.archive }}" \
+            dist/neovim-release/SHA256SUMS.txt \
+            --verify-tag \
+            --notes "Install this standalone plugin release with lazy.nvim using tag \`${{ steps.distribution.outputs.tag }}\`, or follow the moving \`neovim-release\` branch. Requires @truss-harness/cli ${{ steps.distribution.outputs.minimum_cli }} or newer. See the included README and COMPATIBILITY.md." \
+            --title "truss.nvim ${{ steps.distribution.outputs.version }}"

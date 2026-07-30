@@ -1,7 +1,8 @@
 local M = {}
+local version = require("truss.version")
 
-M.protocol_version = 1
-M.client_version = "0.2.0"
+M.protocol_version = version.protocol
+M.client_version = version.plugin
 
 local function default_encode(value)
   return vim.json.encode(value)

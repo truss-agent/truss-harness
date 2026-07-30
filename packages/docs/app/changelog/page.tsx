@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "CLI 0.1.14 · truss.nvim 0.2.1",
+    label: "Neovim distribution and health",
+    changes: [
+      "Added a clean lazy.nvim installation path backed by a generated plugin-root distribution branch and versioned nvim-v release tags.",
+      "Added :checkhealth truss diagnostics for Neovim and CLI compatibility, executable resolution, workspace access, and optional Git support without contacting a provider.",
+      "Added centralized compatibility metadata, a published version matrix, release validation, and pinned plain-Neovim and lazy.nvim integration smoke coverage.",
+    ],
+  },
+  {
     version: "CLI 0.1.13 · truss.nvim 0.2.0",
     label: "Native Neovim agent workflows",
     changes: [

@@ -3,8 +3,10 @@ local approval = require("truss.approval")
 local workspace = require("truss.workspace")
 local Panel = require("truss.panel").Panel
 local ProtocolClient = require("truss.protocol").Client
+local version = require("truss.version")
 
 local M = {}
+M.version = version
 
 local defaults = {
   command = "truss-cli",

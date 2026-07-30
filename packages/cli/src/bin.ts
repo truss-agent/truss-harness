@@ -45,7 +45,7 @@ import {
 } from "@truss-harness/gateway";
 import type { McpServerStatus } from "@truss-harness/mcp";
 import { formatMcpStatuses } from "./mcp.js";
-import { CLI_VERSION } from "./version.js";
+import { CLI_VERSION, formatCliVersion } from "./version.js";
 import qrcode from "qrcode-terminal";
 
 const help = `${brand.productName} CLI
@@ -64,6 +64,7 @@ Quick start:
   5. Optional: ${brand.cliCommand} config init
 
 Commands:
+  version               Print the installed CLI version
   chat [prompt]          Stream one response or open persistent chat
   setup                 Interactively save local-model or cloud BYOK defaults
   test-connection       Verify the configured provider, model, and credential
@@ -500,6 +501,11 @@ async function main(): Promise<void> {
   const [command = "help", ...rawArgs] = process.argv.slice(2);
   if (command === "help" || command === "--help" || command === "-h") {
     process.stdout.write(help);
+    return;
+  }
+
+  if (command === "version" || command === "--version" || command === "-v") {
+    process.stdout.write(`${formatCliVersion(brand.cliCommand)}\n`);
     return;
   }
 

@@ -11,7 +11,14 @@ Requirements:
 
 - Neovim 0.10 or newer
 - Node.js 20 or newer
-- truss-cli installed and configured
+- truss-cli 0.1.14 or newer, installed and configured
+
+After installation, run:
+
+  :checkhealth truss
+
+This checks local versions and dependencies without contacting a provider.
+Use :TrussTestConnection separately to test the configured provider.
 
 ==============================================================================
 SETUP                                                          *truss-setup*
@@ -46,6 +53,9 @@ COMMANDS                                                    *truss-commands*
 `:TrussTestConnection`   Test the selected provider without starting a run.
 `:TrussMcp`              Show credential-safe MCP server status.
 `:TrussProfile`          Select a named CLI configuration profile.
+
+Neovim's built-in `:checkhealth truss` command verifies the plugin, CLI,
+workspace, and optional Git integration without starting the service.
 
 Inside the Truss panel:
 
