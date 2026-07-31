@@ -96,6 +96,7 @@ import {
   type DesktopWorkspaceUiState,
 } from "./shared.js";
 import QRCode from "qrcode";
+import { recoverStartupRuntime } from "./startup-runtime.js";
 
 const execFile = promisify(execFileCallback);
 const ignoredDirectories = new Set([
@@ -917,14 +918,15 @@ function safeRuntimeConfigurationError(
 async function configureStartupRuntime(
   configuration: DesktopConfiguration,
 ): Promise<void> {
-  try {
-    await configureRuntime(configuration);
-  } catch (error) {
-    await disposeRuntime();
+  const result = await recoverStartupRuntime(
+    () => configureRuntime(configuration),
+    disposeRuntime,
+  );
+  if (result.status === "recovered") {
     persisted = {
       ...persisted,
       mcpStatuses: [],
-      runtimeError: safeRuntimeConfigurationError(configuration, error),
+      runtimeError: safeRuntimeConfigurationError(configuration, result.error),
     };
   }
 }

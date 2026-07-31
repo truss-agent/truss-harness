@@ -2,6 +2,15 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.22] - 2026-07-30
+
+### Fixed
+
+- Kept Desktop open when a saved cloud-provider configuration cannot recover
+  its credential on startup, including session-only Linux credentials that
+  expire after the previous app session. Settings now remains available for
+  key re-entry even if runtime cleanup also encounters an error.
+
 ## [0.1.21] - 2026-07-29
 
 ### Added
