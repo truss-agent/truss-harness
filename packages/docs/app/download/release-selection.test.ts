@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { selectDesktopRelease } from "./release-selection";
+import {
+  selectDesktopRelease,
+  selectNeovimRelease,
+  selectTrussGoRelease,
+} from "./release-selection";
 
 describe("selectDesktopRelease", () => {
   it("ignores a newer Truss Go release", () => {
@@ -19,5 +23,25 @@ describe("selectDesktopRelease", () => {
     ];
 
     expect(selectDesktopRelease(releases)?.tag_name).toBe("v0.1.9");
+  });
+
+  it("selects the newest stable Android release without treating it as Desktop", () => {
+    const releases = [
+      { tag_name: "nvim-v0.2.1", draft: false, prerelease: false },
+      { tag_name: "truss-go-v0.1.2", draft: false, prerelease: false },
+      { tag_name: "v0.1.22", draft: false, prerelease: false },
+    ];
+
+    expect(selectTrussGoRelease(releases)?.tag_name).toBe("truss-go-v0.1.2");
+  });
+
+  it("selects the newest stable Neovim release without treating it as Desktop", () => {
+    const releases = [
+      { tag_name: "v0.1.22", draft: false, prerelease: false },
+      { tag_name: "truss-go-v0.1.2", draft: false, prerelease: false },
+      { tag_name: "nvim-v0.2.1", draft: false, prerelease: false },
+    ];
+
+    expect(selectNeovimRelease(releases)?.tag_name).toBe("nvim-v0.2.1");
   });
 });
