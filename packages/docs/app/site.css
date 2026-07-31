@@ -1087,6 +1087,161 @@ body {
     min-width: 120px;
 }
 
+.download-client-section {
+    margin-top: 74px;
+}
+
+.download-client-section > header {
+    margin-bottom: 24px;
+    max-width: 760px;
+}
+
+.download-client-section > header h1 {
+    font-size: clamp(36px, 4vw, 56px);
+    line-height: 1.03;
+    margin-bottom: 12px;
+    max-width: 760px;
+}
+
+.download-client-section > header h2 {
+    font-size: 32px;
+    margin-bottom: 10px;
+}
+
+.download-client-section > header > p:last-child,
+.download-desktop-section-heading > p:last-child {
+    color: #52675e;
+    line-height: 1.6;
+    margin-bottom: 0;
+}
+
+.download-client-grid {
+    display: grid;
+    gap: 20px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.download-client-card {
+    background: var(--site-panel);
+    border: 1px solid var(--site-line);
+    border-radius: 22px;
+    box-shadow: 0 18px 50px rgba(20, 45, 36, .06);
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    padding: 32px;
+}
+
+.download-client-card header h2 {
+    font-size: 27px;
+    margin-bottom: 10px;
+}
+
+.download-client-card header > p:last-child {
+    color: #52675e;
+    line-height: 1.6;
+    margin-bottom: 0;
+}
+
+.download-client-release {
+    align-items: center;
+    border-bottom: 1px solid var(--site-line);
+    border-top: 1px solid var(--site-line);
+    display: flex;
+    gap: 11px;
+    margin: 28px 0 22px;
+    padding: 16px 0;
+}
+
+.download-client-release > div {
+    display: grid;
+    gap: 3px;
+}
+
+.download-client-release strong {
+    font-size: 14px;
+}
+
+.download-client-release span:last-child {
+    color: #5b6f66;
+    font-size: 13px;
+}
+
+.download-client-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.download-client-actions .site-button {
+    min-height: 44px;
+}
+
+.download-client-all-releases {
+    font-size: 13px;
+    margin-top: auto;
+    padding-top: 24px;
+}
+
+.download-desktop-section {
+    margin-top: 74px;
+}
+
+.download-desktop-section-heading {
+    margin-bottom: 24px;
+}
+
+.download-desktop-section-heading h2 {
+    font-size: 32px;
+    margin-bottom: 9px;
+}
+
+:root[data-truss-theme="dark"] .download-client-section > header > p:last-child,
+:root[data-truss-theme="dark"] .download-client-card header > p:last-child,
+:root[data-truss-theme="dark"] .download-client-release span:last-child,
+:root[data-truss-theme="dark"] .download-desktop-section-heading > p:last-child {
+    color: #b5c9bf;
+}
+
+:root[data-truss-theme="dark"] .download-client-card {
+    border-color: #365a4a;
+}
+
+@media (max-width: 1100px) {
+    .download-client-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 780px) {
+    .download-client-section,
+    .download-desktop-section {
+        margin-top: 52px;
+    }
+
+    .download-client-section > header h1,
+    .download-client-section > header h2,
+    .download-desktop-section-heading h2 {
+        font-size: 28px;
+    }
+
+    .download-client-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .download-client-card {
+        padding: 26px 22px;
+    }
+
+    .download-client-actions {
+        flex-direction: column;
+    }
+
+    .download-client-actions .site-button {
+        width: 100%;
+    }
+}
+
 .download-button-unavailable {
     background: #e6ebe7;
     border-color: #ccd5ce;

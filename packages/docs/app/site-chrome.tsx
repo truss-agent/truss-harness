@@ -23,7 +23,7 @@ export function SiteHeader() {
           <Link href="/about">About</Link>
           <Link href="/features">Features</Link>
           <Link href="/clients">Clients</Link>
-          <Link href="/truss-go">Truss Go</Link>
+          <Link href="/changelog">Changelog</Link>
           <Link href="/docs">Docs</Link>
           <Link className="site-nav-download" href="/download">
             Download
