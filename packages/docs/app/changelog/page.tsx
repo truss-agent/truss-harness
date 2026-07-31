@@ -4,6 +4,14 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "0.1.22",
+    label: "Desktop startup recovery",
+    changes: [
+      "Kept Desktop open when a saved cloud-provider credential is unavailable at startup, so Settings remains available for key re-entry on session-only Linux systems.",
+      "Hardened startup cleanup so a failed previous runtime cannot prevent the Desktop shell from opening.",
+    ],
+  },
+  {
     version: "CLI 0.1.14 · truss.nvim 0.2.1",
     label: "Neovim distribution and health",
     changes: [
