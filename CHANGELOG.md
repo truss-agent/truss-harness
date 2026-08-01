@@ -2,6 +2,16 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.23] - 2026-07-31
+
+### Fixed
+
+- Explicitly selected Electron's GNOME/libsecret credential backend on Linux
+  so installed Desktop builds can persist provider keys in Secret Service
+  keyrings on desktop environments Electron cannot identify automatically.
+- Preserved the session-only fallback and its disclosure when no secure
+  credential backend is available on the host.
+
 ## [0.1.22] - 2026-07-30
 
 ### Fixed

@@ -4,6 +4,14 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "0.1.23",
+    label: "Linux credential storage",
+    changes: [
+      "Selected Electron's GNOME/libsecret credential backend for installed Desktop builds on Linux so provider keys can persist through the Secret Service keyring.",
+      "Kept the clear session-only fallback when a host has no available secure credential storage.",
+    ],
+  },
+  {
     version: "0.1.22",
     label: "Desktop startup recovery",
     changes: [
