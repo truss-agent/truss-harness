@@ -24,6 +24,7 @@ import {
   initializeWorkspaceConfiguration,
   listConfigurationProfiles,
   parseConfigurationOverrides,
+  providerAccountEnvironmentVariable,
   resolveConfiguration,
   saveUserProfile,
   type ResolvedConfiguration,
@@ -90,6 +91,7 @@ Commands:
 Options:
   --profile <name>       Select a named configuration profile
   --provider <name>      Local or BYOK cloud provider (see Environment)
+  --provider-account <id> Select a named provider account
   --base-url <url>       Local server endpoint
   --model <name>         Model identifier
   --mode <name>          chat, plan, or edit
@@ -119,6 +121,9 @@ Environment:
   TRUSS_HARNESS_PROVIDER    ollama, openai-compatible, openai, anthropic,
                             openrouter, groq, together, gemini, xai, mistral,
                             deepseek, perplexity, fireworks, or nvidia-nim
+  TRUSS_HARNESS_PROVIDER_ACCOUNT
+                            Named account reference. If set, the CLI first
+                            checks TRUSS_HARNESS_API_KEY_ACCOUNT_<ID>.
   TRUSS_HARNESS_BASE_URL    Local server base URL (default depends on provider)
   TRUSS_HARNESS_AGENT_MODE  chat (default), plan, or edit
   TRUSS_HARNESS_PERMISSION_MODE ask (default), auto-read, or auto-all
@@ -376,6 +381,7 @@ async function runSetup(): Promise<void> {
         ];
       const model = await ask("Model ID", "your-tool-capable-model");
       const profileName = await ask("Profile name", provider.id);
+      const accountRef = await ask("Provider account reference", "default");
       const mode = await ask("Default mode: chat, plan, or edit", "edit");
       if (mode !== "chat" && mode !== "plan" && mode !== "edit")
         throw new Error("Mode must be chat, plan, or edit.");
@@ -394,14 +400,14 @@ async function runSetup(): Promise<void> {
         provider: provider.id,
         baseUrl: provider.baseUrl,
         model,
+        credentialRef: accountRef,
         mode,
         permission,
         internetAccess: /^(y|yes|true|1)$/i.test(internet),
-        apiKeyEnv: provider.apiKeyEnvironmentVariable,
       });
       process.stdout.write(`\nSaved profile '${profileName}' to ${path}\n`);
       process.stdout.write(
-        `Set ${provider.apiKeyEnvironmentVariable} outside configuration, then run: ${brand.cliCommand} chat --profile ${profileName}\n`,
+        `Set ${providerAccountEnvironmentVariable(accountRef)} (or ${provider.apiKeyEnvironmentVariable} for the fallback) outside configuration, then run: ${brand.cliCommand} chat --profile ${profileName}\n`,
       );
       return;
     }

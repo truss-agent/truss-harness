@@ -43,7 +43,9 @@ export async function testClientProviderConnection(
     providerId: options.provider,
     endpointUrl: options.baseUrl,
     modelId: options.model,
-    ...(credential ? { credentialRef: "direct" } : {}),
+    ...(credential
+      ? { credentialRef: options.credentialRef ?? "direct" }
+      : {}),
   });
 }
 
@@ -75,14 +77,24 @@ export function configurationFromEnvironment(
       "Set TRUSS_HARNESS_MODEL to the model name exposed by your OpenAI-compatible server.",
     );
   }
+  const credentialRef = environment.TRUSS_HARNESS_PROVIDER_ACCOUNT?.trim();
+  const accountApiKey = credentialRef
+    ? environment[
+        `TRUSS_HARNESS_API_KEY_ACCOUNT_${credentialRef
+          .replace(/[^a-zA-Z0-9]+/g, "_")
+          .toUpperCase()}`
+      ]
+    : undefined;
 
   return {
     workspaceRoot,
     provider,
     baseUrl,
     model,
+    credentialRef: credentialRef || undefined,
     apiKey:
       environment.TRUSS_HARNESS_API_KEY ??
+      accountApiKey ??
       (isCloudProviderId(provider)
         ? environment[
             cloudProviderDefinition(provider).apiKeyEnvironmentVariable

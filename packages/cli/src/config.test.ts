@@ -2,7 +2,11 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { listConfigurationProfiles, resolveConfiguration } from "./config.js";
+import {
+  listConfigurationProfiles,
+  providerAccountEnvironmentVariable,
+  resolveConfiguration,
+} from "./config.js";
 
 describe("resolveConfiguration", () => {
   it("merges environment, user profiles, workspace profiles, and explicit overrides in precedence order", async () => {
@@ -168,6 +172,38 @@ describe("resolveConfiguration", () => {
           readOnly: false,
         },
       });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("selects an account-scoped key before the provider fallback", async () => {
+    const root = join(process.cwd(), ".test-workspaces", randomUUID());
+    const paths = {
+      user: join(root, "user.json"),
+      workspace: join(root, "workspace.json"),
+    };
+    await mkdir(root, { recursive: true });
+    try {
+      await writeFile(
+        paths.user,
+        JSON.stringify({
+          provider: "openrouter",
+          model: "provider/model",
+          credentialRef: "work/team",
+        }),
+      );
+      const resolved = await resolveConfiguration({
+        workspaceRoot: root,
+        paths,
+        environment: {
+          OPENROUTER_API_KEY: "fallback-key",
+          [providerAccountEnvironmentVariable("work/team")]: "account-key",
+        },
+      });
+
+      expect(resolved.credentialRef).toBe("work/team");
+      expect(resolved.apiKey).toBe("account-key");
     } finally {
       await rm(root, { recursive: true, force: true });
     }

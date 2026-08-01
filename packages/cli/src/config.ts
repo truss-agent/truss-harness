@@ -22,6 +22,8 @@ export interface ProfileConfiguration {
   readonly provider?: ModelProviderKind;
   readonly baseUrl?: string;
   readonly model?: string;
+  /** Opaque provider-account reference; secrets stay in environment variables. */
+  readonly credentialRef?: string;
   readonly mode?: AgentMode;
   readonly permission?: PermissionMode;
   readonly internetAccess?: boolean;
@@ -61,6 +63,7 @@ export interface ConfigurationProfileSummary {
   readonly selected: boolean;
   readonly provider?: ModelProviderKind;
   readonly model?: string;
+  readonly credentialRef?: string;
   readonly mode?: AgentMode;
   readonly permission?: PermissionMode;
 }
@@ -89,6 +92,16 @@ function validTuiTheme(value: unknown): TuiThemeName | undefined {
     : undefined;
 }
 
+/**
+ * Converts an account reference into the optional environment variable used
+ * for that account's secret. Generic provider variables remain the fallback.
+ */
+export function providerAccountEnvironmentVariable(reference: string): string {
+  const normalized = reference.trim().replace(/[^a-zA-Z0-9]+/g, "_");
+  if (!normalized) throw new Error("A provider account reference is required.");
+  return `TRUSS_HARNESS_API_KEY_ACCOUNT_${normalized.toUpperCase()}`;
+}
+
 function object(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -102,6 +115,10 @@ function parseProfile(value: unknown): ProfileConfiguration {
     provider: validProvider(source.provider),
     baseUrl: typeof source.baseUrl === "string" ? source.baseUrl : undefined,
     model: typeof source.model === "string" ? source.model : undefined,
+    credentialRef:
+      typeof source.credentialRef === "string"
+        ? source.credentialRef.trim() || undefined
+        : undefined,
     mode: validMode(source.mode),
     permission: validPermission(source.permission),
     internetAccess:
@@ -177,6 +194,8 @@ function environmentConfiguration(
     provider: validProvider(environment.TRUSS_HARNESS_PROVIDER),
     baseUrl: environment.TRUSS_HARNESS_BASE_URL,
     model: environment.TRUSS_HARNESS_MODEL,
+    credentialRef:
+      environment.TRUSS_HARNESS_PROVIDER_ACCOUNT?.trim() || undefined,
     mode: validMode(environment.TRUSS_HARNESS_AGENT_MODE),
     permission: validPermission(environment.TRUSS_HARNESS_PERMISSION_MODE),
     internetAccess:
@@ -197,6 +216,7 @@ const profileKeys = [
   "provider",
   "baseUrl",
   "model",
+  "credentialRef",
   "mode",
   "permission",
   "internetAccess",
@@ -310,11 +330,15 @@ export async function resolveConfiguration(options: {
     throw new Error(
       `Set a model with --model, TRUSS_HARNESS_MODEL, a ${brand.productName} config profile, or start a local model server.`,
     );
+  const accountApiKey = merged.credentialRef
+    ? environment[providerAccountEnvironmentVariable(merged.credentialRef)]
+    : undefined;
   const apiKey = merged.apiKeyEnv
     ? environment[merged.apiKeyEnv]
-    : isCloudProviderId(provider)
-      ? environment[cloudProviderDefinition(provider).apiKeyEnvironmentVariable]
-      : undefined;
+    : accountApiKey ??
+      (isCloudProviderId(provider)
+        ? environment[cloudProviderDefinition(provider).apiKeyEnvironmentVariable]
+        : undefined);
   return {
     workspaceRoot: options.workspaceRoot,
     provider,
@@ -326,6 +350,7 @@ export async function resolveConfiguration(options: {
           ? "http://127.0.0.1:1234/v1"
           : cloudProviderDefinition(provider).baseUrl),
     model,
+    ...(merged.credentialRef ? { credentialRef: merged.credentialRef } : {}),
     mode: merged.mode ?? "chat",
     permission: merged.permission ?? "ask",
     internetAccess: merged.internetAccess ?? false,
@@ -375,6 +400,9 @@ export async function listConfigurationProfiles(options: {
       selected: name === selected,
       ...(profile.provider ? { provider: profile.provider } : {}),
       ...(profile.model ? { model: profile.model } : {}),
+      ...(profile.credentialRef
+        ? { credentialRef: profile.credentialRef }
+        : {}),
       ...(profile.mode ? { mode: profile.mode } : {}),
       ...(profile.permission ? { permission: profile.permission } : {}),
     };
@@ -469,6 +497,7 @@ export function parseConfigurationOverrides(arguments_: readonly string[]): {
     provider?: ModelProviderKind;
     baseUrl?: string;
     model?: string;
+    credentialRef?: string;
     mode?: AgentMode;
     permission?: PermissionMode;
     internetAccess?: boolean;
@@ -492,6 +521,12 @@ export function parseConfigurationOverrides(arguments_: readonly string[]): {
       overrides.provider = provider;
     } else if (argument === "--base-url") overrides.baseUrl = value();
     else if (argument === "--model") overrides.model = value();
+    else if (argument === "--provider-account") {
+      const reference = value().trim();
+      if (!reference)
+        throw new Error("--provider-account must be a non-empty reference.");
+      overrides.credentialRef = reference;
+    }
     else if (argument === "--mode") {
       const mode = validMode(value());
       if (!mode) throw new Error("--mode must be chat, plan, or edit");

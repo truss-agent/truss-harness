@@ -543,6 +543,8 @@ export interface HostedRuntimeOptions {
   readonly provider: ModelProviderKind;
   readonly baseUrl: string;
   readonly model: string;
+  /** Opaque provider-account reference used by clients that manage multiple credentials. */
+  readonly credentialRef?: string;
   readonly apiKey?: string;
   readonly credential?: CredentialProvider;
   readonly systemPrompt?: string;
@@ -573,7 +575,9 @@ export async function createHostedRuntime(
       providerId: options.provider,
       endpointUrl: options.baseUrl,
       modelId: options.model,
-      ...(credential ? { credentialRef: "direct" } : {}),
+      ...(credential
+        ? { credentialRef: options.credentialRef ?? "direct" }
+        : {}),
     },
     mode,
     approvalPolicy: "ask",
