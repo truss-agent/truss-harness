@@ -96,6 +96,7 @@ import {
   type DesktopWorkspaceUiState,
 } from "./shared.js";
 import QRCode from "qrcode";
+import { configureLinuxCredentialStorage } from "./credential-storage.js";
 import { recoverStartupRuntime } from "./startup-runtime.js";
 
 const execFile = promisify(execFileCallback);
@@ -1441,6 +1442,16 @@ async function createMainWindow(): Promise<void> {
 
 if (process.platform === "win32")
   app.setAppUserModelId(`com.${brand.productSlug}.desktop`);
+
+configureLinuxCredentialStorage(
+  process.platform,
+  (name, value) => app.commandLine.appendSwitch(name, value),
+  process.argv.some(
+    (argument) =>
+      argument === "--password-store" ||
+      argument.startsWith("--password-store="),
+  ),
+);
 
 void app.whenReady().then(async () => {
   await loadPersistedState();
