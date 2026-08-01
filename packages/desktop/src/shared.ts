@@ -4,6 +4,7 @@ import type {
   AgentProfile,
   AgentRunSummary,
   CreateAgentProfileInput,
+  ProviderAccount,
   UpdateAgentProfileInput,
 } from "@truss-harness/runtime";
 
@@ -44,6 +45,8 @@ export interface DesktopConfiguration {
   readonly provider: DesktopProvider;
   readonly baseUrl: string;
   readonly model: string;
+  /** Opaque provider-account reference; legacy configurations may omit it. */
+  readonly credentialAccountId?: string;
   readonly mode: DesktopMode;
   readonly permission: DesktopPermission;
   readonly contextWindow: number;
@@ -140,6 +143,8 @@ export interface DesktopState {
   readonly workspaceUiState?: DesktopWorkspaceUiState;
   /** Workspace-local profiles; provider credentials remain in encrypted host storage. */
   readonly agentProfiles?: readonly AgentProfile[];
+  /** Non-secret provider-account metadata; credentials remain host-side. */
+  readonly providerAccounts?: readonly ProviderAccount[];
 }
 
 export type DesktopEvent =
