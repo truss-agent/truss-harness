@@ -1,5 +1,5 @@
 import { execFile as execFileCallback, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { createInterface } from "node:readline";
@@ -9,7 +9,7 @@ import { FileAgentProfileStore, FileAgentRunHistoryStore, profileFromConfigurati
 import type { ClientConfiguration } from "@truss-harness/cli/runtime";
 import { AgentHost } from "@truss-harness/agent-host";
 import { McpServerManager, type McpServerConfigurations, type McpServerStatus, type McpStdioServerConfiguration } from "@truss-harness/mcp";
-import { AgentCoordinator, ApiKeyCredential, executeWorkspaceCommand, ToolRegistry, type AgentProfile, type AgentRunSummary, type ChatAttachment, type ContextBlock, type ToolApproval, type ToolCall, type WorkspacePlan } from "@truss-harness/runtime";
+import { AgentCoordinator, ApiKeyCredential, defaultProviderAccountId, executeWorkspaceCommand, isProviderAccount, ToolRegistry, type AgentProfile, type AgentRunSummary, type ChatAttachment, type ContextBlock, type ProviderAccount, type ToolApproval, type ToolCall, type WorkspacePlan } from "@truss-harness/runtime";
 import { createPairingUri, detectLanAddress } from "@truss-harness/gateway";
 import QRCode from "qrcode";
 import * as vscode from "vscode";
@@ -22,6 +22,7 @@ interface ModelConfiguration {
   readonly provider: ModelProviderKind;
   readonly baseUrl: string;
   readonly model: string;
+  readonly credentialAccountId?: string;
   readonly mode: AgentMode;
   readonly permission: PermissionMode;
   readonly contextWindow: number;
@@ -195,6 +196,7 @@ interface HostState {
   readonly configuration: ModelConfiguration;
   readonly endpoints: readonly LocalModelEndpoint[];
   readonly models: readonly string[];
+  readonly providerAccounts: readonly ProviderAccount[];
 }
 
 const defaultConfiguration: ModelConfiguration = {
@@ -339,6 +341,9 @@ function normalizeConfiguration(value: unknown): ModelConfiguration {
     provider: value.provider,
     baseUrl: isLocalEndpointKind(value.provider) ? normalizeLocalBaseUrl(value.provider, value.baseUrl) : cloudProviderDefinition(value.provider).baseUrl,
     model: value.model,
+    ...(typeof value.credentialAccountId === "string" && value.credentialAccountId.trim()
+      ? { credentialAccountId: value.credentialAccountId.trim() }
+      : {}),
     mode: value.mode === "plan" || value.mode === "edit" ? value.mode : "chat",
     permission: value.permission === "auto-read" || value.permission === "auto-all" ? value.permission : "ask",
     contextWindow: typeof value.contextWindow === "number" && Number.isFinite(value.contextWindow)
@@ -427,6 +432,10 @@ function dashboardApproval(profile: AgentProfile): ToolApproval & { resolve(call
   };
 }
 
+function normalizeProviderAccounts(value: unknown): ProviderAccount[] {
+  return Array.isArray(value) ? value.filter(isProviderAccount) : [];
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel(brand.productName);
   let view: vscode.WebviewView | undefined;
@@ -443,11 +452,64 @@ export function activate(context: vscode.ExtensionContext): void {
   let disposeAgentEvents: (() => void) | undefined;
   let agentPanel: vscode.WebviewPanel | undefined;
   let agentCoordinatorSignature: string | undefined;
+  let providerAccounts = normalizeProviderAccounts(
+    context.workspaceState.get("providerAccounts"),
+  );
 
-  const credentialKey = (provider: ModelProviderKind): string => `model-provider-api-key:${provider}`;
-  const providerApiKey = async (provider = configuration.provider): Promise<string | undefined> => {
-    return isCloudProviderId(provider) ? context.secrets.get(credentialKey(provider)) : undefined;
+  const legacyCredentialKey = (provider: ModelProviderKind): string =>
+    `model-provider-api-key:${provider}`;
+  const credentialKey = (accountId: string): string =>
+    `model-provider-api-key:${accountId}`;
+  const providerAccountsFor = (provider: ModelProviderKind): readonly ProviderAccount[] =>
+    providerAccounts.filter((account) => account.providerId === provider);
+  const persistProviderAccounts = async (): Promise<void> => {
+    await context.workspaceState.update("providerAccounts", providerAccounts);
   };
+  const ensureProviderAccount = async (
+    provider: ModelProviderKind,
+    requestedId?: string,
+  ): Promise<ProviderAccount | undefined> => {
+    if (!isCloudProviderId(provider)) return undefined;
+    const requested = requestedId?.trim();
+    const existing = requested
+      ? providerAccounts.find(
+          (account) => account.id === requested && account.providerId === provider,
+        )
+      : undefined;
+    const account = existing ?? (requested ? undefined : providerAccountsFor(provider)[0]);
+    if (account) return account;
+    const timestamp = new Date().toISOString();
+    const created: ProviderAccount = {
+      id: defaultProviderAccountId(provider),
+      providerId: provider,
+      label: cloudProviderDefinition(provider).label,
+      authMethod: "api-key",
+      status: "active",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+    providerAccounts = [...providerAccounts, created];
+    await persistProviderAccounts();
+    const legacy = await context.secrets.get(legacyCredentialKey(provider));
+    if (legacy && !(await context.secrets.get(credentialKey(created.id)))) {
+      await context.secrets.store(credentialKey(created.id), legacy);
+      await context.secrets.delete(legacyCredentialKey(provider));
+    }
+    return created;
+  };
+  const providerApiKeyForReference = async (
+    provider: ModelProviderKind,
+    reference?: string,
+  ): Promise<string | undefined> => {
+    if (!isCloudProviderId(provider)) return undefined;
+    const account = await ensureProviderAccount(provider, reference);
+    if (account) return context.secrets.get(credentialKey(account.id));
+    return context.secrets.get(legacyCredentialKey(provider));
+  };
+  const providerApiKey = async (
+    provider = configuration.provider,
+  ): Promise<string | undefined> =>
+    providerApiKeyForReference(provider, configuration.credentialAccountId);
   const testProviderConnection = async (): Promise<void> => {
     if (!configuration.model.trim()) {
       throw new Error("Choose a provider model before testing the connection.");
@@ -745,15 +807,28 @@ export function activate(context: vscode.ExtensionContext): void {
     if (!configuration.model) throw new Error("Choose a model before starting a managed agent.");
     const credential = isCloudProviderId(configuration.provider) ? await providerApiKey() : undefined;
     if (isCloudProviderId(configuration.provider) && !credential) throw new Error(`No API key is stored for ${cloudProviderDefinition(configuration.provider).label}. Run 'Truss: Configure BYOK Provider'.`);
-    const signature = JSON.stringify({ workspaceRoot: workspaceRoot(), provider: configuration.provider, baseUrl: configuration.baseUrl, model: configuration.model, internetAccess: configuration.internetAccess, mcpServers: configuration.mcpServers, hasCredential: Boolean(credential) });
+    const signature = JSON.stringify({ workspaceRoot: workspaceRoot(), provider: configuration.provider, credentialAccountId: configuration.credentialAccountId, baseUrl: configuration.baseUrl, model: configuration.model, internetAccess: configuration.internetAccess, mcpServers: configuration.mcpServers, hasCredential: Boolean(credential) });
     if (agentCoordinator && agentCoordinatorSignature === signature) return agentCoordinator;
     await disposeAgentCoordinator();
     const host = new AgentHost({
       workspaceRoot: workspaceRoot(),
       mcpServers: configuration.mcpServers,
       credentialResolver: {
-        async resolve(reference) {
-          return reference === "configuration" && credential ? new ApiKeyCredential("vscode-agent-credential", credential) : undefined;
+        async resolve(reference, binding) {
+          const accountReference =
+            reference === "configuration"
+              ? configuration.credentialAccountId
+              : reference;
+          const value =
+            reference === "configuration" && credential
+              ? credential
+              : await providerApiKeyForReference(
+                  binding.providerId as ModelProviderKind,
+                  accountReference,
+                );
+          return value
+            ? new ApiKeyCredential(`vscode-agent-${reference}`, value)
+            : undefined;
         },
       },
       approvalFactory: dashboardApproval,
@@ -876,7 +951,12 @@ export function activate(context: vscode.ExtensionContext): void {
       try { models = (await listLocalModels(localEndpoint(selectedConfiguration))).map((model) => model.name); } catch { /* Manual names remain valid for custom endpoints. */ }
     }
     const endpoints = await detectLocalEndpoints();
-    return { configuration: selectedConfiguration, endpoints, models };
+    return {
+      configuration: selectedConfiguration,
+      endpoints,
+      models,
+      providerAccounts,
+    };
   };
   const sendState = async (selectedConfiguration?: ModelConfiguration): Promise<void> => post({ type: "state", state: await state(selectedConfiguration) });
   const sendConversationState = (): void => post({ type: "conversations", state: conversations });
@@ -1116,7 +1196,7 @@ ${diff}`);
     if (choice.action === "create") {
       const name = await vscode.window.showInputBox({ prompt: "Agent profile name", validateInput: (value) => value.trim() ? undefined : "A name is required." });
       if (!name?.trim()) return;
-      const runtime: ClientConfiguration = { workspaceRoot: workspaceRoot(), provider: configuration.provider, baseUrl: configuration.baseUrl, model: configuration.model, apiKey: await providerApiKey(), mode: configuration.mode, internetAccess: configuration.internetAccess, mcpServers: configuration.mcpServers };
+      const runtime: ClientConfiguration = { workspaceRoot: workspaceRoot(), provider: configuration.provider, baseUrl: configuration.baseUrl, model: configuration.model, credentialRef: configuration.credentialAccountId, apiKey: await providerApiKey(), mode: configuration.mode, internetAccess: configuration.internetAccess, mcpServers: configuration.mcpServers };
       const profile = await store.create(profileFromConfiguration(runtime, name));
       await vscode.window.showInformationMessage(`${brand.productName} created agent profile ${profile.displayName}.`);
       await openAgentControlCenter();
@@ -1135,6 +1215,36 @@ ${diff}`);
       provider
     })), { placeHolder: "Choose a cloud model provider" });
     if (!selected) return;
+    await ensureProviderAccount(selected.provider.id);
+    const existingAccounts = providerAccountsFor(selected.provider.id);
+    const accountChoice = await vscode.window.showQuickPick([
+      { label: "$(add) Create a new account", description: "Store another key", account: undefined },
+      ...existingAccounts.map((account) => ({
+        label: account.label,
+        description: account.status,
+        account,
+      })),
+    ], { placeHolder: `Choose a ${selected.label} account` });
+    if (!accountChoice) return;
+    let account = accountChoice.account;
+    if (!account) {
+      const label = await vscode.window.showInputBox({
+        prompt: `${selected.label} account label`,
+        value: `${selected.label} account`,
+        validateInput: (value) => value.trim() ? undefined : "An account label is required.",
+      });
+      if (!label?.trim()) return;
+      const timestamp = new Date().toISOString();
+      account = {
+        id: randomUUID(),
+        providerId: selected.provider.id,
+        label: label.trim(),
+        authMethod: "api-key" as const,
+        status: "active" as const,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+    }
     const model = await vscode.window.showInputBox({
       prompt: `Model ID for ${selected.label}`,
       value: configuration.provider === selected.provider.id ? configuration.model : "",
@@ -1149,29 +1259,51 @@ ${diff}`);
     });
     if (!apiKey?.trim()) return;
 
-    await context.secrets.store(credentialKey(selected.provider.id), apiKey.trim());
+    account = {
+      ...account,
+      status: "active",
+      updatedAt: new Date().toISOString(),
+    };
+    providerAccounts = [
+      ...providerAccounts.filter((candidate) => candidate.id !== account.id),
+      account,
+    ];
+    await persistProviderAccounts();
+    await context.secrets.store(credentialKey(account.id), apiKey.trim());
     configuration = {
       ...configuration,
       provider: selected.provider.id,
       baseUrl: selected.provider.baseUrl,
-      model: model.trim()
+      model: model.trim(),
+      credentialAccountId: account.id,
     };
     await context.workspaceState.update("modelConfiguration", configuration);
     disposeService();
     await disposeAgentCoordinator();
     post({ type: "runtimeReset" });
     await sendState();
-    void vscode.window.showInformationMessage(`${brand.productName} is configured for ${selected.label}. Its API key is stored in VS Code Secret Storage.`);
+    void vscode.window.showInformationMessage(`${brand.productName} is configured for ${selected.label} / ${account.label}. Its API key is stored in VS Code Secret Storage.`);
   }));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.removeByokCredential", async () => {
-    const selected = await vscode.window.showQuickPick(cloudProviderDefinitions.map((provider) => ({ label: provider.label, description: provider.id, provider })), { placeHolder: "Remove a stored provider key" });
-    if (!selected) return;
-    await context.secrets.delete(credentialKey(selected.provider.id));
-    if (configuration.provider === selected.provider.id) {
+    const selectedProvider = await vscode.window.showQuickPick(cloudProviderDefinitions.map((provider) => ({ label: provider.label, description: provider.id, provider })), { placeHolder: "Choose a provider" });
+    if (!selectedProvider) return;
+    const account = await ensureProviderAccount(selectedProvider.provider.id);
+    if (!account) return;
+    const selectedAccount = await vscode.window.showQuickPick(
+      providerAccountsFor(selectedProvider.provider.id).map((candidate) => ({
+        label: candidate.label,
+        description: candidate.status,
+        account: candidate,
+      })),
+      { placeHolder: `Remove a ${selectedProvider.label} account key` },
+    );
+    if (!selectedAccount) return;
+    await context.secrets.delete(credentialKey(selectedAccount.account.id));
+    if (configuration.provider === selectedProvider.provider.id && configuration.credentialAccountId === selectedAccount.account.id) {
       disposeService();
       await disposeAgentCoordinator();
     }
-    void vscode.window.showInformationMessage(`${brand.productName} removed the stored ${selected.label} API key.`);
+    void vscode.window.showInformationMessage(`${brand.productName} removed the stored ${selectedProvider.label} account key.`);
   }));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.generateCommitMessage", async () => {
     try {
@@ -1356,7 +1488,7 @@ function webviewHtml(webview: vscode.Webview): string {
   const renderChat = () => { chat.replaceChildren(); const plan = planView(); if (plan) chat.append(plan); const conversation = active(); if (!conversation || !conversation.messages.length) { const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = 'Select a local model in Settings, then ask about the workspace. Use Plan for read-only investigation and Agent when you want the agent to change files or run commands.'; chat.append(empty); renderTelemetry(); return; } conversation.messages.forEach((item) => { const view = message(item.role, item.content, item.attachments || []); chat.append(view.element); }); chat.scrollTop = chat.scrollHeight; renderTelemetry(); };
   const addMessage = (role, content, attachments) => { const conversation = current(); conversation.messages.push({ role, content, ...(attachments && attachments.length ? { attachments } : {}) }); conversation.updatedAt = new Date().toISOString(); if (role === 'user' && conversation.title === 'New conversation') conversation.title = content.replace(/\s+/g, ' ').slice(0, 32) || conversation.title; persist(); renderHistory(); renderChat(); return conversation.messages.length - 1; };
   const parsedMcpServers = () => { const source = mcpServers.value.trim(); if (!source) return {}; const parsed = JSON.parse(source); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('MCP servers must be a JSON object.'); for (const [name, server] of Object.entries(parsed)) { if (!server || typeof server !== 'object' || typeof server.command !== 'string' || !server.command.trim()) throw new Error('MCP server ' + name + ' needs a command.'); } return parsed; };
-  const configurationValue = () => ({ provider: provider.value, baseUrl: endpoint.value.trim(), model: model.value.trim(), mode: configuration ? configuration.mode : 'chat', permission: permission.value, contextWindow: configuredContextWindow(), internetAccess: internetAccess.value === 'true', mcpServers: parsedMcpServers() });
+  const configurationValue = () => ({ provider: provider.value, baseUrl: endpoint.value.trim(), model: model.value.trim(), ...(configuration?.credentialAccountId && configuration.provider === provider.value ? { credentialAccountId: configuration.credentialAccountId } : {}), mode: configuration ? configuration.mode : 'chat', permission: permission.value, contextWindow: configuredContextWindow(), internetAccess: internetAccess.value === 'true', mcpServers: parsedMcpServers() });
   const postConfigure = () => vscode.postMessage({ type: 'configure', configuration: configurationValue() });
   const beginStream = () => { streamStartedAt = performance.now(); generatedTokens = 0; renderTelemetry(); };
   const slashQuery = () => { const beforeCursor = prompt.value.slice(0, prompt.selectionStart || prompt.value.length); const match = beforeCursor.match(/(?:^|\s)@\/([^\s]*)$/); return match ? { start: beforeCursor.length - match[1].length - 2, query: match[1] } : undefined; };

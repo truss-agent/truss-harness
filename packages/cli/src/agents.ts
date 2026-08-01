@@ -248,7 +248,11 @@ export function createCliAgentCoordinator(
     mcpServers: configuration.mcpServers,
     credentialResolver: {
       async resolve(reference) {
-        return reference === "configuration" ? credential : undefined;
+        return reference === "configuration" ||
+          reference === "direct" ||
+          reference === configuration.credentialRef
+          ? credential
+          : undefined;
       },
     },
     approvalFactory: approval,
@@ -271,7 +275,7 @@ export function profileFromConfiguration(
       endpointUrl: configuration.baseUrl,
       modelId: configuration.model,
       ...(isCloudProviderId(configuration.provider)
-        ? { credentialRef: "configuration" }
+        ? { credentialRef: configuration.credentialRef ?? "configuration" }
         : {}),
     },
     mode: configuration.mode ?? "chat",
