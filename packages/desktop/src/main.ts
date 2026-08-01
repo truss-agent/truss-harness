@@ -76,6 +76,7 @@ import {
   type ContextBlock,
   type CreateAgentProfileInput,
   type ProviderAccount,
+  type UpdateProviderAccountInput,
   type RemoteToolApprovalMode,
   type ToolApproval,
   type ToolCall,
@@ -162,7 +163,7 @@ let unsubscribeAgentEvents: (() => void) | undefined;
 // Some Linux desktop sessions do not expose a Secret Service-compatible
 // keyring to Electron. Keep keys in memory in that case rather than writing
 // plaintext credentials to disk. They disappear when the app exits.
-const sessionCredentials = new Map<CloudProviderId, string>();
+const sessionCredentials = new Map<string, string>();
 
 class DesktopAgentProfileStore implements AgentProfileStore {
   async list(): Promise<readonly AgentProfile[]> {
@@ -409,7 +410,9 @@ function credentialPath(): string {
 function providerAccountForReference(
   reference: string,
 ): ProviderAccount | undefined {
-  return persisted.providerAccounts?.find((account) => account.id === reference);
+  return persisted.providerAccounts?.find(
+    (account) => account.id === reference,
+  );
 }
 
 /** Creates metadata for the existing single-key configuration during migration. */
@@ -480,11 +483,14 @@ async function readCredentials(): Promise<Readonly<Record<string, string>>> {
   }
 }
 
-async function storedCredential(reference: string): Promise<string | undefined> {
+async function storedCredential(
+  reference: string,
+): Promise<string | undefined> {
   const account = providerAccountForReference(reference);
   const provider = account?.providerId ?? reference;
   if (!isCloudProviderId(provider)) return undefined;
-  const sessionCredential = sessionCredentials.get(provider);
+  const sessionCredential =
+    sessionCredentials.get(reference) ?? sessionCredentials.get(provider);
   if (sessionCredential) return sessionCredential;
   if (!safeStorage.isEncryptionAvailable()) return undefined;
   const credentials = { ...(await readCredentials()) };
@@ -507,9 +513,10 @@ async function saveCredential(
   if (!isCloudProviderId(provider)) return;
   const accountId = ensureProviderAccount(provider, requestedAccountId);
   if (!safeStorage.isEncryptionAvailable()) {
-    sessionCredentials.set(provider, value);
+    sessionCredentials.set(accountId, value);
     return;
   }
+  sessionCredentials.delete(accountId);
   sessionCredentials.delete(provider);
   const credentials = { ...(await readCredentials()) };
   delete credentials[provider];
@@ -520,14 +527,21 @@ async function saveCredential(
   );
 }
 
-async function removeCredential(provider: DesktopProvider): Promise<void> {
+async function removeCredential(
+  provider: DesktopProvider,
+  accountId?: string,
+): Promise<void> {
   if (!isCloudProviderId(provider)) return;
-  sessionCredentials.delete(provider);
+  if (accountId) sessionCredentials.delete(accountId);
+  else sessionCredentials.delete(provider);
   const credentials = await readCredentials();
   const remaining = { ...credentials };
-  delete remaining[provider];
-  for (const account of persisted.providerAccounts ?? [])
-    if (account.providerId === provider) delete remaining[account.id];
+  if (accountId) delete remaining[accountId];
+  else {
+    delete remaining[provider];
+    for (const account of persisted.providerAccounts ?? [])
+      if (account.providerId === provider) delete remaining[account.id];
+  }
   await writeFile(
     credentialPath(),
     `${JSON.stringify(remaining, null, 2)}\n`,
@@ -860,9 +874,7 @@ async function connectTrussGo(): Promise<{
     );
   await stopTrussGo();
   const token = randomBytes(32).toString("hex");
-  const configuredMcpServers = Object.entries(
-    configuration.mcpServers ?? {},
-  );
+  const configuredMcpServers = Object.entries(configuration.mcpServers ?? {});
   trussGoGateway = await startRemoteGateway({
     token,
     host: address,
@@ -889,8 +901,7 @@ async function connectTrussGo(): Promise<{
                     return (
                       live ?? {
                         name,
-                        state:
-                          server.enabled === false ? "disabled" : "idle",
+                        state: server.enabled === false ? "disabled" : "idle",
                         toolCount: 0,
                       }
                     );
@@ -1560,24 +1571,27 @@ configureLinuxCredentialStorage(
   ),
 );
 
-void app.whenReady().then(async () => {
-  await loadPersistedState();
-  protocol.handle("truss-media", workspaceMediaResponse);
-  await configureAgentCoordinator();
-  if (persisted.configuration)
-    await configureStartupRuntime(persisted.configuration);
-  await createMainWindow();
-  configureUpdater();
-  app.on("activate", () => {
-    if (!mainWindow) void createMainWindow();
+void app
+  .whenReady()
+  .then(async () => {
+    await loadPersistedState();
+    protocol.handle("truss-media", workspaceMediaResponse);
+    await configureAgentCoordinator();
+    if (persisted.configuration)
+      await configureStartupRuntime(persisted.configuration);
+    await createMainWindow();
+    configureUpdater();
+    app.on("activate", () => {
+      if (!mainWindow) void createMainWindow();
+    });
+  })
+  .catch((error: unknown) => {
+    console.error(
+      "Desktop startup failed:",
+      error instanceof Error ? error.message : String(error),
+    );
+    app.quit();
   });
-}).catch((error: unknown) => {
-  console.error(
-    "Desktop startup failed:",
-    error instanceof Error ? error.message : String(error),
-  );
-  app.quit();
-});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();
@@ -1601,11 +1615,9 @@ ipcMain.handle(
     const configurations = parseMcpServerConfigurations({
       [normalizedName]: { ...input, enabled: true },
     });
-    const manager = new McpServerManager(
-      new ToolRegistry(),
-      configurations,
-      { workspaceRoot: persisted.workspaceRoot },
-    );
+    const manager = new McpServerManager(new ToolRegistry(), configurations, {
+      workspaceRoot: persisted.workspaceRoot,
+    });
     try {
       return (
         (await manager.connect(normalizedName)) ?? {
@@ -1846,9 +1858,7 @@ ipcMain.handle(
       );
     if (
       isCloudProviderId(next.provider) &&
-      !(await storedCredential(
-        next.credentialAccountId ?? next.provider,
-      ))
+      !(await storedCredential(next.credentialAccountId ?? next.provider))
     ) {
       throw new Error(
         `Enter an API key for ${cloudProviderDefinition(next.provider).label}.`,
@@ -1899,7 +1909,10 @@ ipcMain.handle(
         endpointUrl: configuration.baseUrl,
         modelId: configuration.model,
         ...(isCloudProviderId(configuration.provider)
-          ? { credentialRef: configuration.provider }
+          ? {
+              credentialRef:
+                configuration.credentialAccountId ?? configuration.provider,
+            }
           : {}),
       },
       undefined,
@@ -1919,10 +1932,131 @@ ipcMain.handle(
 );
 ipcMain.handle(
   "truss:clear-credential",
-  async (_event, provider: DesktopProvider): Promise<void> => {
+  async (
+    _event,
+    provider: DesktopProvider,
+    accountId?: string,
+  ): Promise<void> => {
     if (!isCloudProviderId(provider)) return;
-    await removeCredential(provider);
-    if (persisted.configuration?.provider === provider) await disposeRuntime();
+    await removeCredential(provider, accountId);
+    if (
+      persisted.configuration?.provider === provider &&
+      (!accountId || persisted.configuration.credentialAccountId === accountId)
+    )
+      await disposeRuntime();
+  },
+);
+ipcMain.handle(
+  "truss:save-provider-account",
+  async (
+    _event,
+    input: {
+      readonly id?: string;
+      readonly providerId: DesktopProvider;
+      readonly label: string;
+      readonly authMethod: "api-key";
+    },
+    apiKey: string,
+  ): Promise<DesktopState> => {
+    if (!isCloudProviderId(input.providerId))
+      throw new Error("Only cloud providers can store API-key accounts.");
+    if (input.authMethod !== "api-key")
+      throw new Error("This account currently supports API keys only.");
+    if (!input.label.trim())
+      throw new Error("A provider account requires a label.");
+    if (!apiKey.trim()) throw new Error("Enter an API key for this account.");
+
+    const existing = input.id
+      ? providerAccountForReference(input.id)
+      : undefined;
+    if (input.id && (!existing || existing.providerId !== input.providerId))
+      throw new Error("The selected provider account no longer exists.");
+    const timestamp = new Date().toISOString();
+    const account: ProviderAccount = existing
+      ? { ...existing, label: input.label.trim(), updatedAt: timestamp }
+      : {
+          id: randomUUID(),
+          providerId: input.providerId,
+          label: input.label.trim(),
+          authMethod: "api-key",
+          status: "active",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+    persisted = {
+      ...persisted,
+      providerAccounts: [
+        ...(persisted.providerAccounts ?? []).filter(
+          (candidate) => candidate.id !== account.id,
+        ),
+        account,
+      ],
+    };
+    await saveCredential(input.providerId, apiKey.trim(), account.id);
+    await persistState();
+    return persisted;
+  },
+);
+ipcMain.handle(
+  "truss:update-provider-account",
+  async (
+    _event,
+    id: string,
+    input: UpdateProviderAccountInput,
+  ): Promise<DesktopState> => {
+    const existing = providerAccountForReference(id);
+    if (!existing) throw new Error("Unknown provider account.");
+    if (input.label !== undefined && !input.label.trim())
+      throw new Error("A provider account requires a label.");
+    if (
+      input.status !== undefined &&
+      !["active", "reauth-required", "disabled"].includes(input.status)
+    )
+      throw new Error("A provider account has an unsupported status.");
+    const account: ProviderAccount = {
+      ...existing,
+      ...(input.label !== undefined ? { label: input.label.trim() } : {}),
+      ...(input.status !== undefined ? { status: input.status } : {}),
+      ...(input.scopes !== undefined
+        ? { scopes: [...new Set(input.scopes)] }
+        : {}),
+      updatedAt: new Date().toISOString(),
+    };
+    persisted = {
+      ...persisted,
+      providerAccounts: (persisted.providerAccounts ?? []).map((candidate) =>
+        candidate.id === id ? account : candidate,
+      ),
+    };
+    await persistState();
+    return persisted;
+  },
+);
+ipcMain.handle(
+  "truss:delete-provider-account",
+  async (_event, id: string): Promise<DesktopState> => {
+    const existing = providerAccountForReference(id);
+    if (!existing) throw new Error("Unknown provider account.");
+    if (isCloudProviderId(existing.providerId))
+      await removeCredential(existing.providerId, id);
+    const active = persisted.configuration?.credentialAccountId === id;
+    persisted = {
+      ...persisted,
+      providerAccounts: (persisted.providerAccounts ?? []).filter(
+        (account) => account.id !== id,
+      ),
+      ...(active && persisted.configuration
+        ? {
+            configuration: {
+              ...persisted.configuration,
+              credentialAccountId: undefined,
+            },
+          }
+        : {}),
+    };
+    if (active) await disposeRuntime();
+    await persistState();
+    return persisted;
   },
 );
 ipcMain.handle("truss:send-chat", (_event, input) => runChat(input));

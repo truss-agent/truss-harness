@@ -1,4 +1,8 @@
-import type { ChatAttachment, WorkspacePlan } from "@truss-harness/runtime";
+import type {
+  ChatAttachment,
+  ProviderAccount,
+  WorkspacePlan,
+} from "@truss-harness/runtime";
 import type {
   McpServerStatus,
   McpStdioServerConfiguration,
@@ -145,6 +149,15 @@ const baseUrlInput = element<HTMLInputElement>("baseUrlInput");
 const modelInput = element<HTMLInputElement>("modelInput");
 const byokBaseUrl = element<HTMLInputElement>("byokBaseUrl");
 const byokModelInput = element<HTMLInputElement>("byokModelInput");
+const providerAccountSelect = element<HTMLSelectElement>(
+  "providerAccountSelect",
+);
+const providerAccountLabel = element<HTMLInputElement>("providerAccountLabel");
+const newProviderAccount = element<HTMLButtonElement>("newProviderAccount");
+const saveProviderAccount = element<HTMLButtonElement>("saveProviderAccount");
+const deleteProviderAccount = element<HTMLButtonElement>(
+  "deleteProviderAccount",
+);
 const apiKeyInput = element<HTMLInputElement>("apiKeyInput");
 const clearApiKey = element<HTMLButtonElement>("clearApiKey");
 const testProviderConnection = element<HTMLButtonElement>(
@@ -260,6 +273,8 @@ let pendingAttachments: ChatAttachment[] = [];
 type SettingsTab = "local" | "byok" | "other";
 let activeSettingsTab: SettingsTab = "local";
 let modelSettingsTab: "local" | "byok" = "local";
+let selectedProviderAccountId: string | undefined;
+let creatingProviderAccount = false;
 const maxAttachmentCount = 5;
 const maxAttachmentBytes = 4 * 1024 * 1024;
 const maxAttachmentTotalBytes = 12 * 1024 * 1024;
@@ -349,6 +364,53 @@ function byokBaseUrlForSelectedProvider(): string {
   return byokProviderSelect.selectedOptions[0]?.dataset.baseUrl ?? "";
 }
 
+function providerAccountsFor(
+  provider: DesktopProvider,
+): readonly ProviderAccount[] {
+  return (desktopState.providerAccounts ?? []).filter(
+    (account) => account.providerId === provider,
+  );
+}
+
+function renderProviderAccounts(preferredId?: string): void {
+  const provider = byokProviderSelect.value as DesktopProvider;
+  const accounts = providerAccountsFor(provider);
+  const currentId = configuration().credentialAccountId;
+  const nextId =
+    preferredId && accounts.some((account) => account.id === preferredId)
+      ? preferredId
+      : currentId && accounts.some((account) => account.id === currentId)
+        ? currentId
+        : accounts[0]?.id;
+  selectedProviderAccountId = nextId;
+  providerAccountSelect.replaceChildren(
+    ...(accounts.length
+      ? accounts.map((account) => {
+          const option = document.createElement("option");
+          option.value = account.id;
+          option.textContent = `${account.label} (${account.status})`;
+          return option;
+        })
+      : [
+          (() => {
+            const option = document.createElement("option");
+            option.value = "";
+            option.textContent = "No saved account yet";
+            return option;
+          })(),
+        ]),
+  );
+  providerAccountSelect.value = nextId ?? "";
+  const selected = accounts.find((account) => account.id === nextId);
+  providerAccountLabel.value = creatingProviderAccount
+    ? ""
+    : (selected?.label ?? "");
+  deleteProviderAccount.disabled = !selected || creatingProviderAccount;
+  saveProviderAccount.textContent = creatingProviderAccount
+    ? "Create account"
+    : "Save account";
+}
+
 function selectedSettingsProvider(): DesktopProvider {
   return modelSettingsTab === "byok"
     ? (byokProviderSelect.value as DesktopProvider)
@@ -358,7 +420,10 @@ function selectedSettingsProvider(): DesktopProvider {
 function setSettingsTab(tab: SettingsTab): void {
   activeSettingsTab = tab;
   if (tab !== "other") modelSettingsTab = tab;
-  if (tab === "byok") byokBaseUrl.value = byokBaseUrlForSelectedProvider();
+  if (tab === "byok") {
+    byokBaseUrl.value = byokBaseUrlForSelectedProvider();
+    renderProviderAccounts(selectedProviderAccountId);
+  }
   (document.getElementById("settingsPanelLocal") as HTMLElement).hidden =
     tab !== "local";
   (document.getElementById("settingsPanelByok") as HTMLElement).hidden =
@@ -511,6 +576,32 @@ function renderAgents(): void {
   const model = document.createElement("input");
   model.placeholder = "Model ID";
   model.value = desktopState.configuration?.model ?? "";
+  const account = document.createElement("select");
+  account.title = "Provider account";
+  const syncAccounts = (): void => {
+    const providerId = provider.value as DesktopProvider;
+    const accounts = providerAccountsFor(providerId);
+    account.replaceChildren(
+      ...(accounts.length
+        ? accounts.map((candidate) => {
+            const option = document.createElement("option");
+            option.value = candidate.id;
+            option.textContent = `Account: ${candidate.label}`;
+            return option;
+          })
+        : [
+            (() => {
+              const option = document.createElement("option");
+              option.value = providerId;
+              option.textContent = "Default provider credential";
+              return option;
+            })(),
+          ]),
+    );
+    account.hidden = isLocalProvider(providerId);
+  };
+  provider.onchange = syncAccounts;
+  syncAccounts();
   const mode = document.createElement("select");
   for (const value of ["chat", "plan", "edit"] as const) {
     const option = document.createElement("option");
@@ -523,7 +614,7 @@ function renderAgents(): void {
   const add = document.createElement("button");
   add.className = "primary";
   add.textContent = "Create agent";
-  create.append(name, provider, endpoint, model, mode, add);
+  create.append(name, provider, endpoint, model, account, mode, add);
   create.onsubmit = (event) => {
     event.preventDefault();
     const providerId = provider.value;
@@ -536,7 +627,7 @@ function renderAgents(): void {
           modelId: model.value,
           ...(["ollama", "openai-compatible", "llama-cpp"].includes(providerId)
             ? {}
-            : { credentialRef: providerId }),
+            : { credentialRef: account.value || providerId }),
         },
         mode: mode.value as "chat" | "plan" | "edit",
         approvalPolicy: "ask",
@@ -555,9 +646,7 @@ function renderAgents(): void {
       (candidate) => candidate.agentId === profile.id,
     );
     const activeRun = profileRuns.find((candidate) =>
-      ["queued", "running", "waiting_for_approval"].includes(
-        candidate.state,
-      ),
+      ["queued", "running", "waiting_for_approval"].includes(candidate.state),
     );
     const latestRun = activeRun ?? profileRuns.at(-1);
     const card = document.createElement("section");
@@ -570,7 +659,12 @@ function renderAgents(): void {
     status.textContent = latestRun?.state.replaceAll("_", " ") ?? "idle";
     details.append(label, status);
     const binding = document.createElement("p");
-    binding.textContent = `${profile.provider.providerId} · ${profile.provider.modelId} · ${profile.mode}${profile.provider.endpointUrl ? ` · ${profile.provider.endpointUrl}` : ""}`;
+    const accountLabel = profile.provider.credentialRef
+      ? desktopState.providerAccounts?.find(
+          (candidate) => candidate.id === profile.provider.credentialRef,
+        )?.label
+      : undefined;
+    binding.textContent = `${profile.provider.providerId} · ${profile.provider.modelId} · ${profile.mode}${accountLabel ? ` · ${accountLabel}` : ""}${profile.provider.endpointUrl ? ` · ${profile.provider.endpointUrl}` : ""}`;
     const prompt = document.createElement("textarea");
     prompt.rows = 2;
     prompt.placeholder = "Give this agent a focused task";
@@ -2573,6 +2667,8 @@ function settingsConfiguration(): DesktopConfiguration {
     provider,
     baseUrl,
     model,
+    credentialAccountId:
+      modelSettingsTab === "byok" ? selectedProviderAccountId : undefined,
     mode: current.mode,
     permission:
       permissionSelect.value === "auto-read" ||
@@ -2593,7 +2689,10 @@ function settingsConfiguration(): DesktopConfiguration {
   };
 }
 
-function mcpConfigurationsFromAdvancedJson(): Record<string, McpStdioServerConfiguration> {
+function mcpConfigurationsFromAdvancedJson(): Record<
+  string,
+  McpStdioServerConfiguration
+> {
   const source = mcpServersInput.value.trim();
   if (!source) return {};
   const parsed = JSON.parse(source) as unknown;
@@ -2611,7 +2710,9 @@ function syncMcpAdvancedJson(): void {
 function openMcpEditor(name?: string): void {
   editingMcpName = name;
   const configuration = name ? mcpDraft[name] : undefined;
-  mcpEditorTitle.textContent = configuration ? `Edit ${name}` : "Add MCP server";
+  mcpEditorTitle.textContent = configuration
+    ? `Edit ${name}`
+    : "Add MCP server";
   mcpNameInput.value = name ?? "";
   mcpNameInput.disabled = Boolean(configuration);
   mcpCommandInput.value = configuration?.command ?? "";
@@ -2629,74 +2730,85 @@ function closeMcpEditor(): void {
 }
 
 function renderMcpManager(): void {
-  const runtimeStatuses = new Map((desktopState.mcpStatuses ?? []).map((status) => [status.name, status]));
-  const names = Object.keys(mcpDraft).sort((left, right) => left.localeCompare(right));
+  const runtimeStatuses = new Map(
+    (desktopState.mcpStatuses ?? []).map((status) => [status.name, status]),
+  );
+  const names = Object.keys(mcpDraft).sort((left, right) =>
+    left.localeCompare(right),
+  );
   if (!names.length) {
     const empty = document.createElement("p");
     empty.className = "mcp-empty";
-    empty.textContent = "No MCP servers configured. Add one to connect local tools.";
+    empty.textContent =
+      "No MCP servers configured. Add one to connect local tools.";
     mcpServerList.replaceChildren(empty);
     mcpStatus.textContent = "No MCP servers configured.";
     return;
   }
-  mcpServerList.replaceChildren(...names.map((name) => {
-    const configuration = mcpDraft[name];
-    const status = testedMcpStatuses.get(name) ?? runtimeStatuses.get(name) ?? {
-      name,
-      state: configuration.enabled === false ? "disabled" as const : "idle" as const,
-      toolCount: 0,
-    };
-    const card = document.createElement("article");
-    card.className = "mcp-server-card";
-    const heading = document.createElement("div");
-    heading.className = "mcp-server-card-heading";
-    const identity = document.createElement("div");
-    const title = document.createElement("strong");
-    title.textContent = name;
-    const command = document.createElement("span");
-    command.textContent = configuration.command;
-    identity.append(title, command);
-    const badge = document.createElement("span");
-    badge.className = `mcp-state ${status.state}`;
-    badge.textContent = status.state;
-    heading.append(identity, badge);
-    const actions = document.createElement("div");
-    actions.className = "mcp-server-actions";
-    for (const [action, label] of [
-      ["test", status.state === "connected" ? "Reconnect" : "Test"],
-      ["edit", "Edit"],
-      ["toggle", configuration.enabled === false ? "Enable" : "Disable"],
-      ["remove", "Remove"],
-    ] as const) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.dataset.mcpAction = action;
-      button.dataset.mcpName = name;
-      button.textContent = label;
-      actions.append(button);
-    }
-    card.append(heading, actions);
-    if (status.error) {
-      const error = document.createElement("p");
-      error.className = "mcp-card-error";
-      error.textContent = status.error;
-      card.append(error);
-    }
-    if (status.tools?.length) {
-      const details = document.createElement("details");
-      const summary = document.createElement("summary");
-      summary.textContent = `${status.toolCount} tool${status.toolCount === 1 ? "" : "s"}`;
-      const list = document.createElement("ul");
-      for (const tool of status.tools) {
-        const item = document.createElement("li");
-        item.textContent = `${tool.name}${tool.readOnly ? " (read-only)" : ""}${tool.description ? ` — ${tool.description}` : ""}`;
-        list.append(item);
+  mcpServerList.replaceChildren(
+    ...names.map((name) => {
+      const configuration = mcpDraft[name];
+      const status = testedMcpStatuses.get(name) ??
+        runtimeStatuses.get(name) ?? {
+          name,
+          state:
+            configuration.enabled === false
+              ? ("disabled" as const)
+              : ("idle" as const),
+          toolCount: 0,
+        };
+      const card = document.createElement("article");
+      card.className = "mcp-server-card";
+      const heading = document.createElement("div");
+      heading.className = "mcp-server-card-heading";
+      const identity = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = name;
+      const command = document.createElement("span");
+      command.textContent = configuration.command;
+      identity.append(title, command);
+      const badge = document.createElement("span");
+      badge.className = `mcp-state ${status.state}`;
+      badge.textContent = status.state;
+      heading.append(identity, badge);
+      const actions = document.createElement("div");
+      actions.className = "mcp-server-actions";
+      for (const [action, label] of [
+        ["test", status.state === "connected" ? "Reconnect" : "Test"],
+        ["edit", "Edit"],
+        ["toggle", configuration.enabled === false ? "Enable" : "Disable"],
+        ["remove", "Remove"],
+      ] as const) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.mcpAction = action;
+        button.dataset.mcpName = name;
+        button.textContent = label;
+        actions.append(button);
       }
-      details.append(summary, list);
-      card.append(details);
-    }
-    return card;
-  }));
+      card.append(heading, actions);
+      if (status.error) {
+        const error = document.createElement("p");
+        error.className = "mcp-card-error";
+        error.textContent = status.error;
+        card.append(error);
+      }
+      if (status.tools?.length) {
+        const details = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = `${status.toolCount} tool${status.toolCount === 1 ? "" : "s"}`;
+        const list = document.createElement("ul");
+        for (const tool of status.tools) {
+          const item = document.createElement("li");
+          item.textContent = `${tool.name}${tool.readOnly ? " (read-only)" : ""}${tool.description ? ` — ${tool.description}` : ""}`;
+          list.append(item);
+        }
+        details.append(summary, list);
+        card.append(details);
+      }
+      return card;
+    }),
+  );
   mcpStatus.textContent = "Changes take effect when you Apply settings.";
 }
 
@@ -2716,7 +2828,14 @@ function providerConnectionConfiguration(): DesktopConfiguration {
     ).trim() || (reusingCurrentProvider ? current.model : "");
   if (!baseUrl || !model)
     throw new Error("Choose a provider endpoint and model before testing.");
-  return { ...current, provider, baseUrl, model };
+  return {
+    ...current,
+    provider,
+    baseUrl,
+    model,
+    credentialAccountId:
+      modelSettingsTab === "byok" ? selectedProviderAccountId : undefined,
+  };
 }
 
 function clearProviderConnectionResult(): void {
@@ -2774,6 +2893,8 @@ function populateSettings(): void {
     byokProviderSelect.value = current.provider;
     byokBaseUrl.value = current.baseUrl || byokBaseUrlForSelectedProvider();
     byokModelInput.value = current.model;
+    creatingProviderAccount = false;
+    renderProviderAccounts(current.credentialAccountId);
     setSettingsTab("byok");
   }
   contextInput.value = String(current.contextWindow);
@@ -3875,7 +3996,9 @@ fileTree.addEventListener("contextmenu", (event) => {
   event.preventDefault();
   const element = event.target;
   const row =
-    element instanceof Element ? element.closest<HTMLElement>(".tree-row") : null;
+    element instanceof Element
+      ? element.closest<HTMLElement>(".tree-row")
+      : null;
   const button = row?.querySelector<HTMLButtonElement>("button[data-path]");
   const target: FileContextTarget =
     !row || !button?.dataset.path
@@ -4065,10 +4188,13 @@ element<HTMLButtonElement>("applySettings").onclick = (event) => {
 };
 clearApiKey.onclick = () => {
   void window.trussDesktop
-    .clearCredential(byokProviderSelect.value as DesktopProvider)
+    .clearCredential(
+      byokProviderSelect.value as DesktopProvider,
+      selectedProviderAccountId,
+    )
     .then(() => {
       apiKeyInput.value = "";
-      notify("Stored provider key removed.");
+      notify("Stored account key removed.");
     })
     .catch((error: unknown) =>
       notify(error instanceof Error ? error.message : String(error)),
@@ -4105,6 +4231,88 @@ testProviderConnection.onclick = () => {
       testProviderConnection.textContent = "Test connection";
     });
 };
+newProviderAccount.onclick = () => {
+  creatingProviderAccount = true;
+  selectedProviderAccountId = undefined;
+  apiKeyInput.value = "";
+  renderProviderAccounts();
+  providerAccountLabel.focus();
+};
+providerAccountSelect.onchange = () => {
+  creatingProviderAccount = false;
+  selectedProviderAccountId = providerAccountSelect.value || undefined;
+  apiKeyInput.value = "";
+  renderProviderAccounts(selectedProviderAccountId);
+};
+saveProviderAccount.onclick = () => {
+  const provider = byokProviderSelect.value as DesktopProvider;
+  const label = providerAccountLabel.value.trim();
+  const apiKey = apiKeyInput.value.trim();
+  if (!label) {
+    notify("Enter an account label first.");
+    providerAccountLabel.focus();
+    return;
+  }
+  if (!apiKey) {
+    notify("Enter the provider API key to save this account.");
+    apiKeyInput.focus();
+    return;
+  }
+  saveProviderAccount.disabled = true;
+  const previousAccountIds = new Set(
+    providerAccountsFor(provider).map((account) => account.id),
+  );
+  void window.trussDesktop
+    .saveProviderAccount(
+      {
+        id: creatingProviderAccount ? undefined : selectedProviderAccountId,
+        providerId: provider,
+        label,
+        authMethod: "api-key",
+      },
+      apiKey,
+    )
+    .then((returned) => {
+      desktopState = returned;
+      creatingProviderAccount = false;
+      const saved = providerAccountsFor(provider).find(
+        (account) =>
+          account.id === selectedProviderAccountId ||
+          (!previousAccountIds.has(account.id) && account.label === label),
+      );
+      selectedProviderAccountId = saved?.id ?? selectedProviderAccountId;
+      apiKeyInput.value = "";
+      renderProviderAccounts(selectedProviderAccountId);
+      notify("Provider account saved. Apply settings to use it.");
+    })
+    .catch((error: unknown) =>
+      notify(error instanceof Error ? error.message : String(error)),
+    )
+    .finally(() => {
+      saveProviderAccount.disabled = false;
+    });
+};
+deleteProviderAccount.onclick = () => {
+  const accountId = selectedProviderAccountId;
+  if (!accountId) return;
+  deleteProviderAccount.disabled = true;
+  void window.trussDesktop
+    .deleteProviderAccount(accountId)
+    .then((returned) => {
+      desktopState = returned;
+      selectedProviderAccountId = undefined;
+      creatingProviderAccount = false;
+      apiKeyInput.value = "";
+      renderProviderAccounts();
+      notify("Provider account deleted.");
+    })
+    .catch((error: unknown) =>
+      notify(error instanceof Error ? error.message : String(error)),
+    )
+    .finally(() => {
+      deleteProviderAccount.disabled = false;
+    });
+};
 element<HTMLButtonElement>("addMcpServer").onclick = () => openMcpEditor();
 element<HTMLButtonElement>("cancelMcpServer").onclick = closeMcpEditor;
 element<HTMLButtonElement>("saveMcpServer").onclick = () => {
@@ -4123,7 +4331,10 @@ element<HTMLButtonElement>("saveMcpServer").onclick = () => {
     ...mcpDraft,
     [name]: {
       command,
-      args: mcpArgsInput.value.split(/\r?\n/).map((value) => value.trim()).filter(Boolean),
+      args: mcpArgsInput.value
+        .split(/\r?\n/)
+        .map((value) => value.trim())
+        .filter(Boolean),
       cwd: mcpCwdInput.value.trim() || undefined,
       enabled: mcpEnabledInput.checked,
       readOnly: mcpReadOnlyInput.checked,
@@ -4136,7 +4347,9 @@ element<HTMLButtonElement>("saveMcpServer").onclick = () => {
   renderMcpManager();
 };
 mcpServerList.onclick = (event) => {
-  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-mcp-action]");
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
+    "button[data-mcp-action]",
+  );
   const name = button?.dataset.mcpName;
   const action = button?.dataset.mcpAction;
   if (!button || !name || !action || !mcpDraft[name]) return;
@@ -4170,12 +4383,14 @@ mcpServerList.onclick = (event) => {
     void window.trussDesktop
       .testMcpServer(name, mcpDraft[name])
       .then((status) => testedMcpStatuses.set(name, status))
-      .catch(() => testedMcpStatuses.set(name, {
-        name,
-        state: "failed",
-        toolCount: 0,
-        error: "The MCP server test could not start.",
-      }))
+      .catch(() =>
+        testedMcpStatuses.set(name, {
+          name,
+          state: "failed",
+          toolCount: 0,
+          error: "The MCP server test could not start.",
+        }),
+      )
       .finally(renderMcpManager);
   }
 };
@@ -4189,7 +4404,12 @@ mcpServersInput.onchange = () => {
     notify(error instanceof Error ? error.message : String(error));
   }
 };
-for (const input of [byokProviderSelect, byokBaseUrl, byokModelInput, apiKeyInput]) {
+for (const input of [
+  byokProviderSelect,
+  byokBaseUrl,
+  byokModelInput,
+  apiKeyInput,
+]) {
   input.addEventListener("input", clearProviderConnectionResult);
   input.addEventListener("change", clearProviderConnectionResult);
 }
@@ -4230,35 +4450,29 @@ saveCustomTheme.onclick = () => {
   }
 };
 checkUpdates.onclick = () =>
-  void window.trussDesktop
-    .checkForUpdates()
-    .catch((error) =>
-      renderUpdate({
-        type: "update",
-        status: "error",
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
+  void window.trussDesktop.checkForUpdates().catch((error) =>
+    renderUpdate({
+      type: "update",
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+    }),
+  );
 downloadUpdate.onclick = () =>
-  void window.trussDesktop
-    .downloadUpdate()
-    .catch((error) =>
-      renderUpdate({
-        type: "update",
-        status: "error",
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
+  void window.trussDesktop.downloadUpdate().catch((error) =>
+    renderUpdate({
+      type: "update",
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+    }),
+  );
 installUpdate.onclick = () => {
-  void window.trussDesktop
-    .installUpdate()
-    .catch((error) =>
-      renderUpdate({
-        type: "update",
-        status: "error",
-        message: error instanceof Error ? error.message : String(error),
-      }),
-    );
+  void window.trussDesktop.installUpdate().catch((error) =>
+    renderUpdate({
+      type: "update",
+      status: "error",
+      message: error instanceof Error ? error.message : String(error),
+    }),
+  );
 };
 endpointSelect.onchange = () => {
   if (!endpointSelect.value) return;
@@ -4276,6 +4490,10 @@ providerSelect.onchange = () => {
 };
 byokProviderSelect.onchange = () => {
   byokBaseUrl.value = byokBaseUrlForSelectedProvider();
+  creatingProviderAccount = false;
+  selectedProviderAccountId = undefined;
+  apiKeyInput.value = "";
+  renderProviderAccounts();
 };
 document
   .querySelectorAll<HTMLButtonElement>("[data-settings-tab]")
@@ -4296,18 +4514,16 @@ quickModel.onchange = () => {
     notify(error instanceof Error ? error.message : String(error)),
   );
 };
-document
-  .querySelectorAll<HTMLButtonElement>("[data-mode]")
-  .forEach(
-    (button) =>
-      (button.onclick = () =>
-        void applyConfiguration({
-          ...configuration(),
-          mode: button.dataset.mode as DesktopConfiguration["mode"],
-        }).catch((error) =>
-          notify(error instanceof Error ? error.message : String(error)),
-        )),
-  );
+document.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach(
+  (button) =>
+    (button.onclick = () =>
+      void applyConfiguration({
+        ...configuration(),
+        mode: button.dataset.mode as DesktopConfiguration["mode"],
+      }).catch((error) =>
+        notify(error instanceof Error ? error.message : String(error)),
+      )),
+);
 element<HTMLFormElement>("chatForm").onsubmit = (event) => {
   event.preventDefault();
   void sendChat();
