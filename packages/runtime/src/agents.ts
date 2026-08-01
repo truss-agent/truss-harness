@@ -32,7 +32,7 @@ export interface AgentProviderBinding {
   readonly endpointId?: string;
   readonly endpointUrl?: string;
   readonly modelId: string;
-  /** Opaque secure-storage key. It is never a credential value. */
+  /** Opaque provider-account or secure-storage reference. Never a credential value. */
   readonly credentialRef?: string;
   readonly options?: JsonObject;
 }

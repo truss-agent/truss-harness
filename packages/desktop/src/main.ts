@@ -65,14 +65,17 @@ import {
 import {
   AgentCoordinator,
   ApiKeyCredential,
+  defaultProviderAccountId,
   executeWorkspaceCommand,
   FileWorkspacePlanStore,
+  isProviderAccount,
   ToolRegistry,
   type AgentProfile,
   type AgentProfileStore,
   type ChatAttachment,
   type ContextBlock,
   type CreateAgentProfileInput,
+  type ProviderAccount,
   type RemoteToolApprovalMode,
   type ToolApproval,
   type ToolCall,
@@ -403,6 +406,65 @@ function credentialPath(): string {
   return join(app.getPath("userData"), "credentials.json");
 }
 
+function providerAccountForReference(
+  reference: string,
+): ProviderAccount | undefined {
+  return persisted.providerAccounts?.find((account) => account.id === reference);
+}
+
+/** Creates metadata for the existing single-key configuration during migration. */
+function ensureProviderAccount(
+  provider: CloudProviderId,
+  requestedId?: string,
+): string {
+  const requested = requestedId?.trim();
+  const existing = requested
+    ? providerAccountForReference(requested)
+    : undefined;
+  if (existing?.providerId === provider) return existing.id;
+
+  const id = defaultProviderAccountId(provider);
+  if (providerAccountForReference(id)) return id;
+  const timestamp = new Date().toISOString();
+  const account: ProviderAccount = {
+    id,
+    providerId: provider,
+    label: cloudProviderDefinition(provider).label,
+    authMethod: "api-key",
+    status: "active",
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  persisted = {
+    ...persisted,
+    providerAccounts: [...(persisted.providerAccounts ?? []), account],
+  };
+  return id;
+}
+
+/** Moves the encrypted legacy provider key under its new account ID without decrypting it. */
+async function migrateLegacyCredential(
+  provider: CloudProviderId,
+  accountId: string,
+): Promise<void> {
+  try {
+    const credentials = { ...(await readCredentials()) };
+    if (!credentials[provider] || credentials[accountId]) return;
+    credentials[accountId] = credentials[provider];
+    delete credentials[provider];
+    await writeFile(
+      credentialPath(),
+      `${JSON.stringify(credentials, null, 2)}\n`,
+      "utf8",
+    );
+  } catch (error) {
+    console.warn(
+      "Unable to migrate the existing provider credential to its account reference:",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+}
+
 async function readCredentials(): Promise<Readonly<Record<string, string>>> {
   try {
     const parsed: unknown = JSON.parse(
@@ -418,14 +480,15 @@ async function readCredentials(): Promise<Readonly<Record<string, string>>> {
   }
 }
 
-async function storedCredential(
-  provider: DesktopProvider,
-): Promise<string | undefined> {
+async function storedCredential(reference: string): Promise<string | undefined> {
+  const account = providerAccountForReference(reference);
+  const provider = account?.providerId ?? reference;
   if (!isCloudProviderId(provider)) return undefined;
   const sessionCredential = sessionCredentials.get(provider);
   if (sessionCredential) return sessionCredential;
   if (!safeStorage.isEncryptionAvailable()) return undefined;
-  const encoded = (await readCredentials())[provider];
+  const credentials = { ...(await readCredentials()) };
+  const encoded = credentials[reference] ?? credentials[provider];
   if (!encoded) return undefined;
   try {
     return safeStorage.decryptString(Buffer.from(encoded, "base64"));
@@ -439,17 +502,20 @@ async function storedCredential(
 async function saveCredential(
   provider: DesktopProvider,
   value: string,
+  requestedAccountId?: string,
 ): Promise<void> {
   if (!isCloudProviderId(provider)) return;
+  const accountId = ensureProviderAccount(provider, requestedAccountId);
   if (!safeStorage.isEncryptionAvailable()) {
     sessionCredentials.set(provider, value);
     return;
   }
   sessionCredentials.delete(provider);
-  const credentials = await readCredentials();
+  const credentials = { ...(await readCredentials()) };
+  delete credentials[provider];
   await writeFile(
     credentialPath(),
-    `${JSON.stringify({ ...credentials, [provider]: safeStorage.encryptString(value).toString("base64") }, null, 2)}\n`,
+    `${JSON.stringify({ ...credentials, [accountId]: safeStorage.encryptString(value).toString("base64") }, null, 2)}\n`,
     "utf8",
   );
 }
@@ -458,7 +524,10 @@ async function removeCredential(provider: DesktopProvider): Promise<void> {
   if (!isCloudProviderId(provider)) return;
   sessionCredentials.delete(provider);
   const credentials = await readCredentials();
-  const { [provider]: _removed, ...remaining } = credentials;
+  const remaining = { ...credentials };
+  delete remaining[provider];
+  for (const account of persisted.providerAccounts ?? [])
+    if (account.providerId === provider) delete remaining[account.id];
   await writeFile(
     credentialPath(),
     `${JSON.stringify(remaining, null, 2)}\n`,
@@ -475,10 +544,12 @@ async function configureAgentCoordinator(): Promise<void> {
     mcpServers: persisted.configuration?.mcpServers,
     credentialResolver: {
       async resolve(reference) {
-        if (!isCloudProviderId(reference)) return undefined;
+        const account = providerAccountForReference(reference);
+        const provider = account?.providerId ?? reference;
+        if (!isCloudProviderId(provider)) return undefined;
         const value = await storedCredential(reference);
         return value
-          ? new ApiKeyCredential(`desktop:${reference}`, value)
+          ? new ApiKeyCredential(`desktop:${provider}:${reference}`, value)
           : undefined;
       },
     },
@@ -513,6 +584,9 @@ async function loadPersistedState(): Promise<void> {
       configuration: isConfiguration(parsed.configuration)
         ? normalizeConfiguration(parsed.configuration)
         : undefined,
+      providerAccounts: Array.isArray(parsed.providerAccounts)
+        ? parsed.providerAccounts.filter(isProviderAccount)
+        : [],
       updates:
         parsed.updates && typeof parsed.updates === "object"
           ? {
@@ -533,6 +607,9 @@ async function loadPersistedState(): Promise<void> {
           ? parsed.activeConversationId
           : undefined,
       workspaceUiState: normalizeWorkspaceUiState(parsed.workspaceUiState),
+      agentProfiles: Array.isArray(parsed.agentProfiles)
+        ? parsed.agentProfiles
+        : undefined,
     };
   } catch {
     persisted = {
@@ -569,7 +646,9 @@ function isConfiguration(value: unknown): value is DesktopConfiguration {
       candidate.permission === "auto-all") &&
     typeof candidate.contextWindow === "number" &&
     (candidate.internetAccess === undefined ||
-      typeof candidate.internetAccess === "boolean")
+      typeof candidate.internetAccess === "boolean") &&
+    (candidate.credentialAccountId === undefined ||
+      typeof candidate.credentialAccountId === "string")
   );
 }
 
@@ -582,6 +661,9 @@ function normalizeConfiguration(
       ? cloudProviderDefinition(value.provider).baseUrl
       : value.baseUrl.trim(),
     model: value.model.trim(),
+    credentialAccountId: isCloudProviderId(value.provider)
+      ? value.credentialAccountId?.trim() || undefined
+      : undefined,
     contextWindow: Math.max(
       512,
       Math.min(1_000_000, Math.floor(value.contextWindow || 8_192)),
@@ -715,7 +797,9 @@ async function clientConfiguration(
     provider: configuration.provider as ClientConfiguration["provider"],
     baseUrl: configuration.baseUrl,
     model: configuration.model,
-    apiKey: await storedCredential(configuration.provider),
+    apiKey: await storedCredential(
+      configuration.credentialAccountId ?? configuration.provider,
+    ),
     mode: configuration.mode,
     internetAccess: configuration.internetAccess,
     mcpServers: configuration.mcpServers,
@@ -919,15 +1003,38 @@ function safeRuntimeConfigurationError(
 async function configureStartupRuntime(
   configuration: DesktopConfiguration,
 ): Promise<void> {
+  let runtimeConfiguration = configuration;
+  const provider = runtimeConfiguration.provider;
+  if (isCloudProviderId(provider)) {
+    const accountId = ensureProviderAccount(
+      provider,
+      runtimeConfiguration.credentialAccountId,
+    );
+    if (runtimeConfiguration.credentialAccountId !== accountId) {
+      runtimeConfiguration = {
+        ...runtimeConfiguration,
+        credentialAccountId: accountId,
+      };
+      persisted = {
+        ...persisted,
+        configuration: runtimeConfiguration,
+      };
+      await persistState();
+    }
+    await migrateLegacyCredential(provider, accountId);
+  }
   const result = await recoverStartupRuntime(
-    () => configureRuntime(configuration),
+    () => configureRuntime(runtimeConfiguration),
     disposeRuntime,
   );
   if (result.status === "recovered") {
     persisted = {
       ...persisted,
       mcpStatuses: [],
-      runtimeError: safeRuntimeConfigurationError(configuration, result.error),
+      runtimeError: safeRuntimeConfigurationError(
+        runtimeConfiguration,
+        result.error,
+      ),
     };
   }
 }
@@ -1722,10 +1829,26 @@ ipcMain.handle(
     let next = normalizeConfiguration(input);
     if (!next.baseUrl || !next.model)
       throw new Error("An endpoint and model are required.");
-    if (apiKey?.trim()) await saveCredential(next.provider, apiKey.trim());
+    const provider = next.provider;
+    if (isCloudProviderId(provider)) {
+      const accountId = ensureProviderAccount(
+        provider,
+        next.credentialAccountId,
+      );
+      next = { ...next, credentialAccountId: accountId };
+      await migrateLegacyCredential(provider, accountId);
+    }
+    if (apiKey?.trim())
+      await saveCredential(
+        next.provider,
+        apiKey.trim(),
+        next.credentialAccountId,
+      );
     if (
       isCloudProviderId(next.provider) &&
-      !(await storedCredential(next.provider))
+      !(await storedCredential(
+        next.credentialAccountId ?? next.provider,
+      ))
     ) {
       throw new Error(
         `Enter an API key for ${cloudProviderDefinition(next.provider).label}.`,
