@@ -76,10 +76,13 @@
         <p class="settings-panel-intro">Choose a supported provider, enter its model ID, and store your key only on this device.</p>
         <label>Provider<select id="byokProviderSelect"><option value="openai" data-base-url="https://api.openai.com/v1">OpenAI</option><option value="anthropic" data-base-url="https://api.anthropic.com/v1">Anthropic</option><option value="openrouter" data-base-url="https://openrouter.ai/api/v1">OpenRouter</option><option value="groq" data-base-url="https://api.groq.com/openai/v1">Groq</option><option value="together" data-base-url="https://api.together.ai/v1">Together AI</option><option value="gemini" data-base-url="https://generativelanguage.googleapis.com/v1beta/openai">Gemini</option><option value="xai" data-base-url="https://api.x.ai/v1">xAI</option><option value="mistral" data-base-url="https://api.mistral.ai/v1">Mistral AI</option><option value="deepseek" data-base-url="https://api.deepseek.com">DeepSeek</option><option value="perplexity" data-base-url="https://api.perplexity.ai">Perplexity</option><option value="fireworks" data-base-url="https://api.fireworks.ai/inference/v1">Fireworks AI</option><option value="nvidia-nim" data-base-url="https://integrate.api.nvidia.com/v1">NVIDIA NIM</option></select></label>
         <label>Endpoint<input id="byokBaseUrl" readonly></label>
+        <label>Account<select id="providerAccountSelect"></select></label>
+        <label>Account label<input id="providerAccountLabel" placeholder="Personal"></label>
         <label class="settings-wide">Model ID<input id="byokModelInput" placeholder="Enter the provider's model ID"></label>
         <label class="settings-wide">API key<input id="apiKeyInput" type="password" autocomplete="new-password" placeholder="Stored securely; enter a replacement key"></label>
         <p id="credentialStorageStatus" class="provider-connection-result" hidden></p>
-        <div class="settings-panel-actions"><button id="testProviderConnection" type="button">Test connection</button><button id="clearApiKey" type="button">Remove stored provider key</button></div>
+        <div class="settings-panel-actions"><button id="newProviderAccount" type="button">New account</button><button id="saveProviderAccount" class="primary" type="button">Save account</button><button id="deleteProviderAccount" type="button">Delete account</button></div>
+        <div class="settings-panel-actions"><button id="testProviderConnection" type="button">Test connection</button><button id="clearApiKey" type="button">Remove stored account key</button></div>
         <p id="providerConnectionResult" class="provider-connection-result" role="status" hidden></p>
       </section>
       <section id="settingsPanelOther" class="settings-panel" role="tabpanel" aria-labelledby="settingsTabOther" hidden>

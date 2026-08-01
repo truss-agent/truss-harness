@@ -5,6 +5,7 @@ import type {
   AgentRunSummary,
   CreateAgentProfileInput,
   ProviderAccount,
+  UpdateProviderAccountInput,
   UpdateAgentProfileInput,
 } from "@truss-harness/runtime";
 
@@ -240,11 +241,25 @@ export interface DesktopBridge {
     apiKey?: string,
   ): Promise<ProviderConnectionResult>;
   credentialStorage(): Promise<DesktopCredentialStorage>;
+  saveProviderAccount(
+    input: {
+      readonly id?: string;
+      readonly providerId: DesktopProvider;
+      readonly label: string;
+      readonly authMethod: "api-key";
+    },
+    apiKey: string,
+  ): Promise<DesktopState>;
+  updateProviderAccount(
+    id: string,
+    input: UpdateProviderAccountInput,
+  ): Promise<DesktopState>;
+  deleteProviderAccount(id: string): Promise<DesktopState>;
   testMcpServer(
     name: string,
     configuration: McpStdioServerConfiguration,
   ): Promise<McpServerStatus>;
-  clearCredential(provider: DesktopProvider): Promise<void>;
+  clearCredential(provider: DesktopProvider, accountId?: string): Promise<void>;
   configureTheme(theme: DesktopThemePreference): Promise<DesktopState>;
   adjustZoom(direction: -1 | 1): Promise<number>;
   configureUpdates(updates: {

@@ -33,10 +33,16 @@ const bridge: DesktopBridge = {
   ) =>
     ipcRenderer.invoke("truss:test-provider-connection", configuration, apiKey),
   credentialStorage: () => ipcRenderer.invoke("truss:credential-storage"),
+  saveProviderAccount: (input, apiKey) =>
+    ipcRenderer.invoke("truss:save-provider-account", input, apiKey),
+  updateProviderAccount: (id, input) =>
+    ipcRenderer.invoke("truss:update-provider-account", id, input),
+  deleteProviderAccount: (id) =>
+    ipcRenderer.invoke("truss:delete-provider-account", id),
   testMcpServer: (name, configuration) =>
     ipcRenderer.invoke("truss:test-mcp-server", name, configuration),
-  clearCredential: (provider) =>
-    ipcRenderer.invoke("truss:clear-credential", provider),
+  clearCredential: (provider, accountId) =>
+    ipcRenderer.invoke("truss:clear-credential", provider, accountId),
   configureTheme: (theme) => ipcRenderer.invoke("truss:configure-theme", theme),
   adjustZoom: (direction) => ipcRenderer.invoke("truss:adjust-zoom", direction),
   configureUpdates: (updates: {
