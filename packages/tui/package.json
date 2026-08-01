@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/tui",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Interactive terminal client for Truss.",
   "type": "module",
   "bin": {
@@ -43,9 +43,9 @@
     "ink": "^6.8.0",
     "react": "^19.2.0",
     "@truss-harness/branding": "0.1.0",
-    "@truss-harness/cli": "0.1.14",
-    "@truss-harness/provider-openai-compatible": "0.1.7",
-    "@truss-harness/runtime": "0.1.7"
+    "@truss-harness/cli": "0.1.15",
+    "@truss-harness/provider-openai-compatible": "0.1.8",
+    "@truss-harness/runtime": "0.1.8"
   },
   "devDependencies": {
     "@types/react": "^19.2.0"

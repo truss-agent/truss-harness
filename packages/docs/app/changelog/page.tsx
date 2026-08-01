@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.24 · VS Code 0.1.14 · CLI 0.1.15 · TUI 0.1.11",
+    label: "Named provider accounts",
+    changes: [
+      "Added named API-key accounts in Desktop and VS Code, with secure per-account storage, legacy-key migration, replacement, removal, and agent account selection.",
+      "Added CLI provider-account references with account-scoped environment variables and preserved those opaque references in managed-agent profiles without storing secrets in configuration.",
+      "Kept provider-wide environment variables and existing BYOK setups as compatible fallbacks while laying the groundwork for future provider-specific OAuth adapters.",
+    ],
+  },
+  {
     version: "0.1.23",
     label: "Linux credential storage",
     changes: [
