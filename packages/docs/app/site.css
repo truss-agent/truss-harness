@@ -1167,6 +1167,40 @@ body {
     font-size: 13px;
 }
 
+.download-client-package {
+    display: grid;
+    gap: 7px;
+    margin: -2px 0 22px;
+}
+
+.download-client-package > span {
+    color: #5b6f66;
+    font-size: 12px;
+    font-weight: 750;
+}
+
+.download-client-package select {
+    appearance: auto;
+    background: var(--site-panel);
+    border: 1px solid var(--site-line);
+    border-radius: 10px;
+    color: var(--site-ink);
+    font: inherit;
+    min-height: 44px;
+    padding: 0 12px;
+    width: 100%;
+}
+
+.download-client-package select:focus-visible {
+    outline: 2px solid var(--site-accent);
+    outline-offset: 2px;
+}
+
+.download-client-package small {
+    color: #5b6f66;
+    font-size: 12px;
+}
+
 .download-client-actions {
     display: flex;
     flex-wrap: wrap;
@@ -1199,6 +1233,8 @@ body {
 :root[data-truss-theme="dark"] .download-client-section > header > p:last-child,
 :root[data-truss-theme="dark"] .download-client-card header > p:last-child,
 :root[data-truss-theme="dark"] .download-client-release span:last-child,
+:root[data-truss-theme="dark"] .download-client-package > span,
+:root[data-truss-theme="dark"] .download-client-package small,
 :root[data-truss-theme="dark"] .download-desktop-section-heading > p:last-child {
     color: #b5c9bf;
 }

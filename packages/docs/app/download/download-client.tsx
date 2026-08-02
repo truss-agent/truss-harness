@@ -150,6 +150,126 @@ function releaseDate(release: Release | undefined): string | undefined {
     : undefined;
 }
 
+function buildKey(build: Build): string {
+  return `${build.platform}:${build.arch}:${build.extension}`;
+}
+
+function buildLabel(build: Build): string {
+  const architecture = build.arch === "x64" ? "x64 / AMD64" : "ARM64";
+  return `${build.format} · ${architecture}`;
+}
+
+function DesktopReleaseCard({
+  release,
+  recommended,
+  releasesUrl,
+}: {
+  readonly release: Release | undefined;
+  readonly recommended: Pick<Build, "platform" | "arch"> | undefined;
+  readonly releasesUrl: string;
+}) {
+  const [selectedBuildKey, setSelectedBuildKey] = useState<string>();
+  const recommendedBuild = builds.find(
+    (build) =>
+      build.platform === recommended?.platform &&
+      build.arch === recommended.arch &&
+      (build.platform === "windows" || build.extension === ".tar.gz"),
+  );
+  const selectedBuild =
+    builds.find((build) => buildKey(build) === selectedBuildKey) ??
+    recommendedBuild ??
+    builds[0];
+  const selectedAsset = release?.assets.find((asset) =>
+    assetMatches(asset, selectedBuild),
+  );
+  const published = releaseDate(release);
+
+  return (
+    <article className="download-client-card">
+      <header>
+        <p className="site-eyebrow">Truss Desktop</p>
+        <h2>Desktop</h2>
+        <p>
+          A focused local coding workspace with files, Git, terminal work,
+          provider controls, and agent approvals.
+        </p>
+      </header>
+      <div className="download-client-release">
+        {release ? (
+          <>
+            <span
+              className="download-status download-status-ready"
+              aria-hidden="true"
+            />
+            <div>
+              <strong>{release.tag_name}</strong>
+              <span>
+                Latest stable release{published ? ` · ${published}` : ""}
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
+            <span
+              className="download-status download-status-unavailable"
+              aria-hidden="true"
+            />
+            <div>
+              <strong>Release unavailable</strong>
+              <span>Check the Desktop releases for current builds.</span>
+            </div>
+          </>
+        )}
+      </div>
+      <label className="download-client-package">
+        <span>Desktop package</span>
+        <select
+          value={buildKey(selectedBuild)}
+          onChange={(event) => setSelectedBuildKey(event.target.value)}
+        >
+          {builds.map((build) => (
+            <option key={buildKey(build)} value={buildKey(build)}>
+              {buildLabel(build)}
+            </option>
+          ))}
+        </select>
+        <small>{selectedBuild.note}</small>
+      </label>
+      <div className="download-client-actions">
+        {selectedAsset ? (
+          <a
+            className="site-button site-button-primary"
+            href={selectedAsset.browser_download_url}
+          >
+            Download package
+          </a>
+        ) : (
+          <span
+            className="site-button download-button-unavailable"
+            aria-disabled="true"
+          >
+            Not available
+          </span>
+        )}
+        <a
+          className="site-button site-button-secondary"
+          href="/docs/clients/desktop"
+        >
+          Desktop guide
+        </a>
+      </div>
+      <a
+        className="site-text-link download-client-all-releases"
+        href={releasesUrl}
+        target="_blank"
+        rel="noreferrer"
+      >
+        View Desktop releases
+      </a>
+    </article>
+  );
+}
+
 function ReleaseCard({
   eyebrow,
   title,
@@ -339,18 +459,10 @@ export function DownloadClient({
           </p>
         </header>
         <div className="download-client-grid">
-          <ReleaseCard
-            eyebrow="Truss Desktop"
-            title="Desktop"
-            description="A focused local coding workspace with files, Git, terminal work, provider controls, and agent approvals."
+          <DesktopReleaseCard
             release={release}
-            asset={undefined}
-            sourceHref={releasesUrl}
-            sourceLabel="View Desktop releases"
-            detailsHref="/docs/clients/desktop"
-            detailsLabel="Desktop guide"
-            downloadLabel="Choose Desktop package"
-            primaryHref="#desktop-downloads"
+            recommended={recommended}
+            releasesUrl={releasesUrl}
           />
           <ReleaseCard
             eyebrow="Truss for VS Code"
