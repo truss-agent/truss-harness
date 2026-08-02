@@ -32,7 +32,9 @@ Open the app, choose a workspace, then select a detected local server and model 
 
 ## Bring your own key
 
-Settings are separated into **Local provider**, **BYOK**, and **Other** tabs. In **BYOK**, select OpenAI, Anthropic, OpenRouter, Groq, Together AI, Gemini, xAI, Mistral AI, DeepSeek, Perplexity, Fireworks AI, or NVIDIA NIM, then supply a model ID and API key. Truss encrypts the key through Electron's platform secure-storage service before storing it locally; the normal desktop state file contains no raw credential. Leave the API-key field blank when changing other settings to keep the saved key, or select **Remove stored provider key** to delete it.
+Settings are separated into **Local provider**, **BYOK**, and **Other** tabs. In **BYOK**, select OpenAI, Anthropic, OpenRouter, Groq, Together AI, Gemini, xAI, Mistral AI, DeepSeek, Perplexity, Fireworks AI, NVIDIA NIM, Xiaomi MiMo, or Ollama Cloud, then supply a model ID and API key. Truss encrypts the key through Electron's platform secure-storage service before storing it locally; the normal desktop state file contains no raw credential. Leave the API-key field blank when changing other settings to keep the saved key, or select **Remove stored provider key** to delete it.
+
+**Ollama** in the Local provider tab stays key-free and connects to your local server. Choose **Ollama Cloud** in BYOK only when connecting directly to Ollama's hosted API with an `OLLAMA_API_KEY`.
 
 ## Themes
 

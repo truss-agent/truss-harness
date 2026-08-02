@@ -2,7 +2,7 @@
   "name": "truss-harness-vscode",
   "displayName": "Truss",
   "description": "VS Code client for the Truss runtime.",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "publisher": "truss-harness",
   "repository": {
     "type": "git",
@@ -148,14 +148,14 @@
     "prepublishOnly": "npm run package"
   },
   "dependencies": {
-    "@truss-harness/agent-host": "0.1.3",
+    "@truss-harness/agent-host": "0.1.4",
     "@truss-harness/gateway": "0.1.8",
     "@types/qrcode": "^1.5.6",
     "qrcode": "^1.5.4",
     "@truss-harness/branding": "0.1.0",
-    "@truss-harness/cli": "0.1.15",
+    "@truss-harness/cli": "0.1.16",
     "@truss-harness/mcp": "0.1.8",
-    "@truss-harness/provider-openai-compatible": "0.1.8",
+    "@truss-harness/provider-openai-compatible": "0.1.9",
     "@truss-harness/runtime": "0.1.8"
   },
   "devDependencies": {
