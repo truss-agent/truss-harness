@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   selectDesktopRelease,
   selectNeovimRelease,
@@ -169,6 +169,7 @@ function DesktopReleaseCard({
   readonly releasesUrl: string;
 }) {
   const [selectedBuildKey, setSelectedBuildKey] = useState<string>();
+  const picker = useRef<HTMLDetailsElement>(null);
   const recommendedBuild = builds.find(
     (build) =>
       build.platform === recommended?.platform &&
@@ -183,6 +184,27 @@ function DesktopReleaseCard({
     assetMatches(asset, selectedBuild),
   );
   const published = releaseDate(release);
+
+  useEffect(() => {
+    const closePicker = (event: MouseEvent) => {
+      if (
+        picker.current?.open &&
+        event.target instanceof Node &&
+        !picker.current.contains(event.target)
+      )
+        picker.current.open = false;
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && picker.current?.open)
+        picker.current.open = false;
+    };
+    document.addEventListener("mousedown", closePicker);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("mousedown", closePicker);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, []);
 
   return (
     <article className="download-client-card">
@@ -221,20 +243,48 @@ function DesktopReleaseCard({
           </>
         )}
       </div>
-      <label className="download-client-package">
-        <span>Desktop package</span>
-        <select
-          value={buildKey(selectedBuild)}
-          onChange={(event) => setSelectedBuildKey(event.target.value)}
-        >
-          {builds.map((build) => (
-            <option key={buildKey(build)} value={buildKey(build)}>
-              {buildLabel(build)}
-            </option>
-          ))}
-        </select>
+      <div className="download-client-package">
+        <span id="desktop-package-label">Desktop package</span>
+        <details ref={picker}>
+          <summary aria-labelledby="desktop-package-label">
+            <span>{buildLabel(selectedBuild)}</span>
+            <span
+              className="download-client-package-chevron"
+              aria-hidden="true"
+            >
+              ▾
+            </span>
+          </summary>
+          <div
+            className="download-client-package-menu"
+            role="menu"
+            aria-labelledby="desktop-package-label"
+          >
+            {builds.map((build) => {
+              const selected = buildKey(build) === buildKey(selectedBuild);
+              return (
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  className={selected ? "selected" : undefined}
+                  key={buildKey(build)}
+                  onClick={(event) => {
+                    setSelectedBuildKey(buildKey(build));
+                    event.currentTarget
+                      .closest("details")
+                      ?.removeAttribute("open");
+                  }}
+                >
+                  <span>{buildLabel(build)}</span>
+                  <small>{build.note}</small>
+                </button>
+              );
+            })}
+          </div>
+        </details>
         <small>{selectedBuild.note}</small>
-      </label>
+      </div>
       <div className="download-client-actions">
         {selectedAsset ? (
           <a
