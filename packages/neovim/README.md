@@ -39,7 +39,7 @@ the repository root, so no monorepo runtime-path workaround is required:
 To pin a specific plugin release, replace `branch` with a release tag:
 
 ```lua
-tag = "nvim-v0.2.1"
+tag = "nvim-v0.2.2"
 ```
 
 Run `:checkhealth truss` once after installation. Then use
@@ -90,7 +90,11 @@ Edit-mode write and replace requests remain blocked until the host asks for
 approval. Choose **Preview diff** to inspect the proposed text in a native
 `diff` split before approving it. Changed files appear in the Truss panel;
 press `gf` or Enter on one to open or focus it after a workspace-boundary
-check.
+check. The panel follows your active colorscheme and has local action keys:
+`a` or Enter opens the Chat prompt; `c`, `p`, and `e` select Chat, Plan, and
+Edit without starting a request; `n` starts a new conversation; `r` tests the
+connection; `m` shows MCP status; `P` selects a profile; `?` shows Help; and
+`q` or Escape closes. These keys apply only while the Truss panel is focused.
 
 Use `:help truss` for commands and defaults.
 

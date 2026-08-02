@@ -62,7 +62,17 @@ Inside the Truss panel:
 `<Enter>`                Prompt, or open the changed file under the cursor.
 `gf`                     Open or focus the changed file under the cursor.
 `<C-c>`                  Stop the active run.
+`a`                      Open a Chat prompt.
+`c`                      Select Chat mode without starting a request.
+`p`                      Select Plan mode without starting a request.
+`e`                      Select Edit mode without starting a request.
+`n`                      Start a new conversation.
+`r`                      Test the selected provider connection.
+`m`                      Show credential-safe MCP status.
+`P`                      Select a named CLI profile.
+`?`                      Toggle the panel's control reference.
 `q`                      Close the panel without stopping the service.
+`<Esc>`                  Close the panel without stopping the service.
 
 Edit write requests prompt before execution. Write and replacement requests
 offer a native diff preview. Profile selection, provider tests, MCP state,
