@@ -236,7 +236,7 @@ describe("OpenAICompatibleProvider", () => {
   });
 
   it("offers typed BYOK definitions for supported cloud providers", async () => {
-    expect(cloudProviderDefinitions.map(({ id }) => id)).toEqual(["openai", "anthropic", "openrouter", "groq", "together", "gemini", "xai", "mistral", "deepseek", "perplexity", "fireworks", "nvidia-nim"]);
+    expect(cloudProviderDefinitions.map(({ id }) => id)).toEqual(["openai", "anthropic", "openrouter", "groq", "together", "gemini", "xai", "mistral", "deepseek", "perplexity", "fireworks", "nvidia-nim", "xiaomi-mimo", "ollama-cloud"]);
     let url = "";
     const provider = createCloudModelProvider({
       provider: "gemini",
@@ -251,6 +251,26 @@ describe("OpenAICompatibleProvider", () => {
     for await (const _event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
     expect(provider.id).toBe("gemini");
     expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
+  });
+
+  it("uses the native Ollama API and bearer credentials for Ollama Cloud", async () => {
+    let url = "";
+    let authorization = "";
+    const provider = createCloudModelProvider({
+      provider: "ollama-cloud",
+      model: "qwen3-coder:480b",
+      credential: { id: "ollama-key", async resolve() { return { kind: "bearer", token: "secret" }; } },
+      fetch: async (input, init) => {
+        url = String(input);
+        authorization = new Headers(init?.headers).get("authorization") ?? "";
+        return new Response('{"message":{"content":"ok"},"done":true}\n');
+      }
+    });
+
+    for await (const _event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
+    expect(provider.id).toBe("ollama-cloud");
+    expect(url).toBe("https://ollama.com/api/chat");
+    expect(authorization).toBe("Bearer secret");
   });
 });
 

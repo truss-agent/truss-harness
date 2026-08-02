@@ -68,7 +68,9 @@ export type CloudProviderId =
   | "deepseek"
   | "perplexity"
   | "fireworks"
-  | "nvidia-nim";
+  | "nvidia-nim"
+  | "xiaomi-mimo"
+  | "ollama-cloud";
 export type ModelProviderKind = LocalEndpointKind | CloudProviderId;
 
 export interface CloudProviderDefinition {
@@ -76,7 +78,8 @@ export interface CloudProviderDefinition {
   readonly label: string;
   readonly baseUrl: string;
   readonly apiKeyEnvironmentVariable: string;
-  readonly compatibility: "openai-chat-completions";
+  /** Wire protocol used by the provider's hosted endpoint. */
+  readonly compatibility: "openai-chat-completions" | "ollama-api";
   readonly productionNote?: string;
 }
 
@@ -92,7 +95,9 @@ export const cloudProviderDefinitions: readonly CloudProviderDefinition[] = [
   { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com", apiKeyEnvironmentVariable: "DEEPSEEK_API_KEY", compatibility: "openai-chat-completions" },
   { id: "perplexity", label: "Perplexity", baseUrl: "https://api.perplexity.ai", apiKeyEnvironmentVariable: "PERPLEXITY_API_KEY", compatibility: "openai-chat-completions" },
   { id: "fireworks", label: "Fireworks AI", baseUrl: "https://api.fireworks.ai/inference/v1", apiKeyEnvironmentVariable: "FIREWORKS_API_KEY", compatibility: "openai-chat-completions" },
-  { id: "nvidia-nim", label: "NVIDIA NIM", baseUrl: "https://integrate.api.nvidia.com/v1", apiKeyEnvironmentVariable: "NVIDIA_API_KEY", compatibility: "openai-chat-completions" }
+  { id: "nvidia-nim", label: "NVIDIA NIM", baseUrl: "https://integrate.api.nvidia.com/v1", apiKeyEnvironmentVariable: "NVIDIA_API_KEY", compatibility: "openai-chat-completions" },
+  { id: "xiaomi-mimo", label: "Xiaomi MiMo", baseUrl: "https://api.xiaomimimo.com/v1", apiKeyEnvironmentVariable: "MIMO_API_KEY", compatibility: "openai-chat-completions" },
+  { id: "ollama-cloud", label: "Ollama Cloud", baseUrl: "https://ollama.com", apiKeyEnvironmentVariable: "OLLAMA_API_KEY", compatibility: "ollama-api" }
 ];
 
 export function isCloudProviderId(value: unknown): value is CloudProviderId {
@@ -428,11 +433,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
 /** Native Ollama adapter. Ollama's native API preserves local tool-calling semantics. */
 export class OllamaProvider implements ModelProvider {
-  readonly id = "ollama";
+  readonly id: string;
   private readonly endpoint: string;
   private readonly requestFetch: typeof globalThis.fetch;
 
-  constructor(options: Omit<OpenAICompatibleProviderOptions, "id">) {
+  constructor(options: OpenAICompatibleProviderOptions) {
+    this.id = options.id ?? "ollama";
     this.endpoint = `${options.baseUrl.replace(/\/$/, "")}/api/chat`;
     this.options = options;
     this.requestFetch = options.fetch ?? globalThis.fetch;
@@ -440,22 +446,40 @@ export class OllamaProvider implements ModelProvider {
 
   private readonly options: Omit<OpenAICompatibleProviderOptions, "id">;
 
-  async *stream(request: ModelRequest): AsyncIterable<ModelStreamEvent> {
-    const response = await this.requestFetch(this.endpoint, {
-      method: "POST",
-      signal: request.signal,
-      headers: {
-        "content-type": "application/json",
-        ...(this.options.headers ?? {})
-      },
-      body: JSON.stringify({
-        model: this.options.model,
-        stream: true,
-        messages: request.messages.map(toOllamaMessage),
-        tools: request.tools.map(toOpenAITool)
-      })
+  private credential(): CredentialProvider | undefined {
+    return this.options.credential ?? (this.options.apiKey ? new ApiKeyCredential(`${this.id}-api-key`, this.options.apiKey) : undefined);
+  }
+
+  private async send(request: ModelRequest): Promise<Response> {
+    const body = JSON.stringify({
+      model: this.options.model,
+      stream: true,
+      messages: request.messages.map(toOllamaMessage),
+      tools: request.tools.map(toOpenAITool)
     });
-    if (!response.ok) throw new Error(`Ollama request failed (${response.status}): ${await response.text()}`);
+    const credential = this.credential();
+    const attempt = async (): Promise<Response> => {
+      const headers = new Headers({ "content-type": "application/json", ...this.options.headers });
+      const resolved = await credential?.resolve();
+      if (resolved?.kind === "request-signer") {
+        return this.requestFetch(await resolved.sign(new Request(this.endpoint, { method: "POST", signal: request.signal, headers, body })));
+      }
+      if (resolved) applyCredential(headers, resolved);
+      return this.requestFetch(this.endpoint, { method: "POST", signal: request.signal, headers, body });
+    };
+
+    let response = await attempt();
+    if ((response.status === 401 || response.status === 403) && credential?.refresh) {
+      await response.body?.cancel();
+      await credential.refresh();
+      response = await attempt();
+    }
+    return response;
+  }
+
+  async *stream(request: ModelRequest): AsyncIterable<ModelStreamEvent> {
+    const response = await this.send(request);
+    if (!response.ok) throw new Error(`Ollama request failed (${response.status}).`);
     if (!response.body) throw new Error("Ollama response did not include a stream");
 
     const decoder = new TextDecoder();
@@ -620,6 +644,16 @@ export function cloudProviderDefinition(id: CloudProviderId): CloudProviderDefin
 /** Creates a BYOK cloud adapter while keeping credentials outside model configuration. */
 export function createCloudModelProvider(configuration: CloudModelConfiguration): ModelProvider {
   const definition = cloudProviderDefinition(configuration.provider);
+  if (definition.compatibility === "ollama-api") {
+    return new OllamaProvider({
+      id: definition.id,
+      baseUrl: definition.baseUrl,
+      model: configuration.model,
+      credential: configuration.credential,
+      headers: configuration.headers,
+      fetch: configuration.fetch
+    });
+  }
   return new OpenAICompatibleProvider({
     id: definition.id,
     baseUrl: definition.baseUrl,
