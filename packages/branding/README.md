@@ -9,3 +9,12 @@ After changing it, run `npm run brand:sync`. The command updates the npm workspa
 The docs shell reads this module directly, so its navbar, metadata, footer, repository link, and "Edit this page" URLs use the configured product name and repository URL.
 
 Package folders and the TypeScript import specifiers in authored source remain implementation paths. A new product identity should be configured before release work begins, then rebuilt and republished as a new npm scope and VS Code extension identity.
+
+## License and contributions
+
+This package is source-available under the [Truss Collaborative Source
+License](LICENSE). Contributions to the official project are welcome. Every
+copy, fork, or derivative must preserve the license and prominently state:
+**Based on Truss (https://github.com/truss-agent/truss-harness).** Commercial
+use and competing products or services require separate written permission.
+The license does not grant trademark rights beyond the required attribution.

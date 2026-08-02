@@ -9,3 +9,11 @@ Credentials implement the provider-neutral `CredentialProvider` contract from `@
 Anthropic documents its OpenAI compatibility layer primarily for evaluation and recommends its native API for production. Truss exposes the compatibility path now; a native Anthropic adapter can replace it without changing the runtime contract.
 
 For end-user setup, use `@truss-harness/cli` or `@truss-harness/tui`.
+
+## License and contributions
+
+This package is source-available under the [Truss Collaborative Source
+License](LICENSE). Contributions to the official project are welcome. Every
+copy, fork, or derivative must preserve the license and prominently state:
+**Based on Truss (https://github.com/truss-agent/truss-harness).** Commercial
+use and competing products or services require separate written permission.

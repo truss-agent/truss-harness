@@ -25,3 +25,11 @@ Configuration supports `command`, `args`, workspace-relative `cwd`, `env`,
 `${env:VARIABLE_NAME}`. Server startup and tool discovery are bounded, one
 failed server does not prevent other servers from connecting, and callers own
 the returned lifecycle.
+
+## License and contributions
+
+This package is source-available under the [Truss Collaborative Source
+License](LICENSE). Contributions to the official project are welcome. Every
+copy, fork, or derivative must preserve the license and prominently state:
+**Based on Truss (https://github.com/truss-agent/truss-harness).** Commercial
+use and competing products or services require separate written permission.

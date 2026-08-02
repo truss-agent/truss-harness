@@ -34,3 +34,11 @@ truss-cli gateway --gateway-token "replace-with-a-random-24-character-minimum-to
 
 Do not expose this initial gateway to the public internet. TLS, device pairing,
 revocation, and remote-host deployment are planned follow-up work.
+
+## License and contributions
+
+This package is source-available under the [Truss Collaborative Source
+License](LICENSE). Contributions to the official project are welcome. Every
+copy, fork, or derivative must preserve the license and prominently state:
+**Based on Truss (https://github.com/truss-agent/truss-harness).** Commercial
+use and competing products or services require separate written permission.

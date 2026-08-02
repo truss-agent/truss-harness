@@ -2,6 +2,14 @@
 
 Thanks for helping improve Truss. This repository powers several clients over a shared, provider-agnostic runtime, so every change must clearly state the client it is intended to fix.
 
+Contributions to the official project are expressly permitted by Section 7 of
+the [Truss Collaborative Source License](LICENSE), including contribution work
+performed for an employer. You retain ownership of your contribution while
+granting the permissions needed to maintain, distribute, and license Truss.
+Commercial use, competing products or services, and redistribution without
+prominent Truss attribution remain prohibited unless the project owner gives
+separate written permission.
+
 ## Before you start
 
 1. Search the [issue tracker](https://github.com/truss-agent/truss-harness/issues) for an existing report.
@@ -67,6 +75,10 @@ Closes #123
 ```
 
 Pull requests without a linked issue should be updated to link one before review. Do not merge your own pull request unless the repository maintainers have explicitly granted that permission.
+
+By intentionally submitting a contribution for inclusion in Truss, you agree
+to the contribution terms in Section 7 of the license. Identify any code or
+assets governed by separate third-party terms in the pull request.
 
 ## Maintainers
 

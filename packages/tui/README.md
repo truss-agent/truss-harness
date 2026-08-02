@@ -54,3 +54,11 @@ configuration files.
 | `Ctrl+C` | Stop generation, or exit while idle. |
 
 Type `/init`, `/update [note]`, `/status`, `/clear-memory`, or `/help` into the Agent pane. They run locally without a model call. Approvals for model-initiated tools still respect the selected permission policy.
+
+## License and contributions
+
+This client is source-available under the [Truss Collaborative Source
+License](LICENSE). Contributions to the official project are welcome. Every
+copy, fork, or derivative must preserve the license and prominently state:
+**Based on Truss (https://github.com/truss-agent/truss-harness).** Commercial
+use and competing products or services require separate written permission.

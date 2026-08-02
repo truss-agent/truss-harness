@@ -209,4 +209,20 @@ on the host.
 - [Download Truss Desktop](https://truss-agent.com/download)
 - [GitHub issues](https://github.com/truss-agent/truss-harness/issues)
 
-Truss is actively developed. Contributions and feedback are welcome.
+## License and contributing
+
+Truss is **source-available, not OSI-approved open source**. You may inspect,
+modify, test, and contribute to Truss, and noncommercial, noncompeting use is
+permitted under the [Truss Collaborative Source License](LICENSE).
+
+Every clone, fork, copy, package, and derivative must preserve the license and
+prominently state: **Based on Truss
+(https://github.com/truss-agent/truss-harness).** Commercial use and competing
+products or services require separate written permission from the project
+owner. See [CONTRIBUTING.md](CONTRIBUTING.md) to help improve the official
+project.
+
+This change does not revoke permissions for copies of earlier releases that
+were already received under the MIT License; those copies remain governed by
+the license that accompanied them. The new terms apply to versions distributed
+with the new license.
