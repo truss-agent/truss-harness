@@ -523,6 +523,8 @@ function agentProviderOptions(selected: string): HTMLOptionElement[] {
     ["anthropic", "Anthropic"],
     ["openrouter", "OpenRouter"],
     ["gemini", "Google Gemini"],
+    ["xiaomi-mimo", "Xiaomi MiMo"],
+    ["ollama-cloud", "Ollama Cloud"],
   ] as const;
   return providers.map(([id, label]) => {
     const option = document.createElement("option");

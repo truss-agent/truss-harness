@@ -2,6 +2,15 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.25] - 2026-08-02
+
+### Added
+
+- Added first-class Xiaomi MiMo BYOK setup across Desktop, VS Code, and the
+  CLI using MiMo's OpenAI-compatible endpoint and `MIMO_API_KEY`.
+- Added **Ollama Cloud** as a credentialed native-Ollama provider using
+  `OLLAMA_API_KEY`, while keeping ordinary local Ollama completely key-free.
+
 ## [0.1.23] - 2026-07-31
 
 ### Fixed

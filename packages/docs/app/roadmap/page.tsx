@@ -7,7 +7,7 @@ const sections = [
     label: "Available now",
     title: "Cloud providers, on your terms.",
     items: [
-      "Bring your own API key for OpenAI, Anthropic, OpenRouter, Groq, Together AI, Gemini, xAI, Mistral AI, DeepSeek, Perplexity, Fireworks AI, or NVIDIA NIM.",
+      "Bring your own API key for OpenAI, Anthropic, OpenRouter, Groq, Together AI, Gemini, xAI, Mistral AI, DeepSeek, Perplexity, Fireworks AI, NVIDIA NIM, Xiaomi MiMo, or Ollama Cloud.",
       "Keep provider selection, model routing, tools, and safety policies behind the same provider-neutral runtime interfaces.",
       "Store keys locally in the client or environment you control; Truss will not require a hosted control plane or proxy your requests."
     ]

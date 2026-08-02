@@ -121,6 +121,53 @@ describe("resolveConfiguration", () => {
     }
   });
 
+  it("resolves Xiaomi MiMo and Ollama Cloud as separate credentialed providers", async () => {
+    const root = join(process.cwd(), ".test-workspaces", randomUUID());
+    const paths = {
+      user: join(root, "user.json"),
+      workspace: join(root, "workspace.json"),
+    };
+    await mkdir(root, { recursive: true });
+    try {
+      await writeFile(
+        paths.user,
+        JSON.stringify({
+          profiles: {
+            mimo: { provider: "xiaomi-mimo", model: "mimo-v2.5" },
+            ollamaCloud: { provider: "ollama-cloud", model: "qwen3-coder:480b" },
+          },
+        }),
+      );
+
+      await expect(
+        resolveConfiguration({
+          workspaceRoot: root,
+          paths,
+          environment: { MIMO_API_KEY: "mimo-key" },
+          overrides: { profile: "mimo" },
+        }),
+      ).resolves.toMatchObject({
+        provider: "xiaomi-mimo",
+        baseUrl: "https://api.xiaomimimo.com/v1",
+        apiKey: "mimo-key",
+      });
+      await expect(
+        resolveConfiguration({
+          workspaceRoot: root,
+          paths,
+          environment: { OLLAMA_API_KEY: "ollama-key" },
+          overrides: { profile: "ollamaCloud" },
+        }),
+      ).resolves.toMatchObject({
+        provider: "ollama-cloud",
+        baseUrl: "https://ollama.com",
+        apiKey: "ollama-key",
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("ignores workspace MCP commands until the user explicitly trusts them", async () => {
     const root = join(process.cwd(), ".test-workspaces", randomUUID());
     const paths = {

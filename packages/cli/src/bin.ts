@@ -120,7 +120,8 @@ Environment:
   TRUSS_HARNESS_MODEL       Required model identifier
   TRUSS_HARNESS_PROVIDER    ollama, openai-compatible, openai, anthropic,
                             openrouter, groq, together, gemini, xai, mistral,
-                            deepseek, perplexity, fireworks, or nvidia-nim
+                            deepseek, perplexity, fireworks, nvidia-nim,
+                            xiaomi-mimo, or ollama-cloud
   TRUSS_HARNESS_PROVIDER_ACCOUNT
                             Named account reference. If set, the CLI first
                             checks TRUSS_HARNESS_API_KEY_ACCOUNT_<ID>.
@@ -131,7 +132,8 @@ Environment:
   TRUSS_HARNESS_API_KEY     Optional generic bearer token
   OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY,
   TOGETHER_API_KEY, GEMINI_API_KEY, XAI_API_KEY, MISTRAL_API_KEY,
-  DEEPSEEK_API_KEY, PERPLEXITY_API_KEY, FIREWORKS_API_KEY, NVIDIA_API_KEY
+  DEEPSEEK_API_KEY, PERPLEXITY_API_KEY, FIREWORKS_API_KEY, NVIDIA_API_KEY,
+  MIMO_API_KEY, OLLAMA_API_KEY
                                   Provider-specific BYOK credentials
   TRUSS_HARNESS_SYSTEM_PROMPT Optional system prompt
   TRUSS_HARNESS_MCP_SERVERS JSON object containing local stdio MCP servers

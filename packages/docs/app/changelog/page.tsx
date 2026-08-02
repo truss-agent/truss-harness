@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.25 · VS Code 0.1.15 · CLI 0.1.16 · TUI 0.1.12",
+    label: "Xiaomi MiMo and Ollama Cloud",
+    changes: [
+      "Added Xiaomi MiMo as a first-class BYOK provider across Desktop, VS Code, and the CLI, using its OpenAI-compatible API and MIMO_API_KEY credential.",
+      "Added Ollama Cloud as a credentialed native-Ollama provider using OLLAMA_API_KEY, without changing the key-free local Ollama workflow.",
+      "Kept provider credentials out of configuration files and usable by named provider accounts, CLI profiles, and independently configured managed agents.",
+    ],
+  },
+  {
     version: "truss.nvim 0.2.2",
     label: "Polished Neovim workspace panel",
     changes: [

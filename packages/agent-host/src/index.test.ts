@@ -242,5 +242,7 @@ describe("AgentHost", () => {
     expect(providerIds).toContain("openai-compatible");
     expect(providerIds).toContain("llama-cpp");
     expect(providerIds).toContain("openai");
+    expect(providerIds).toContain("xiaomi-mimo");
+    expect(providerIds).toContain("ollama-cloud");
   });
 });
