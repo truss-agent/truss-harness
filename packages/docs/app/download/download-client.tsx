@@ -156,7 +156,9 @@ function ReleaseCard({
   description,
   release,
   asset,
-  releasesUrl,
+  distribution,
+  sourceHref,
+  sourceLabel,
   detailsHref,
   detailsLabel,
   downloadLabel,
@@ -167,7 +169,12 @@ function ReleaseCard({
   readonly description: string;
   readonly release: Release | undefined;
   readonly asset: ReleaseAsset | undefined;
-  readonly releasesUrl: string;
+  readonly distribution?: {
+    readonly label: string;
+    readonly description: string;
+  };
+  readonly sourceHref: string;
+  readonly sourceLabel: string;
   readonly detailsHref: string;
   readonly detailsLabel: string;
   readonly downloadLabel: string;
@@ -198,12 +205,17 @@ function ReleaseCard({
         ) : (
           <>
             <span
-              className="download-status download-status-unavailable"
+              className={`download-status download-status-${
+                distribution ? "ready" : "unavailable"
+              }`}
               aria-hidden="true"
             />
             <div>
-              <strong>Release unavailable</strong>
-              <span>Check GitHub for current builds.</span>
+              <strong>{distribution?.label ?? "Release unavailable"}</strong>
+              <span>
+                {distribution?.description ??
+                  "Check the distribution source for current builds."}
+              </span>
             </div>
           </>
         )}
@@ -219,11 +231,11 @@ function ReleaseCard({
         ) : (
           <a
             className="site-button site-button-secondary"
-            href={releasesUrl}
+            href={sourceHref}
             target="_blank"
             rel="noreferrer"
           >
-            View releases
+            {sourceLabel}
           </a>
         )}
         <a className="site-button site-button-secondary" href={detailsHref}>
@@ -232,11 +244,11 @@ function ReleaseCard({
       </div>
       <a
         className="site-text-link download-client-all-releases"
-        href={releasesUrl}
+        href={sourceHref}
         target="_blank"
         rel="noreferrer"
       >
-        View all {title} releases
+        {sourceLabel}
       </a>
     </article>
   );
@@ -322,9 +334,8 @@ export function DownloadClient({
           <p className="site-eyebrow">Truss downloads</p>
           <h1 id="downloads">Choose the Truss client for your workflow.</h1>
           <p>
-            Each client has its own latest stable release, installation path,
-            and release history. Developer packages stay in their normal
-            registries.
+            Pick the client that fits your workflow. Every installable Truss
+            client has one consistent starting point here.
           </p>
         </header>
         <div className="download-client-grid">
@@ -334,11 +345,63 @@ export function DownloadClient({
             description="A focused local coding workspace with files, Git, terminal work, provider controls, and agent approvals."
             release={release}
             asset={undefined}
-            releasesUrl={releasesUrl}
+            sourceHref={releasesUrl}
+            sourceLabel="View Desktop releases"
             detailsHref="/docs/clients/desktop"
             detailsLabel="Desktop guide"
             downloadLabel="Choose Desktop package"
             primaryHref="#desktop-downloads"
+          />
+          <ReleaseCard
+            eyebrow="Truss for VS Code"
+            title="VS Code"
+            description="Keep Truss inside your editor with chat, file context, completions, approvals, and a bundled runtime service."
+            release={undefined}
+            asset={undefined}
+            distribution={{
+              label: "VS Code Marketplace",
+              description: "Install the latest published extension.",
+            }}
+            sourceHref="https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode"
+            sourceLabel="View on Marketplace"
+            detailsHref="/docs/clients/vscode"
+            detailsLabel="VS Code guide"
+            downloadLabel="Install extension"
+            primaryHref="https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode"
+          />
+          <ReleaseCard
+            eyebrow="Truss command line"
+            title="CLI"
+            description="Run focused agent tasks, manage profiles, host the editor service, and keep the runtime in your terminal."
+            release={undefined}
+            asset={undefined}
+            distribution={{
+              label: "npm package",
+              description: "Install the latest published CLI globally.",
+            }}
+            sourceHref="https://www.npmjs.com/package/@truss-harness/cli"
+            sourceLabel="View CLI on npm"
+            detailsHref="/docs/clients/cli"
+            detailsLabel="CLI guide"
+            downloadLabel="Install CLI"
+            primaryHref="https://www.npmjs.com/package/@truss-harness/cli"
+          />
+          <ReleaseCard
+            eyebrow="Truss terminal UI"
+            title="TUI"
+            description="Use the full-screen terminal workspace when you want conversations, file context, and approvals without leaving the shell."
+            release={undefined}
+            asset={undefined}
+            distribution={{
+              label: "npm package",
+              description: "Install the latest published terminal UI globally.",
+            }}
+            sourceHref="https://www.npmjs.com/package/@truss-harness/tui"
+            sourceLabel="View TUI on npm"
+            detailsHref="/docs/clients/tui"
+            detailsLabel="TUI guide"
+            downloadLabel="Install TUI"
+            primaryHref="https://www.npmjs.com/package/@truss-harness/tui"
           />
           <ReleaseCard
             eyebrow="Truss Go for Android"
@@ -346,7 +409,8 @@ export function DownloadClient({
             description="Pair your phone with a trusted Desktop or VS Code workspace and continue the same conversation on your local Wi-Fi."
             release={androidRelease}
             asset={androidApk}
-            releasesUrl={releasesUrl}
+            sourceHref={releasesUrl}
+            sourceLabel="View Android releases"
             detailsHref="/truss-go"
             detailsLabel="Android setup"
             downloadLabel="Download Android APK"
@@ -357,7 +421,8 @@ export function DownloadClient({
             description="Bring Chat, Plan, Edit, approvals, and local-model controls into Neovim or LazyVim without moving credentials into Lua."
             release={neovimRelease}
             asset={neovimArchive}
-            releasesUrl={releasesUrl}
+            sourceHref={releasesUrl}
+            sourceLabel="View Neovim releases"
             detailsHref="/docs/clients/neovim"
             detailsLabel="Installation guide"
             downloadLabel="Download plugin archive"
