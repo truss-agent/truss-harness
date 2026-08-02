@@ -87,3 +87,11 @@ Tag a committed mobile version as `truss-go-v<version>` (for example,
 `truss-go-v0.1.0`). The **Truss Go Android release** workflow creates the
 installable APK and its `SHA256SUMS.txt` file on the corresponding GitHub
 Release. The production `.aab` remains the artifact for Google Play Console.
+
+## License and contributions
+
+This client is source-available under the [Truss Collaborative Source
+License](LICENSE). Contributions to the official project are welcome. Every
+copy, fork, or derivative must preserve the license and prominently state:
+**Based on Truss (https://github.com/truss-agent/truss-harness).** Commercial
+use and competing products or services require separate written permission.

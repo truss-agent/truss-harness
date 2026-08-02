@@ -11,3 +11,11 @@ The default registry provides separate bindings for Ollama, generic
 OpenAI-compatible servers, llama.cpp servers, and the supported cloud
 providers. Applications can replace or extend the registry through
 `AgentProviderRegistry`.
+
+## License and contributions
+
+This package is source-available under the [Truss Collaborative Source
+License](LICENSE). Contributions to the official project are welcome. Every
+copy, fork, or derivative must preserve the license and prominently state:
+**Based on Truss (https://github.com/truss-agent/truss-harness).** Commercial
+use and competing products or services require separate written permission.

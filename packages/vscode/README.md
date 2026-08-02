@@ -87,3 +87,11 @@ npm run package
 ```
 
 This produces a `.vsix` file for local installation or Marketplace submission. Set the final `publisher`, `name`, version, repository links, and a PNG Marketplace icon before publishing under an organization account.
+
+## License and contributions
+
+This extension is source-available under the [Truss Collaborative Source
+License](LICENSE). Contributions to the official project are welcome. Every
+copy, fork, or derivative must preserve the license and prominently state:
+**Based on Truss (https://github.com/truss-agent/truss-harness).** Commercial
+use and competing products or services require separate written permission.

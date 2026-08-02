@@ -76,3 +76,11 @@ git push origin v0.2.0
 The release workflow rejects tags that do not match the version in `packages/desktop/package.json`.
 
 Windows installers are unsigned until a certificate is supplied to Electron Builder through `CSC_LINK` and `CSC_KEY_PASSWORD`.
+
+## License and contributions
+
+This client is source-available under the [Truss Collaborative Source
+License](LICENSE). Contributions to the official project are welcome. Every
+copy, fork, or derivative must preserve the license and prominently state:
+**Based on Truss (https://github.com/truss-agent/truss-harness).** Commercial
+use and competing products or services require separate written permission.

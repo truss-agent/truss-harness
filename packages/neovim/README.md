@@ -107,3 +107,11 @@ Current-buffer content with available diagnostics and the active file's Git
 diff is attached only when a command starts a run. A visual command sends the
 selection instead. Every source is bounded in Lua and again by the service
 before reaching the runtime.
+
+## License and contributions
+
+This client is source-available under the [Truss Collaborative Source
+License](LICENSE). Contributions to the official project are welcome. Every
+copy, fork, or derivative must preserve the license and prominently state:
+**Based on Truss (https://github.com/truss-agent/truss-harness).** Commercial
+use and competing products or services require separate written permission.

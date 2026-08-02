@@ -108,7 +108,7 @@
       ]
     }
   },
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/truss-agent/truss-harness.git"

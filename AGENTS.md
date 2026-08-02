@@ -7,7 +7,7 @@ Release, publishing, deployment, and contributor-only procedures live in
 intentionally private. Keep the root `README.md` focused on product users:
 installation, configuration, client usage, screenshots, and documentation.
 
-Build an open-source agent harness similar in capability to Cline, Continue, Roo Code, and OpenHands.
+Build a source-available agent harness similar in capability to Cline, Continue, Roo Code, and OpenHands.
 
 The objective is NOT to clone any existing project.
 

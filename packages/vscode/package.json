@@ -3,6 +3,7 @@
   "displayName": "Truss",
   "description": "VS Code client for the Truss runtime.",
   "version": "0.1.15",
+  "license": "SEE LICENSE IN LICENSE",
   "publisher": "truss-harness",
   "repository": {
     "type": "git",

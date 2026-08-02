@@ -1,6 +1,7 @@
 {
   "name": "truss-harness",
   "private": false,
+  "license": "SEE LICENSE IN LICENSE",
   "packageManager": "npm@10.8.2",
   "workspaces": [
     "packages/*"
