@@ -265,10 +265,10 @@ function M.chat(prompt, options)
   end)
 end
 
-function M.run_mode(mode, prompt, options)
+function M.select_mode(mode)
   if state.client and state.client.active_request then
     notify("Stop the active Truss run before changing modes.")
-    return
+    return false
   end
   if state.options.mode ~= mode then
     state.options.mode = mode
@@ -276,6 +276,13 @@ function M.run_mode(mode, prompt, options)
     local panel = ensure_panel()
     panel:clear()
     panel:set_mode(mode, state.options.profile)
+  end
+  return true
+end
+
+function M.run_mode(mode, prompt, options)
+  if not M.select_mode(mode) then
+    return
   end
   M.chat(prompt, options)
 end

@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "truss.nvim 0.2.2",
+    label: "Polished Neovim workspace panel",
+    changes: [
+      "Redesigned the full-height Truss split with colorscheme-aware panel contrast, a status Winbar, clearer conversation, plan, activity, and changed-file sections, and an actionable empty state.",
+      "Added panel-local keyboard controls for choosing Chat, Plan, and Edit before starting a request, opening the prompt explicitly, starting a new conversation, testing a connection, inspecting MCP status, selecting a profile, and showing in-panel help.",
+      "Stopped the panel from forcing focus to the bottom while streaming, so users can inspect prior output without the cursor jumping away.",
+    ],
+  },
+  {
     version: "Desktop 0.1.24 · VS Code 0.1.14 · CLI 0.1.15 · TUI 0.1.11",
     label: "Named provider accounts",
     changes: [

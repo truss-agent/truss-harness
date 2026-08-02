@@ -30,6 +30,22 @@ function requireEqual(label, actual, expected) {
   }
 }
 
+function compareVersions(left, right) {
+  const leftParts = left.match(/^(\d+)\.(\d+)\.(\d+)/)?.slice(1);
+  const rightParts = right.match(/^(\d+)\.(\d+)\.(\d+)/)?.slice(1);
+  if (!leftParts || !rightParts) {
+    errors.push(
+      `Cannot compare ${JSON.stringify(left)} and ${JSON.stringify(right)} as semantic versions.`,
+    );
+    return undefined;
+  }
+  for (let index = 0; index < leftParts.length; index += 1) {
+    const difference = Number(leftParts[index]) - Number(rightParts[index]);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
 requireEqual("Lua plugin version", luaString("plugin"), manifest.version);
 requireEqual(
   "Lua minimum CLI version",
@@ -59,11 +75,15 @@ try {
   const cliManifest = JSON.parse(
     await readFile(resolve(root, "../cli/package.json"), "utf8"),
   );
-  requireEqual(
-    "Minimum CLI version for this source release",
-    manifest.truss?.minimumCliVersion,
+  const comparison = compareVersions(
     cliManifest.version,
+    manifest.truss?.minimumCliVersion,
   );
+  if (comparison !== undefined && comparison < 0) {
+    errors.push(
+      `Source CLI version ${JSON.stringify(cliManifest.version)} must satisfy the plugin minimum ${JSON.stringify(manifest.truss?.minimumCliVersion)}.`,
+    );
+  }
 } catch (error) {
   if (error?.code !== "ENOENT") throw error;
 }
