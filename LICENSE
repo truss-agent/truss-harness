@@ -1,0 +1,233 @@
+Truss Collaborative Source License, Version 1.0
+
+Copyright (c) 2026 Jared Hooker and Truss contributors
+
+Required Notice: This software is based on Truss.
+Required Notice: Truss original project: https://github.com/truss-agent/truss-harness
+
+This is a source-available license. It is not an Open Source Initiative
+approved open-source license.
+
+1. Acceptance
+
+To receive any license under these terms, you must accept them as strict
+obligations and as conditions of every license granted below. If you do not
+accept these terms, you receive no license.
+
+2. Definitions
+
+"Software" means the Truss source code, object code, documentation, artwork,
+and other material distributed with these terms, excluding Third-Party
+Components identified below.
+
+"Licensor" means each person or entity that owns copyright or patent rights in
+the Software and has authority to license those rights.
+
+"Official Project" means the Truss project maintained at
+https://github.com/truss-agent/truss-harness and its official releases.
+
+"Project Steward" means Jared Hooker or a successor publicly identified as the
+project owner in the Official Project repository.
+
+"You" means the individual or legal entity exercising rights under these
+terms. For a legal entity, You includes entities that control, are controlled
+by, or are under common control with that entity.
+
+"Commercial Purpose" means any purpose intended to provide, or that does
+provide, direct or indirect commercial advantage or monetary compensation to
+You or another person. It includes internal business use by a for-profit
+entity; use in developing, operating, or supporting a revenue-generating
+product or service; sale, licensing, subscription, hosting, paid support,
+consulting, advertising, or other monetization; and use intended to reduce the
+cost of a commercial product or service.
+
+"Competing Product" means any product or service, whether paid or free, that
+provides the same or substantially similar functionality as the Software or an
+official Truss product, or that is marketed or made available as a substitute
+for any of them. Products and services may compete even when they use a
+different interface, platform, programming language, architecture, or delivery
+model. Coding-agent runtimes, harnesses, clients, development tools, model
+routing systems, agent orchestration systems, and hosted versions of any of
+those may be Competing Products.
+
+"Contribution Activity" means reproducing, modifying, running, and sharing the
+Software only as reasonably necessary to prepare, test, review, or submit a
+good-faith contribution to the Official Project.
+
+"Distribute" means to provide any copy of the Software or a work based on the
+Software to another person or entity, including by publishing, transferring,
+sublicensing, offering as a network service, or making it available for
+download.
+
+"Corresponding Source" means the preferred form for making modifications,
+including build scripts and other material reasonably necessary to build and
+run the distributed version, but excluding generally available unmodified
+tools and dependencies.
+
+"Third-Party Components" means material that is identified as being governed
+by separate license terms. Those separate terms continue to control that
+material.
+
+3. Copyright License
+
+Subject to these terms, each Licensor grants You a worldwide, royalty-free,
+non-exclusive, non-transferable, non-sublicensable copyright license to use,
+reproduce, modify, and create works based on the Software solely for:
+
+  a. a purpose that is both noncommercial and does not provide or support a
+     Competing Product; or
+
+  b. Contribution Activity.
+
+No permission is granted for a Commercial Purpose or a Competing Product
+except under Section 8.
+
+4. Distribution License and Conditions
+
+Subject to these terms, each Licensor grants You a worldwide, royalty-free,
+non-exclusive, non-transferable, non-sublicensable license to Distribute the
+Software, with or without modifications, only for a purpose permitted by
+Section 3 and when You satisfy every condition below. You may not market,
+direct, or knowingly provide a distribution for a Commercial Purpose or a
+Competing Product. A public fork maintained in good faith for Contribution
+Activity is permitted.
+
+  a. You must provide the complete Corresponding Source at no charge with the
+     distribution or through a durable, publicly accessible location clearly
+     identified in the distribution.
+
+  b. You must license the Software and every work based on the Software under
+     this exact license. You may not offer additional or conflicting terms
+     that restrict or expand the rights granted by this license.
+
+  c. You must include an unmodified copy of this license and preserve every
+     copyright, attribution, and Required Notice supplied with the Software.
+
+  d. The primary README or equivalent documentation must prominently state:
+     "Based on Truss (https://github.com/truss-agent/truss-harness)."
+
+  e. A program with a graphical or command-line user interface must display
+     the statement in Section 4(d) in a reasonably accessible About, Credits,
+     Help, or version view. A library or service without such an interface
+     must display it in its primary documentation and package metadata where
+     that metadata format supports attribution.
+
+  f. You must identify significant modifications and must not imply that a
+     modified version is an official Truss release or is endorsed by the
+     Official Project.
+
+  g. You may not remove, obscure, minimize, or bypass the notices required by
+     this section.
+
+Merely creating a private clone does not require publication, but every notice
+already present in that clone must remain intact. Distribution through a fork,
+mirror, package, archive, installer, container, application, or network service
+is subject to this section.
+
+5. No Commercial Use
+
+You may not use, reproduce, modify, create works based on, or Distribute the
+Software for a Commercial Purpose without separate written permission under
+Section 8. A commercial activity does not become noncommercial because the
+Software is provided without a separate charge.
+
+6. No Competitive Use
+
+You may not use, reproduce, modify, create works based on, or Distribute the
+Software to build, provide, maintain, market, fund, or support a Competing
+Product without separate written permission under Section 8. This restriction
+applies even if the Competing Product is free, source-available, internal,
+nonprofit, or not yet publicly released.
+
+7. Contributions Are Welcome
+
+You may perform Contribution Activity even when You work for a commercial
+organization, provided the activity is genuinely directed toward improving
+the Official Project and is not used to develop or support a separate
+Commercial Purpose or Competing Product.
+
+If You intentionally submit a contribution for inclusion in the Official
+Project, You retain ownership of Your contribution and grant the Project
+Steward a perpetual, worldwide, irrevocable, non-exclusive, royalty-free
+copyright license to use, reproduce, modify, prepare derivative works of,
+publicly display, publicly perform, Distribute, sublicense, and relicense that
+contribution as part of or in connection with Truss. Recipients receive rights
+to the contribution only under the license that accompanies the Official
+Project version they receive. You also grant the Project Steward a patent
+license covering patent claims You can license that would necessarily be
+infringed by the contribution alone or in combination with the Official
+Project, with the right to sublicense that patent license to recipients under
+the terms accompanying the Official Project.
+
+You represent that You have the right to grant these permissions and that You
+will identify any contribution governed by separate third-party terms.
+
+8. Separate Commercial or Competitive License
+
+The Project Steward or applicable Licensor may offer separate written terms
+for a Commercial Purpose, a Competing Product, reduced attribution, or another
+use not permitted here. Permission is effective only when stated in a separate
+written agreement signed or expressly issued by the party authorized to grant
+it. Payment, sponsorship, contribution, or prior communication alone does not
+create permission.
+
+9. Patents
+
+Subject to these terms, each Licensor grants You a worldwide, royalty-free,
+non-exclusive patent license under patent claims the Licensor can license that
+You would necessarily infringe by exercising the copyright licenses granted
+here. If You or Your organization makes a written claim that the Software
+infringes or contributes to infringement of a patent, every patent license
+granted to You under these terms ends immediately.
+
+10. Trademarks
+
+These terms do not grant permission to use the Truss name, logos, trade dress,
+or other marks except as strictly necessary to provide the attribution
+required by Section 4. You may not use any mark in a way that suggests
+affiliation with or endorsement by the Official Project.
+
+11. Third-Party Components
+
+Third-Party Components remain governed by their own license terms. Nothing in
+this license limits rights You receive directly under those terms, and nothing
+in those terms expands Your rights in the Software.
+
+12. Termination and Cure
+
+Any license granted under these terms terminates automatically when You breach
+them. If this is Your first breach and You cure it fully within 30 days after
+receiving written notice from a Licensor, Your license is reinstated
+retroactively. A later breach terminates Your license immediately and
+permanently unless the applicable Licensor agrees otherwise in writing.
+
+Sections that by their nature should survive termination, including Sections
+7, 10, 13, 14, and 15, survive.
+
+13. Disclaimer of Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS" AND WITHOUT WARRANTIES OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+PURPOSE, TITLE, AND NON-INFRINGEMENT. YOU BEAR ALL RISK ARISING FROM USE OR
+DISTRIBUTION OF THE SOFTWARE.
+
+14. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, NO LICENSOR, PROJECT STEWARD, OR
+CONTRIBUTOR WILL BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+EXEMPLARY, CONSEQUENTIAL, OR OTHER DAMAGES, OR FOR LOST PROFITS, DATA,
+GOODWILL, OR BUSINESS INTERRUPTION, ARISING FROM OR RELATED TO THE SOFTWARE OR
+THESE TERMS, UNDER ANY LEGAL THEORY, EVEN IF ADVISED OF THE POSSIBILITY.
+
+15. General Terms
+
+If a provision of these terms is unenforceable, it will be modified only to
+the minimum extent necessary to make it enforceable, and the remaining terms
+will continue in effect. Failure to enforce a provision is not a waiver. These
+terms do not limit rights You may have under applicable law without a license,
+such as fair use.
+
+This license applies only to Software versions distributed with it. Software
+versions previously received under another license remain governed by the
+license that accompanied those versions. No future license version applies
+unless the Software is distributed with that version.
