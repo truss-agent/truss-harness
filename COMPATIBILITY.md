@@ -6,7 +6,8 @@ capabilities are checked before their commands use them.
 
 | truss.nvim | Minimum truss-cli | Neovim | Protocol | Support |
 | --- | --- | --- | --- | --- |
-| 0.2.1 | 0.1.14 | 0.10+ | v1 | Current standalone distribution, health checks, Chat, Plan, Edit, approvals, profiles, provider tests, MCP status |
+| 0.2.2 | 0.1.14 | 0.10+ | v1 | Current standalone distribution with a colorscheme-aware full-height panel, explicit mode selection, improved keyboard controls, and stable streaming focus |
+| 0.2.1 | 0.1.14 | 0.10+ | v1 | Previous standalone distribution with health checks, Chat, Plan, Edit, approvals, profiles, provider tests, and MCP status |
 | 0.2.0 | 0.1.13 | 0.10+ | v1 | Monorepo preview with native agent workflows |
 | 0.1.0 | 0.1.12 | 0.10+ | v1 | Initial chat preview |
 
