@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   selectDesktopRelease,
   selectNeovimRelease,
@@ -159,6 +159,14 @@ function buildLabel(build: Build): string {
   return `${build.format} · ${architecture}`;
 }
 
+function platformLabel(
+  build: Pick<Build, "platform" | "arch">,
+): string {
+  const platform = build.platform === "windows" ? "Windows" : "Linux";
+  const architecture = build.arch === "x64" ? "x64" : "ARM64";
+  return `${platform} ${architecture}`;
+}
+
 function DesktopReleaseCard({
   release,
   recommended,
@@ -169,7 +177,6 @@ function DesktopReleaseCard({
   readonly releasesUrl: string;
 }) {
   const [selectedBuildKey, setSelectedBuildKey] = useState<string>();
-  const picker = useRef<HTMLDetailsElement>(null);
   const recommendedBuild = builds.find(
     (build) =>
       build.platform === recommended?.platform &&
@@ -184,27 +191,9 @@ function DesktopReleaseCard({
     assetMatches(asset, selectedBuild),
   );
   const published = releaseDate(release);
-
-  useEffect(() => {
-    const closePicker = (event: MouseEvent) => {
-      if (
-        picker.current?.open &&
-        event.target instanceof Node &&
-        !picker.current.contains(event.target)
-      )
-        picker.current.open = false;
-    };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && picker.current?.open)
-        picker.current.open = false;
-    };
-    document.addEventListener("mousedown", closePicker);
-    document.addEventListener("keydown", closeOnEscape);
-    return () => {
-      document.removeEventListener("mousedown", closePicker);
-      document.removeEventListener("keydown", closeOnEscape);
-    };
-  }, []);
+  const selectedIsRecommended =
+    recommendedBuild !== undefined &&
+    buildKey(selectedBuild) === buildKey(recommendedBuild);
 
   return (
     <article className="download-client-card">
@@ -244,46 +233,58 @@ function DesktopReleaseCard({
         )}
       </div>
       <div className="download-client-package">
-        <span id="desktop-package-label">Desktop package</span>
-        <details ref={picker}>
-          <summary aria-labelledby="desktop-package-label">
-            <span>{buildLabel(selectedBuild)}</span>
-            <span
-              className="download-client-package-chevron"
-              aria-hidden="true"
-            >
-              ▾
+        <details>
+          <summary>
+            <span className="download-client-package-choice">
+              <span className="download-client-package-label">
+                Desktop package
+              </span>
+              <strong>{buildLabel(selectedBuild)}</strong>
+              <small>
+                {selectedIsRecommended && recommended
+                  ? `Recommended for ${platformLabel(recommended)}`
+                  : selectedBuild.note}
+              </small>
             </span>
+            <span className="download-client-package-change">Change</span>
           </summary>
-          <div
-            className="download-client-package-menu"
-            role="menu"
-            aria-labelledby="desktop-package-label"
-          >
-            {builds.map((build) => {
-              const selected = buildKey(build) === buildKey(selectedBuild);
-              return (
-                <button
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={selected}
-                  className={selected ? "selected" : undefined}
-                  key={buildKey(build)}
-                  onClick={(event) => {
-                    setSelectedBuildKey(buildKey(build));
-                    event.currentTarget
-                      .closest("details")
-                      ?.removeAttribute("open");
-                  }}
-                >
-                  <span>{buildLabel(build)}</span>
-                  <small>{build.note}</small>
-                </button>
-              );
-            })}
+          <div className="download-client-package-menu">
+            {(["windows", "linux"] as const).map((platform) => (
+              <section key={platform}>
+                <h3>{platform === "windows" ? "Windows" : "Linux"}</h3>
+                {builds
+                  .filter((build) => build.platform === platform)
+                  .map((build) => {
+                    const selected =
+                      buildKey(build) === buildKey(selectedBuild);
+                    const isRecommended =
+                      recommendedBuild !== undefined &&
+                      buildKey(build) === buildKey(recommendedBuild);
+                    return (
+                      <button
+                        type="button"
+                        aria-pressed={selected}
+                        className={selected ? "selected" : undefined}
+                        key={buildKey(build)}
+                        onClick={(event) => {
+                          setSelectedBuildKey(buildKey(build));
+                          event.currentTarget
+                            .closest("details")
+                            ?.removeAttribute("open");
+                        }}
+                      >
+                        <span>
+                          <strong>{buildLabel(build)}</strong>
+                          <small>{build.note}</small>
+                        </span>
+                        {isRecommended ? <em>Recommended</em> : null}
+                      </button>
+                    );
+                  })}
+              </section>
+            ))}
           </div>
         </details>
-        <small>{selectedBuild.note}</small>
       </div>
       <div className="download-client-actions">
         {selectedAsset ? (
