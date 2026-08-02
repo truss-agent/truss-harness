@@ -5,7 +5,7 @@ import { DownloadClient } from "./download-client";
 
 export const metadata = createPageMetadata({
   title: "Download",
-  description: `Download ${brand.productName} Desktop, Truss Go for Android, or truss.nvim.`,
+  description: `Install ${brand.productName} Desktop, VS Code, CLI, TUI, Neovim, or Truss Go for Android.`,
   path: "/download",
 });
 

@@ -1167,6 +1167,127 @@ body {
     font-size: 13px;
 }
 
+.download-client-package {
+    margin: -2px 0 22px;
+}
+
+.download-client-package details {
+    border: 1px solid var(--site-line);
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+.download-client-package summary {
+    align-items: center;
+    background: rgba(126, 168, 149, .08);
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    list-style: none;
+    min-height: 76px;
+    padding: 13px 15px;
+}
+
+.download-client-package summary::-webkit-details-marker {
+    display: none;
+}
+
+.download-client-package summary:focus-visible {
+    outline: 2px solid var(--site-accent);
+    outline-offset: 2px;
+}
+
+.download-client-package-choice {
+    display: grid;
+    gap: 3px;
+}
+
+.download-client-package-label,
+.download-client-package-choice small,
+.download-client-package-menu button small {
+    color: #5b6f66;
+    font-size: 12px;
+}
+
+.download-client-package-label {
+    font-weight: 750;
+}
+
+.download-client-package-choice strong {
+    font-size: 14px;
+}
+
+.download-client-package-change {
+    color: #0b7965;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.download-client-package-menu {
+    display: grid;
+    gap: 14px;
+    max-height: 360px;
+    overflow-y: auto;
+    padding: 12px;
+}
+
+.download-client-package-menu section {
+    display: grid;
+    gap: 4px;
+}
+
+.download-client-package-menu h3 {
+    color: #5b6f66;
+    font-size: 11px;
+    letter-spacing: .1em;
+    margin: 4px 8px;
+    text-transform: uppercase;
+}
+
+.download-client-package-menu button {
+    align-items: center;
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    color: inherit;
+    cursor: pointer;
+    display: flex;
+    font: inherit;
+    justify-content: space-between;
+    padding: 9px;
+    text-align: left;
+}
+
+.download-client-package-menu button > span {
+    display: grid;
+    gap: 2px;
+}
+
+.download-client-package-menu button strong {
+    font-size: 13px;
+}
+
+.download-client-package-menu button em {
+    background: rgba(11, 121, 101, .13);
+    border-radius: 999px;
+    color: #0b7965;
+    font-size: 10px;
+    font-style: normal;
+    font-weight: 800;
+    padding: 4px 7px;
+}
+
+.download-client-package-menu button:hover,
+.download-client-package-menu button:focus-visible,
+.download-client-package-menu button.selected {
+    background: color-mix(in srgb, var(--site-accent) 16%, transparent);
+}
+
+.download-client-package-menu button:focus-visible {
+    outline: 2px solid var(--site-accent);
+    outline-offset: -2px;
+}
+
 .download-client-actions {
     display: flex;
     flex-wrap: wrap;
@@ -1199,8 +1320,21 @@ body {
 :root[data-truss-theme="dark"] .download-client-section > header > p:last-child,
 :root[data-truss-theme="dark"] .download-client-card header > p:last-child,
 :root[data-truss-theme="dark"] .download-client-release span:last-child,
+:root[data-truss-theme="dark"] .download-client-package-label,
+:root[data-truss-theme="dark"] .download-client-package-choice small,
+:root[data-truss-theme="dark"] .download-client-package-menu h3,
+:root[data-truss-theme="dark"] .download-client-package-menu button small,
 :root[data-truss-theme="dark"] .download-desktop-section-heading > p:last-child {
     color: #b5c9bf;
+}
+
+:root[data-truss-theme="dark"] .download-client-package summary {
+    background: rgba(115, 169, 143, .08);
+}
+
+:root[data-truss-theme="dark"] .download-client-package-change,
+:root[data-truss-theme="dark"] .download-client-package-menu button em {
+    color: #8cddb6;
 }
 
 :root[data-truss-theme="dark"] .download-client-card {

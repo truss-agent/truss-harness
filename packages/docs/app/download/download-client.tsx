@@ -150,13 +150,186 @@ function releaseDate(release: Release | undefined): string | undefined {
     : undefined;
 }
 
+function buildKey(build: Build): string {
+  return `${build.platform}:${build.arch}:${build.extension}`;
+}
+
+function buildLabel(build: Build): string {
+  const architecture = build.arch === "x64" ? "x64 / AMD64" : "ARM64";
+  return `${build.format} · ${architecture}`;
+}
+
+function platformLabel(
+  build: Pick<Build, "platform" | "arch">,
+): string {
+  const platform = build.platform === "windows" ? "Windows" : "Linux";
+  const architecture = build.arch === "x64" ? "x64" : "ARM64";
+  return `${platform} ${architecture}`;
+}
+
+function DesktopReleaseCard({
+  release,
+  recommended,
+  releasesUrl,
+}: {
+  readonly release: Release | undefined;
+  readonly recommended: Pick<Build, "platform" | "arch"> | undefined;
+  readonly releasesUrl: string;
+}) {
+  const [selectedBuildKey, setSelectedBuildKey] = useState<string>();
+  const recommendedBuild = builds.find(
+    (build) =>
+      build.platform === recommended?.platform &&
+      build.arch === recommended.arch &&
+      (build.platform === "windows" || build.extension === ".tar.gz"),
+  );
+  const selectedBuild =
+    builds.find((build) => buildKey(build) === selectedBuildKey) ??
+    recommendedBuild ??
+    builds[0];
+  const selectedAsset = release?.assets.find((asset) =>
+    assetMatches(asset, selectedBuild),
+  );
+  const published = releaseDate(release);
+  const selectedIsRecommended =
+    recommendedBuild !== undefined &&
+    buildKey(selectedBuild) === buildKey(recommendedBuild);
+
+  return (
+    <article className="download-client-card">
+      <header>
+        <p className="site-eyebrow">Truss Desktop</p>
+        <h2>Desktop</h2>
+        <p>
+          A focused local coding workspace with files, Git, terminal work,
+          provider controls, and agent approvals.
+        </p>
+      </header>
+      <div className="download-client-release">
+        {release ? (
+          <>
+            <span
+              className="download-status download-status-ready"
+              aria-hidden="true"
+            />
+            <div>
+              <strong>{release.tag_name}</strong>
+              <span>
+                Latest stable release{published ? ` · ${published}` : ""}
+              </span>
+            </div>
+          </>
+        ) : (
+          <>
+            <span
+              className="download-status download-status-unavailable"
+              aria-hidden="true"
+            />
+            <div>
+              <strong>Release unavailable</strong>
+              <span>Check the Desktop releases for current builds.</span>
+            </div>
+          </>
+        )}
+      </div>
+      <div className="download-client-package">
+        <details>
+          <summary>
+            <span className="download-client-package-choice">
+              <span className="download-client-package-label">
+                Desktop package
+              </span>
+              <strong>{buildLabel(selectedBuild)}</strong>
+              <small>
+                {selectedIsRecommended && recommended
+                  ? `Recommended for ${platformLabel(recommended)}`
+                  : selectedBuild.note}
+              </small>
+            </span>
+            <span className="download-client-package-change">Change</span>
+          </summary>
+          <div className="download-client-package-menu">
+            {(["windows", "linux"] as const).map((platform) => (
+              <section key={platform}>
+                <h3>{platform === "windows" ? "Windows" : "Linux"}</h3>
+                {builds
+                  .filter((build) => build.platform === platform)
+                  .map((build) => {
+                    const selected =
+                      buildKey(build) === buildKey(selectedBuild);
+                    const isRecommended =
+                      recommendedBuild !== undefined &&
+                      buildKey(build) === buildKey(recommendedBuild);
+                    return (
+                      <button
+                        type="button"
+                        aria-pressed={selected}
+                        className={selected ? "selected" : undefined}
+                        key={buildKey(build)}
+                        onClick={(event) => {
+                          setSelectedBuildKey(buildKey(build));
+                          event.currentTarget
+                            .closest("details")
+                            ?.removeAttribute("open");
+                        }}
+                      >
+                        <span>
+                          <strong>{buildLabel(build)}</strong>
+                          <small>{build.note}</small>
+                        </span>
+                        {isRecommended ? <em>Recommended</em> : null}
+                      </button>
+                    );
+                  })}
+              </section>
+            ))}
+          </div>
+        </details>
+      </div>
+      <div className="download-client-actions">
+        {selectedAsset ? (
+          <a
+            className="site-button site-button-primary"
+            href={selectedAsset.browser_download_url}
+          >
+            Download package
+          </a>
+        ) : (
+          <span
+            className="site-button download-button-unavailable"
+            aria-disabled="true"
+          >
+            Not available
+          </span>
+        )}
+        <a
+          className="site-button site-button-secondary"
+          href="/docs/clients/desktop"
+        >
+          Desktop guide
+        </a>
+      </div>
+      <a
+        className="site-text-link download-client-all-releases"
+        href={releasesUrl}
+        target="_blank"
+        rel="noreferrer"
+      >
+        View Desktop releases
+      </a>
+    </article>
+  );
+}
+
 function ReleaseCard({
   eyebrow,
   title,
   description,
   release,
   asset,
-  releasesUrl,
+  distribution,
+  sourceHref,
+  sourceLabel,
   detailsHref,
   detailsLabel,
   downloadLabel,
@@ -167,7 +340,12 @@ function ReleaseCard({
   readonly description: string;
   readonly release: Release | undefined;
   readonly asset: ReleaseAsset | undefined;
-  readonly releasesUrl: string;
+  readonly distribution?: {
+    readonly label: string;
+    readonly description: string;
+  };
+  readonly sourceHref: string;
+  readonly sourceLabel: string;
   readonly detailsHref: string;
   readonly detailsLabel: string;
   readonly downloadLabel: string;
@@ -198,12 +376,17 @@ function ReleaseCard({
         ) : (
           <>
             <span
-              className="download-status download-status-unavailable"
+              className={`download-status download-status-${
+                distribution ? "ready" : "unavailable"
+              }`}
               aria-hidden="true"
             />
             <div>
-              <strong>Release unavailable</strong>
-              <span>Check GitHub for current builds.</span>
+              <strong>{distribution?.label ?? "Release unavailable"}</strong>
+              <span>
+                {distribution?.description ??
+                  "Check the distribution source for current builds."}
+              </span>
             </div>
           </>
         )}
@@ -219,11 +402,11 @@ function ReleaseCard({
         ) : (
           <a
             className="site-button site-button-secondary"
-            href={releasesUrl}
+            href={sourceHref}
             target="_blank"
             rel="noreferrer"
           >
-            View releases
+            {sourceLabel}
           </a>
         )}
         <a className="site-button site-button-secondary" href={detailsHref}>
@@ -232,11 +415,11 @@ function ReleaseCard({
       </div>
       <a
         className="site-text-link download-client-all-releases"
-        href={releasesUrl}
+        href={sourceHref}
         target="_blank"
         rel="noreferrer"
       >
-        View all {title} releases
+        {sourceLabel}
       </a>
     </article>
   );
@@ -322,23 +505,66 @@ export function DownloadClient({
           <p className="site-eyebrow">Truss downloads</p>
           <h1 id="downloads">Choose the Truss client for your workflow.</h1>
           <p>
-            Each client has its own latest stable release, installation path,
-            and release history. Developer packages stay in their normal
-            registries.
+            Pick the client that fits your workflow. Every installable Truss
+            client has one consistent starting point here.
           </p>
         </header>
         <div className="download-client-grid">
-          <ReleaseCard
-            eyebrow="Truss Desktop"
-            title="Desktop"
-            description="A focused local coding workspace with files, Git, terminal work, provider controls, and agent approvals."
+          <DesktopReleaseCard
             release={release}
-            asset={undefined}
+            recommended={recommended}
             releasesUrl={releasesUrl}
-            detailsHref="/docs/clients/desktop"
-            detailsLabel="Desktop guide"
-            downloadLabel="Choose Desktop package"
-            primaryHref="#desktop-downloads"
+          />
+          <ReleaseCard
+            eyebrow="Truss for VS Code"
+            title="VS Code"
+            description="Keep Truss inside your editor with chat, file context, completions, approvals, and a bundled runtime service."
+            release={undefined}
+            asset={undefined}
+            distribution={{
+              label: "VS Code Marketplace",
+              description: "Install the latest published extension.",
+            }}
+            sourceHref="https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode"
+            sourceLabel="View on Marketplace"
+            detailsHref="/docs/clients/vscode"
+            detailsLabel="VS Code guide"
+            downloadLabel="Install extension"
+            primaryHref="https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode"
+          />
+          <ReleaseCard
+            eyebrow="Truss command line"
+            title="CLI"
+            description="Run focused agent tasks, manage profiles, host the editor service, and keep the runtime in your terminal."
+            release={undefined}
+            asset={undefined}
+            distribution={{
+              label: "npm package",
+              description: "Install the latest published CLI globally.",
+            }}
+            sourceHref="https://www.npmjs.com/package/@truss-harness/cli"
+            sourceLabel="View CLI on npm"
+            detailsHref="/docs/clients/cli"
+            detailsLabel="CLI guide"
+            downloadLabel="Install CLI"
+            primaryHref="https://www.npmjs.com/package/@truss-harness/cli"
+          />
+          <ReleaseCard
+            eyebrow="Truss terminal UI"
+            title="TUI"
+            description="Use the full-screen terminal workspace when you want conversations, file context, and approvals without leaving the shell."
+            release={undefined}
+            asset={undefined}
+            distribution={{
+              label: "npm package",
+              description: "Install the latest published terminal UI globally.",
+            }}
+            sourceHref="https://www.npmjs.com/package/@truss-harness/tui"
+            sourceLabel="View TUI on npm"
+            detailsHref="/docs/clients/tui"
+            detailsLabel="TUI guide"
+            downloadLabel="Install TUI"
+            primaryHref="https://www.npmjs.com/package/@truss-harness/tui"
           />
           <ReleaseCard
             eyebrow="Truss Go for Android"
@@ -346,7 +572,8 @@ export function DownloadClient({
             description="Pair your phone with a trusted Desktop or VS Code workspace and continue the same conversation on your local Wi-Fi."
             release={androidRelease}
             asset={androidApk}
-            releasesUrl={releasesUrl}
+            sourceHref={releasesUrl}
+            sourceLabel="View Android releases"
             detailsHref="/truss-go"
             detailsLabel="Android setup"
             downloadLabel="Download Android APK"
@@ -357,7 +584,8 @@ export function DownloadClient({
             description="Bring Chat, Plan, Edit, approvals, and local-model controls into Neovim or LazyVim without moving credentials into Lua."
             release={neovimRelease}
             asset={neovimArchive}
-            releasesUrl={releasesUrl}
+            sourceHref={releasesUrl}
+            sourceLabel="View Neovim releases"
             detailsHref="/docs/clients/neovim"
             detailsLabel="Installation guide"
             downloadLabel="Download plugin archive"
