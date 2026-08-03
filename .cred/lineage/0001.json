@@ -1,0 +1,21 @@
+{
+  "schema": "https://raw.githubusercontent.com/JRH89/cred/main/schema/lineage-v1.schema.json",
+  "sequence": 1,
+  "kind": "origin",
+  "project": {
+    "id": "cred:sha256:31af43c97c6ac8c0065c19bc00531d48b05464c1d582e56e56c89cdc9575e4f0",
+    "name": "Truss",
+    "maintainer": "Jared Hooker and Truss contributors",
+    "repository": "https://github.com/truss-agent/truss-harness",
+    "public_key": "zRvTk3gGrisBwJ_c_4vybWv_oFwW0YhO-PGxkAGJV1w"
+  },
+  "license": {
+    "id": "LicenseRef-Truss-Collaborative-1.0",
+    "url": "https://github.com/truss-agent/truss-harness/blob/master/LICENSE"
+  },
+  "attribution": {
+    "required": true,
+    "notice": "Truss — Copyright (c) 2026 Jared Hooker and Truss contributors. See LICENSE."
+  },
+  "created_at": "2026-08-03T06:38:28Z"
+}
