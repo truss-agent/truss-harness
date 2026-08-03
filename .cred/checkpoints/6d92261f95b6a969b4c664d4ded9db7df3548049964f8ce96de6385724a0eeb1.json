@@ -1,0 +1,7 @@
+{
+  "schema": "https://raw.githubusercontent.com/JRH89/cred/main/schema/checkpoint-v1.schema.json",
+  "project_id": "cred:sha256:31af43c97c6ac8c0065c19bc00531d48b05464c1d582e56e56c89cdc9575e4f0",
+  "lineage_sha256": "sha256:2acf712c78abb10e4469dbb12dcc2bf9de241b3c5d37ba813fb69afca3c52dd9",
+  "source_sha256": "sha256:6d92261f95b6a969b4c664d4ded9db7df3548049964f8ce96de6385724a0eeb1",
+  "created_at": "2026-08-03T06:41:05Z"
+}
