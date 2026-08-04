@@ -4,6 +4,14 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.26",
+    label: "BYOK model selection",
+    changes: [
+      "Added authenticated provider model discovery and a selectable model list to Desktop BYOK settings, while retaining manual model-ID entry for providers that do not list models.",
+      "Kept chat, editor, and terminal input available after creating, selecting, or deleting Desktop conversations by releasing focus before the conversation controls are replaced.",
+    ],
+  },
+  {
     version: "Desktop 0.1.25 · VS Code 0.1.15 · CLI 0.1.16 · TUI 0.1.12",
     label: "Xiaomi MiMo and Ollama Cloud",
     changes: [
