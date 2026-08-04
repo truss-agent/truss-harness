@@ -22,8 +22,10 @@ const bridge: DesktopBridge = {
     ),
   saveWorkspaceUiState: (state: DesktopWorkspaceUiState) =>
     ipcRenderer.invoke("truss:save-workspace-ui-state", state),
-  discoverModels: (configuration?: Partial<DesktopConfiguration>) =>
-    ipcRenderer.invoke("truss:discover-models", configuration),
+  discoverModels: (
+    configuration?: Partial<DesktopConfiguration>,
+    apiKey?: string,
+  ) => ipcRenderer.invoke("truss:discover-models", configuration, apiKey),
   refreshLocalModel: () => ipcRenderer.invoke("truss:refresh-local-model"),
   configure: (configuration: DesktopConfiguration, apiKey?: string) =>
     ipcRenderer.invoke("truss:configure", configuration, apiKey),

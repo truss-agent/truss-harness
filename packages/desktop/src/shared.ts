@@ -227,7 +227,10 @@ export interface DesktopBridge {
     activeConversationId?: string,
   ): Promise<void>;
   saveWorkspaceUiState(state: DesktopWorkspaceUiState): Promise<void>;
-  discoverModels(configuration?: Partial<DesktopConfiguration>): Promise<{
+  discoverModels(
+    configuration?: Partial<DesktopConfiguration>,
+    apiKey?: string,
+  ): Promise<{
     readonly endpoints: readonly DesktopEndpoint[];
     readonly models: readonly string[];
   }>;

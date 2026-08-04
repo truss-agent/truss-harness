@@ -78,10 +78,11 @@
         <label>Endpoint<input id="byokBaseUrl" readonly></label>
         <label>Account<select id="providerAccountSelect"></select></label>
         <label>Account label<input id="providerAccountLabel" placeholder="Personal"></label>
-        <label class="settings-wide">Model ID<input id="byokModelInput" placeholder="Enter the provider's model ID"></label>
+        <label class="settings-wide">Available models<select id="byokModelSelect"><option value="">Refresh models to load choices</option></select></label>
+        <label class="settings-wide">Model ID<input id="byokModelInput" placeholder="Or enter a model ID manually"></label>
         <label class="settings-wide">API key<input id="apiKeyInput" type="password" autocomplete="new-password" placeholder="Stored securely; enter a replacement key"></label>
         <p id="credentialStorageStatus" class="provider-connection-result" hidden></p>
-        <div class="settings-panel-actions"><button id="newProviderAccount" type="button">New account</button><button id="saveProviderAccount" class="primary" type="button">Save account</button><button id="deleteProviderAccount" type="button">Delete account</button></div>
+        <div class="settings-panel-actions"><button id="newProviderAccount" type="button">New account</button><button id="saveProviderAccount" class="primary" type="button">Save account</button><button id="deleteProviderAccount" type="button">Delete account</button><button id="discoverByokModels" type="button">Refresh models</button></div>
         <div class="settings-panel-actions"><button id="testProviderConnection" type="button">Test connection</button><button id="clearApiKey" type="button">Remove stored account key</button></div>
         <p id="providerConnectionResult" class="provider-connection-result" role="status" hidden></p>
       </section>
