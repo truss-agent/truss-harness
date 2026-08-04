@@ -6,13 +6,14 @@ import type { SessionStore } from "./sessions.js";
 import type { ToolRegistry } from "./tools.js";
 import type { WorkspaceMemoryStore, WorkspaceTaskRecord, WorkspaceToolRecord } from "./memory.js";
 import { parseAgentPlan, type WorkspacePlanStore } from "./plans.js";
+import { type ModelRetryAttempt, type ModelRetryPolicy, withModelRetries } from "./retry.js";
 import { checkpoint } from "./sessions.js";
 
 export interface ToolApproval { approve(call: ToolCall, session: Session): Promise<boolean>; }
 export const allowAllTools: ToolApproval = { approve: async () => true };
 /** A generous safety ceiling for multi-step workspace tasks; callers may still override it. */
 export const defaultAgentMaxTurns = 64;
-export interface AgentRuntimeOptions { readonly provider: ModelProvider; readonly tools: ToolRegistry; readonly sessions: SessionStore; readonly context: ContextManager; readonly events: RuntimeEventBus; readonly workspaceRoot: string; readonly approval?: ToolApproval; readonly systemPrompt?: string; readonly maxTurns?: number; readonly memory?: WorkspaceMemoryStore; readonly plans?: WorkspacePlanStore; readonly savePlanOnCompletion?: boolean; readonly requireWriteForEditIntent?: boolean; readonly deferTextUntilToolDecision?: boolean; }
+export interface AgentRuntimeOptions { readonly provider: ModelProvider; readonly tools: ToolRegistry; readonly sessions: SessionStore; readonly context: ContextManager; readonly events: RuntimeEventBus; readonly workspaceRoot: string; readonly approval?: ToolApproval; readonly systemPrompt?: string; readonly maxTurns?: number; readonly memory?: WorkspaceMemoryStore; readonly plans?: WorkspacePlanStore; readonly savePlanOnCompletion?: boolean; readonly requireWriteForEditIntent?: boolean; readonly deferTextUntilToolDecision?: boolean; readonly modelRetryPolicy?: ModelRetryPolicy; }
 
 function workspacePath(call: ToolCall): string | undefined {
   return typeof call.input.path === "string" ? call.input.path : undefined;
@@ -26,6 +27,15 @@ function toolFailureRecovery(tool: string): string {
   if (tool === "web_fetch") return "Do not infer page or file contents from this failure. web_fetch reads only public HTTP/HTTPS URLs; to inspect a workspace file, retry with read_file using its workspace-relative path.";
   if (tool === "web_search") return "Do not infer search results from this failure. Correct the tool arguments and retry, or use a workspace tool when the request concerns local files.";
   return "Do not infer a result from this failure. Correct the arguments and retry the appropriate tool before answering.";
+}
+
+function retryProgress(retry: ModelRetryAttempt): string {
+  const seconds = Math.max(1, Math.ceil(retry.delayMs / 1_000));
+  const reason = retry.message ||
+    (retry.reason === "rate_limited"
+      ? "Provider rate limit reached."
+      : "Provider temporarily unavailable.");
+  return `${reason} Retrying in ${seconds} second${seconds === 1 ? "" : "s"} (attempt ${retry.attempt} of ${retry.maxAttempts}).`;
 }
 
 function hasEditIntent(prompt: string): boolean {
@@ -90,7 +100,9 @@ function trailingTagPrefixLength(value: string, tag: string): number {
 /** Provider-neutral iterative agent loop. UI clients interact only via sessions, events, and approval. */
 export class AgentRuntime {
   private readonly maxTurns: number;
-  constructor(private readonly options: AgentRuntimeOptions) { this.maxTurns = options.maxTurns ?? defaultAgentMaxTurns; }
+  constructor(private readonly options: AgentRuntimeOptions) {
+    this.maxTurns = options.maxTurns ?? defaultAgentMaxTurns;
+  }
   async createSession(messages: readonly ChatMessage[] = []): Promise<Session> { return this.options.sessions.create(messages); }
   async getSession(sessionId: string): Promise<Session | undefined> { return this.options.sessions.get(sessionId); }
   async listSessions(): Promise<readonly Session[]> { return this.options.sessions.list(); }
@@ -111,6 +123,16 @@ export class AgentRuntime {
     await this.recordMemory({ id: taskId, sessionId, objective: prompt, status: "running", startedAt, tools: [], modifiedFiles: [] });
     session.messages.push({ role: "user", content: prompt, ...(attachments.length ? { attachments } : {}) }); session.checkpoint = checkpoint(session); await this.options.sessions.save(session);
     await this.emit({ type: "run_started", sessionId });
+    const provider = withModelRetries(
+      this.options.provider,
+      this.options.modelRetryPolicy,
+      (retry) =>
+        this.emit({
+          type: "progress_delta",
+          sessionId,
+          text: retryProgress(retry),
+        }),
+    );
     try {
       for (let turn = 0; turn < this.maxTurns; turn++) {
         const calls: ToolCall[] = [];
@@ -126,7 +148,7 @@ export class AgentRuntime {
           ? `TURN BUDGET: ${turnsRemaining} turns remain. Stop repeated exploration. Complete and verify the requested edits now, then return a concise final result. Do not claim work is complete unless the relevant write tools succeeded.`
           : undefined;
         const systemPrompt = [this.options.systemPrompt, recoveryInstruction, turnBudgetInstruction].filter(Boolean).join("\n\n") || undefined;
-        for await (const event of this.options.provider.stream({ messages: await this.options.context.build(session, systemPrompt, requestContext), tools: this.options.tools.definitions(), signal })) {
+        for await (const event of provider.stream({ messages: await this.options.context.build(session, systemPrompt, requestContext), tools: this.options.tools.definitions(), signal })) {
           if (event.type === "text_delta") {
             const parsed = progressParser.push(event.text);
             if (parsed.progress) await this.emit({ type: "progress_delta", sessionId, text: parsed.progress });

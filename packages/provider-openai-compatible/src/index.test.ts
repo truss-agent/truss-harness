@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ModelRequestError } from "@truss-harness/runtime";
 import { OllamaProvider, OpenAICompatibleProvider, cloudProviderDefinitions, createCloudModelProvider, detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, generateLocalText, listLocalModels, normalizeLocalBaseUrl } from "./index.js";
 import type { CredentialProvider } from "@truss-harness/runtime";
 
@@ -231,8 +232,43 @@ describe("OpenAICompatibleProvider", () => {
     const consume = async (): Promise<void> => {
       for await (const _event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
     };
-    await expect(consume()).rejects.toThrow("Model request failed (400).");
+    await expect(consume()).rejects.toThrow(
+      "Model request was rejected (400).",
+    );
     await expect(consume()).rejects.not.toThrow("secret echoed by provider");
+  });
+
+  it("classifies a provider rate-limit response reported as HTTP 400", async () => {
+    const provider = new OpenAICompatibleProvider({
+      baseUrl: "https://example.com/v1",
+      model: "test",
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            error:
+              "Rate limit reached for test in organization private-org on tokens per min (TPM): Limit 200000, Used 99179, Requested 165743. Please try again in 19.476s.",
+          }),
+          { status: 400 },
+        ),
+    });
+
+    const consume = async (): Promise<void> => {
+      for await (const _event of provider.stream({
+        messages: [{ role: "user", content: "hi" }],
+        tools: [],
+      })) {
+        /* Consume stream. */
+      }
+    };
+    await expect(consume()).rejects.toMatchObject({
+      name: "ModelRequestError",
+      status: 429,
+      retryAfterMs: 19_476,
+    } satisfies Partial<ModelRequestError>);
+    await expect(consume()).rejects.toThrow(
+      "Model rate limit reached for test. limit 200000 tokens per minute; 99179 used; 165743 requested.",
+    );
+    await expect(consume()).rejects.not.toThrow("private-org");
   });
 
   it("offers typed BYOK definitions for supported cloud providers", async () => {

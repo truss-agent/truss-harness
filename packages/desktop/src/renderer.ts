@@ -133,6 +133,12 @@ const fileEntryTitle = element<HTMLElement>("fileEntryTitle");
 const fileEntryDescription = element<HTMLElement>("fileEntryDescription");
 const fileEntryInput = element<HTMLInputElement>("fileEntryInput");
 const confirmFileEntry = element<HTMLButtonElement>("confirmFileEntry");
+const confirmDialog = element<HTMLDialogElement>("confirmDialog");
+const confirmTitle = element<HTMLElement>("confirmTitle");
+const confirmMessage = element<HTMLElement>("confirmMessage");
+const acceptConfirm = element<HTMLButtonElement>("acceptConfirm");
+const cancelConfirm = element<HTMLButtonElement>("cancelConfirm");
+const closeConfirm = element<HTMLButtonElement>("closeConfirm");
 const quickModel = element<HTMLSelectElement>("quickModel");
 const contextMeter = element<HTMLSpanElement>("contextMeter");
 // Keep older packaged HTML usable when only the renderer bundle has been refreshed.
@@ -226,6 +232,7 @@ type FileContextTarget = {
 let fileContextTarget: FileContextTarget | undefined;
 let copiedWorkspaceFile: string | undefined;
 let resolveFileEntry: ((value: string | undefined) => void) | undefined;
+let resolveConfirmation: ((value: boolean) => void) | undefined;
 let activeFile: string | undefined;
 let showingDiff = false;
 let inlineCompletion = "";
@@ -564,18 +571,30 @@ function setCenterView(next: "editor" | "preview" | "agents"): void {
   if (next === "agents") renderAgents();
 }
 
+const agentCloudProviders = [
+  ["openai", "OpenAI", "https://api.openai.com/v1"],
+  ["anthropic", "Anthropic", "https://api.anthropic.com/v1"],
+  ["openrouter", "OpenRouter", "https://openrouter.ai/api/v1"],
+  ["groq", "Groq", "https://api.groq.com/openai/v1"],
+  ["together", "Together AI", "https://api.together.ai/v1"],
+  ["gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai"],
+  ["xai", "xAI", "https://api.x.ai/v1"],
+  ["mistral", "Mistral AI", "https://api.mistral.ai/v1"],
+  ["deepseek", "DeepSeek", "https://api.deepseek.com"],
+  ["perplexity", "Perplexity", "https://api.perplexity.ai"],
+  ["fireworks", "Fireworks AI", "https://api.fireworks.ai/inference/v1"],
+  ["nvidia-nim", "NVIDIA NIM", "https://integrate.api.nvidia.com/v1"],
+  ["xiaomi-mimo", "Xiaomi MiMo", "https://api.xiaomimimo.com/v1"],
+  ["ollama-cloud", "Ollama Cloud", "https://ollama.com"],
+] as const;
+
 function agentProviderOptions(selected: string): HTMLOptionElement[] {
   const providers = [
     ["ollama", "Ollama"],
     ["openai-compatible", "OpenAI-compatible"],
     ["llama-cpp", "llama.cpp server"],
-    ["openai", "OpenAI"],
-    ["anthropic", "Anthropic"],
-    ["openrouter", "OpenRouter"],
-    ["gemini", "Google Gemini"],
-    ["xiaomi-mimo", "Xiaomi MiMo"],
-    ["ollama-cloud", "Ollama Cloud"],
-  ] as const;
+    ...agentCloudProviders.map(([id, label]) => [id, label] as const),
+  ];
   return providers.map(([id, label]) => {
     const option = document.createElement("option");
     option.value = id;
@@ -583,6 +602,15 @@ function agentProviderOptions(selected: string): HTMLOptionElement[] {
     option.selected = id === selected;
     return option;
   });
+}
+
+function agentProviderDefaultEndpoint(provider: string): string | undefined {
+  if (provider === "ollama") return "http://127.0.0.1:11434";
+  if (provider === "openai-compatible" || provider === "llama-cpp")
+    return provider === "llama-cpp"
+      ? "http://127.0.0.1:8080/v1"
+      : "http://127.0.0.1:1234/v1";
+  return agentCloudProviders.find(([id]) => id === provider)?.[2];
 }
 
 function applyAgentsSnapshot(snapshot: DesktopAgentsSnapshot): void {
@@ -624,14 +652,18 @@ function renderAgents(): void {
   const endpoint = document.createElement("input");
   endpoint.placeholder = "Endpoint URL";
   endpoint.value =
-    desktopState.configuration?.baseUrl ?? "http://127.0.0.1:11434";
-  const model = document.createElement("input");
-  model.placeholder = "Model ID";
-  model.value = desktopState.configuration?.model ?? "";
+    desktopState.configuration?.baseUrl ??
+    agentProviderDefaultEndpoint(provider.value) ??
+    "";
+  const model = document.createElement("select");
+  model.title = "Model";
   const account = document.createElement("select");
   account.title = "Provider account";
   const syncAccounts = (): void => {
     const providerId = provider.value as DesktopProvider;
+    const local = ["ollama", "openai-compatible", "llama-cpp"].includes(
+      provider.value,
+    );
     const accounts = providerAccountsFor(providerId);
     account.replaceChildren(
       ...(accounts.length
@@ -650,10 +682,63 @@ function renderAgents(): void {
             })(),
           ]),
     );
-    account.hidden = isLocalProvider(providerId);
+    account.hidden = local;
   };
-  provider.onchange = syncAccounts;
+  const renderAgentModels = (available: readonly string[]): void => {
+    const selected = model.value || desktopState.configuration?.model || "";
+    const values = [...new Set([selected, ...available].filter(Boolean))];
+    model.replaceChildren(
+      ...(values.length
+        ? values.map((value) => {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = value;
+            return option;
+          })
+        : [
+            (() => {
+              const option = document.createElement("option");
+              option.value = "";
+              option.textContent = "No models available";
+              return option;
+            })(),
+          ]),
+    );
+    model.value = selected;
+  };
+  const loadAgentModels = async (): Promise<void> => {
+    const providerId = provider.value;
+    const discoveryProvider =
+      providerId === "llama-cpp" ? "openai-compatible" : providerId;
+    try {
+      const result = await window.trussDesktop.discoverModels({
+        provider: discoveryProvider as DesktopProvider,
+        baseUrl: endpoint.value,
+        ...(["ollama", "openai-compatible", "llama-cpp"].includes(providerId)
+          ? {}
+          : { credentialAccountId: account.value || undefined }),
+      });
+      renderAgentModels(result.models);
+    } catch {
+      // Keep the active model usable when a provider does not expose discovery.
+      renderAgentModels([]);
+    }
+  };
+  let previousProvider = provider.value;
+  provider.onchange = () => {
+    const previousDefault = agentProviderDefaultEndpoint(previousProvider);
+    const nextDefault = agentProviderDefaultEndpoint(provider.value);
+    if (!endpoint.value.trim() || endpoint.value === previousDefault)
+      endpoint.value = nextDefault ?? "";
+    previousProvider = provider.value;
+    syncAccounts();
+    void loadAgentModels();
+  };
+  account.onchange = () => void loadAgentModels();
+  endpoint.onchange = () => void loadAgentModels();
   syncAccounts();
+  renderAgentModels([]);
+  void loadAgentModels();
   const mode = document.createElement("select");
   for (const value of ["chat", "plan", "edit"] as const) {
     const option = document.createElement("option");
@@ -1209,16 +1294,18 @@ function renderGit(): void {
       discard.textContent = "x";
       discard.title = `Discard all uncommitted changes in ${file.path}`;
       discard.setAttribute("aria-label", `Discard ${file.path}`);
-      discard.onclick = () => {
-        if (
-          window.confirm(
-            `Discard all uncommitted changes in ${file.path}? This cannot be undone.`,
-          )
-        )
-          void runGitAction("discard", () =>
-            window.trussDesktop.gitDiscard([file.path]),
-          );
-      };
+      discard.onclick = () =>
+        void requestConfirmation({
+          title: "Discard file changes",
+          message: `Discard all uncommitted changes in ${file.path}? This cannot be undone.`,
+          confirmLabel: "Discard",
+          danger: true,
+        }).then((confirmed) => {
+          if (confirmed)
+            void runGitAction("discard", () =>
+              window.trussDesktop.gitDiscard([file.path]),
+            );
+        });
       actions.append(discard);
       return row;
     }),
@@ -1443,6 +1530,25 @@ async function loadDirectoryContents(path: string): Promise<void> {
   loadedDirectoryContents.add(path);
 }
 
+function requestConfirmation(options: {
+  readonly title: string;
+  readonly message: string;
+  readonly confirmLabel?: string;
+  readonly danger?: boolean;
+}): Promise<boolean> {
+  if (resolveConfirmation)
+    return Promise.reject(new Error("Finish the current confirmation first."));
+  confirmTitle.textContent = options.title;
+  confirmMessage.textContent = options.message;
+  acceptConfirm.textContent = options.confirmLabel ?? "Confirm";
+  acceptConfirm.classList.toggle("danger", options.danger === true);
+  confirmDialog.showModal();
+  window.requestAnimationFrame(() => acceptConfirm.focus());
+  return new Promise((resolve) => {
+    resolveConfirmation = resolve;
+  });
+}
+
 function renderConversations(): void {
   conversations.replaceChildren();
   desktopState.conversations.forEach((conversation) => {
@@ -1465,8 +1571,13 @@ function renderConversations(): void {
     remove.className = "delete";
     remove.textContent = "x";
     remove.title = "Delete conversation";
-    remove.onclick = () => {
-      if (!window.confirm(`Delete "${conversation.title}"?`)) return;
+    remove.onclick = async () => {
+      if (!(await requestConfirmation({
+        title: "Delete conversation",
+        message: `Delete "${conversation.title}"?`,
+        confirmLabel: "Delete",
+        danger: true,
+      }))) return;
       if (conversation.id === desktopState.activeConversationId)
         cancelActiveRunForNavigation();
       const remaining = desktopState.conversations.filter(
@@ -1777,9 +1888,7 @@ function renderChat(): void {
     toolActivityPanel.hidden = true;
     return;
   }
-  const activities = (
-    toolActivityByConversation.get(conversation.id) ?? []
-  ).slice(-10);
+  const activities = toolActivityByConversation.get(conversation.id) ?? [];
   if (activities.length) {
     toolActivityPanel.hidden = false;
     toolActivityPanel.replaceChildren(
@@ -2452,11 +2561,20 @@ function openSettings(): void {
 function closeEditorTab(path: string): void {
   const index = openEditorTabs.findIndex((tab) => tab.path === path);
   if (index < 0) return;
-  if (
-    openEditorTabs[index].dirty &&
-    !window.confirm(`Close ${path} without saving your edits?`)
-  )
+  if (openEditorTabs[index].dirty) {
+    void requestConfirmation({
+      title: "Close unsaved editor",
+      message: `Close ${path} without saving your edits?`,
+      confirmLabel: "Close",
+      danger: true,
+    }).then((confirmed) => {
+      if (confirmed) {
+        openEditorTabs[index].dirty = false;
+        closeEditorTab(path);
+      }
+    });
     return;
+  }
   const wasActive = activeFile === path;
   if (wasActive) preserveEditorScroll();
   openEditorTabs.splice(index, 1);
@@ -3298,6 +3416,13 @@ fileEntryDialog.addEventListener("close", () => {
       : undefined,
   );
 });
+cancelConfirm.onclick = () => confirmDialog.close("cancel");
+closeConfirm.onclick = () => confirmDialog.close("cancel");
+confirmDialog.addEventListener("close", () => {
+  const resolve = resolveConfirmation;
+  resolveConfirmation = undefined;
+  resolve?.(confirmDialog.returnValue === "confirm");
+});
 
 function normalizedWorkspaceEntry(value: string): string | undefined {
   const normalized = value.trim().replaceAll("\\", "/");
@@ -3465,10 +3590,12 @@ async function pasteWorkspaceFile(target: FileContextTarget): Promise<void> {
 async function deleteWorkspaceEntry(target: FileContextTarget): Promise<void> {
   const label =
     target.kind === "directory" ? "folder and all of its contents" : "file";
-  if (
-    !window.confirm(`Delete ${label} "${target.path}"? This cannot be undone.`)
-  )
-    return;
+  if (!(await requestConfirmation({
+    title: `Delete ${label}`,
+    message: `Delete ${label} "${target.path}"? This cannot be undone.`,
+    confirmLabel: "Delete",
+    danger: true,
+  }))) return;
   await window.trussDesktop.deleteWorkspaceEntry(target.path);
   removeOpenEditorEntries(target.path, target.kind === "directory");
   expandedDirectories.delete(target.path);
@@ -3552,9 +3679,12 @@ function toolActivityView(
   );
   const summary = document.createElement("summary");
   const running = activities.find((activity) => activity.status === "running");
+  const toolCallCount = activities.filter(
+    (activity) => activity.status !== "progress",
+  ).length;
   summary.textContent = running
     ? `Working: ${running.tool}`
-    : `Activity: ${activities.length} tool call${activities.length === 1 ? "" : "s"}`;
+    : `Activity: ${toolCallCount} tool call${toolCallCount === 1 ? "" : "s"}`;
   const list = document.createElement("div");
   list.className = "tool-activity-list";
   for (const activity of activities) {
@@ -4120,15 +4250,18 @@ element<HTMLButtonElement>("discardAll").onclick = () => {
     notify("No uncommitted changes to discard.");
     return;
   }
-  if (
-    window.confirm(
+  void requestConfirmation({
+    title: "Discard workspace changes",
+    message:
       "Discard every uncommitted change in this workspace? This also removes untracked files and cannot be undone.",
-    )
-  ) {
-    void runGitAction("discard all", () =>
-      window.trussDesktop.gitDiscard(gitStatus.files.map((file) => file.path)),
-    );
-  }
+    confirmLabel: "Discard all",
+    danger: true,
+  }).then((confirmed) => {
+    if (confirmed)
+      void runGitAction("discard all", () =>
+        window.trussDesktop.gitDiscard(gitStatus.files.map((file) => file.path)),
+      );
+  });
 };
 element<HTMLButtonElement>("pullGit").onclick = () =>
   void runGitAction("pull", () => window.trussDesktop.gitPull());

@@ -1522,6 +1522,7 @@ async function createMainWindow(): Promise<void> {
       webviewTag: true,
     },
   });
+  mainWindow.center();
   mainWindow.webContents.setZoomFactor(persisted.zoomFactor);
   mainWindow.webContents.on(
     "will-attach-webview",
@@ -1717,6 +1718,10 @@ ipcMain.handle(
   "truss:choose-workspace",
   async (): Promise<DesktopState | undefined> => {
     const options: OpenDialogOptions = { properties: ["openDirectory"] };
+    if (mainWindow) {
+      mainWindow.center();
+      mainWindow.focus();
+    }
     const selection = mainWindow
       ? await dialog.showOpenDialog(mainWindow, options)
       : await dialog.showOpenDialog(options);

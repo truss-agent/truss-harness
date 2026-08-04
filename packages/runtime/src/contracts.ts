@@ -47,6 +47,22 @@ export interface ModelRequest {
   readonly signal?: AbortSignal;
 }
 
+/** Safe provider request metadata used by runtime retry policies. */
+export class ModelRequestError extends Error {
+  readonly status?: number;
+  readonly retryAfterMs?: number;
+
+  constructor(
+    message: string,
+    options: { readonly status?: number; readonly retryAfterMs?: number } = {},
+  ) {
+    super(message);
+    this.name = "ModelRequestError";
+    this.status = options.status;
+    this.retryAfterMs = options.retryAfterMs;
+  }
+}
+
 export type ModelStreamEvent =
   | { readonly type: "text_delta"; readonly text: string }
   | ({ readonly type: "tool_call" } & ToolCall)

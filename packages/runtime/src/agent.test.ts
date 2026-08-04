@@ -10,6 +10,7 @@ import {
   InMemorySessionStore,
   listDirectoryTool,
   ModelProviderRegistry,
+  ModelRequestError,
   RecentHistoryContextManager,
   StaticContextProvider,
   ToolRegistry,
@@ -23,6 +24,38 @@ import {
 } from "./index.js";
 
 describe("AgentRuntime", () => {
+  it("retries a rate-limited provider request before starting the agent turn", async () => {
+    let attempts = 0;
+    const provider: ModelProvider = { id: "fake", async *stream() {
+      attempts += 1;
+      if (attempts === 1)
+        throw new ModelRequestError("limited", { status: 429 });
+      yield { type: "text_delta", text: "Completed." } as const;
+      yield { type: "finish", reason: "stop" } as const;
+    }};
+    const events = new EventBus<RuntimeEvent>();
+    const progress: string[] = [];
+    events.subscribe((event) => {
+      if (event.type === "progress_delta") progress.push(event.text);
+    });
+    const runtime = new AgentRuntime({
+      provider,
+      tools: new ToolRegistry(),
+      sessions: new InMemorySessionStore(),
+      context: new RecentHistoryContextManager(),
+      events,
+      workspaceRoot: process.cwd(),
+      modelRetryPolicy: { baseDelayMs: 0 },
+    });
+
+    const session = await runtime.createSession();
+    await expect(runtime.run(session.id, "test")).resolves.toBeUndefined();
+    expect(attempts).toBe(2);
+    expect(progress).toEqual([
+      "limited Retrying in 1 second (attempt 2 of 3).",
+    ]);
+  });
+
   it("streams text, executes a tool, and continues the loop", async () => {
     const provider: ModelProvider = { id: "fake", async *stream(request) {
       if (!request.messages.some(m => m.role === "tool")) { yield { type: "text_delta", text: "I already finished. " } as const; yield { type: "tool_call", id: "1", name: "echo", input: { value: "hello" } } as const; yield { type: "finish", reason: "tool_calls" } as const; }

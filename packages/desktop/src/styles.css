@@ -1068,6 +1068,7 @@ button:focus-visible {
 }
 
 .agent-control-row {
+    min-width: 0;
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
@@ -1108,6 +1109,9 @@ button:focus-visible {
 }
 
 .model-control select {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
     height: 28px;
     padding: 3px 6px;
     text-transform: none;
@@ -1122,6 +1126,10 @@ button:focus-visible {
 }
 
 dialog {
+    position: fixed;
+    inset: 0;
+    max-height: calc(100vh - 28px);
+    margin: auto;
     width: min(520px, calc(100vw - 28px));
     padding: 0;
     border: 1px solid #40515a;
@@ -1133,6 +1141,16 @@ dialog {
 
 dialog::backdrop {
     background: #0009;
+}
+
+.confirm-dialog-form {
+    display: grid;
+    gap: 16px;
+    padding: 18px;
+}
+
+.confirm-dialog-form .dialog-actions {
+    justify-content: flex-end;
 }
 
 .settings-form {
