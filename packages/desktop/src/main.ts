@@ -1755,7 +1755,46 @@ ipcMain.handle(
 );
 ipcMain.handle(
   "truss:discover-models",
-  async (_event, partial?: Partial<DesktopConfiguration>) => {
+  async (
+    _event,
+    partial?: Partial<DesktopConfiguration>,
+    apiKey?: string,
+  ) => {
+    if (partial?.provider && isCloudProviderId(partial.provider)) {
+      const definition = cloudProviderDefinition(partial.provider);
+      const credential =
+        apiKey?.trim() ||
+        (partial.credentialAccountId
+          ? await storedCredential(partial.credentialAccountId)
+          : await storedCredential(partial.provider));
+      if (!credential)
+        throw new Error(`Enter an API key for ${definition.label} first.`);
+      const baseUrl = (partial.baseUrl || definition.baseUrl).replace(/\/$/, "");
+      const url =
+        definition.compatibility === "ollama-api"
+          ? `${baseUrl}/api/tags`
+          : `${baseUrl}/models`;
+      const response = await fetch(url, {
+        headers: { Authorization: `Bearer ${credential}` },
+      });
+      if (!response.ok)
+        throw new Error(
+          `${definition.label} model discovery failed (${response.status}).`,
+        );
+      const payload = (await response.json()) as {
+        readonly data?: readonly { readonly id?: string }[];
+        readonly models?: readonly { readonly name?: string; readonly model?: string }[];
+      };
+      const models =
+        definition.compatibility === "ollama-api"
+          ? (payload.models ?? []).flatMap((model) =>
+              model.name ?? model.model ? [model.name ?? model.model!] : [],
+            )
+          : (payload.data ?? []).flatMap((model) =>
+              model.id ? [model.id] : [],
+            );
+      return { endpoints: [], models: [...new Set(models)] };
+    }
     const configuration =
       partial?.baseUrl && isLocalEndpointKind(partial.provider)
         ? { provider: partial.provider, baseUrl: partial.baseUrl }

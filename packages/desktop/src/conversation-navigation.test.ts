@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { scheduleConversationNavigation } from "./conversation-navigation.js";
 
 describe("scheduleConversationNavigation", () => {
-  it("defers list replacement and restores focus after rendering", () => {
+  it("releases the clicked button before replacing the list", () => {
     const calls: string[] = [];
     let scheduled: (() => void) | undefined;
     const cancelFrame = vi.fn();
@@ -14,15 +14,16 @@ describe("scheduleConversationNavigation", () => {
         scheduled = callback;
         return 23;
       },
+      releaseFocus: () => calls.push("release"),
       render: () => calls.push("render"),
       restoreFocus: () => calls.push("focus"),
     });
 
     expect(frame).toBe(23);
     expect(cancelFrame).toHaveBeenCalledWith(17);
-    expect(calls).toEqual(["save"]);
+    expect(calls).toEqual(["save", "release"]);
 
     scheduled?.();
-    expect(calls).toEqual(["save", "render", "focus"]);
+    expect(calls).toEqual(["save", "release", "render", "focus"]);
   });
 });

@@ -148,6 +148,7 @@ const byokProviderSelect = element<HTMLSelectElement>("byokProviderSelect");
 const baseUrlInput = element<HTMLInputElement>("baseUrlInput");
 const modelInput = element<HTMLInputElement>("modelInput");
 const byokBaseUrl = element<HTMLInputElement>("byokBaseUrl");
+const byokModelSelect = element<HTMLSelectElement>("byokModelSelect");
 const byokModelInput = element<HTMLInputElement>("byokModelInput");
 const providerAccountSelect = element<HTMLSelectElement>(
   "providerAccountSelect",
@@ -158,6 +159,7 @@ const saveProviderAccount = element<HTMLButtonElement>("saveProviderAccount");
 const deleteProviderAccount = element<HTMLButtonElement>(
   "deleteProviderAccount",
 );
+const discoverByokModels = element<HTMLButtonElement>("discoverByokModels");
 const apiKeyInput = element<HTMLInputElement>("apiKeyInput");
 const clearApiKey = element<HTMLButtonElement>("clearApiKey");
 const testProviderConnection = element<HTMLButtonElement>(
@@ -214,6 +216,7 @@ let editingMcpName: string | undefined;
 const testedMcpStatuses = new Map<string, McpServerStatus>();
 let endpoints: readonly DesktopEndpoint[] = [];
 let models: readonly string[] = [];
+let byokModels: readonly string[] = [];
 let files: readonly DesktopFile[] = [];
 let fileSearchQuery = "";
 type FileContextTarget = {
@@ -409,6 +412,53 @@ function renderProviderAccounts(preferredId?: string): void {
   saveProviderAccount.textContent = creatingProviderAccount
     ? "Create account"
     : "Save account";
+}
+
+function renderByokModels(preferredModel?: string): void {
+  const current = preferredModel ?? byokModelInput.value.trim();
+  byokModelSelect.replaceChildren(
+    ...(byokModels.length
+      ? byokModels.map((model) => {
+          const option = document.createElement("option");
+          option.value = model;
+          option.textContent = model;
+          return option;
+        })
+      : [
+          (() => {
+            const option = document.createElement("option");
+            option.value = "";
+            option.textContent = "Refresh models to load choices";
+            return option;
+          })(),
+        ]),
+  );
+  byokModelSelect.value = byokModels.includes(current) ? current : "";
+}
+
+async function discoverByokModelList(): Promise<void> {
+  const provider = byokProviderSelect.value as DesktopProvider;
+  discoverByokModels.disabled = true;
+  try {
+    const result = await window.trussDesktop.discoverModels(
+      {
+        provider,
+        baseUrl: byokBaseUrlForSelectedProvider(),
+        credentialAccountId: selectedProviderAccountId,
+      },
+      apiKeyInput.value.trim() || undefined,
+    );
+    byokModels = result.models;
+    renderByokModels();
+    if (!byokModels.length) throw new Error("The provider returned no models.");
+    notify(`Loaded ${byokModels.length} ${provider} model${byokModels.length === 1 ? "" : "s"}.`);
+  } catch (error) {
+    byokModels = [];
+    renderByokModels();
+    notify(error instanceof Error ? error.message : String(error));
+  } finally {
+    discoverByokModels.disabled = false;
+  }
 }
 
 function selectedSettingsProvider(): DesktopProvider {
@@ -1446,6 +1496,12 @@ function finishConversationNavigation(): void {
       save: saveConversations,
       cancelFrame: (frame) => window.cancelAnimationFrame(frame),
       requestFrame: (callback) => window.requestAnimationFrame(callback),
+      releaseFocus: () => {
+        // Chromium on Linux can stop dispatching keyboard input when it keeps
+        // focus on a button that is removed in the next animation frame.
+        if (document.activeElement instanceof HTMLElement)
+          document.activeElement.blur();
+      },
       render: () => {
         // Rebuilding the list during its own click can leave Chromium focused
         // on a detached button on Linux, freezing keyboard input app-wide.
@@ -2895,6 +2951,8 @@ function populateSettings(): void {
     byokProviderSelect.value = current.provider;
     byokBaseUrl.value = current.baseUrl || byokBaseUrlForSelectedProvider();
     byokModelInput.value = current.model;
+    byokModels = [];
+    renderByokModels(current.model);
     creatingProviderAccount = false;
     renderProviderAccounts(current.credentialAccountId);
     setSettingsTab("byok");
@@ -4244,6 +4302,8 @@ providerAccountSelect.onchange = () => {
   creatingProviderAccount = false;
   selectedProviderAccountId = providerAccountSelect.value || undefined;
   apiKeyInput.value = "";
+  byokModels = [];
+  renderByokModels();
   renderProviderAccounts(selectedProviderAccountId);
 };
 saveProviderAccount.onclick = () => {
@@ -4415,6 +4475,10 @@ for (const input of [
   input.addEventListener("input", clearProviderConnectionResult);
   input.addEventListener("change", clearProviderConnectionResult);
 }
+byokModelSelect.onchange = () => {
+  if (byokModelSelect.value) byokModelInput.value = byokModelSelect.value;
+  clearProviderConnectionResult();
+};
 themeSelect.onchange = () => {
   renderCustomThemeControls();
   if (themeSelect.value === "custom") {
@@ -4495,8 +4559,11 @@ byokProviderSelect.onchange = () => {
   creatingProviderAccount = false;
   selectedProviderAccountId = undefined;
   apiKeyInput.value = "";
+  byokModels = [];
+  renderByokModels();
   renderProviderAccounts();
 };
+discoverByokModels.onclick = () => void discoverByokModelList();
 document
   .querySelectorAll<HTMLButtonElement>("[data-settings-tab]")
   .forEach((button) => {
