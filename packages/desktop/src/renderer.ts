@@ -1496,6 +1496,12 @@ function finishConversationNavigation(): void {
       save: saveConversations,
       cancelFrame: (frame) => window.cancelAnimationFrame(frame),
       requestFrame: (callback) => window.requestAnimationFrame(callback),
+      releaseFocus: () => {
+        // Chromium on Linux can stop dispatching keyboard input when it keeps
+        // focus on a button that is removed in the next animation frame.
+        if (document.activeElement instanceof HTMLElement)
+          document.activeElement.blur();
+      },
       render: () => {
         // Rebuilding the list during its own click can leave Chromium focused
         // on a detached button on Linux, freezing keyboard input app-wide.
