@@ -53,7 +53,7 @@
       <section id="planPanel" class="plan-panel" hidden></section>
       <div id="chatMessages" class="chat-messages"></div>
       <form id="chatForm" class="composer"><div id="slashMenu" class="slash-menu" role="listbox" hidden></div><div id="attachmentList" class="attachment-list" hidden></div><textarea id="chatInput" rows="3" placeholder="Ask about this workspace. Type / to attach a file."></textarea><input id="attachmentInput" type="file" multiple hidden><div class="composer-actions"><button id="addAttachment" type="button" title="Attach images or text files">Attach</button><button id="sendChat" class="primary" type="submit">Send</button><button id="cancelChat" type="button" hidden>Cancel</button></div></form>
-      <div class="agent-controls"><div class="runtime-metrics"><span id="contextMeter">Context 0 / 8k est.</span><span id="rateMeter" title="Estimated from aggregate streamed response text. It excludes time spent waiting on tools.">Output -- tok/s</span></div><div class="agent-control-row"><div class="mode-control" aria-label="Agent mode"><button data-mode="chat">Chat</button><button data-mode="plan">Plan</button><button data-mode="edit">Agent</button></div><label class="model-control"><span>Model</span><select id="quickModel"></select></label></div></div>
+       <div class="agent-controls"><div class="runtime-metrics"><span id="contextMeter">Context 0 / 8k est.</span><span id="rateMeter" title="Estimated from aggregate streamed response text. It excludes time spent waiting on tools.">Output -- tok/s</span></div><div class="agent-control-row"><div class="mode-control" aria-label="Agent mode"><button data-mode="chat">Chat</button><button data-mode="plan">Plan</button><button data-mode="edit">Agent</button></div><label class="model-control"><span>Model</span><select id="quickModel"></select></label></div></div>
     </section>
   </main>
   <section id="settingsPanel" class="settings-editor" hidden>
@@ -130,6 +130,12 @@
       <div class="dialog-heading"><div><strong id="fileEntryTitle">New file</strong><span id="fileEntryDescription">Enter a relative path inside the workspace.</span></div><button id="closeFileEntry" type="button" aria-label="Close">x</button></div>
       <label>Path<input id="fileEntryInput" autocomplete="off" spellcheck="false" required></label>
       <div class="dialog-actions"><button id="cancelFileEntry" type="button">Cancel</button><button id="confirmFileEntry" class="primary" type="submit">Create</button></div>
+    </form>
+  </dialog>
+  <dialog id="confirmDialog">
+    <form id="confirmForm" method="dialog" class="confirm-dialog-form">
+      <div class="dialog-heading"><div><strong id="confirmTitle">Confirm action</strong><span id="confirmMessage"></span></div><button id="closeConfirm" type="button" aria-label="Close">x</button></div>
+      <div class="dialog-actions"><button id="cancelConfirm" value="cancel" type="submit">Cancel</button><button id="acceptConfirm" class="primary" value="confirm" type="submit">Confirm</button></div>
     </form>
   </dialog>
   <div id="fileContextMenu" class="file-context-menu" role="menu" hidden></div>

@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.27 · VS Code 0.1.16 · CLI 0.1.17 · TUI 0.1.13",
+    label: "Provider recovery and Desktop workflow",
+    changes: [
+      "Added bounded provider retries before streaming begins for rate limits, retry delays, transient network failures, timeouts, and server errors across every runtime client.",
+      "Added safe, actionable provider failure messages and rate-limit progress that report the selected model, token-budget figures, retry delay, and retry attempt without exposing provider response bodies or organization identifiers.",
+      "Improved Desktop agent setup with complete BYOK provider choices, provider-default endpoints, authenticated model pickers, full tool activity counts, and centered in-app confirmations.",
+    ],
+  },
+  {
     version: "Desktop 0.1.26",
     label: "BYOK model selection",
     changes: [
