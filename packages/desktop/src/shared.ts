@@ -51,6 +51,8 @@ export interface DesktopConfiguration {
   readonly mode: DesktopMode;
   readonly permission: DesktopPermission;
   readonly contextWindow: number;
+  /** Provider-reported context window for the selected model, when known. */
+  readonly modelContextWindow?: number;
   readonly internetAccess: boolean;
   readonly mcpServers: McpServerConfigurations;
   readonly autocomplete?: {
@@ -58,6 +60,25 @@ export interface DesktopConfiguration {
     readonly model?: string;
   };
   readonly formatOnSave?: boolean;
+}
+
+export interface DesktopModelInfo {
+  readonly id: string;
+  readonly contextWindow?: number;
+  /** USD per one million input tokens, when published by the provider. */
+  readonly inputCostPerMillion?: number;
+  /** USD per one million output tokens, when published by the provider. */
+  readonly outputCostPerMillion?: number;
+  readonly supportsTools?: boolean;
+  readonly kind?: "chat" | "embedding" | "image" | "audio" | "moderation" | "other";
+}
+
+export interface DesktopTokenUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly totalTokens: number;
+  readonly estimated?: boolean;
+  readonly estimatedCostUsd?: number;
 }
 
 export interface DesktopMessage {
@@ -70,6 +91,7 @@ export interface DesktopRunResult {
   readonly status: "running" | "completed" | "failed";
   readonly modifiedFiles: readonly string[];
   readonly completedAt?: string;
+  readonly usage?: DesktopTokenUsage;
 }
 
 export interface DesktopToolActivity {
@@ -124,6 +146,24 @@ export interface DesktopGitStatus {
   readonly ahead: number;
   readonly behind: number;
   readonly files: readonly DesktopGitFile[];
+  /** Name of the first configured push-capable remote, not its URL. */
+  readonly pushRemote?: string;
+  readonly error?: string;
+}
+
+export interface DesktopGitCommit {
+  readonly hash: string;
+  readonly shortHash: string;
+  readonly subject: string;
+  readonly author: string;
+  readonly authoredAt: string;
+  readonly parents: readonly string[];
+  readonly refs: readonly string[];
+}
+
+export interface DesktopGitGraph {
+  readonly available: boolean;
+  readonly commits: readonly DesktopGitCommit[];
   readonly error?: string;
 }
 
@@ -166,6 +206,7 @@ export type DesktopEvent =
         readonly error?: { readonly message?: string };
         readonly plan?: WorkspacePlan;
         readonly modifiedFiles?: readonly string[];
+        readonly usage?: Omit<DesktopTokenUsage, "estimated" | "estimatedCostUsd">;
       };
     }
   | {
@@ -232,7 +273,7 @@ export interface DesktopBridge {
     apiKey?: string,
   ): Promise<{
     readonly endpoints: readonly DesktopEndpoint[];
-    readonly models: readonly string[];
+    readonly models: readonly DesktopModelInfo[];
   }>;
   refreshLocalModel(): Promise<DesktopState>;
   configure(
@@ -282,7 +323,11 @@ export interface DesktopBridge {
     readonly openFilePaths?: readonly string[];
   }): Promise<void>;
   stopChat(): Promise<void>;
-  resolveApproval(callId: string, approved: boolean): Promise<void>;
+  resolveApproval(
+    callId: string,
+    approved: boolean,
+    allowAllForSession?: boolean,
+  ): Promise<void>;
   listAgents(): Promise<DesktopAgentsSnapshot>;
   createAgent(input: CreateAgentProfileInput): Promise<DesktopAgentsSnapshot>;
   updateAgent(
@@ -311,6 +356,7 @@ export interface DesktopBridge {
   diffFile(path: string): Promise<string>;
   getPlan(): Promise<WorkspacePlan | undefined>;
   gitStatus(): Promise<DesktopGitStatus>;
+  gitGraph(): Promise<DesktopGitGraph>;
   gitStage(paths: readonly string[]): Promise<string>;
   gitUnstage(paths: readonly string[]): Promise<string>;
   gitDiscard(paths: readonly string[]): Promise<string>;

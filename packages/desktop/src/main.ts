@@ -91,8 +91,10 @@ import {
   type DesktopEndpoint,
   type DesktopEvent,
   type DesktopFile,
+  type DesktopGitGraph,
   type DesktopGitStatus,
   type DesktopMessage,
+  type DesktopModelInfo,
   type DesktopState,
   type DesktopProvider,
   type DesktopThemePalette,
@@ -156,6 +158,7 @@ const trussGoClients: Array<Awaited<ReturnType<typeof createClientRuntime>>> =
   [];
 let updaterConfigured = false;
 const approvalResolvers = new Map<string, (approved: boolean) => void>();
+let sessionAllowsAllTools = false;
 const sessionConversationIds = new Map<string, string>();
 let agentHost: AgentHost | undefined;
 let agentCoordinator: AgentCoordinator | undefined;
@@ -659,6 +662,8 @@ function isConfiguration(value: unknown): value is DesktopConfiguration {
       candidate.permission === "auto-read" ||
       candidate.permission === "auto-all") &&
     typeof candidate.contextWindow === "number" &&
+    (candidate.modelContextWindow === undefined ||
+      typeof candidate.modelContextWindow === "number") &&
     (candidate.internetAccess === undefined ||
       typeof candidate.internetAccess === "boolean") &&
     (candidate.credentialAccountId === undefined ||
@@ -669,6 +674,9 @@ function isConfiguration(value: unknown): value is DesktopConfiguration {
 function normalizeConfiguration(
   value: DesktopConfiguration,
 ): DesktopConfiguration {
+  const modelContextWindow = isCloudProviderId(value.provider)
+    ? value.modelContextWindow ?? publishedContextWindow(value.provider, value.model)
+    : undefined;
   return {
     ...value,
     baseUrl: isCloudProviderId(value.provider)
@@ -680,8 +688,15 @@ function normalizeConfiguration(
       : undefined,
     contextWindow: Math.max(
       512,
-      Math.min(1_000_000, Math.floor(value.contextWindow || 8_192)),
+      Math.min(2_000_000, Math.floor(value.contextWindow || 8_192)),
     ),
+    modelContextWindow:
+      modelContextWindow === undefined
+        ? undefined
+        : Math.max(
+            512,
+            Math.min(2_000_000, Math.floor(modelContextWindow)),
+          ),
     internetAccess: value.internetAccess ?? false,
     autocomplete: {
       enabled: value.autocomplete?.enabled ?? false,
@@ -698,6 +713,17 @@ function isLocalConfiguration(
   readonly provider: "ollama" | "openai-compatible";
 } {
   return isLocalEndpointKind(configuration.provider);
+}
+
+function contextBudgetForConfiguration(
+  configuration: DesktopConfiguration,
+): number {
+  // The editable context setting belongs to local endpoints. Cloud models
+  // must use their own published metadata, or a conservative fallback when
+  // the provider does not publish a context window in its model list.
+  return isLocalConfiguration(configuration)
+    ? configuration.contextWindow
+    : configuration.modelContextWindow ?? 8_192;
 }
 
 function normalizeWorkspaceUiState(
@@ -791,6 +817,7 @@ async function clientConfiguration(
         "grep",
       ].includes(call.name);
       if (
+        sessionAllowsAllTools ||
         configuration.permission === "auto-all" ||
         (configuration.permission === "auto-read" && readOnly)
       )
@@ -965,6 +992,7 @@ async function disposeRuntime(): Promise<void> {
   activeRun = undefined;
   activeSessionId = undefined;
   activeConversationId = undefined;
+  sessionAllowsAllTools = false;
   sessionConversationIds.clear();
   unsubscribeEvents?.();
   unsubscribeEvents = undefined;
@@ -1318,9 +1346,35 @@ function gitPaths(paths: readonly string[]): string[] {
   );
 }
 
+async function gitPushRemoteName(): Promise<string | undefined> {
+  try {
+    const { stdout } = await execFile("git", ["remote"], {
+      cwd: persisted.workspaceRoot,
+      maxBuffer: 100_000,
+    });
+    for (const name of stdout.split(/\r?\n/).map((value) => value.trim())) {
+      if (!name) continue;
+      try {
+        const { stdout: url } = await execFile(
+          "git",
+          ["remote", "get-url", "--push", name],
+          { cwd: persisted.workspaceRoot, maxBuffer: 100_000 },
+        );
+        if (url.trim()) return name;
+      } catch {
+        // A remote without a usable push URL is not actionable from the UI.
+      }
+    }
+  } catch {
+    // Git status will carry the unavailable state when this is not a repository.
+  }
+  return undefined;
+}
+
 async function getGitStatus(): Promise<DesktopGitStatus> {
   try {
     const output = await gitCommand(["status", "--porcelain=v1", "--branch"]);
+    const pushRemote = await gitPushRemoteName();
     let branch: string | undefined;
     let ahead = 0;
     let behind = 0;
@@ -1345,13 +1399,63 @@ async function getGitStatus(): Promise<DesktopGitStatus> {
         workTreeStatus: line[1],
       });
     }
-    return { available: true, branch, ahead, behind, files };
+    return {
+      available: true,
+      branch,
+      ahead,
+      behind,
+      files,
+      ...(pushRemote ? { pushRemote } : {}),
+    };
   } catch (error) {
     return {
       available: false,
       ahead: 0,
       behind: 0,
       files: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function getGitGraph(): Promise<DesktopGitGraph> {
+  try {
+    const output = await gitCommand([
+      "log",
+      "--all",
+      "--max-count=80",
+      "--date=iso-strict",
+      "--pretty=format:%H%x1f%h%x1f%an%x1f%aI%x1f%P%x1f%D%x1f%s",
+    ]);
+    const commits = output
+      .split(/\r?\n/)
+      .filter(Boolean)
+      .flatMap((line) => {
+        const [hash, shortHash, author, authoredAt, parents, refs, subject] =
+          line.split("\x1f");
+        if (!hash || !shortHash || !subject) return [];
+        return [
+          {
+            hash,
+            shortHash,
+            subject,
+            author: author ?? "Unknown author",
+            authoredAt: authoredAt ?? "",
+            parents: parents ? parents.split(" ").filter(Boolean) : [],
+            refs: refs
+              ? refs
+                  .split(",")
+                  .map((ref) => ref.trim())
+                  .filter(Boolean)
+              : [],
+          },
+        ];
+      });
+    return { available: true, commits };
+  } catch (error) {
+    return {
+      available: false,
+      commits: [],
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -1376,7 +1480,12 @@ async function fileContext(
   const blocks: ContextBlock[] = [];
   const primaryBudget = Math.max(
     2_000,
-    Math.min(20_000, persisted.configuration?.contextWindow ?? 8_192),
+    Math.min(
+      20_000,
+      persisted.configuration
+        ? contextBudgetForConfiguration(persisted.configuration)
+        : 8_192,
+    ),
   );
   let remaining = 80_000;
   for (const path of paths) {
@@ -1438,6 +1547,7 @@ async function executeChat(input: {
     ReturnType<typeof createClientRuntime>
   >;
   if (!activeSessionId || activeConversationId !== input.conversationId) {
+    sessionAllowsAllTools = false;
     const session = await client.runtime.createSession(input.history);
     activeSessionId = session.id;
     activeConversationId = input.conversationId;
@@ -1758,6 +1868,110 @@ ipcMain.handle(
     await persistState();
   },
 );
+function finiteNumber(value: unknown): number | undefined {
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : undefined;
+}
+
+function modelKind(value: unknown): DesktopModelInfo["kind"] {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.toLowerCase();
+  if (normalized.includes("embed")) return "embedding";
+  if (normalized.includes("moderation")) return "moderation";
+  if (normalized.includes("image")) return "image";
+  if (normalized.includes("audio") || normalized.includes("speech")) return "audio";
+  if (normalized.includes("chat") || normalized.includes("language")) return "chat";
+  return "other";
+}
+
+function publishedContextWindow(
+  provider: CloudProviderId,
+  modelId: string,
+): number | undefined {
+  if (provider !== "openai") return undefined;
+  const normalized = modelId.toLowerCase();
+  return ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"].includes(
+    normalized,
+  )
+    ? 1_050_000
+    : undefined;
+}
+
+function modelInfoFromRecord(
+  value: unknown,
+  provider: CloudProviderId,
+): DesktopModelInfo | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value as Record<string, unknown>;
+  const id = [source.id, source.name, source.model]
+    .find((candidate): candidate is string => typeof candidate === "string" && Boolean(candidate.trim()))
+    ?.trim();
+  if (!id || source.archived === true) return undefined;
+  const capabilities = source.capabilities as Record<string, unknown> | undefined;
+  const supportedParameters = Array.isArray(source.supported_parameters)
+    ? source.supported_parameters.filter((item): item is string => typeof item === "string")
+    : [];
+  const supportedGenerationMethods = Array.isArray(source.supportedGenerationMethods)
+    ? source.supportedGenerationMethods.filter((item): item is string => typeof item === "string")
+    : [];
+  const kind =
+    modelKind(source.type) ??
+    modelKind(source.kind) ??
+    (/(?:embedding|moderation|rerank|whisper|tts|dall-e|image-generation)/i.test(id)
+      ? modelKind(id)
+      : undefined);
+  const pricing = source.pricing as Record<string, unknown> | undefined;
+  const inputPrice = finiteNumber(
+    pricing?.prompt ??
+      pricing?.input ??
+      source.input_cost_per_token ??
+      source.inputCostPerToken,
+  );
+  const outputPrice = finiteNumber(
+    pricing?.completion ??
+      pricing?.output ??
+      source.output_cost_per_token ??
+      source.outputCostPerToken,
+  );
+  const pricingMultiplier = provider === "openrouter" ? 1_000_000 : 1;
+  const supportsTools =
+    supportedParameters.some((item) =>
+      ["tools", "tool_choice", "function_calling"].includes(item),
+    ) || capabilities?.function_calling === true;
+  const contextWindow =
+    finiteNumber(
+    source.context_length ??
+      source.max_context_length ??
+      source.contextWindow ??
+      source.inputTokenLimit ??
+      source.max_input_tokens,
+    ) ?? publishedContextWindow(provider, id);
+  return {
+    id,
+    ...(contextWindow ? { contextWindow } : {}),
+    ...(inputPrice !== undefined
+      ? { inputCostPerMillion: inputPrice * pricingMultiplier }
+      : {}),
+    ...(outputPrice !== undefined
+      ? { outputCostPerMillion: outputPrice * pricingMultiplier }
+      : {}),
+    ...(kind ? { kind } : {}),
+    ...(supportsTools || supportedGenerationMethods.includes("generateContent")
+      ? { supportsTools: true }
+      : {}),
+  };
+}
+
+function usableChatModels(models: readonly DesktopModelInfo[]): DesktopModelInfo[] {
+  return models.filter(
+    (model) =>
+      model.kind !== "embedding" &&
+      model.kind !== "image" &&
+      model.kind !== "audio" &&
+      model.kind !== "moderation",
+  );
+}
+
 ipcMain.handle(
   "truss:discover-models",
   async (
@@ -1779,26 +1993,44 @@ ipcMain.handle(
         definition.compatibility === "ollama-api"
           ? `${baseUrl}/api/tags`
           : `${baseUrl}/models`;
-      const response = await fetch(url, {
-        headers: { Authorization: `Bearer ${credential}` },
-      });
-      if (!response.ok)
-        throw new Error(
-          `${definition.label} model discovery failed (${response.status}).`,
+      const records: unknown[] = [];
+      let nextUrl: string | undefined = url;
+      for (let page = 0; nextUrl && page < 20; page += 1) {
+        const response = await fetch(nextUrl, {
+          headers: { Authorization: `Bearer ${credential}` },
+        });
+        if (!response.ok)
+          throw new Error(
+            `${definition.label} model discovery failed (${response.status}).`,
+          );
+        const payload = (await response.json()) as {
+          readonly data?: readonly unknown[];
+          readonly models?: readonly unknown[];
+          readonly nextPageToken?: string;
+        };
+        records.push(
+          ...(definition.compatibility === "ollama-api"
+            ? payload.models ?? []
+            : payload.data ?? []),
         );
-      const payload = (await response.json()) as {
-        readonly data?: readonly { readonly id?: string }[];
-        readonly models?: readonly { readonly name?: string; readonly model?: string }[];
+        if (definition.compatibility === "ollama-api" || !payload.nextPageToken) {
+          nextUrl = undefined;
+        } else {
+          const pagedUrl: URL = new URL(nextUrl);
+          pagedUrl.searchParams.set("pageToken", payload.nextPageToken);
+          nextUrl = pagedUrl.toString();
+        }
+      }
+      const models = usableChatModels(
+        records.flatMap((record) => {
+          const info = modelInfoFromRecord(record, partial.provider as CloudProviderId);
+          return info ? [info] : [];
+        }),
+      );
+      return {
+        endpoints: [],
+        models: [...new Map(models.map((model) => [model.id, model])).values()],
       };
-      const models =
-        definition.compatibility === "ollama-api"
-          ? (payload.models ?? []).flatMap((model) =>
-              model.name ?? model.model ? [model.name ?? model.model!] : [],
-            )
-          : (payload.data ?? []).flatMap((model) =>
-              model.id ? [model.id] : [],
-            );
-      return { endpoints: [], models: [...new Set(models)] };
     }
     const configuration =
       partial?.baseUrl && isLocalEndpointKind(partial.provider)
@@ -1814,10 +2046,13 @@ ipcMain.handle(
     const endpoint = configuration
       ? localEndpoint(configuration)
       : endpoints[0];
-    let models: readonly string[] = [];
+    let models: readonly DesktopModelInfo[] = [];
     if (endpoint) {
       try {
-        models = (await listLocalModels(endpoint)).map((model) => model.name);
+        models = (await listLocalModels(endpoint)).map((model) => ({
+          id: model.name,
+          kind: "chat" as const,
+        }));
       } catch {
         /* Manual models remain available. */
       }
@@ -2196,7 +2431,13 @@ ipcMain.handle(
 );
 ipcMain.handle(
   "truss:resolve-approval",
-  (_event, callId: string, approved: boolean): void => {
+  (
+    _event,
+    callId: string,
+    approved: boolean,
+    allowAllForSession = false,
+  ): void => {
+    if (approved && allowAllForSession) sessionAllowsAllTools = true;
     approvalResolvers.get(callId)?.(approved);
     approvalResolvers.delete(callId);
   },
@@ -2319,6 +2560,7 @@ ipcMain.handle("truss:get-plan", () =>
   new FileWorkspacePlanStore(persisted.workspaceRoot).load(),
 );
 ipcMain.handle("truss:git-status", () => getGitStatus());
+ipcMain.handle("truss:git-graph", () => getGitGraph());
 ipcMain.handle(
   "truss:git-stage",
   async (_event, paths: readonly string[]): Promise<string> =>
@@ -2390,11 +2632,19 @@ ipcMain.handle(
   async (_event, message: string): Promise<string> => {
     if (typeof message !== "string" || !message.trim())
       throw new Error("Enter a commit message.");
+    await gitCommand(["add", "-A", "--"]);
     return gitCommand(["commit", "-m", message.trim()]);
   },
 );
 ipcMain.handle("truss:git-pull", (): Promise<string> => gitCommand(["pull"]));
-ipcMain.handle("truss:git-push", (): Promise<string> => gitCommand(["push"]));
+ipcMain.handle("truss:git-push", async (): Promise<string> => {
+  const remote = await gitPushRemoteName();
+  if (!remote)
+    throw new Error(
+      "No push remote is configured. Add one with: git remote add origin <repository-url>",
+    );
+  return gitCommand(["push"]);
+});
 ipcMain.handle(
   "truss:run-terminal",
   async (_event, command: string): Promise<string> => {

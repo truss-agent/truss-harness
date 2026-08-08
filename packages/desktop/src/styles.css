@@ -127,7 +127,7 @@ button:focus-visible {
     display: grid;
     grid-template-columns: minmax(180px, 1fr) auto auto;
     align-items: center;
-    gap: 12px;
+    gap: 8px;
     padding: 0 14px;
     border-bottom: 1px solid #2b383f;
     background: #151d22;
@@ -346,8 +346,12 @@ button:focus-visible {
     display: flex;
     flex: 0 0 auto;
     align-items: center;
-    gap: 4px;
+    gap: 8px;
     min-width: 0;
+}
+
+.center-tabs {
+    gap: 0;
 }
 
 .editor-tabs {
@@ -774,20 +778,26 @@ button:focus-visible {
 
 .chat-area {
     display: grid;
-    grid-template-rows: 38px minmax(0, 1fr) auto auto;
+    grid-template-rows: 38px minmax(0, 1fr);
     border-left: 1px solid #2b383f;
     background: #151d22;
+    overflow: hidden;
 }
 
-/* The activity trace belongs directly below the Agent heading.  Let hidden
-   optional panels leave no empty grid rows behind. */
-.chat-area:has(.tool-activity-panel:not([hidden])),
-.chat-area:has(.plan-panel:not([hidden])) {
-    grid-template-rows: 38px auto minmax(0, 1fr) auto;
+.chat-content {
+    min-height: 0;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto auto;
 }
 
-.chat-area:has(.tool-activity-panel:not([hidden])):has(.plan-panel:not([hidden])) {
-    grid-template-rows: 38px auto auto minmax(0, 1fr) auto;
+/* Let hidden optional panels leave no empty grid rows behind. */
+.chat-content:has(.tool-activity-panel:not([hidden])),
+.chat-content:has(.plan-panel:not([hidden])) {
+    grid-template-rows: auto minmax(0, 1fr) auto auto;
+}
+
+.chat-content:has(.tool-activity-panel:not([hidden])):has(.plan-panel:not([hidden])) {
+    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
 }
 
 .chat-heading {
@@ -808,6 +818,77 @@ button:focus-visible {
 
 .chat-heading button {
     min-height: 25px;
+}
+
+.chat-heading-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 5px;
+}
+
+.chat-actions-menu {
+    position: relative;
+}
+
+.chat-actions-menu summary {
+    display: flex;
+    align-items: center;
+    min-height: 25px;
+    border: 1px solid #33414a;
+    border-radius: 4px;
+    background: #1b252b;
+    padding: 3px 7px;
+    cursor: pointer;
+    list-style: none;
+    white-space: nowrap;
+}
+
+.chat-actions-menu summary::-webkit-details-marker {
+    display: none;
+}
+
+.chat-actions-menu summary::after {
+    content: "⌄";
+    margin-left: 6px;
+    color: #9badb5;
+    font-size: 11px;
+}
+
+.chat-actions-menu[open] summary,
+.chat-actions-menu summary:hover {
+    background: #25343c;
+}
+
+.chat-actions-menu-panel {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 5px);
+    right: 0;
+    display: grid;
+    gap: 5px;
+    min-width: 150px;
+    padding: 6px;
+    border: 1px solid #33414a;
+    border-radius: 6px;
+    background: #151d22;
+    box-shadow: 0 14px 30px #05090baa;
+}
+
+.chat-actions-menu-panel button {
+    width: 100%;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.chat-area.chat-collapsed .chat-content {
+    display: none;
+}
+
+.chat-area.chat-docked {
+    width: 100%;
+    height: 100%;
+    border-left: 0;
 }
 
 .plan-panel {
@@ -1060,8 +1141,10 @@ button:focus-visible {
 .runtime-metrics {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    column-gap: 12px;
+    row-gap: 4px;
     color: #9badb5;
     font-size: 11px;
     font-variant-numeric: tabular-nums;
@@ -1119,6 +1202,8 @@ button:focus-visible {
 }
 
 #contextMeter,
+#modelMeter,
+#usageMeter,
 #rateMeter {
     color: #9badb5;
     font-size: 11px;
@@ -2159,9 +2244,9 @@ dialog::backdrop {
 
 .git-body {
     display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto auto minmax(0, 1fr) minmax(0, .8fr) auto;
     gap: 6px;
-    max-height: 274px;
+    max-height: 440px;
     padding: 7px;
 }
 
@@ -2200,6 +2285,81 @@ dialog::backdrop {
     min-height: 26px;
     padding: 3px 6px;
     font-size: 11px;
+}
+
+.git-graph {
+    min-height: 68px;
+    max-height: 190px;
+    overflow: auto;
+    border-top: 1px solid #26353c;
+    border-bottom: 1px solid #26353c;
+    color: #9badb5;
+    font-size: 10px;
+}
+
+.git-graph-row {
+    display: flex;
+    min-width: 0;
+    min-height: 36px;
+    align-items: center;
+}
+
+.git-graph-visual {
+    flex: 0 0 auto;
+    height: 36px;
+}
+
+.git-graph-visual svg {
+    display: block;
+    width: 100%;
+    height: 36px;
+}
+
+.git-graph-commit {
+    min-width: 0;
+    padding: 3px 4px 3px 0;
+}
+
+.git-graph-commit-heading {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 5px;
+}
+
+.git-graph-subject {
+    min-width: 0;
+    overflow: hidden;
+    color: #d5dfe2;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.git-graph-meta {
+    display: block;
+    overflow: hidden;
+    color: #748890;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.git-ref-badge {
+    flex: 0 0 auto;
+    max-width: 130px;
+    overflow: hidden;
+    padding: 2px 6px;
+    border-radius: 10px;
+    color: #07100f;
+    background: #54d7b0;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.git-ref-badge.remote {
+    color: #17100a;
+    background: #f28b30;
 }
 
 .git-files {
@@ -2290,6 +2450,10 @@ dialog::backdrop {
     --sidebar-width: 260px;
     --chat-width: 390px;
     grid-template-columns: minmax(190px, var(--sidebar-width)) 6px minmax(360px, 1fr) 6px minmax(330px, var(--chat-width));
+}
+
+.workbench.chat-docked {
+    grid-template-columns: minmax(190px, var(--sidebar-width)) 6px minmax(360px, 1fr);
 }
 
 .sidebar {
@@ -2409,6 +2573,11 @@ body.resizing * {
         grid-template-rows: minmax(0, 1fr) 6px minmax(300px, 42%);
     }
 
+    .workbench.chat-docked {
+        grid-template-columns: minmax(175px, var(--sidebar-width)) 6px minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+    }
+
     .sidebar {
         grid-column: 1;
         grid-row: 1;
@@ -2434,6 +2603,7 @@ body.resizing * {
         border-left: 0;
         border-top: 1px solid #2b383f;
     }
+
 }
 
 @media (max-width: 700px) {
@@ -2455,6 +2625,11 @@ body.resizing * {
         grid-template-columns: 1fr;
         grid-template-rows: 250px minmax(240px, 1fr) minmax(320px, 1fr);
         overflow: auto;
+    }
+
+    .workbench.chat-docked {
+        grid-template-columns: 1fr;
+        grid-template-rows: 250px minmax(240px, 1fr);
     }
 
     .sidebar,

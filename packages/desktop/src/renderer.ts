@@ -17,12 +17,15 @@ import {
   type DesktopEndpoint,
   type DesktopEvent,
   type DesktopFile,
+  type DesktopGitGraph,
   type DesktopGitStatus,
   type DesktopMessage,
+  type DesktopModelInfo,
   type DesktopProvider,
   type DesktopState,
   type DesktopThemePalette,
   type DesktopThemePreference,
+  type DesktopTokenUsage,
   type DesktopToolActivity,
   type DesktopWorkspaceUiState,
 } from "./shared.js";
@@ -91,8 +94,12 @@ const gitPanel = element<HTMLElement>("gitPanel");
 const gitBody = element<HTMLDivElement>("gitBody");
 const gitBranch = element<HTMLSpanElement>("gitBranch");
 const gitCounts = element<HTMLSpanElement>("gitCounts");
+const gitGraph = element<HTMLDivElement>("gitGraph");
 const gitFiles = element<HTMLDivElement>("gitFiles");
+const pullGit = element<HTMLButtonElement>("pullGit");
+const pushGit = element<HTMLButtonElement>("pushGit");
 const commitMessage = element<HTMLInputElement>("commitMessage");
+const commitButton = element<HTMLButtonElement>("commitButton");
 const generateCommitMessage = element<HTMLButtonElement>(
   "generateCommitMessage",
 );
@@ -100,6 +107,7 @@ const editor = element<HTMLElement>("editor");
 const formatFileButton = element<HTMLButtonElement>("formatFileButton");
 const editorTabsElement = element<HTMLDivElement>("editorTabs");
 const editorTitle = element<HTMLSpanElement>("editorTitle");
+const fileDiffToggle = element<HTMLButtonElement>("fileDiffToggle");
 const browserPanel = element<HTMLElement>("browserPanel");
 const agentsPanel = element<HTMLElement>("agentsPanel");
 const browserView = element<EmbeddedBrowserView>("browserView");
@@ -111,6 +119,10 @@ const browserExternal = element<HTMLButtonElement>("browserExternal");
 const terminalOutput = element<HTMLPreElement>("terminalOutput");
 const terminalPrompt = element<HTMLDivElement>("terminalPrompt");
 const chatMessages = element<HTMLDivElement>("chatMessages");
+const chatArea = document.querySelector<HTMLElement>(".chat-area") as HTMLElement;
+const toggleChat = element<HTMLButtonElement>("toggleChat");
+const chatSplitter = element<HTMLDivElement>("chatSplitter");
+const toggleChatDock = element<HTMLButtonElement>("toggleChatDock");
 const planPanel = element<HTMLElement>("planPanel");
 const chatInput = element<HTMLTextAreaElement>("chatInput");
 const attachmentInput = element<HTMLInputElement>("attachmentInput");
@@ -120,7 +132,6 @@ const sendChatButton = element<HTMLButtonElement>("sendChat");
 const cancelChatButton = element<HTMLButtonElement>("cancelChat");
 const slashMenu = element<HTMLDivElement>("slashMenu");
 const chatStatus = element<HTMLSpanElement>("chatStatus");
-const stopChat = element<HTMLButtonElement>("stopChat");
 const runtimeStatus = element<HTMLSpanElement>("runtimeStatus");
 const statusDot = element<HTMLSpanElement>("statusDot");
 const connectTrussGo = element<HTMLButtonElement>("connectTrussGo");
@@ -141,6 +152,8 @@ const cancelConfirm = element<HTMLButtonElement>("cancelConfirm");
 const closeConfirm = element<HTMLButtonElement>("closeConfirm");
 const quickModel = element<HTMLSelectElement>("quickModel");
 const contextMeter = element<HTMLSpanElement>("contextMeter");
+const modelMeter = element<HTMLSpanElement>("modelMeter");
+const usageMeter = element<HTMLSpanElement>("usageMeter");
 // Keep older packaged HTML usable when only the renderer bundle has been refreshed.
 const rateMeter = document.getElementById(
   "rateMeter",
@@ -221,8 +234,8 @@ let mcpDraft: Record<string, McpStdioServerConfiguration> = {};
 let editingMcpName: string | undefined;
 const testedMcpStatuses = new Map<string, McpServerStatus>();
 let endpoints: readonly DesktopEndpoint[] = [];
-let models: readonly string[] = [];
-let byokModels: readonly string[] = [];
+let models: readonly DesktopModelInfo[] = [];
+let byokModels: readonly DesktopModelInfo[] = [];
 let files: readonly DesktopFile[] = [];
 let fileSearchQuery = "";
 type FileContextTarget = {
@@ -269,6 +282,7 @@ let gitStatus: DesktopGitStatus = {
   behind: 0,
   files: [],
 };
+let gitGraphData: DesktopGitGraph = { available: false, commits: [] };
 let gitCollapsed = false;
 let gitPanelHeight = 220;
 let activePlan: WorkspacePlan | undefined;
@@ -276,7 +290,9 @@ let streamStartedAt = 0;
 let streamedTextCharacters = 0;
 let agentActivity = "Ready";
 let runningConversationId: string | undefined;
-let centerView: "editor" | "preview" | "agents" = "editor";
+let chatCollapsed = false;
+let chatDocked = false;
+let centerView: "editor" | "preview" | "agents" | "chat" = "editor";
 let agentsSnapshot: DesktopAgentsSnapshot = { profiles: [], runs: [] };
 let selectedAgentRunId: string | undefined;
 let pendingAttachments: ChatAttachment[] = [];
@@ -293,6 +309,74 @@ const longPasteAttachmentThreshold = 12_000;
 
 function configuration(): DesktopConfiguration {
   return desktopState.configuration ?? defaultConfiguration;
+}
+
+function knownModel(modelId = configuration().model): DesktopModelInfo | undefined {
+  return [...models, ...byokModels].find((model) => model.id === modelId);
+}
+
+function selectedModelContextWindow(modelId: string): number | undefined {
+  return knownModel(modelId)?.contextWindow;
+}
+
+function formatUsd(value: number): string {
+  if (value === 0) return "$0";
+  if (value < 0.01) return `$${value.toFixed(4)}`;
+  if (value < 1) return `$${value.toFixed(3)}`;
+  return `$${value.toFixed(2)}`;
+}
+
+function modelLabel(model: DesktopModelInfo): string {
+  const prices =
+    model.inputCostPerMillion !== undefined &&
+    model.outputCostPerMillion !== undefined
+      ? ` · ${formatUsd(model.inputCostPerMillion)}/${formatUsd(model.outputCostPerMillion)} per 1M`
+      : "";
+  const context = model.contextWindow
+    ? ` · ${formatTokens(model.contextWindow)} context`
+    : "";
+  return `${model.id}${prices}${context}`;
+}
+
+function usageCost(usage: Pick<DesktopTokenUsage, "inputTokens" | "outputTokens">): number | undefined {
+  const model = knownModel();
+  if (!model) return undefined;
+  const inputCost = model.inputCostPerMillion;
+  const outputCost = model.outputCostPerMillion;
+  if (inputCost === undefined && outputCost === undefined) return undefined;
+  return (
+    (usage.inputTokens / 1_000_000) * (inputCost ?? 0) +
+    (usage.outputTokens / 1_000_000) * (outputCost ?? 0)
+  );
+}
+
+function addUsage(
+  previous: DesktopTokenUsage | undefined,
+  next: Pick<DesktopTokenUsage, "inputTokens" | "outputTokens" | "totalTokens">,
+): DesktopTokenUsage {
+  const usage = {
+    inputTokens: (previous?.inputTokens ?? 0) + next.inputTokens,
+    outputTokens: (previous?.outputTokens ?? 0) + next.outputTokens,
+    totalTokens: (previous?.totalTokens ?? 0) + next.totalTokens,
+  };
+  return { ...usage, estimatedCostUsd: usageCost(usage) };
+}
+
+function estimatedConversationUsage(
+  conversation: DesktopConversation,
+): DesktopTokenUsage {
+  const inputTokens = conversation.messages
+    .slice(0, -1)
+    .reduce((total, message) => total + Math.ceil(message.content.length / 4), 0);
+  const outputTokens = conversation.messages.at(-1)?.role === "assistant"
+    ? Math.ceil((conversation.messages.at(-1)?.content.length ?? 0) / 4)
+    : 0;
+  const usage = {
+    inputTokens: Math.max(1, inputTokens),
+    outputTokens,
+    totalTokens: Math.max(1, inputTokens) + outputTokens,
+  };
+  return { ...usage, estimated: true, estimatedCostUsd: usageCost(usage) };
 }
 
 const customThemeProperties: Readonly<
@@ -427,8 +511,8 @@ function renderByokModels(preferredModel?: string): void {
     ...(byokModels.length
       ? byokModels.map((model) => {
           const option = document.createElement("option");
-          option.value = model;
-          option.textContent = model;
+          option.value = model.id;
+          option.textContent = modelLabel(model);
           return option;
         })
       : [
@@ -440,7 +524,9 @@ function renderByokModels(preferredModel?: string): void {
           })(),
         ]),
   );
-  byokModelSelect.value = byokModels.includes(current) ? current : "";
+  byokModelSelect.value = byokModels.some((model) => model.id === current)
+    ? current
+    : "";
 }
 
 async function discoverByokModelList(): Promise<void> {
@@ -558,11 +644,16 @@ function normalizedPreviewUrl(value: string): string {
   return url.toString();
 }
 
-function setCenterView(next: "editor" | "preview" | "agents"): void {
+function setCenterView(next: "editor" | "preview" | "agents" | "chat"): void {
+  if (next === "chat" && !chatDocked) {
+    setChatDocked(true);
+    return;
+  }
   centerView = next;
   editor.hidden = next !== "editor";
   browserPanel.hidden = next !== "preview";
   agentsPanel.hidden = next !== "agents";
+  chatArea.hidden = chatDocked && next !== "chat";
   document
     .querySelectorAll<HTMLButtonElement>("[data-center-view]")
     .forEach((button) =>
@@ -684,15 +775,20 @@ function renderAgents(): void {
     );
     account.hidden = local;
   };
-  const renderAgentModels = (available: readonly string[]): void => {
+  const renderAgentModels = (available: readonly DesktopModelInfo[]): void => {
     const selected = model.value || desktopState.configuration?.model || "";
-    const values = [...new Set([selected, ...available].filter(Boolean))];
+    const values = [
+      ...(selected && !available.some((candidate) => candidate.id === selected)
+        ? [{ id: selected }]
+        : []),
+      ...available,
+    ];
     model.replaceChildren(
       ...(values.length
         ? values.map((value) => {
             const option = document.createElement("option");
-            option.value = value;
-            option.textContent = value;
+            option.value = value.id;
+            option.textContent = modelLabel(value);
             return option;
           })
         : [
@@ -1037,12 +1133,48 @@ function setBusy(next: boolean): void {
   }
   if (!next) agentActivity = "Ready";
   busy = next;
-  stopChat.disabled = !next;
   sendChatButton.hidden = next;
   cancelChatButton.hidden = !next;
   chatStatus.textContent = agentActivity;
   statusDot.className = `status-dot ${next ? "busy" : desktopState.configuration?.model ? "ready" : ""}`;
   renderRuntime();
+}
+
+function setChatCollapsed(next: boolean): void {
+  chatCollapsed = next;
+  chatArea.classList.toggle("chat-collapsed", next);
+  workbench.classList.toggle("chat-collapsed", next && !chatDocked);
+  toggleChat.textContent = next ? "Restore" : "Minimize";
+  toggleChat.title = next ? "Restore agent panel" : "Minimize agent panel";
+  toggleChat.setAttribute("aria-expanded", String(!next));
+}
+
+function setChatDocked(next: boolean): void {
+  if (chatDocked === next) {
+    if (next) setCenterView("chat");
+    return;
+  }
+  chatDocked = next;
+  setChatCollapsed(false);
+  if (next) {
+    centerSurface.append(chatArea);
+    chatSplitter.hidden = true;
+    chatArea.classList.add("chat-docked");
+    toggleChatDock.textContent = "Side";
+    toggleChatDock.title = "Return agent panel to the side";
+    toggleChatDock.setAttribute("aria-pressed", "true");
+    workbench.classList.add("chat-docked");
+    setCenterView("chat");
+    return;
+  }
+  chatSplitter.after(chatArea);
+  chatSplitter.hidden = false;
+  chatArea.classList.remove("chat-docked");
+  toggleChatDock.textContent = "Full size";
+  toggleChatDock.title = "Move agent panel into the editor area";
+  toggleChatDock.setAttribute("aria-pressed", "false");
+  workbench.classList.remove("chat-docked");
+  setCenterView("editor");
 }
 
 function cancelActiveRunForNavigation(): void {
@@ -1079,8 +1211,8 @@ function renderRuntime(): void {
     );
   const values = [
     ...new Set(
-      [config?.model, ...models].filter((value): value is string =>
-        Boolean(value),
+      [config?.model, ...models.map((model) => model.id)].filter(
+        (value): value is string => Boolean(value),
       ),
     ),
   ];
@@ -1088,13 +1220,38 @@ function renderRuntime(): void {
     ...values.map((value) => {
       const option = document.createElement("option");
       option.value = value;
-      option.textContent = value;
+      option.textContent = modelLabel(knownModel(value) ?? { id: value });
       return option;
     }),
   );
   quickModel.value = config?.model ?? "";
   const used = tokenEstimate(activeConversation()?.messages ?? []);
-  contextMeter.textContent = `Context ${formatTokens(used)} / ${formatTokens(configuration().contextWindow)} est.`;
+  const selectedModel = knownModel();
+  const currentConfiguration = configuration();
+  const contextLimit =
+    selectedModel?.contextWindow ??
+    (isLocalProvider(currentConfiguration.provider)
+      ? currentConfiguration.contextWindow
+      : currentConfiguration.modelContextWindow);
+  contextMeter.textContent = contextLimit
+    ? `Context ${formatTokens(used)} / ${formatTokens(contextLimit)} est.`
+    : `Context ${formatTokens(used)} / unknown`;
+  const selectedPrice = selectedModel
+    ? selectedModel.inputCostPerMillion !== undefined &&
+      selectedModel.outputCostPerMillion !== undefined
+      ? `${formatUsd(selectedModel.inputCostPerMillion)} in / ${formatUsd(selectedModel.outputCostPerMillion)} out per 1M`
+      : "Pricing unavailable"
+    : "Model metadata unavailable";
+  modelMeter.textContent = selectedPrice;
+  modelMeter.title = selectedModel?.contextWindow
+    ? `${modelLabel(selectedModel)}${selectedModel.supportsTools === false ? " · tool calling not advertised" : ""}`
+    : "Refresh models to load pricing and context metadata.";
+  const runUsage = activeConversation()?.lastRun?.usage;
+  usageMeter.textContent = runUsage
+    ? `Usage ${formatTokens(runUsage.inputTokens)} in / ${formatTokens(runUsage.outputTokens)} out${runUsage.estimated ? " est." : ""}${runUsage.estimatedCostUsd !== undefined ? ` · ${formatUsd(runUsage.estimatedCostUsd)}` : ""}`
+    : busy
+      ? "Usage pending"
+      : "Usage --";
   chatStatus.textContent = busy ? agentActivity : "Ready";
   const elapsed = streamStartedAt
     ? (performance.now() - streamStartedAt) / 1_000
@@ -1118,6 +1275,162 @@ function statusLabel(file: DesktopGitStatus["files"][number]): string {
   if (status.includes("R")) return "REN";
   if (status.includes("M")) return "MOD";
   return status.trim() || "CHG";
+}
+
+const gitGraphColors = [
+  "#f28b30",
+  "#4f9cf9",
+  "#e03b8b",
+  "#f1bd22",
+  "#9b6ade",
+  "#54d7b0",
+];
+
+function graphRefLabel(ref: string): string {
+  return ref
+    .replace(/^HEAD -> /, "")
+    .replace(/^refs\/heads\//, "")
+    .replace(/^refs\/remotes\//, "");
+}
+
+function graphDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return "";
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function appendSvgLine(
+  svg: SVGSVGElement,
+  attributes: Record<string, string>,
+): void {
+  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+  for (const [name, value] of Object.entries(attributes))
+    line.setAttribute(name, value);
+  svg.append(line);
+}
+
+function appendSvgPath(
+  svg: SVGSVGElement,
+  attributes: Record<string, string>,
+): void {
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  for (const [name, value] of Object.entries(attributes))
+    path.setAttribute(name, value);
+  svg.append(path);
+}
+
+function renderGitGraph(): void {
+  gitGraph.replaceChildren();
+  if (!gitGraphData.available) {
+    gitGraph.textContent = "Git history unavailable.";
+    return;
+  }
+  if (!gitGraphData.commits.length) {
+    gitGraph.textContent = "No commits yet.";
+    return;
+  }
+
+  const lanes: string[] = [];
+  const rows = gitGraphData.commits.map((commit) => {
+    let laneIndex = lanes.indexOf(commit.hash);
+    if (laneIndex < 0) {
+      laneIndex = 0;
+      lanes.unshift(commit.hash);
+    }
+    const before = [...lanes];
+    lanes.splice(laneIndex, 1, ...commit.parents);
+    const nextLanes = lanes.filter(
+      (hash, index) => lanes.indexOf(hash) === index,
+    );
+    lanes.splice(0, lanes.length, ...nextLanes);
+    return { commit, laneIndex, before, after: [...lanes] };
+  });
+  const laneCount = Math.max(
+    1,
+    ...rows.flatMap((row) => [row.before.length, row.after.length]),
+  );
+  const graphWidth = Math.max(42, laneCount * 16 + 18);
+
+  gitGraph.replaceChildren(
+    ...rows.map(({ commit, laneIndex, before, after }) => {
+      const row = document.createElement("div");
+      row.className = "git-graph-row";
+      const visual = document.createElement("div");
+      visual.className = "git-graph-visual";
+      visual.style.width = `${graphWidth}px`;
+      const svg = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "svg",
+      );
+      svg.setAttribute("viewBox", `0 0 ${graphWidth} 36`);
+      svg.setAttribute("aria-hidden", "true");
+      const xFor = (index: number) => 9 + index * 16;
+      before.forEach((_hash, index) => {
+        const color = gitGraphColors[index % gitGraphColors.length];
+        appendSvgLine(svg, {
+          x1: String(xFor(index)),
+          y1: "0",
+          x2: String(xFor(index)),
+          y2: "36",
+          stroke: color,
+          "stroke-width": "2",
+        });
+      });
+      const currentX = xFor(laneIndex);
+      commit.parents.forEach((parent) => {
+        const parentIndex = after.indexOf(parent);
+        if (parentIndex < 0) return;
+        const parentX = xFor(parentIndex);
+        if (parentX === currentX) return;
+        appendSvgPath(svg, {
+          d: `M ${currentX} 18 C ${currentX} 27, ${parentX} 27, ${parentX} 36`,
+          fill: "none",
+          stroke: gitGraphColors[parentIndex % gitGraphColors.length],
+          "stroke-width": "2",
+        });
+      });
+      const node = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "circle",
+      );
+      node.setAttribute("cx", String(currentX));
+      node.setAttribute("cy", "18");
+      node.setAttribute("r", "5");
+      node.setAttribute("fill", gitGraphColors[laneIndex % gitGraphColors.length]);
+      node.setAttribute("stroke", "#11161a");
+      node.setAttribute("stroke-width", "2");
+      svg.append(node);
+      visual.append(svg);
+
+      const details = document.createElement("div");
+      details.className = "git-graph-commit";
+      const heading = document.createElement("div");
+      heading.className = "git-graph-commit-heading";
+      const subject = document.createElement("span");
+      subject.className = "git-graph-subject";
+      subject.textContent = commit.subject;
+      subject.title = `${commit.subject}\n${commit.hash}`;
+      heading.append(subject);
+      for (const ref of commit.refs) {
+        const badge = document.createElement("span");
+        badge.className = `git-ref-badge ${ref.includes("remotes/") ? "remote" : ""}`;
+        badge.textContent = graphRefLabel(ref);
+        badge.title = ref;
+        heading.append(badge);
+      }
+      const metadata = document.createElement("span");
+      metadata.className = "git-graph-meta";
+      metadata.textContent = `${commit.author} · ${graphDate(commit.authoredAt)} · ${commit.shortHash}`;
+      details.append(heading, metadata);
+      row.append(visual, details);
+      return row;
+    }),
+  );
 }
 
 function sidebarTracks(): {
@@ -1228,20 +1541,36 @@ function renderGit(): void {
   if (!gitStatus.available) {
     gitBranch.textContent = "Git unavailable";
     gitCounts.textContent = "";
+    renderGitGraph();
     gitFiles.replaceChildren();
+    commitButton.disabled = true;
+    commitButton.title = "Git is unavailable in this workspace";
+    pullGit.disabled = true;
+    pushGit.disabled = true;
     return;
   }
   gitBranch.textContent = gitStatus.branch || "No branch yet";
+  const staged = gitStatus.files.filter(
+    (file) => file.indexStatus !== " " && file.indexStatus !== "?",
+  );
   gitCounts.textContent = [
     gitStatus.ahead ? `up ${gitStatus.ahead}` : "",
     gitStatus.behind ? `down ${gitStatus.behind}` : "",
     `${gitStatus.files.length} changed`,
+    staged.length ? `${staged.length} staged` : "commit will stage changes",
+    gitStatus.pushRemote ? `remote ${gitStatus.pushRemote}` : "no push remote",
   ]
     .filter(Boolean)
     .join(" | ");
-  const staged = gitStatus.files.filter(
-    (file) => file.indexStatus !== " " && file.indexStatus !== "?",
-  );
+  renderGitGraph();
+  commitButton.disabled = gitStatus.files.length === 0;
+  commitButton.title = staged.length
+    ? "Commit staged changes"
+    : "Commit all changed files; staging happens automatically";
+  pushGit.disabled = !gitStatus.pushRemote;
+  pushGit.title = gitStatus.pushRemote
+    ? `Push to ${gitStatus.pushRemote}`
+    : "No push remote configured. Add one with: git remote add origin <url>";
   const stageAll = element<HTMLButtonElement>("stageAll");
   stageAll.textContent = staged.length ? "Unstage all" : "Stage all";
   stageAll.title = staged.length
@@ -1313,7 +1642,10 @@ function renderGit(): void {
 }
 
 async function refreshGit(): Promise<void> {
-  gitStatus = await window.trussDesktop.gitStatus();
+  [gitStatus, gitGraphData] = await Promise.all([
+    window.trussDesktop.gitStatus(),
+    window.trussDesktop.gitGraph(),
+  ]);
   renderGit();
   renderTerminalPrompt();
 }
@@ -1921,9 +2253,17 @@ function renderChat(): void {
       result.textContent =
         "Run did not complete. No file changes are verified.";
     } else if (conversation.lastRun.modifiedFiles.length) {
-      result.textContent = `Verified workspace changes: ${conversation.lastRun.modifiedFiles.join(", ")}`;
+      result.textContent = `Made all necessary changes: ${conversation.lastRun.modifiedFiles.join(", ")}`;
     } else {
       result.textContent = "No workspace file changes were verified.";
+    }
+    if (conversation.lastRun.usage) {
+      const usage = conversation.lastRun.usage;
+      const cost = usage.estimatedCostUsd !== undefined
+        ? ` · ${formatUsd(usage.estimatedCostUsd)}`
+        : "";
+      result.textContent += ` · ${formatTokens(usage.inputTokens)} in / ${formatTokens(usage.outputTokens)} out${cost}${usage.estimated ? " est." : ""}`;
+      result.title = "Provider usage when available; otherwise estimated from message text.";
     }
     chatMessages.append(result);
   }
@@ -2039,6 +2379,17 @@ function mediaKindForPath(path: string): "image" | "video" | undefined {
   return undefined;
 }
 
+function renderFileDiffToggle(): void {
+  fileDiffToggle.textContent = showingDiff ? "File" : "Diff";
+  fileDiffToggle.title = showingDiff
+    ? "Show the current file"
+    : "Show the current file's diff";
+  fileDiffToggle.setAttribute(
+    "aria-label",
+    showingDiff ? "Show file" : "Show diff",
+  );
+}
+
 function workspaceMediaUrl(path: string): string {
   return `truss-media://workspace/${encodeURIComponent(path.replaceAll("\\", "/"))}`;
 }
@@ -2064,6 +2415,7 @@ function preserveEditorScroll(): void {
 }
 
 function renderEditorContent(tab: EditorTab | undefined): void {
+  renderFileDiffToggle();
   editor.className = "editor-content";
   settingsPanel.hidden = true;
   if (settingsPanel.parentElement === editor)
@@ -2811,9 +3163,9 @@ async function discover(input?: Partial<DesktopConfiguration>): Promise<void> {
     }),
   );
   modelOptions.replaceChildren(
-    ...models.map((name) => {
+    ...models.map((model) => {
       const option = document.createElement("option");
-      option.value = name;
+      option.value = model.id;
       return option;
     }),
   );
@@ -2839,6 +3191,7 @@ function settingsConfiguration(): DesktopConfiguration {
       "Choose a provider endpoint and model before applying agent settings.",
     );
   const mcpServers = mcpConfigurationsFromAdvancedJson();
+  const modelContextWindow = selectedModelContextWindow(model);
   return {
     provider,
     baseUrl,
@@ -2851,10 +3204,12 @@ function settingsConfiguration(): DesktopConfiguration {
       permissionSelect.value === "auto-all"
         ? permissionSelect.value
         : "ask",
-    contextWindow: Math.max(
-      512,
-      Number.parseInt(contextInput.value, 10) || 8_192,
-    ),
+    contextWindow: isLocalProvider(provider)
+      ? Math.max(512, Number.parseInt(contextInput.value, 10) || 8_192)
+      : modelContextWindow ?? 8_192,
+    ...(isLocalProvider(provider) || modelContextWindow === undefined
+      ? {}
+      : { modelContextWindow }),
     internetAccess: internetAccessInput.checked,
     autocomplete: {
       enabled: autocompleteEnabled.checked,
@@ -3075,7 +3430,15 @@ function populateSettings(): void {
     renderProviderAccounts(current.credentialAccountId);
     setSettingsTab("byok");
   }
-  contextInput.value = String(current.contextWindow);
+  contextInput.value = String(
+    current.modelContextWindow ??
+      (isLocalProvider(current.provider) ? current.contextWindow : 8_192),
+  );
+  contextInput.title = isLocalProvider(current.provider)
+    ? "Context discovered from the local endpoint when available."
+    : current.modelContextWindow !== undefined
+      ? "Controlled by the selected cloud model."
+      : "The provider did not publish context metadata; using a conservative fallback.";
   permissionSelect.value = current.permission;
   internetAccessInput.checked = current.internetAccess;
   autocompleteEnabled.checked = current.autocomplete?.enabled ?? false;
@@ -3830,6 +4193,17 @@ function handleEvent(message: DesktopEvent): void {
     return;
   }
   if (message.type === "chat-end") {
+    const conversation = conversationById(message.conversationId);
+    if (conversation && conversation.lastRun && !conversation.lastRun.usage) {
+      updateConversation(conversation.id, (current) => ({
+        ...current,
+        lastRun: {
+          ...current.lastRun!,
+          usage: estimatedConversationUsage(current),
+        },
+      }));
+      saveConversations();
+    }
     if (message.conversationId === runningConversationId) {
       runningConversationId = undefined;
       setBusy(false);
@@ -3883,17 +4257,23 @@ function handleEvent(message: DesktopEvent): void {
     actions.className = "approval-actions";
     const allow = document.createElement("button");
     allow.textContent = "Allow";
+    const allowAll = document.createElement("button");
+    allowAll.textContent = "Allow all this session";
     const deny = document.createElement("button");
     deny.textContent = "Deny";
     allow.onclick = () => {
       void window.trussDesktop.resolveApproval(message.callId, true);
       approval.textContent = `Allowed ${message.tool}`;
     };
+    allowAll.onclick = () => {
+      void window.trussDesktop.resolveApproval(message.callId, true, true);
+      approval.textContent = "Allowed all tools for this session";
+    };
     deny.onclick = () => {
       void window.trussDesktop.resolveApproval(message.callId, false);
       approval.textContent = `Denied ${message.tool}`;
     };
-    actions.append(allow, deny);
+    actions.append(allow, allowAll, deny);
     approval.append(actions);
     chatMessages.append(approval);
     chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -3907,6 +4287,19 @@ function handleEvent(message: DesktopEvent): void {
   if (event.type === "plan_updated" && event.plan) {
     activePlan = event.plan;
     renderPlan();
+    return;
+  }
+  if (event.type === "usage" && event.usage && conversation) {
+    updateConversation(conversation.id, (current) => ({
+      ...current,
+      lastRun: current.lastRun
+        ? { ...current.lastRun, usage: addUsage(current.lastRun.usage, event.usage!) }
+        : current.lastRun,
+      updatedAt: new Date().toISOString(),
+    }));
+    saveConversations();
+    renderChat();
+    renderRuntime();
     return;
   }
   if (event.type === "run_completed") {
@@ -4263,10 +4656,15 @@ element<HTMLButtonElement>("discardAll").onclick = () => {
       );
   });
 };
-element<HTMLButtonElement>("pullGit").onclick = () =>
+pullGit.onclick = () =>
   void runGitAction("pull", () => window.trussDesktop.gitPull());
-element<HTMLButtonElement>("pushGit").onclick = () =>
+pushGit.onclick = () => {
+  if (!gitStatus.pushRemote) {
+    notify("No push remote configured. Add one with: git remote add origin <url>");
+    return;
+  }
   void runGitAction("push", () => window.trussDesktop.gitPush());
+};
 generateCommitMessage.onclick = () => {
   if (!configuration().model) {
     openSettings();
@@ -4310,12 +4708,7 @@ element<HTMLButtonElement>("newChat").onclick = () => {
   createConversation();
   finishConversationNavigation();
 };
-element<HTMLButtonElement>("fileButton").onclick = () => {
-  const path = activeWorkspaceFilePath();
-  setCenterView("editor");
-  if (path) void openFile(path, false, true);
-};
-element<HTMLButtonElement>("diffButton").onclick = () => {
+fileDiffToggle.onclick = () => {
   const path = activeWorkspaceFilePath();
   setCenterView("editor");
   if (path) void openFile(path, !showingDiff, true);
@@ -4353,6 +4746,9 @@ window.addEventListener(
   { passive: false, capture: true },
 );
 element<HTMLButtonElement>("settingsButton").onclick = openSettings;
+element<HTMLButtonElement>("openChat").onclick = () => setCenterView("chat");
+toggleChat.onclick = () => setChatCollapsed(!chatCollapsed);
+toggleChatDock.onclick = () => setChatDocked(!chatDocked);
 element<HTMLButtonElement>("dialogRefresh").onclick = () => {
   const provider = providerSelect.value as "ollama" | "openai-compatible";
   void discover({ provider, baseUrl: baseUrlInput.value });
@@ -4712,7 +5108,17 @@ document
 quickModel.onchange = () => {
   const next = quickModel.value;
   if (!next || next === configuration().model) return;
-  void applyConfiguration({ ...configuration(), model: next }).catch((error) =>
+  const current = configuration();
+  void applyConfiguration({
+    ...current,
+    model: next,
+    contextWindow: isLocalProvider(current.provider)
+      ? current.contextWindow
+      : selectedModelContextWindow(next) ?? 8_192,
+    modelContextWindow: isLocalProvider(current.provider)
+      ? undefined
+      : selectedModelContextWindow(next),
+  }).catch((error) =>
     notify(error instanceof Error ? error.message : String(error)),
   );
 };
@@ -4801,7 +5207,6 @@ chatInput.onkeydown = (event) => {
     slashMenu.hidden = true;
   }
 };
-stopChat.onclick = () => void window.trussDesktop.stopChat();
 cancelChatButton.onclick = () => void window.trussDesktop.stopChat();
 element<HTMLFormElement>("terminalForm").onsubmit = (event) => {
   event.preventDefault();
@@ -4838,7 +5243,9 @@ document
           ? "preview"
           : button.dataset.centerView === "agents"
             ? "agents"
-            : "editor",
+            : button.dataset.centerView === "chat"
+              ? "chat"
+              : "editor",
       );
   });
 element<HTMLFormElement>("browserForm").onsubmit = (event) => {

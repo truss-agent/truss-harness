@@ -4,6 +4,7 @@ import type {
   JsonObject,
   ModelProvider,
   ModelRequest,
+  ModelTokenUsage,
   ModelStreamEvent,
   ToolCall,
   ToolDefinition,
@@ -142,6 +143,30 @@ interface OpenAIChoice {
 interface OpenAIChunk {
   readonly choices?: readonly OpenAIChoice[];
   readonly error?: unknown;
+  readonly usage?: unknown;
+}
+
+function tokenUsage(value: unknown): ModelTokenUsage | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value as Record<string, unknown>;
+  const input = Number(
+    source.prompt_tokens ?? source.input_tokens ?? source.prompt_eval_count,
+  );
+  const output = Number(
+    source.completion_tokens ?? source.output_tokens ?? source.eval_count,
+  );
+  const total = Number(source.total_tokens);
+  if (!Number.isFinite(input) && !Number.isFinite(output)) return undefined;
+  const inputTokens = Number.isFinite(input) ? Math.max(0, input) : 0;
+  const outputTokens = Number.isFinite(output) ? Math.max(0, output) : 0;
+  return {
+    inputTokens,
+    outputTokens,
+    totalTokens:
+      Number.isFinite(total) && total >= 0
+        ? total
+        : inputTokens + outputTokens,
+  };
 }
 
 interface PartialToolCall {
@@ -396,6 +421,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const payload = {
       model: this.options.model,
       stream: true,
+      stream_options: { include_usage: true },
       messages: request.messages.map(toOpenAIMessage),
       ...(request.tools.length ? { tools: request.tools.map(toOpenAITool) } : {})
     };
@@ -432,7 +458,11 @@ export class OpenAICompatibleProvider implements ModelProvider {
     let receivedChunk = false;
     let receivedText = false;
 
-    const processData = (data: string): { readonly done: boolean; readonly text?: string } => {
+    const processData = (data: string): {
+      readonly done: boolean;
+      readonly text?: string;
+      readonly usage?: ModelTokenUsage;
+    } => {
       if (data === "[DONE]") return { done: true };
 
       let chunk: OpenAIChunk;
@@ -444,16 +474,25 @@ export class OpenAICompatibleProvider implements ModelProvider {
       if (chunk.error !== undefined) throw new Error("Model provider returned an error response.");
 
       const choice = chunk.choices?.[0];
-      if (!choice) return { done: false };
+      const usage = tokenUsage(chunk.usage);
+      if (!choice) return { done: false, ...(usage ? { usage } : {}) };
       receivedChunk = true;
       const text = contentText(choice.delta?.content ?? choice.message?.content);
       if (text) receivedText = true;
       appendChunk(partialCalls, choice);
       if (choice.finish_reason) finalReason = finishReason(choice.finish_reason);
-      return { done: false, ...(text ? { text } : {}) };
+      return {
+        done: false,
+        ...(text ? { text } : {}),
+        ...(usage ? { usage } : {}),
+      };
     };
 
-    const finish = (): { readonly calls: ToolCall[]; readonly reason: "stop" | "tool_calls" | "length" } => {
+    let usage: ModelTokenUsage | undefined;
+    const finish = (): {
+      readonly calls: ToolCall[];
+      readonly reason: "stop" | "tool_calls" | "length";
+    } => {
       const calls = parseToolCalls(partialCalls);
       if (!receivedText && calls.length === 0) {
         throw new Error("Model response did not include text or tool calls.");
@@ -464,10 +503,15 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
     if (contentType.includes("application/json") || contentType.includes("+json")) {
       const result = processData(await response.text());
+      usage = result.usage ?? usage;
       if (result.text) yield { type: "text_delta", text: result.text };
       const completed = finish();
       for (const call of completed.calls) yield { type: "tool_call", ...call };
-      yield { type: "finish", reason: completed.reason };
+      yield {
+        type: "finish",
+        reason: completed.reason,
+        ...(usage ? { usage } : {}),
+      };
       return;
     }
 
@@ -483,11 +527,16 @@ export class OpenAICompatibleProvider implements ModelProvider {
         const data = line.startsWith("data:") ? line.slice(5).trim() : "";
         if (!data) continue;
         const result = processData(data);
+        usage = result.usage ?? usage;
         if (result.text) yield { type: "text_delta", text: result.text };
         if (result.done) {
           const completed = finish();
           for (const call of completed.calls) yield { type: "tool_call", ...call };
-          yield { type: "finish", reason: completed.reason };
+          yield {
+            type: "finish",
+            reason: completed.reason,
+            ...(usage ? { usage } : {}),
+          };
           return;
         }
       }
@@ -501,18 +550,27 @@ export class OpenAICompatibleProvider implements ModelProvider {
     for (const line of trailingLines) {
       const data = line.startsWith("data:") ? line.slice(5).trim() : line;
       const result = processData(data);
+      usage = result.usage ?? usage;
       if (result.text) yield { type: "text_delta", text: result.text };
       if (result.done) {
         const completed = finish();
         for (const call of completed.calls) yield { type: "tool_call", ...call };
-        yield { type: "finish", reason: completed.reason };
+        yield {
+          type: "finish",
+          reason: completed.reason,
+          ...(usage ? { usage } : {}),
+        };
         return;
       }
     }
     if (receivedChunk) {
       const completed = finish();
       for (const call of completed.calls) yield { type: "tool_call", ...call };
-      yield { type: "finish", reason: completed.reason };
+      yield {
+        type: "finish",
+        reason: completed.reason,
+        ...(usage ? { usage } : {}),
+      };
       return;
     }
 
@@ -585,13 +643,20 @@ export class OllamaProvider implements ModelProvider {
           readonly message?: { readonly content?: string; readonly tool_calls?: readonly { readonly function: { readonly name: string; readonly arguments: JsonObject } }[] };
           readonly done?: boolean;
           readonly done_reason?: "stop" | "length";
+          readonly prompt_eval_count?: number;
+          readonly eval_count?: number;
         };
         if (chunk.message?.content) yield { type: "text_delta", text: chunk.message.content };
         for (const toolCall of chunk.message?.tool_calls ?? []) {
           yield { type: "tool_call", id: `ollama-${++callIndex}`, name: toolCall.function.name, input: toolCall.function.arguments };
         }
         if (chunk.done) {
-          yield { type: "finish", reason: chunk.done_reason === "length" ? "length" : "stop" };
+          const usage = tokenUsage(chunk);
+          yield {
+            type: "finish",
+            reason: chunk.done_reason === "length" ? "length" : "stop",
+            ...(usage ? { usage } : {}),
+          };
           return;
         }
       }
