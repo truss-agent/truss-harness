@@ -70,6 +70,33 @@ describe("OpenAICompatibleProvider", () => {
     ]);
   });
 
+  it("reports usage from the provider's final streaming chunk", async () => {
+    const body = [
+      'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\n',
+      'data: {"choices":[],"usage":{"prompt_tokens":12,"completion_tokens":4,"total_tokens":16}}\n\n',
+      "data: [DONE]\n\n",
+    ].join("");
+    const provider = new OpenAICompatibleProvider({
+      baseUrl: "https://example.com/v1",
+      model: "usage-model",
+      fetch: async () =>
+        new Response(body, { headers: { "content-type": "text/event-stream" } }),
+    });
+
+    const events = [];
+    for await (const event of provider.stream({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [],
+    }))
+      events.push(event);
+
+    expect(events.at(-1)).toEqual({
+      type: "finish",
+      reason: "stop",
+      usage: { inputTokens: 12, outputTokens: 4, totalTokens: 16 },
+    });
+  });
+
   it("accepts a non-streaming JSON response when a compatible provider ignores streaming", async () => {
     let request: Record<string, unknown> | undefined;
     const provider = new OpenAICompatibleProvider({

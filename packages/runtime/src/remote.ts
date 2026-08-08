@@ -1,4 +1,4 @@
-import type { ChatAttachment, JsonObject, RuntimeEvent, ToolResult } from "./contracts.js";
+import type { ChatAttachment, JsonObject, ModelTokenUsage, RuntimeEvent, ToolResult } from "./contracts.js";
 import type { WorkspacePlan } from "./plans.js";
 
 /** The first version of the provider-neutral protocol used by remote Truss clients. */
@@ -135,6 +135,7 @@ export type RemoteCommandResult =
 /** JSON-safe, sequenced events for clients that are not running in the host process. */
 export type RemoteSessionEvent =
   | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "run_started"; readonly sessionId: string }
+  | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "usage"; readonly sessionId: string; readonly usage: ModelTokenUsage }
   | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "progress_delta"; readonly sessionId: string; readonly text: string }
   | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "text_delta"; readonly sessionId: string; readonly text: string }
   | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "tool_call_requested"; readonly sessionId: string; readonly callId: string; readonly tool: string; readonly input: JsonObject }
@@ -158,6 +159,7 @@ export function toRemoteSessionEvent(event: RuntimeEvent, sequence: number): Rem
   const envelope = { version: REMOTE_SESSION_PROTOCOL_VERSION, sequence, sessionId: event.sessionId } as const;
   switch (event.type) {
     case "run_started": return { ...envelope, type: event.type };
+    case "usage": return { ...envelope, type: event.type, usage: event.usage };
     case "progress_delta": return { ...envelope, type: event.type, text: event.text };
     case "text_delta": return { ...envelope, type: event.type, text: event.text };
     case "tool_call_requested": return { ...envelope, type: event.type, callId: event.callId, tool: event.tool, input: event.input };

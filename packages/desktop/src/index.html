@@ -9,8 +9,8 @@
 <body>
   <header class="topbar">
     <div class="runtime-lockup"><div class="app-brand"><img src="./assets/brand-logo.png" alt=""><span>Truss</span></div><span class="status-dot" id="statusDot"></span><span id="runtimeStatus">No model selected</span></div>
-    <div class="header-editor-actions"><div class="center-tabs" aria-label="Center view"><button class="active" data-center-view="editor">Editor</button><button data-center-view="preview">Preview</button><button data-center-view="agents">Agents</button></div><button id="formatFileButton" title="Format current file with Prettier">Format</button><button id="fileButton">File</button><button id="diffButton">Diff</button><button id="settingsButton">Settings</button></div>
-    <details class="top-menu"><summary aria-label="Application menu">Menu</summary><div class="top-menu-panel"><button id="chooseWorkspace">Open workspace</button><button id="connectTrussGo" title="Connect this workspace to Truss Go on the same Wi-Fi">Connect Truss Go</button><button id="refreshModels" title="Redetect the active local provider, model, and context window">Refresh local model</button></div></details>
+    <div class="header-editor-actions"><div class="center-tabs" aria-label="Center view"><button class="active" data-center-view="editor">Editor</button><button data-center-view="preview">Preview</button><button data-center-view="agents">Agents</button></div><button id="formatFileButton" title="Format current file with Prettier">Format</button><button id="fileDiffToggle" title="Show the current file's diff">Diff</button></div>
+    <details class="top-menu"><summary aria-label="Application menu">Menu</summary><div class="top-menu-panel"><button id="chooseWorkspace">Open workspace</button><button id="settingsButton">Settings</button><button id="openChat">Open chat</button><button id="connectTrussGo" title="Connect this workspace to Truss Go on the same Wi-Fi">Connect Truss Go</button><button id="refreshModels" title="Redetect the active local provider, model, and context window">Refresh local model</button></div></details>
   </header>
   <main class="workbench">
     <aside class="sidebar">
@@ -19,8 +19,9 @@
         <div id="gitBody" class="git-body">
           <div class="git-summary"><span id="gitBranch">Checking repository...</span><span id="gitCounts"></span></div>
           <div class="git-actions"><button id="stageAll" title="Stage all changed files">Stage all</button><button id="discardAll" title="Discard all uncommitted file changes">Discard all</button><button id="pullGit" title="Pull from the configured remote">Pull</button><button id="pushGit" title="Push to the configured remote">Push</button></div>
+          <div id="gitGraph" class="git-graph" aria-label="Git commit graph"></div>
           <div id="gitFiles" class="git-files"></div>
-          <form id="commitForm" class="commit-form"><input id="commitMessage" autocomplete="off" placeholder="Commit message"><button id="generateCommitMessage" type="button" title="Generate a commit message from your changes">Generate</button><button class="primary" type="submit">Commit</button></form>
+          <form id="commitForm" class="commit-form"><input id="commitMessage" autocomplete="off" placeholder="Commit message"><button id="generateCommitMessage" type="button" title="Generate a commit message from your changes">Generate</button><button id="commitButton" class="primary" type="submit" title="Stage changes before committing">Commit</button></form>
         </div>
       </section>
       <div id="gitSplitter" class="pane-splitter horizontal" role="separator" aria-label="Resize Git panel"></div>
@@ -48,12 +49,14 @@
     </section>
     <div id="chatSplitter" class="pane-splitter vertical" role="separator" aria-label="Resize agent panel"></div>
     <section class="chat-area">
-      <div class="chat-heading"><div><strong>Agent</strong><span id="chatStatus">Ready</span></div><button id="stopChat" disabled>Stop</button></div>
-      <div id="toolActivityPanel" class="tool-activity-panel" hidden></div>
-      <section id="planPanel" class="plan-panel" hidden></section>
-      <div id="chatMessages" class="chat-messages"></div>
-      <form id="chatForm" class="composer"><div id="slashMenu" class="slash-menu" role="listbox" hidden></div><div id="attachmentList" class="attachment-list" hidden></div><textarea id="chatInput" rows="3" placeholder="Ask about this workspace. Type / to attach a file."></textarea><input id="attachmentInput" type="file" multiple hidden><div class="composer-actions"><button id="addAttachment" type="button" title="Attach images or text files">Attach</button><button id="sendChat" class="primary" type="submit">Send</button><button id="cancelChat" type="button" hidden>Cancel</button></div></form>
-       <div class="agent-controls"><div class="runtime-metrics"><span id="contextMeter">Context 0 / 8k est.</span><span id="rateMeter" title="Estimated from aggregate streamed response text. It excludes time spent waiting on tools.">Output -- tok/s</span></div><div class="agent-control-row"><div class="mode-control" aria-label="Agent mode"><button data-mode="chat">Chat</button><button data-mode="plan">Plan</button><button data-mode="edit">Agent</button></div><label class="model-control"><span>Model</span><select id="quickModel"></select></label></div></div>
+      <div class="chat-heading"><div><strong>Agent</strong><span id="chatStatus">Ready</span></div><div class="chat-heading-actions"><details class="chat-actions-menu"><summary aria-label="Agent panel actions">Actions</summary><div class="chat-actions-menu-panel"><button id="toggleChat" type="button" aria-expanded="true" aria-controls="chatContent">Minimize</button><button id="toggleChatDock" type="button" title="Move agent panel into the editor area" aria-pressed="false">Full size</button></div></details></div></div>
+      <div id="chatContent" class="chat-content">
+        <div id="toolActivityPanel" class="tool-activity-panel" hidden></div>
+        <section id="planPanel" class="plan-panel" hidden></section>
+        <div id="chatMessages" class="chat-messages"></div>
+        <form id="chatForm" class="composer"><div id="slashMenu" class="slash-menu" role="listbox" hidden></div><div id="attachmentList" class="attachment-list" hidden></div><textarea id="chatInput" rows="3" placeholder="Ask about this workspace. Type / to attach a file."></textarea><input id="attachmentInput" type="file" multiple hidden><div class="composer-actions"><button id="addAttachment" type="button" title="Attach images or text files">Attach</button><button id="sendChat" class="primary" type="submit">Send</button><button id="cancelChat" type="button" hidden>Cancel</button></div></form>
+        <div class="agent-controls"><div class="runtime-metrics"><span id="contextMeter">Context 0 / 8k est.</span><span id="modelMeter">Pricing unavailable</span><span id="usageMeter">Usage --</span><span id="rateMeter" title="Estimated from aggregate streamed response text. It excludes time spent waiting on tools.">Output -- tok/s</span></div><div class="agent-control-row"><div class="mode-control" aria-label="Agent mode"><button data-mode="chat">Chat</button><button data-mode="plan">Plan</button><button data-mode="edit">Agent</button></div><label class="model-control"><span>Model</span><select id="quickModel"></select></label></div></div>
+      </div>
     </section>
   </main>
   <section id="settingsPanel" class="settings-editor" hidden>
@@ -92,7 +95,7 @@
         <label id="customThemeSetting" class="mcp-setting" hidden>Custom palette (JSON)<textarea id="customThemeInput" rows="8" spellcheck="false" placeholder='{"background":"#11161A","surface":"#151D22","panel":"#131A1F","border":"#2B383F","text":"#E7EEF1","muted":"#9BADB5","accent":"#54D7B0","accentText":"#07100F","warning":"#F4C968","error":"#F0A0A0"}'></textarea></label>
         <div id="customThemeHelp" class="mcp-status" hidden>Use any subset of the shown #RRGGBB tokens. Missing values use the Default theme.</div>
         <div id="customThemeActions" class="settings-panel-actions" hidden><button id="saveCustomTheme" type="button">Save custom theme</button></div>
-        <label>Context window<input id="contextInput" type="number" min="512" max="1000000" step="512"></label>
+        <label>Context window<input id="contextInput" type="number" min="512" max="2000000" step="512"></label>
         <label>Tool permissions<select id="permissionSelect"><option value="ask">Ask every time</option><option value="auto-read">Auto-allow read-only</option><option value="auto-all">Auto-allow all tools</option></select></label>
         <label class="checkbox-setting settings-wide"><input id="internetAccessInput" type="checkbox"><span>Allow public internet research</span></label>
         <label class="checkbox-setting settings-wide"><input id="autocompleteEnabled" type="checkbox"><span>Enable inline Tab autocomplete</span></label>

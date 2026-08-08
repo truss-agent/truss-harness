@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ChatAttachment, ChatMessage, JsonObject, ModelProvider, RuntimeEvent, Session, ToolCall, ToolResult } from "./contracts.js";
+import type { ChatAttachment, ChatMessage, JsonObject, ModelProvider, ModelTokenUsage, RuntimeEvent, Session, ToolCall, ToolResult } from "./contracts.js";
 import type { ContextBlock, ContextManager } from "./context.js";
 import type { RuntimeEventBus } from "./events.js";
 import type { SessionStore } from "./sessions.js";
@@ -137,6 +137,7 @@ export class AgentRuntime {
       for (let turn = 0; turn < this.maxTurns; turn++) {
         const calls: ToolCall[] = [];
         let text = "";
+        let usage: ModelTokenUsage | undefined;
         const progressParser = new ProgressStreamParser();
         const recoveryInstruction = recoveryReason === "write_failed"
           ? "WRITE RECOVERY: A previous file write failed. The current file contents are in the tool history. Do not stop after reading. Call read_file if needed, then retry one focused write using an exact contiguous excerpt. Verify the write with read_file before responding."
@@ -159,8 +160,10 @@ export class AgentRuntime {
             }
           }
           else if (event.type === "tool_call") calls.push(event);
+          else if (event.type === "finish") usage = event.usage;
           else if (event.type === "error") throw event.error;
         }
+        if (usage) await this.emit({ type: "usage", sessionId, usage });
         const finalProgress = progressParser.finish();
         if (finalProgress.progress) await this.emit({ type: "progress_delta", sessionId, text: finalProgress.progress });
         text += finalProgress.content;

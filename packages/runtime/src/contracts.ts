@@ -47,6 +47,12 @@ export interface ModelRequest {
   readonly signal?: AbortSignal;
 }
 
+export interface ModelTokenUsage {
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly totalTokens: number;
+}
+
 /** Safe provider request metadata used by runtime retry policies. */
 export class ModelRequestError extends Error {
   readonly status?: number;
@@ -66,7 +72,11 @@ export class ModelRequestError extends Error {
 export type ModelStreamEvent =
   | { readonly type: "text_delta"; readonly text: string }
   | ({ readonly type: "tool_call" } & ToolCall)
-  | { readonly type: "finish"; readonly reason: "stop" | "tool_calls" | "length" }
+  | {
+      readonly type: "finish";
+      readonly reason: "stop" | "tool_calls" | "length";
+      readonly usage?: ModelTokenUsage;
+    }
   | { readonly type: "error"; readonly error: Error };
 
 /** Provider adapters translate their native streaming protocol into this contract. */
@@ -104,6 +114,7 @@ export interface SessionCheckpoint {
 
 export type RuntimeEvent =
   | { readonly type: "run_started"; readonly sessionId: string }
+  | { readonly type: "usage"; readonly sessionId: string; readonly usage: ModelTokenUsage }
   /** Short user-visible execution note, never hidden chain-of-thought. */
   | { readonly type: "progress_delta"; readonly sessionId: string; readonly text: string }
   | { readonly type: "text_delta"; readonly sessionId: string; readonly text: string }

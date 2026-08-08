@@ -64,8 +64,17 @@ const bridge: DesktopBridge = {
     readonly openFilePaths?: readonly string[];
   }) => ipcRenderer.invoke("truss:send-chat", input),
   stopChat: () => ipcRenderer.invoke("truss:stop-chat"),
-  resolveApproval: (callId: string, approved: boolean) =>
-    ipcRenderer.invoke("truss:resolve-approval", callId, approved),
+  resolveApproval: (
+    callId: string,
+    approved: boolean,
+    allowAllForSession?: boolean,
+  ) =>
+    ipcRenderer.invoke(
+      "truss:resolve-approval",
+      callId,
+      approved,
+      allowAllForSession,
+    ),
   listAgents: () => ipcRenderer.invoke("truss:list-agents"),
   createAgent: (input) => ipcRenderer.invoke("truss:create-agent", input),
   updateAgent: (id, input) =>
@@ -98,6 +107,7 @@ const bridge: DesktopBridge = {
   diffFile: (path: string) => ipcRenderer.invoke("truss:diff-file", path),
   getPlan: () => ipcRenderer.invoke("truss:get-plan"),
   gitStatus: () => ipcRenderer.invoke("truss:git-status"),
+  gitGraph: () => ipcRenderer.invoke("truss:git-graph"),
   gitStage: (paths: readonly string[]) =>
     ipcRenderer.invoke("truss:git-stage", paths),
   gitUnstage: (paths: readonly string[]) =>
