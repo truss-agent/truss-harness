@@ -426,6 +426,14 @@ button:focus-visible {
     font-weight: 700;
 }
 
+.editor-tab.has-syntax-error {
+    border-bottom-color: #e87575;
+}
+
+.editor-tab.has-syntax-error .editor-tab-main {
+    color: #f0a0a0;
+}
+
 .center-tabs {
     padding: 2px;
     border: 1px solid #33414a;
@@ -827,57 +835,8 @@ button:focus-visible {
     gap: 5px;
 }
 
-.chat-actions-menu {
-    position: relative;
-}
-
-.chat-actions-menu summary {
-    display: flex;
-    align-items: center;
-    min-height: 25px;
-    border: 1px solid #33414a;
-    border-radius: 4px;
-    background: #1b252b;
-    padding: 3px 7px;
-    cursor: pointer;
-    list-style: none;
-    white-space: nowrap;
-}
-
-.chat-actions-menu summary::-webkit-details-marker {
-    display: none;
-}
-
-.chat-actions-menu summary::after {
-    content: "⌄";
-    margin-left: 6px;
-    color: #9badb5;
-    font-size: 11px;
-}
-
-.chat-actions-menu[open] summary,
-.chat-actions-menu summary:hover {
-    background: #25343c;
-}
-
-.chat-actions-menu-panel {
-    position: absolute;
-    z-index: 30;
-    top: calc(100% + 5px);
-    right: 0;
-    display: grid;
-    gap: 5px;
-    min-width: 150px;
-    padding: 6px;
-    border: 1px solid #33414a;
-    border-radius: 6px;
-    background: #151d22;
-    box-shadow: 0 14px 30px #05090baa;
-}
-
-.chat-actions-menu-panel button {
-    width: 100%;
-    text-align: left;
+.chat-heading-actions button {
+    min-width: 66px;
     white-space: nowrap;
 }
 
@@ -1830,6 +1789,15 @@ dialog::backdrop {
 
 .tree-row.file button {
     color: #c6d1d6;
+}
+
+.tree-row.file.has-syntax-error button,
+.git-file-row.has-syntax-error .git-file-name {
+    color: #f0a0a0;
+}
+
+.tree-row.file.has-syntax-error .file-icon {
+    color: #f0a0a0 !important;
 }
 
 .tree-row.file.filtered button {

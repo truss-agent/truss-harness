@@ -480,20 +480,35 @@ function isAllowedPreviewUrl(value: string): boolean {
   }
 }
 
-function stopProcessTree(child: ChildProcess | undefined): void {
-  if (!child || child.killed) return;
+function stopProcessTree(child: ChildProcess | undefined): boolean {
+  if (!child || child.killed || child.exitCode !== null) return false;
   if (process.platform === "win32" && child.pid) {
     void execFile("taskkill", ["/PID", String(child.pid), "/T", "/F"]).catch(
       () => child.kill(),
     );
-  } else {
-    child.kill("SIGTERM");
+    return true;
   }
+  if (child.pid) {
+    try {
+      // Terminal commands run in their own process group, so Ctrl+C can stop
+      // the shell and every process it started (for example npm dev).
+      process.kill(-child.pid, "SIGTERM");
+      return true;
+    } catch {
+      // A process can exit between the check above and the signal. Falling back
+      // still handles shells created before grouped terminal processes existed.
+    }
+  }
+  child.kill("SIGTERM");
+  return true;
 }
 
-function stopManagedTerminalProcesses(): void {
-  for (const child of terminalProcesses) stopProcessTree(child);
+function stopManagedTerminalProcesses(): number {
+  let stopped = 0;
+  for (const child of terminalProcesses)
+    if (stopProcessTree(child)) stopped += 1;
   terminalProcesses.clear();
+  return stopped;
 }
 
 function shutdownDesktopWork(): void {
@@ -2784,6 +2799,7 @@ ipcMain.handle(
       cwd: persisted.workspaceRoot,
       shell: true,
       windowsHide: true,
+      detached: process.platform !== "win32",
     });
     terminalProcesses.add(child);
     child.stdout.on("data", (data: Buffer) =>
@@ -2810,6 +2826,7 @@ ipcMain.handle(
     return commandId;
   },
 );
+ipcMain.handle("truss:stop-terminal", (): number => stopManagedTerminalProcesses());
 ipcMain.handle(
   "truss:open-external",
   async (_event, value: string): Promise<void> => {

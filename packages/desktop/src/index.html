@@ -10,7 +10,7 @@
   <header class="topbar">
     <div class="runtime-lockup"><div class="app-brand"><img src="./assets/brand-logo.png" alt=""><span>Truss</span></div><span class="status-dot" id="statusDot"></span><span id="runtimeStatus">No model selected</span></div>
     <div class="header-editor-actions"><div class="center-tabs" aria-label="Center view"><button class="active" data-center-view="editor">Editor</button><button data-center-view="preview">Preview</button><button data-center-view="agents">Agents</button></div><button id="formatFileButton" title="Format current file with Prettier">Format</button><button id="fileDiffToggle" title="Show the current file's diff">Diff</button></div>
-    <details class="top-menu"><summary aria-label="Application menu">Menu</summary><div class="top-menu-panel"><button id="chooseWorkspace">Open workspace</button><button id="settingsButton">Settings</button><button id="openChat">Open chat</button><button id="connectTrussGo" title="Connect this workspace to Truss Go on the same Wi-Fi">Connect Truss Go</button><button id="refreshModels" title="Redetect the active local provider, model, and context window">Refresh local model</button></div></details>
+    <details class="top-menu"><summary aria-label="Application menu">Menu</summary><div class="top-menu-panel"><button id="chooseWorkspace">Open workspace</button><button id="settingsButton">Settings</button><button id="connectTrussGo" title="Connect this workspace to Truss Go on the same Wi-Fi">Connect Truss Go</button></div></details>
   </header>
   <main class="workbench">
     <aside class="sidebar">
@@ -49,7 +49,7 @@
     </section>
     <div id="chatSplitter" class="pane-splitter vertical" role="separator" aria-label="Resize agent panel"></div>
     <section class="chat-area">
-      <div class="chat-heading"><div><strong>Agent</strong><span id="chatStatus">Ready</span></div><div class="chat-heading-actions"><details class="chat-actions-menu"><summary aria-label="Agent panel actions">Actions</summary><div class="chat-actions-menu-panel"><button id="toggleChat" type="button" aria-expanded="true" aria-controls="chatContent">Minimize</button><button id="toggleChatDock" type="button" title="Move agent panel into the editor area" aria-pressed="false">Full size</button></div></details></div></div>
+      <div class="chat-heading"><div><strong>Agent</strong><span id="chatStatus">Ready</span></div><div class="chat-heading-actions"><button id="toggleChat" type="button" aria-expanded="true" aria-controls="chatContent" title="Hide agent panel">Hide</button><button id="toggleChatDock" type="button" title="Move agent panel into the editor area" aria-pressed="false">Full size</button></div></div>
       <div id="chatContent" class="chat-content">
         <div id="toolActivityPanel" class="tool-activity-panel" role="status" aria-live="polite" hidden></div>
         <section id="planPanel" class="plan-panel" hidden></section>

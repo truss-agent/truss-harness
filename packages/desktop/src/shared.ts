@@ -368,6 +368,8 @@ export interface DesktopBridge {
   gitPull(): Promise<string>;
   gitPush(): Promise<string>;
   runTerminal(command: string): Promise<string>;
+  /** Interrupt every Truss-managed terminal process running in this workspace. */
+  stopTerminal(): Promise<number>;
   openExternal(url: string): Promise<void>;
   connectTrussGo(): Promise<{
     readonly workspaceName: string;
