@@ -42,6 +42,20 @@ describe("filesystem edit tools", () => {
     await expect(readFile(join(root, "example.ts"), "utf8")).resolves.toBe("function run() {\n  return false;\n}\n");
   });
 
+  it("initializes a blank file from a focused replacement", async () => {
+    const root = await workspace();
+    await writeFile(join(root, "index.html"), "\n\n", "utf8");
+
+    await expect(
+      replaceInFileTool.execute(
+        { path: "index.html", oldText: "<main>old</main>", newText: "<main>new</main>" },
+        { workspaceRoot: root },
+      ),
+    ).resolves.toEqual({ content: "File was blank; wrote replacement content." });
+
+    await expect(readFile(join(root, "index.html"), "utf8")).resolves.toBe("<main>new</main>");
+  });
+
   it("rejects suspicious truncation of a large existing file", async () => {
     const root = await workspace();
     await writeFile(join(root, "README.md"), "x".repeat(5_000), "utf8");
