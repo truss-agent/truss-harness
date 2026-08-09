@@ -155,6 +155,20 @@ type WebviewRequest =
   | { readonly type: "ready" }
   | { readonly type: "discover"; readonly configuration?: ModelConfiguration }
   | { readonly type: "configure"; readonly configuration: ModelConfiguration }
+  | {
+      readonly type: "saveProviderAccount";
+      readonly provider: ModelProviderKind;
+      readonly accountId?: string;
+      readonly accountLabel?: string;
+      readonly apiKey: string;
+      readonly configuration: ModelConfiguration;
+    }
+  | { readonly type: "removeProviderAccount"; readonly accountId: string }
+  | {
+      readonly type: "testProviderConnection";
+      readonly configuration: ModelConfiguration;
+      readonly apiKey?: string;
+    }
   | { readonly type: "send"; readonly prompt: string; readonly conversationId: string; readonly history: readonly ConversationMessage[]; readonly attachments?: readonly ChatAttachment[]; readonly attachedPaths?: readonly string[] }
   | { readonly type: "stop" }
   | { readonly type: "newConversation" }
@@ -195,8 +209,41 @@ interface AgentDashboardRun {
 interface HostState {
   readonly configuration: ModelConfiguration;
   readonly endpoints: readonly LocalModelEndpoint[];
-  readonly models: readonly string[];
-  readonly providerAccounts: readonly ProviderAccount[];
+  readonly models: readonly DiscoveredModel[];
+  readonly providerAccounts: readonly (ProviderAccount & {
+    readonly hasCredential: boolean;
+  })[];
+  readonly cloudProviders: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly baseUrl: string;
+  }[];
+}
+
+interface DiscoveredModel {
+  readonly id: string;
+  readonly contextWindow?: number;
+}
+
+function discoveredModel(value: unknown): DiscoveredModel | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const id = [record.id, record.name, record.model].find(
+    (candidate): candidate is string =>
+      typeof candidate === "string" && candidate.trim().length > 0,
+  );
+  if (!id) return undefined;
+  const contextWindow = [
+    record.context_length,
+    record.max_context_length,
+    record.contextWindow,
+    record.max_input_tokens,
+    record.inputTokenLimit,
+  ].find(
+    (candidate): candidate is number =>
+      typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 512,
+  );
+  return { id: id.trim(), ...(contextWindow ? { contextWindow: Math.floor(contextWindow) } : {}) };
 }
 
 const defaultConfiguration: ModelConfiguration = {
@@ -510,13 +557,64 @@ export function activate(context: vscode.ExtensionContext): void {
     provider = configuration.provider,
   ): Promise<string | undefined> =>
     providerApiKeyForReference(provider, configuration.credentialAccountId);
-  const testProviderConnection = async (): Promise<void> => {
-    if (!configuration.model.trim()) {
+  const storedProviderApiKey = async (
+    provider: ModelProviderKind,
+    reference?: string,
+  ): Promise<string | undefined> => {
+    if (!isCloudProviderId(provider)) return undefined;
+    const account = reference
+      ? providerAccounts.find(
+          (candidate) => candidate.id === reference && candidate.providerId === provider,
+        )
+      : providerAccountsFor(provider)[0];
+    return account
+      ? context.secrets.get(credentialKey(account.id))
+      : context.secrets.get(legacyCredentialKey(provider));
+  };
+  const discoverCloudModels = async (
+    candidate: ModelConfiguration,
+  ): Promise<readonly DiscoveredModel[]> => {
+    if (!isCloudProviderId(candidate.provider)) return [];
+    const credential = await storedProviderApiKey(
+      candidate.provider,
+      candidate.credentialAccountId,
+    );
+    if (!credential) return [];
+    const definition = cloudProviderDefinition(candidate.provider);
+    const baseUrl = definition.baseUrl.replace(/\/$/, "");
+    const response = await fetch(
+      definition.compatibility === "ollama-api"
+        ? `${baseUrl}/api/tags`
+        : `${baseUrl}/models`,
+      { headers: { Authorization: `Bearer ${credential}` } },
+    );
+    if (!response.ok) return [];
+    const payload = (await response.json()) as {
+      readonly data?: readonly unknown[];
+      readonly models?: readonly unknown[];
+    };
+    const records = definition.compatibility === "ollama-api"
+      ? payload.models ?? []
+      : payload.data ?? [];
+    return [...new Map(
+      records.flatMap((record) => {
+        const model = discoveredModel(record);
+        return model ? [[model.id, model] as const] : [];
+      }),
+    ).values()];
+  };
+  const testProviderConnection = async (
+    candidate = configuration,
+    apiKeyOverride?: string,
+  ) => {
+    if (!candidate.model.trim()) {
       throw new Error("Choose a provider model before testing the connection.");
     }
-    const apiKey = isCloudProviderId(configuration.provider)
-      ? await providerApiKey()
-      : undefined;
+    const apiKey =
+      apiKeyOverride?.trim() ||
+      (isCloudProviderId(candidate.provider)
+        ? await providerApiKeyForReference(candidate.provider, candidate.credentialAccountId)
+        : undefined);
     const host = new AgentHost({
       workspaceRoot: workspaceRoot(),
       credentialResolver: {
@@ -527,17 +625,88 @@ export function activate(context: vscode.ExtensionContext): void {
         },
       },
     });
-    const result = await host.testProviderConnection({
-      providerId: configuration.provider,
-      endpointUrl: configuration.baseUrl,
-      modelId: configuration.model,
+    return host.testProviderConnection({
+      providerId: candidate.provider,
+      endpointUrl: candidate.baseUrl,
+      modelId: candidate.model,
       ...(apiKey ? { credentialRef: "configuration" } : {}),
     });
+  };
+  const showProviderConnectionResult = async (): Promise<void> => {
+    const result = await testProviderConnection();
     const message = `${brand.productName}: ${result.message}`;
     if (result.status === "connected") {
       void vscode.window.showInformationMessage(message);
     } else {
       void vscode.window.showWarningMessage(message);
+    }
+  };
+  const saveProviderAccount = async (
+    provider: ModelProviderKind,
+    apiKey: string,
+    accountId?: string,
+    accountLabel?: string,
+    selectedConfiguration?: ModelConfiguration,
+  ): Promise<ProviderAccount> => {
+    if (!isCloudProviderId(provider)) {
+      throw new Error("Only cloud providers require an API key.");
+    }
+    if (!apiKey.trim()) throw new Error("Enter an API key before saving the provider account.");
+    const existing = accountId?.trim()
+      ? providerAccounts.find(
+          (account) => account.id === accountId.trim() && account.providerId === provider,
+        )
+      : undefined;
+    if (accountId?.trim() && !existing) {
+      throw new Error("The selected provider account is no longer available.");
+    }
+    const timestamp = new Date().toISOString();
+    const account: ProviderAccount = existing
+      ? {
+          ...existing,
+          label: accountLabel?.trim() || existing.label,
+          status: "active",
+          updatedAt: timestamp,
+        }
+      : {
+          id: randomUUID(),
+          providerId: provider,
+          label: accountLabel?.trim() || `${cloudProviderDefinition(provider).label} account`,
+          authMethod: "api-key",
+          status: "active",
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+    providerAccounts = [
+      ...providerAccounts.filter((candidate) => candidate.id !== account.id),
+      account,
+    ];
+    await persistProviderAccounts();
+    await context.secrets.store(credentialKey(account.id), apiKey.trim());
+    if (selectedConfiguration?.provider === provider || configuration.provider === provider) {
+      configuration = {
+        ...(selectedConfiguration ? normalizeConfiguration(selectedConfiguration) : configuration),
+        provider,
+        baseUrl: cloudProviderDefinition(provider).baseUrl,
+        credentialAccountId: account.id,
+      };
+      await context.workspaceState.update("modelConfiguration", configuration);
+      disposeService();
+      await disposeAgentCoordinator();
+    }
+    return account;
+  };
+  const removeProviderAccount = async (accountId: string): Promise<void> => {
+    const account = providerAccounts.find((candidate) => candidate.id === accountId);
+    if (!account) throw new Error("The selected provider account is no longer available.");
+    await context.secrets.delete(credentialKey(account.id));
+    providerAccounts = providerAccounts.filter((candidate) => candidate.id !== account.id);
+    await persistProviderAccounts();
+    if (configuration.credentialAccountId === account.id) {
+      configuration = { ...configuration, credentialAccountId: undefined };
+      await context.workspaceState.update("modelConfiguration", configuration);
+      disposeService();
+      await disposeAgentCoordinator();
     }
   };
   const persistMcpServers = async (
@@ -946,16 +1115,44 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       }
     }
-    let models: readonly string[] = [];
+    let models: readonly DiscoveredModel[] = [];
     if (isLocalConfiguration(selectedConfiguration)) {
-      try { models = (await listLocalModels(localEndpoint(selectedConfiguration))).map((model) => model.name); } catch { /* Manual names remain valid for custom endpoints. */ }
+      try {
+        models = (await listLocalModels(localEndpoint(selectedConfiguration))).map((model) => ({
+          id: model.name,
+        }));
+      } catch {
+        /* Manual names remain valid for custom endpoints. */
+      }
+    } else {
+      try {
+        models = await discoverCloudModels(selectedConfiguration);
+      } catch {
+        /* A manual cloud model ID remains valid when a provider blocks model discovery. */
+      }
     }
     const endpoints = await detectLocalEndpoints();
+    const accountStates = await Promise.all(
+      providerAccounts.map(async (account) => ({
+        ...account,
+        hasCredential: Boolean(
+          (await context.secrets.get(credentialKey(account.id))) ??
+            (isCloudProviderId(account.providerId)
+              ? await context.secrets.get(legacyCredentialKey(account.providerId))
+              : undefined),
+        ),
+      })),
+    );
     return {
       configuration: selectedConfiguration,
       endpoints,
       models,
-      providerAccounts,
+      providerAccounts: accountStates,
+      cloudProviders: cloudProviderDefinitions.map(({ id, label, baseUrl }) => ({
+        id,
+        label,
+        baseUrl,
+      })),
     };
   };
   const sendState = async (selectedConfiguration?: ModelConfiguration): Promise<void> => post({ type: "state", state: await state(selectedConfiguration) });
@@ -1127,6 +1324,61 @@ ${diff}`);
           post({ type: "runtimeReset" });
           await sendState();
           break;
+        case "saveProviderAccount":
+          try {
+            if (!isConfiguration(message.configuration)) {
+              throw new Error("Choose a provider endpoint and model before saving its account.");
+            }
+            const account = await saveProviderAccount(
+              message.provider,
+              message.apiKey,
+              message.accountId,
+              message.accountLabel,
+              normalizeConfiguration(message.configuration),
+            );
+            post({
+              type: "providerAccountSaved",
+              accountId: account.id,
+              message: `${account.label} is stored securely in VS Code.`,
+            });
+            await sendState();
+          } catch (error) {
+            post({
+              type: "providerAccountError",
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+          break;
+        case "removeProviderAccount":
+          try {
+            await removeProviderAccount(message.accountId);
+            post({ type: "providerAccountRemoved", message: "Stored provider key removed." });
+            await sendState();
+          } catch (error) {
+            post({
+              type: "providerAccountError",
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+          break;
+        case "testProviderConnection":
+          try {
+            if (!isConfiguration(message.configuration)) {
+              throw new Error("Choose a provider, endpoint, and model before testing.");
+            }
+            const result = await testProviderConnection(
+              normalizeConfiguration(message.configuration),
+              message.apiKey,
+            );
+            post({ type: "connectionResult", status: result.status, message: result.message });
+          } catch (error) {
+            post({
+              type: "connectionResult",
+              status: "failed",
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+          break;
         case "send":
           await sendPrompt(message.prompt, message.conversationId, message.history, message.attachments, message.attachedPaths);
           break;
@@ -1206,7 +1458,7 @@ ${diff}`);
   }));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.connectTrussGo", () => connectTrussGo().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.manageMcpServers", () => manageMcpServers().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
-  context.subscriptions.push(vscode.commands.registerCommand("trussHarness.testProviderConnection", () => testProviderConnection().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
+  context.subscriptions.push(vscode.commands.registerCommand("trussHarness.testProviderConnection", () => showProviderConnectionResult().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.configureByokProvider", async () => {
     const selected = await vscode.window.showQuickPick(cloudProviderDefinitions.map((provider) => ({
       label: provider.label,
@@ -1373,6 +1625,29 @@ label { display: grid; gap: 5px; color: var(--vscode-descriptionForeground); fon
 button { min-height: 30px; padding: 5px 10px; border: 1px solid var(--vscode-button-border, transparent); border-radius: 3px; color: var(--vscode-button-foreground); background: var(--vscode-button-background); cursor: pointer; } button.secondary { color: var(--vscode-foreground); background: transparent; border-color: var(--vscode-panel-border); } button.danger { color: var(--vscode-errorForeground); background: transparent; border-color: var(--vscode-errorForeground); } button:disabled { cursor: default; opacity: .55; }
 .runs { display: grid; gap: 8px; } .run { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--vscode-panel-border); border-radius: 5px; } .state { color: var(--vscode-terminal-ansiGreen); font-size: 12px; text-transform: capitalize; } .state.waiting_for_approval { color: var(--vscode-editorWarning-foreground); } .state.failed { color: var(--vscode-errorForeground); } .detail { color: var(--vscode-descriptionForeground); font-size: 12px; overflow-wrap: anywhere; } #approval { display: none; border-color: var(--vscode-editorWarning-foreground); } #approval.open { display: grid; } #status { min-height: 18px; color: var(--vscode-descriptionForeground); font-size: 12px; } #status.error { color: var(--vscode-errorForeground); } .empty { color: var(--vscode-descriptionForeground); font-style: italic; }
 @media (max-width: 620px) { main { padding: 14px; } .grid { grid-template-columns: 1fr; } }
+  /* Keep the full-size Agent Control Center visually aligned with the Chat view. */
+  :root { --truss-green: #35c89a; --truss-green-strong: #1e9c78; --truss-green-soft: color-mix(in srgb, #35c89a 15%, transparent); --truss-border: color-mix(in srgb, var(--vscode-panel-border) 70%, #35c89a 30%); }
+  body { background: var(--vscode-editor-background); }
+  main { max-width: 980px; gap: 16px; padding: 28px; }
+  .top { align-items: flex-start; }
+  h1 { font-size: 24px; letter-spacing: -.25px; }
+  h2 { color: var(--truss-green); font-size: 10px; font-weight: 800; letter-spacing: .8px; }
+  .card { gap: 13px; padding: 16px; border-color: var(--truss-border); border-radius: 8px; background: color-mix(in srgb, var(--vscode-sideBar-background) 82%, var(--vscode-editor-background)); box-shadow: 0 5px 18px rgba(0, 0, 0, .08); }
+  label { gap: 6px; font-weight: 600; }
+  select, textarea { border-radius: 5px; }
+  textarea:focus, select:focus { border-color: var(--truss-green); outline: 1px solid var(--truss-green); }
+  button { min-height: 31px; border-color: var(--vscode-button-secondaryBorder, var(--vscode-panel-border)); border-radius: 5px; color: #06231b; background: var(--truss-green); font-weight: 700; transition: background-color 120ms ease, border-color 120ms ease; }
+  button:hover { background: var(--truss-green-strong); border-color: var(--truss-green-strong); }
+  button.secondary { color: var(--vscode-foreground); border-color: var(--vscode-panel-border); background: transparent; }
+  button.secondary:hover { border-color: var(--truss-green); background: var(--truss-green-soft); }
+  .run { gap: 10px; padding: 13px; border-color: var(--vscode-panel-border); border-radius: 7px; background: var(--vscode-editor-background); }
+  .run:hover { border-color: var(--truss-border); }
+  .run-head strong { font-size: 14px; }
+  .state { color: var(--truss-green); font-size: 11px; font-weight: 700; letter-spacing: .25px; }
+  .detail { line-height: 1.5; }
+  #approval { border-color: var(--vscode-editorWarning-foreground); background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 9%, var(--vscode-editor-background)); }
+  #status { min-height: 20px; padding: 0 3px; }
+  @media (max-width: 620px) { main { padding: 16px; } h1 { font-size: 21px; } .top { flex-direction: column; } }
 </style></head><body><main>
 <div class="top"><div><h1>Agent Control Center</h1><p>Run independent profiles in this workspace. Providers, models, and permissions remain local to VS Code.</p></div><button id="manage" class="secondary">Manage profiles</button></div>
 <div class="card"><h2>START AN AGENT</h2><div class="grid"><label>Profile<select id="profile"></select></label><label>Task<textarea id="prompt" placeholder="Give this agent a focused task"></textarea></label></div><div><button id="start">Start agent</button></div></div>
@@ -1462,21 +1737,141 @@ function webviewHtml(webview: vscode.Webview): string {
   #composer { flex: 0 0 auto; min-width: 0; min-height: 0; position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 6px; padding: 9px 10px 6px; border-top: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); box-shadow: 0 -3px 10px color-mix(in srgb, var(--vscode-sideBar-background) 78%, transparent); } textarea { min-height: 36px; max-height: 120px; resize: vertical; padding: 7px; } #attachments { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; } .attachment { display: inline-flex; align-items: center; gap: 5px; max-width: 180px; padding: 3px 5px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-textBlockQuote-background); font-size: 11px; } .attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .attachment img { width: 32px; height: 28px; object-fit: cover; } .attachment button { min-height: 20px; padding: 0 4px; } .message-attachments { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; } #stop { display: none; } body.streaming #stop { display: inline-block; } body.streaming #send { display: none; } #agentControls { flex: 0 0 auto; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; align-items: center; padding: 0 10px 9px; background: var(--vscode-sideBar-background); } .quick-model { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 5px; } .quick-model span { color: var(--vscode-descriptionForeground); font-size: 10px; font-weight: 700; letter-spacing: .35px; } #quickModel { min-width: 0; height: 28px; padding: 3px 6px; }
   .message { white-space: normal; } .markdown > :first-child { margin-top: 0; } .markdown > :last-child { margin-bottom: 0; } .markdown p { margin: 0 0 8px; white-space: pre-wrap; } .markdown h1, .markdown h2, .markdown h3, .markdown h4 { margin: 12px 0 6px; font-size: 14px; line-height: 1.35; } .markdown ul { margin: 4px 0 8px; padding-left: 19px; } .markdown blockquote { margin: 7px 0; padding-left: 8px; border-left: 2px solid var(--vscode-textBlockQuote-border); color: var(--vscode-descriptionForeground); } .markdown code { padding: 1px 4px; border-radius: 3px; background: var(--vscode-textCodeBlock-background); font-family: var(--vscode-editor-font-family); font-size: .92em; } .thinking { color: var(--vscode-descriptionForeground); font-size: 12px; white-space: nowrap; animation: thinking-pulse 1.2s ease-in-out infinite; } @keyframes thinking-pulse { 0%, 100% { opacity: .45; } 50% { opacity: 1; } } .code-block { min-width: 0; max-width: 100%; overflow: hidden; margin: 9px 0; border: 1px solid var(--vscode-panel-border); border-radius: 4px; background: var(--vscode-textCodeBlock-background); } .code-language { padding: 4px 8px; border-bottom: 1px solid var(--vscode-panel-border); color: var(--vscode-descriptionForeground); font-family: var(--vscode-editor-font-family); font-size: 10px; text-transform: uppercase; } .code-block pre { min-width: 0; margin: 0; overflow: hidden; padding: 9px; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; } .code-block code { display: block; min-width: 0; padding: 0; background: transparent; font-family: var(--vscode-editor-font-family); font-size: 12px; line-height: 1.55; white-space: inherit; overflow-wrap: inherit; word-break: inherit; } .token-comment { color: var(--vscode-editorCodeLens-foreground); } .token-string { color: var(--vscode-terminal-ansiYellow); } .token-keyword { color: var(--vscode-terminal-ansiBlue); } .token-number { color: var(--vscode-terminal-ansiMagenta); } .markdown a { color: var(--vscode-textLink-foreground); } #composer { position: relative; } #slashMenu { position: absolute; z-index: 4; right: 10px; bottom: calc(100% - 2px); left: 10px; max-height: 220px; overflow: auto; padding: 4px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; background: var(--vscode-editorWidget-background); box-shadow: 0 -8px 24px #0006; } .slash-option { display: block; width: 100%; min-height: 27px; border: 0; border-radius: 3px; background: transparent; text-align: left; font-family: var(--vscode-editor-font-family); font-size: 12px; } .slash-option:hover, .slash-option.active { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); }
   @media (max-width: 700px) { #settings.open { grid-template-columns: repeat(2, minmax(0, 1fr)); } } @media (max-width: 560px) { header { padding: 8px; } .brand-row { flex-wrap: wrap; } #telemetry { width: 100%; } #workspace { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); } #history { display: flex; gap: 4px; overflow-x: auto; overflow-y: hidden; padding: 5px; border-right: 0; border-bottom: 1px solid var(--vscode-panel-border); } .history-title { display: none; } .conversation-row { display: flex; min-width: 122px; } .conversation { width: auto; min-width: 96px; } #settings.open { grid-template-columns: 1fr; } #composer { grid-template-columns: minmax(0, 1fr) auto; } #stop, #send { grid-column: 2; } #agentControls { grid-template-columns: 1fr; } .quick-model { grid-template-columns: auto minmax(0, 1fr); } }
+  /* Truss webview polish: keep VS Code's theme tokens, with a restrained green accent. */
+  :root { --truss-green: #35c89a; --truss-green-strong: #1e9c78; --truss-green-soft: color-mix(in srgb, #35c89a 17%, transparent); --truss-surface: color-mix(in srgb, var(--vscode-sideBar-background) 82%, var(--vscode-editor-background)); --truss-border: color-mix(in srgb, var(--vscode-panel-border) 72%, #35c89a 28%); }
+  body { letter-spacing: .01em; background: var(--vscode-sideBar-background); }
+  button { border-color: var(--vscode-button-secondaryBorder, var(--vscode-input-border)); background: var(--vscode-button-secondaryBackground, var(--vscode-input-background)); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+  button:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground)); border-color: var(--truss-border); }
+  button.primary { color: #06231b; background: var(--truss-green); border-color: var(--truss-green); font-weight: 700; }
+  button.primary:hover { background: var(--truss-green-strong); border-color: var(--truss-green-strong); }
+  header { gap: 10px; padding: 12px 12px 10px; border-bottom-color: var(--truss-border); box-shadow: 0 3px 14px rgba(0, 0, 0, .08); }
+  .brand-row { justify-content: space-between; gap: 9px; }
+  .brand-lockup { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+  .brand-mark { display: grid; width: 21px; height: 21px; place-items: center; border: 1px solid var(--truss-green); border-radius: 6px; color: var(--truss-green); background: var(--truss-green-soft); font-size: 11px; font-weight: 800; line-height: 1; }
+  .brand { margin-right: 0; color: var(--vscode-foreground); font-size: 14px; }
+  .header-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 5px; }
+  .header-actions button { min-height: 27px; padding: 3px 7px; font-size: 11px; }
+  #settingsButton { color: #c9fff0; border-color: var(--truss-green); background: var(--truss-green-soft); }
+  #settingsButton:hover { background: color-mix(in srgb, var(--truss-green) 26%, transparent); }
+  #telemetry { padding: 7px 8px; border: 1px solid var(--vscode-panel-border); border-radius: 6px; background: var(--truss-surface); }
+  .telemetry-label { color: var(--truss-green); }
+  .meter { background: var(--vscode-editorWidget-border); }
+  .meter > span.active { background: var(--truss-green); }
+  #settings { gap: 11px; padding: 13px 12px 14px; border-bottom-color: var(--truss-border); background: var(--vscode-editor-background); }
+  #settings.open { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .settings-intro { grid-column: 1 / -1; display: flex; align-items: end; justify-content: space-between; gap: 14px; padding: 0 0 10px; border-bottom: 1px solid var(--vscode-panel-border); }
+  .settings-intro span { display: block; margin-bottom: 3px; color: var(--truss-green); font-size: 10px; font-weight: 800; letter-spacing: .7px; }
+  .settings-intro strong { font-size: 14px; }
+  .settings-intro p { max-width: 400px; margin: 0; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.45; }
+  #settings label { gap: 5px; font-weight: 600; }
+  #settings input, #settings select, #settings textarea { border-color: var(--vscode-input-border); background: var(--vscode-input-background); }
+  #settings input[readonly], #settings input:disabled { color: var(--vscode-descriptionForeground); background: var(--vscode-disabledForeground, var(--vscode-editor-inactiveSelectionBackground)); cursor: default; }
+  #settings .provider-status { grid-column: 1 / -1; min-height: 18px; color: var(--vscode-descriptionForeground); font-size: 11px; line-height: 1.45; }
+  #settings .provider-status.connected { color: var(--truss-green); }
+  #settings .provider-status.failed { color: var(--vscode-errorForeground); }
+  #settings .actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 6px; padding-top: 2px; }
+  #workspace { border-top: 0; background: var(--vscode-editor-background); }
+  #history { padding: 9px 7px; border-right-color: var(--truss-border); background: var(--truss-surface); }
+  .history-title { margin: 2px 5px 8px; color: var(--truss-green); font-size: 10px; font-weight: 800; letter-spacing: .75px; }
+  .conversation-row { margin-bottom: 4px; }
+  .conversation { min-height: 29px; padding: 6px 7px; color: var(--vscode-descriptionForeground); }
+  .conversation:hover { background: var(--vscode-list-hoverBackground); color: var(--vscode-foreground); }
+  .conversation.active { color: #e8fff8; background: color-mix(in srgb, var(--truss-green) 22%, var(--vscode-list-activeSelectionBackground)); box-shadow: inset 2px 0 0 var(--truss-green); }
+  .delete-conversation { border-radius: 3px; }
+  #chat { gap: 14px; padding: 16px; background: var(--vscode-editor-background); }
+  .empty { max-width: 370px; margin: auto; padding: 18px; border: 1px dashed var(--truss-border); border-radius: 8px; background: var(--truss-surface); text-align: center; }
+  .plan, .tool { border-color: var(--truss-border); border-radius: 7px; background: var(--truss-surface); }
+  .plan { gap: 6px; padding: 10px; }
+  .message { padding: 10px 11px; border: 1px solid transparent; border-radius: 7px; background: color-mix(in srgb, var(--vscode-editor-background) 88%, var(--vscode-sideBar-background)); }
+  .message.user { border-left: 3px solid var(--vscode-focusBorder); background: color-mix(in srgb, var(--vscode-list-hoverBackground) 70%, transparent); }
+  .message.assistant { border-color: color-mix(in srgb, var(--truss-green) 22%, var(--vscode-panel-border)); border-left: 3px solid var(--truss-green); }
+  .message-header { color: var(--truss-green); font-size: 10px; letter-spacing: .65px; }
+  .message.user .message-header { color: var(--vscode-focusBorder); }
+  .tool { padding: 9px 10px; color: var(--vscode-descriptionForeground); }
+  #composer { gap: 7px; padding: 10px 12px 8px; border-top-color: var(--truss-border); background: var(--truss-surface); box-shadow: 0 -6px 18px rgba(0, 0, 0, .09); }
+  #composer textarea { min-height: 42px; padding: 9px; border-color: var(--vscode-input-border); }
+  #composer textarea:focus { border-color: var(--truss-green); outline: 1px solid var(--truss-green); }
+  #attach { color: var(--vscode-descriptionForeground); }
+  #send { min-width: 62px; }
+  #agentControls { gap: 9px; padding: 8px 12px 11px; border-top: 1px solid var(--truss-border); background: var(--vscode-sideBar-background); }
+  .segmented { border-color: var(--vscode-panel-border); background: var(--truss-surface); }
+  .segmented button { color: var(--vscode-descriptionForeground); }
+  .segmented button.active { color: #06231b; background: var(--truss-green); box-shadow: none; }
+  .quick-model { min-width: 0; padding: 0 7px; border: 1px solid var(--vscode-panel-border); border-radius: 5px; background: var(--truss-surface); }
+  .quick-model span { color: var(--truss-green); }
+  #quickModel { border: 0; background: transparent; }
+  #modelStatus { justify-self: end; max-width: 180px; color: var(--vscode-descriptionForeground); font-size: 11px; }
+  @media (max-width: 560px) { .header-actions { justify-content: flex-start; width: 100%; } .settings-intro { display: block; } .settings-intro p { margin-top: 6px; } #chat { padding: 10px; } #agentControls { gap: 6px; } #modelStatus { justify-self: start; max-width: none; } }
 </style></head><body>
-<header><div class="brand-row"><span class="brand">${brand.productName}</span><button id="new" title="New conversation">New</button><button id="help" title="Show local workspace commands">Help</button><button id="settingsButton" title="Model and agent settings">Settings</button></div><div id="telemetry"><div class="telemetry-context" title="Estimated from the active conversation. Local model servers do not consistently report prompt-token usage."><span class="telemetry-label">CONTEXT</span><span id="contextValue">0 / 8.2k</span><div class="meter"><span id="contextMeter"></span></div></div><div title="Estimated from streamed response text"><span class="telemetry-label">SPEED </span><span id="rateValue">-- tok/s</span></div></div></header>
-<section id="settings"><label>Detected server<select id="server"><option value="">Custom / manual</option></select></label><label>Provider<select id="provider"><option value="ollama">Ollama</option><option value="openai-compatible">Compatible API</option><option value="openai">OpenAI (use Configure BYOK Provider)</option><option value="anthropic">Anthropic (use Configure BYOK Provider)</option><option value="openrouter">OpenRouter (use Configure BYOK Provider)</option><option value="groq">Groq (use Configure BYOK Provider)</option><option value="together">Together AI (use Configure BYOK Provider)</option><option value="gemini">Gemini (use Configure BYOK Provider)</option><option value="xai">xAI (use Configure BYOK Provider)</option><option value="mistral">Mistral AI (use Configure BYOK Provider)</option><option value="deepseek">DeepSeek (use Configure BYOK Provider)</option><option value="perplexity">Perplexity (use Configure BYOK Provider)</option><option value="fireworks">Fireworks AI (use Configure BYOK Provider)</option><option value="nvidia-nim">NVIDIA NIM (use Configure BYOK Provider)</option><option value="xiaomi-mimo">Xiaomi MiMo (use Configure BYOK Provider)</option><option value="ollama-cloud">Ollama Cloud (use Configure BYOK Provider)</option></select></label><label>Endpoint<input id="endpoint" placeholder="http://127.0.0.1:11434"></label><label>Model<input id="model" list="models" placeholder="Refresh to discover models"><datalist id="models"></datalist></label><label>Context window<input id="contextWindow" type="number" min="512" max="1000000" step="512" value="8192"></label><label>Tool permissions<select id="permission"><option value="ask">Ask every time</option><option value="auto-read">Auto-allow read-only</option><option value="auto-all">Auto-allow all tools</option></select></label><label>Internet research<select id="internetAccess"><option value="false">Disabled</option><option value="true">Enabled</option></select></label><label class="mcp-setting">Advanced MCP JSON import/export<textarea id="mcpServers" rows="7" spellcheck="false" placeholder='{"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]}}'></textarea></label><div id="mcpStatus">No MCP servers configured.</div><div class="actions"><button id="manageMcp" type="button">Manage MCP</button><button id="refresh">Refresh</button><button id="apply" class="primary">Apply</button></div></section>
+<header><div class="brand-row"><div class="brand-lockup"><span class="brand-mark" aria-hidden="true">T</span><span class="brand">${brand.productName}</span></div><div class="header-actions"><button id="new" title="New conversation">New</button><button id="help" title="Show local workspace commands">Help</button><button id="settingsButton" title="Model and agent settings">Settings</button></div></div><div id="telemetry"><div class="telemetry-context" title="Estimated from the active conversation. Local model servers do not consistently report prompt-token usage."><span class="telemetry-label">CONTEXT</span><span id="contextValue">0 / 8.2k</span><div class="meter"><span id="contextMeter"></span></div></div><div title="Estimated from streamed response text"><span class="telemetry-label">SPEED </span><span id="rateValue">-- tok/s</span></div></div></header>
+<section id="settings">
+  <div class="settings-intro"><div><span>CONNECTION</span><strong>Model &amp; agent settings</strong></div><p>Choose the model, permissions, and optional MCP tools for this workspace.</p></div>
+  <label>Detected server<select id="server"><option value="">Custom / manual</option></select></label>
+  <label>Provider<select id="provider"><option value="ollama">Ollama</option><option value="openai-compatible">Compatible API</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="openrouter">OpenRouter</option><option value="groq">Groq</option><option value="together">Together AI</option><option value="gemini">Google Gemini</option><option value="xai">xAI</option><option value="mistral">Mistral AI</option><option value="deepseek">DeepSeek</option><option value="perplexity">Perplexity</option><option value="fireworks">Fireworks AI</option><option value="nvidia-nim">NVIDIA NIM</option><option value="xiaomi-mimo">Xiaomi MiMo</option><option value="ollama-cloud">Ollama Cloud</option></select></label>
+  <label>Endpoint<input id="endpoint" placeholder="http://127.0.0.1:11434"></label>
+  <label>Model<input id="model" list="models" placeholder="Enter a model ID or discover models"><datalist id="models"></datalist></label>
+  <label class="cloud-setting" id="providerAccountSetting">Account<select id="providerAccount"></select></label>
+  <label class="cloud-setting" id="providerAccountLabelSetting">Account label<input id="providerAccountLabel" placeholder="Personal"></label>
+  <label class="cloud-setting" id="providerApiKeySetting">API key<input id="providerApiKey" type="password" autocomplete="off" placeholder="Stored only in VS Code Secret Storage"></label>
+  <label id="contextWindowSetting"><span id="contextWindowLabel">Context window</span><input id="contextWindow" type="number" min="512" max="1000000" step="512" value="8192"></label>
+  <label>Tool permissions<select id="permission"><option value="ask">Ask every time</option><option value="auto-read">Auto-allow read-only</option><option value="auto-all">Auto-allow all tools</option></select></label>
+  <label>Internet research<select id="internetAccess"><option value="false">Disabled</option><option value="true">Enabled</option></select></label>
+  <label class="mcp-setting">Advanced MCP JSON import/export<textarea id="mcpServers" rows="7" spellcheck="false" placeholder='{"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]}}'></textarea></label>
+  <div id="mcpStatus">No MCP servers configured.</div>
+  <div id="providerStatus" class="cloud-setting provider-status" role="status" aria-live="polite"></div>
+  <div class="actions"><button id="manageMcp" type="button">Manage MCP</button><button id="refresh" type="button">Discover models</button><button id="saveProviderAccount" class="cloud-setting" type="button">Save key</button><button id="testProviderConnection" class="cloud-setting" type="button">Test connection</button><button id="removeProviderAccount" class="cloud-setting" type="button">Remove key</button><button id="apply" class="primary" type="button">Apply</button></div>
+</section>
 <main id="workspace"><aside id="history"><div class="history-title">Conversations</div></aside><section id="chat"><div class="empty">Select a local model in Settings, then ask about the workspace. Use Plan for read-only investigation and Agent when you want the agent to change files or run commands.</div></section></main>
 <form id="composer"><div id="slashMenu" role="listbox" hidden></div><div id="attachments" hidden></div><textarea id="prompt" placeholder="Ask about this workspace. Type @/ to attach a file; /help for commands." rows="2"></textarea><input id="attachmentInput" type="file" multiple hidden><button id="attach" type="button" title="Attach images or text files">Attach</button><button id="stop" type="button">Cancel</button><button id="send" class="primary" type="submit">Send</button></form>
 <section id="agentControls" aria-label="Agent controls"><div class="segmented" aria-label="Agent mode"><button data-mode="chat">Chat</button><button data-mode="plan">Plan</button><button data-mode="edit">Agent</button></div><label class="quick-model"><span>MODEL</span><select id="quickModel" title="Switch local model"></select></label><span id="modelStatus">Choose a local model</span></section>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi(); const savedState = vscode.getState(); const state = savedState && typeof savedState === 'object' && Array.isArray(savedState.conversations) ? savedState : { conversations: [], activeId: undefined }; state.conversations = state.conversations.filter((item) => item && typeof item === 'object' && typeof item.id === 'string').map((item) => ({ ...item, title: typeof item.title === 'string' ? item.title : 'Conversation', messages: Array.isArray(item.messages) ? item.messages.filter((message) => message && (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string') : [], updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : new Date().toISOString() })); if (!state.conversations.some((item) => item.id === state.activeId)) state.activeId = state.conversations[0]?.id; vscode.setState(state); const history = document.getElementById('history'); const chat = document.getElementById('chat'); const settings = document.getElementById('settings'); const status = document.getElementById('modelStatus'); let persistTimer; let activePlan;
   const server = document.getElementById('server'); const provider = document.getElementById('provider'); const endpoint = document.getElementById('endpoint'); const model = document.getElementById('model'); const modelOptions = document.getElementById('models'); const quickModel = document.getElementById('quickModel'); const permission = document.getElementById('permission'); const internetAccess = document.getElementById('internetAccess'); const contextWindow = document.getElementById('contextWindow'); const contextValue = document.getElementById('contextValue'); const contextMeter = document.getElementById('contextMeter'); const rateValue = document.getElementById('rateValue'); const mcpServers = document.getElementById('mcpServers'); const mcpStatus = document.getElementById('mcpStatus'); const prompt = document.getElementById('prompt'); const slashMenu = document.getElementById('slashMenu'); const attachmentInput = document.getElementById('attachmentInput'); const attachmentView = document.getElementById('attachments'); let configuration; let streamStartedAt = 0; let generatedTokens = 0; let workspaceFiles = []; let slashResults = []; let slashIndex = 0; let pendingAttachments = [];
+  const providerAccount = document.getElementById('providerAccount'); const providerAccountLabel = document.getElementById('providerAccountLabel'); const providerApiKey = document.getElementById('providerApiKey'); const providerStatus = document.getElementById('providerStatus'); const contextWindowLabel = document.getElementById('contextWindowLabel'); let cloudProviders = []; let providerAccounts = []; let discoveredModels = [];
   const persist = () => { vscode.setState(state); clearTimeout(persistTimer); persistTimer = setTimeout(() => vscode.postMessage({ type: 'saveConversations', state: { conversations: state.conversations, activeId: state.activeId } }), 250); }; const active = () => state.conversations.find((item) => item.id === state.activeId); const byId = (conversationId) => state.conversations.find((item) => item.id === conversationId); const id = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const addConversation = () => { const conversation = { id: id(), title: 'New conversation', messages: [], updatedAt: new Date().toISOString() }; state.conversations.unshift(conversation); state.activeId = conversation.id; persist(); return conversation; };
   const current = () => active() || addConversation();
   const estimateTokens = (value) => value.trim() ? Math.ceil(value.trim().length / 4) : 0;
   const formatTokens = (value) => value >= 1000 ? (value / 1000).toFixed(value >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k' : String(Math.round(value));
   const configuredContextWindow = () => Math.max(512, Math.min(1000000, Number.parseInt(contextWindow.value, 10) || 8192));
+  const selectedCloudProvider = () => cloudProviders.find((candidate) => candidate.id === provider.value);
+  const selectedProviderAccount = () => providerAccounts.find((candidate) => candidate.id === providerAccount.value && candidate.providerId === provider.value);
+  const selectedModelMetadata = () => discoveredModels.find((candidate) => candidate.id === model.value.trim());
+  const setProviderStatus = (message, kind = '') => { providerStatus.textContent = message || ''; providerStatus.className = 'cloud-setting provider-status ' + kind; };
+  const renderProviderAccounts = (preferredId) => {
+    const cloud = selectedCloudProvider();
+    if (!cloud) { providerAccount.replaceChildren(); return; }
+    const accounts = providerAccounts.filter((candidate) => candidate.providerId === cloud.id);
+    providerAccount.replaceChildren(...[
+      { id: '', label: 'New account' },
+      ...accounts.map((account) => ({ id: account.id, label: account.label + (account.hasCredential ? ' · key saved' : ' · key required') })),
+    ].map((item) => { const option = document.createElement('option'); option.value = item.id; option.textContent = item.label; return option; }));
+    const selected = accounts.find((account) => account.id === preferredId) || accounts.find((account) => account.id === configuration?.credentialAccountId) || accounts[0];
+    providerAccount.value = selected?.id || '';
+    providerAccountLabel.value = selected?.label || cloud.label + ' account';
+    setProviderStatus(selected ? (selected.hasCredential ? 'API key stored securely in VS Code Secret Storage.' : 'This account needs an API key.') : 'Create a named account, then save its API key only in VS Code Secret Storage.', selected?.hasCredential ? 'connected' : '');
+  };
+  const syncProviderPresentation = (preferredAccountId) => {
+    const cloud = selectedCloudProvider();
+    document.querySelectorAll('.cloud-setting').forEach((element) => { element.hidden = !cloud; });
+    endpoint.readOnly = Boolean(cloud);
+    if (cloud) {
+      endpoint.value = cloud.baseUrl;
+      contextWindow.disabled = true;
+      contextWindowLabel.textContent = 'Cloud model context';
+      contextWindow.title = 'Cloud models use provider metadata when advertised; otherwise Truss uses a conservative 8k context fallback.';
+      const metadata = selectedModelMetadata();
+      contextWindow.value = metadata?.contextWindow || (configuration?.provider === cloud.id ? configuration.contextWindow : 8192) || 8192;
+      renderProviderAccounts(preferredAccountId);
+    } else {
+      contextWindow.disabled = false;
+      contextWindowLabel.textContent = 'Context window';
+      contextWindow.title = 'Truss detects the active local model context when the endpoint provides it.';
+      providerApiKey.value = '';
+      providerAccount.replaceChildren();
+    }
+    renderTelemetry();
+  };
   const renderTelemetry = () => { const conversation = active(); const used = (conversation ? conversation.messages.reduce((total, item) => total + estimateTokens(item.content), 0) : 0) + 400; const limit = configuredContextWindow(); const ratio = Math.min(1, used / limit); contextValue.textContent = formatTokens(used) + ' / ' + formatTokens(limit); contextMeter.style.width = (ratio * 100).toFixed(1) + '%'; contextMeter.className = ratio >= .9 ? 'critical' : ratio >= .7 ? 'warning' : ratio > 0 ? 'active' : ''; const elapsed = streamStartedAt ? (performance.now() - streamStartedAt) / 1000 : 0; rateValue.textContent = generatedTokens && elapsed > 0 ? (generatedTokens / elapsed).toFixed(1) + ' tok/s' : '-- tok/s'; };
   const deleteConversation = (conversationId) => { const conversation = byId(conversationId); if (!conversation) return; const wasActive = state.activeId === conversationId; state.conversations = state.conversations.filter((item) => item.id !== conversationId); if (wasActive) state.activeId = state.conversations[0]?.id; vscode.postMessage({ type: 'deleteConversation', conversationId }); persist(); renderHistory(); renderChat(); };
   const renderHistory = () => { history.replaceChildren(); const label = document.createElement('div'); label.className = 'history-title'; label.textContent = 'Conversations'; history.append(label); state.conversations.forEach((conversation) => { const row = document.createElement('div'); row.className = 'conversation-row'; const button = document.createElement('button'); button.className = 'conversation' + (conversation.id === state.activeId ? ' active' : ''); button.textContent = conversation.title; button.onclick = () => { state.activeId = conversation.id; persist(); renderHistory(); renderChat(); vscode.postMessage({ type: 'selectConversation', conversationId: conversation.id }); }; const remove = document.createElement('button'); remove.className = 'delete-conversation'; remove.type = 'button'; remove.textContent = 'x'; remove.title = 'Delete conversation'; remove.setAttribute('aria-label', 'Delete ' + conversation.title); remove.onclick = () => deleteConversation(conversation.id); row.append(button, remove); history.append(row); }); };
@@ -1488,7 +1883,7 @@ function webviewHtml(webview: vscode.Webview): string {
   const renderChat = () => { chat.replaceChildren(); const plan = planView(); if (plan) chat.append(plan); const conversation = active(); if (!conversation || !conversation.messages.length) { const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = 'Select a local model in Settings, then ask about the workspace. Use Plan for read-only investigation and Agent when you want the agent to change files or run commands.'; chat.append(empty); renderTelemetry(); return; } conversation.messages.forEach((item) => { const view = message(item.role, item.content, item.attachments || []); chat.append(view.element); }); chat.scrollTop = chat.scrollHeight; renderTelemetry(); };
   const addMessage = (role, content, attachments) => { const conversation = current(); conversation.messages.push({ role, content, ...(attachments && attachments.length ? { attachments } : {}) }); conversation.updatedAt = new Date().toISOString(); if (role === 'user' && conversation.title === 'New conversation') conversation.title = content.replace(/\s+/g, ' ').slice(0, 32) || conversation.title; persist(); renderHistory(); renderChat(); return conversation.messages.length - 1; };
   const parsedMcpServers = () => { const source = mcpServers.value.trim(); if (!source) return {}; const parsed = JSON.parse(source); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('MCP servers must be a JSON object.'); for (const [name, server] of Object.entries(parsed)) { if (!server || typeof server !== 'object' || typeof server.command !== 'string' || !server.command.trim()) throw new Error('MCP server ' + name + ' needs a command.'); } return parsed; };
-  const configurationValue = () => ({ provider: provider.value, baseUrl: endpoint.value.trim(), model: model.value.trim(), ...(configuration?.credentialAccountId && configuration.provider === provider.value ? { credentialAccountId: configuration.credentialAccountId } : {}), mode: configuration ? configuration.mode : 'chat', permission: permission.value, contextWindow: configuredContextWindow(), internetAccess: internetAccess.value === 'true', mcpServers: parsedMcpServers() });
+  const configurationValue = () => { const cloud = selectedCloudProvider(); const metadata = selectedModelMetadata(); return { provider: provider.value, baseUrl: cloud ? cloud.baseUrl : endpoint.value.trim(), model: model.value.trim(), ...(cloud && providerAccount.value ? { credentialAccountId: providerAccount.value } : {}), mode: configuration ? configuration.mode : 'chat', permission: permission.value, contextWindow: cloud ? (metadata?.contextWindow || 8192) : configuredContextWindow(), internetAccess: internetAccess.value === 'true', mcpServers: parsedMcpServers() }; };
   const postConfigure = () => vscode.postMessage({ type: 'configure', configuration: configurationValue() });
   const beginStream = () => { streamStartedAt = performance.now(); generatedTokens = 0; renderTelemetry(); };
   const slashQuery = () => { const beforeCursor = prompt.value.slice(0, prompt.selectionStart || prompt.value.length); const match = beforeCursor.match(/(?:^|\s)@\/([^\s]*)$/); return match ? { start: beforeCursor.length - match[1].length - 2, query: match[1] } : undefined; };
@@ -1500,14 +1895,20 @@ function webviewHtml(webview: vscode.Webview): string {
   const toAttachment = async (file) => { if (!file.name) throw new Error('The selected file has no name.'); if (file.size > 4 * 1024 * 1024) throw new Error(file.name + ' exceeds the 4 MB attachment limit.'); if (file.type.startsWith('image/')) { if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) throw new Error(file.name + ' uses an unsupported image type.'); const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Unable to read ' + file.name)); reader.onerror = () => reject(new Error('Unable to read ' + file.name)); reader.readAsDataURL(file); }); return { id: 'attachment-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), kind: 'image', name: file.name, mediaType: file.type, data, size: file.size }; } if (!(file.type.startsWith('text/') || /\.(md|mdx|txt|json|jsonc|ya?ml|toml|ini|cfg|conf|csv|ts|tsx|js|jsx|mjs|cjs|css|html?|xml|svg|py|go|rs|java|php|rb|sh|sql)$/i.test(file.name))) throw new Error(file.name + ' is not a supported text file.'); const text = await file.text(); if (text.includes('\u0000')) throw new Error(file.name + ' appears to be binary.'); return { id: 'attachment-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), kind: 'file', name: file.name, mediaType: file.type || 'text/plain', text: text.slice(0, 120000), size: file.size }; };
   const addFiles = async (files) => { const selected = [...files]; if (!selected.length) return; if (pendingAttachments.length + selected.length > 5) { status.textContent = 'Attach up to five files.'; return; } if (pendingAttachments.reduce((total, item) => total + item.size, 0) + selected.reduce((total, item) => total + item.size, 0) > 12 * 1024 * 1024) { status.textContent = 'Attachments exceed the 12 MB total limit.'; return; } try { pendingAttachments = [...pendingAttachments, ...await Promise.all(selected.map(toAttachment))]; renderAttachments(); } catch (error) { status.textContent = error && error.message ? error.message : String(error); } };
   const sendChat = (text) => { const conversation = current(); const history = conversation.messages.map((message) => ({ role: message.role, content: message.content, ...(message.attachments ? { attachments: message.attachments } : {}) })); const attachments = pendingAttachments; addMessage('user', text, attachments); addMessage('assistant', ''); prompt.value = ''; attachmentInput.value = ''; pendingAttachments = []; renderAttachments(); slashMenu.hidden = true; beginStream(); document.body.classList.add('streaming'); vscode.postMessage({ type: 'send', prompt: text, conversationId: conversation.id, history, attachments, attachedPaths: attachedPaths(text) }); };
-  const connectGo = document.createElement('button'); connectGo.textContent = 'Truss Go'; connectGo.title = 'Connect this workspace to Truss Go on the same Wi-Fi'; connectGo.onclick = () => vscode.postMessage({ type: 'connectTrussGo' }); document.querySelector('.brand-row').prepend(connectGo);
+  const connectGo = document.createElement('button'); connectGo.textContent = 'Truss Go'; connectGo.title = 'Connect this workspace to Truss Go on the same Wi-Fi'; connectGo.onclick = () => vscode.postMessage({ type: 'connectTrussGo' }); document.querySelector('.header-actions').prepend(connectGo);
   document.getElementById('settingsButton').onclick = () => settings.classList.toggle('open'); document.getElementById('new').onclick = () => { addConversation(); renderHistory(); renderChat(); vscode.postMessage({ type: 'newConversation' }); }; document.getElementById('help').onclick = () => sendChat('/help'); document.getElementById('manageMcp').onclick = () => vscode.postMessage({ type: 'manageMcp' });
-  document.getElementById('refresh').onclick = () => { try { vscode.postMessage({ type: 'discover', configuration: configurationValue() }); } catch (error) { mcpStatus.textContent = error.message || String(error); } }; document.getElementById('apply').onclick = () => { try { mcpStatus.textContent = 'MCP connections restart when the agent runs.'; postConfigure(); } catch (error) { mcpStatus.textContent = error.message || String(error); } };
+  document.getElementById('refresh').onclick = () => { try { if (selectedCloudProvider()) setProviderStatus('Discovering models from the provider…'); vscode.postMessage({ type: 'discover', configuration: configurationValue() }); } catch (error) { mcpStatus.textContent = error.message || String(error); } }; document.getElementById('apply').onclick = () => { try { mcpStatus.textContent = 'MCP connections restart when the agent runs.'; postConfigure(); } catch (error) { mcpStatus.textContent = error.message || String(error); } };
+  document.getElementById('saveProviderAccount').onclick = () => { try { const cloud = selectedCloudProvider(); if (!cloud) return; const next = configurationValue(); if (!next.model) return setProviderStatus('Enter a model ID before saving this account.', 'failed'); if (!providerApiKey.value.trim()) return setProviderStatus('Enter an API key before saving this account.', 'failed'); vscode.postMessage({ type: 'saveProviderAccount', provider: cloud.id, accountId: providerAccount.value || undefined, accountLabel: providerAccountLabel.value.trim(), apiKey: providerApiKey.value, configuration: next }); } catch (error) { setProviderStatus(error.message || String(error), 'failed'); } };
+  document.getElementById('testProviderConnection').onclick = () => { try { const cloud = selectedCloudProvider(); if (cloud) setProviderStatus('Testing provider connection…'); vscode.postMessage({ type: 'testProviderConnection', configuration: configurationValue(), ...(providerApiKey.value.trim() ? { apiKey: providerApiKey.value } : {}) }); } catch (error) { setProviderStatus(error.message || String(error), 'failed'); } };
+  document.getElementById('removeProviderAccount').onclick = () => { if (!providerAccount.value) return setProviderStatus('Choose a saved account before removing a key.', 'failed'); vscode.postMessage({ type: 'removeProviderAccount', accountId: providerAccount.value }); };
   contextWindow.oninput = renderTelemetry;
   const setMode = (mode) => { configuration = { ...(configuration || configurationValue()), mode }; document.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode)); postConfigure(); };
   document.querySelectorAll('[data-mode]').forEach((button) => button.onclick = () => setMode(button.dataset.mode));
   quickModel.onchange = () => { if (!quickModel.value || quickModel.value === model.value) return; model.value = quickModel.value; configuration = { ...(configuration || configurationValue()), model: quickModel.value }; postConfigure(); };
-  server.onchange = () => { if (!server.value) return; const selected = JSON.parse(server.value); provider.value = selected.kind; endpoint.value = selected.baseUrl; vscode.postMessage({ type: 'discover', configuration: configurationValue() }); };
+  provider.onchange = () => { model.value = ''; discoveredModels = []; syncProviderPresentation(); vscode.postMessage({ type: 'discover', configuration: configurationValue() }); };
+  providerAccount.onchange = () => { syncProviderPresentation(providerAccount.value); };
+  model.onchange = () => syncProviderPresentation(providerAccount.value);
+  server.onchange = () => { if (!server.value) return; const selected = JSON.parse(server.value); provider.value = selected.kind; endpoint.value = selected.baseUrl; syncProviderPresentation(); vscode.postMessage({ type: 'discover', configuration: configurationValue() }); };
   document.getElementById('attach').onclick = () => attachmentInput.click(); attachmentInput.onchange = () => addFiles(attachmentInput.files || []); document.getElementById('composer').ondragover = (event) => event.preventDefault(); document.getElementById('composer').ondrop = (event) => { event.preventDefault(); addFiles(event.dataTransfer.files || []); };
   prompt.oninput = () => { slashIndex = 0; renderSlashMenu(); };
   prompt.onkeydown = (event) => { if (slashMenu.hidden || !slashResults.length) return; if (event.key === 'ArrowDown') { event.preventDefault(); slashIndex = (slashIndex + 1) % slashResults.length; renderSlashMenu(); } if (event.key === 'ArrowUp') { event.preventDefault(); slashIndex = (slashIndex - 1 + slashResults.length) % slashResults.length; renderSlashMenu(); } if ((event.key === 'Enter' || event.key === 'Tab') && slashResults[slashIndex]) { event.preventDefault(); insertSlashFile(slashResults[slashIndex]); } if (event.key === 'Escape') slashMenu.hidden = true; };
@@ -1528,6 +1929,38 @@ function webviewHtml(webview: vscode.Webview): string {
     if (message.type === 'assistantEnd') { document.body.classList.remove('streaming'); renderTelemetry(); }
     if (message.type === 'conversationReset') { renderHistory(); renderChat(); }
     if (message.type === 'error') { addMessage('assistant', 'Error: ' + message.message); document.body.classList.remove('streaming'); renderTelemetry(); }
-  } catch (error) { status.textContent = 'Panel error'; const detail = document.createElement('div'); detail.className = 'tool'; detail.textContent = 'Panel error: ' + (error && error.message ? error.message : String(error)); chat.append(detail); } }); renderHistory(); renderChat(); vscode.postMessage({ type: 'ready' });
+  } catch (error) { status.textContent = 'Panel error'; const detail = document.createElement('div'); detail.className = 'tool'; detail.textContent = 'Panel error: ' + (error && error.message ? error.message : String(error)); chat.append(detail); } });
+  window.addEventListener('message', ({ data: message }) => {
+    if (message.type === 'state') {
+      const next = message.state;
+      configuration = next.configuration;
+      cloudProviders = Array.isArray(next.cloudProviders) ? next.cloudProviders : [];
+      providerAccounts = Array.isArray(next.providerAccounts) ? next.providerAccounts : [];
+      discoveredModels = Array.isArray(next.models) ? next.models : [];
+      provider.value = configuration.provider;
+      endpoint.value = configuration.baseUrl;
+      model.value = configuration.model;
+      permission.value = configuration.permission;
+      internetAccess.value = configuration.internetAccess ? 'true' : 'false';
+      contextWindow.value = configuration.contextWindow || 8192;
+      mcpServers.value = Object.keys(configuration.mcpServers || {}).length ? JSON.stringify(configuration.mcpServers, null, 2) : '';
+      mcpStatus.textContent = Object.keys(configuration.mcpServers || {}).length ? Object.keys(configuration.mcpServers).length + ' MCP server(s) configured.' : 'No MCP servers configured.';
+      modelOptions.replaceChildren(...discoveredModels.map((entry) => { const option = document.createElement('option'); option.value = entry.id; option.label = entry.contextWindow ? entry.id + ' · ' + formatTokens(entry.contextWindow) + ' context' : entry.id; return option; }));
+      const quickModels = [...new Set([configuration.model, ...discoveredModels.map((entry) => entry.id)].filter(Boolean))];
+      quickModel.replaceChildren(...quickModels.map((name) => { const option = document.createElement('option'); option.value = name; option.textContent = name; return option; }));
+      quickModel.value = configuration.model;
+      server.replaceChildren(...[{ label: 'Custom / manual', kind: '', baseUrl: '' }, ...(next.endpoints || [])].map((item) => { const option = document.createElement('option'); option.value = item.kind ? JSON.stringify(item) : ''; option.textContent = item.label + (item.baseUrl ? ' (' + item.baseUrl + ')' : ''); return option; }));
+      document.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === configuration.mode));
+      syncProviderPresentation(configuration.credentialAccountId);
+      const providerLabel = selectedCloudProvider()?.label || configuration.provider;
+      status.textContent = configuration.model ? providerLabel + ' / ' + configuration.model : 'Choose a model in Settings';
+      renderTelemetry();
+    }
+    if (message.type === 'providerAccountSaved') { providerApiKey.value = ''; setProviderStatus(message.message, 'connected'); }
+    if (message.type === 'providerAccountRemoved') { providerApiKey.value = ''; setProviderStatus(message.message); }
+    if (message.type === 'providerAccountError') setProviderStatus(message.message, 'failed');
+    if (message.type === 'connectionResult') setProviderStatus(message.message, message.status === 'connected' ? 'connected' : 'failed');
+  });
+  renderHistory(); renderChat(); vscode.postMessage({ type: 'ready' });
 </script></body></html>`;
 }
