@@ -97,6 +97,8 @@ export interface DesktopRunResult {
 export interface DesktopToolActivity {
   readonly callId: string;
   readonly tool: string;
+  /** Short, user-safe description of the action; never hidden reasoning. */
+  readonly summary?: string;
   readonly status: "progress" | "running" | "completed" | "failed";
   readonly detail?: string;
 }
