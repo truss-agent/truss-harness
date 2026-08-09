@@ -51,7 +51,7 @@
     <section class="chat-area">
       <div class="chat-heading"><div><strong>Agent</strong><span id="chatStatus">Ready</span></div><div class="chat-heading-actions"><details class="chat-actions-menu"><summary aria-label="Agent panel actions">Actions</summary><div class="chat-actions-menu-panel"><button id="toggleChat" type="button" aria-expanded="true" aria-controls="chatContent">Minimize</button><button id="toggleChatDock" type="button" title="Move agent panel into the editor area" aria-pressed="false">Full size</button></div></details></div></div>
       <div id="chatContent" class="chat-content">
-        <div id="toolActivityPanel" class="tool-activity-panel" hidden></div>
+        <div id="toolActivityPanel" class="tool-activity-panel" role="status" aria-live="polite" hidden></div>
         <section id="planPanel" class="plan-panel" hidden></section>
         <div id="chatMessages" class="chat-messages"></div>
         <form id="chatForm" class="composer"><div id="slashMenu" class="slash-menu" role="listbox" hidden></div><div id="attachmentList" class="attachment-list" hidden></div><textarea id="chatInput" rows="3" placeholder="Ask about this workspace. Type / to attach a file."></textarea><input id="attachmentInput" type="file" multiple hidden><div class="composer-actions"><button id="addAttachment" type="button" title="Attach images or text files">Attach</button><button id="sendChat" class="primary" type="submit">Send</button><button id="cancelChat" type="button" hidden>Cancel</button></div></form>

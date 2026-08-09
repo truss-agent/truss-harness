@@ -29,6 +29,7 @@ import {
   type DesktopToolActivity,
   type DesktopWorkspaceUiState,
 } from "./shared.js";
+import { previewServerUrlFromOutput } from "./preview-url.js";
 import { scheduleConversationNavigation } from "./conversation-navigation.js";
 
 declare global {
@@ -296,6 +297,8 @@ let centerView: "editor" | "preview" | "agents" | "chat" = "editor";
 let agentsSnapshot: DesktopAgentsSnapshot = { profiles: [], runs: [] };
 let selectedAgentRunId: string | undefined;
 let pendingAttachments: ChatAttachment[] = [];
+const terminalOutputByCommand = new Map<string, string>();
+const previewUrlByTerminalCommand = new Map<string, string>();
 type SettingsTab = "local" | "byok" | "other";
 let activeSettingsTab: SettingsTab = "local";
 let modelSettingsTab: "local" | "byok" = "local";
@@ -1129,7 +1132,7 @@ function setBusy(next: boolean): void {
     // the timer only on the first text chunk and estimate from all characters.
     streamStartedAt = 0;
     streamedTextCharacters = 0;
-    agentActivity = "Thinking";
+    agentActivity = "Thinking about the next step";
   }
   if (!next) agentActivity = "Ready";
   busy = next;
@@ -1137,6 +1140,7 @@ function setBusy(next: boolean): void {
   cancelChatButton.hidden = !next;
   chatStatus.textContent = agentActivity;
   statusDot.className = `status-dot ${next ? "busy" : desktopState.configuration?.model ? "ready" : ""}`;
+  renderChat();
   renderRuntime();
 }
 
@@ -2221,10 +2225,14 @@ function renderChat(): void {
     return;
   }
   const activities = toolActivityByConversation.get(conversation.id) ?? [];
-  if (activities.length) {
+  const pendingSummary =
+    busy && conversation.id === runningConversationId
+      ? agentActivity
+      : undefined;
+  if (activities.length || pendingSummary) {
     toolActivityPanel.hidden = false;
     toolActivityPanel.replaceChildren(
-      toolActivityView(conversation.id, activities),
+      toolActivityView(conversation.id, activities, pendingSummary),
     );
   } else {
     toolActivityPanel.hidden = true;
@@ -4033,6 +4041,7 @@ function showFileContextMenu(
 function toolActivityView(
   conversationId: string,
   activities: readonly ToolActivity[],
+  pendingSummary?: string,
 ): HTMLElement {
   const trace = document.createElement("details");
   trace.className = "tool-activity";
@@ -4046,26 +4055,77 @@ function toolActivityView(
     (activity) => activity.status !== "progress",
   ).length;
   summary.textContent = running
-    ? `Working: ${running.tool}`
-    : `Activity: ${toolCallCount} tool call${toolCallCount === 1 ? "" : "s"}`;
+    ? `Working: ${running.summary ?? running.tool}`
+    : pendingSummary ??
+      `Activity: ${toolCallCount} tool call${toolCallCount === 1 ? "" : "s"}`;
   const list = document.createElement("div");
   list.className = "tool-activity-list";
   for (const activity of activities) {
     const row = document.createElement("div");
     row.className = `tool-activity-row ${activity.status}`;
+    const description = activity.summary ?? activity.tool;
     row.textContent =
       activity.status === "progress"
-        ? activity.tool
+        ? description
         : activity.status === "running"
-          ? `${activity.tool} running`
+          ? `${description} · running`
           : activity.status === "failed"
-            ? `${activity.tool} failed${activity.detail ? `: ${activity.detail}` : ""}`
-            : `${activity.tool} completed`;
+            ? `${description} · failed${activity.detail ? `: ${activity.detail}` : ""}`
+            : `${description} · completed`;
     if (activity.detail) row.title = activity.detail;
+    list.append(row);
+  }
+  if (pendingSummary && !activities.length) {
+    const row = document.createElement("div");
+    row.className = "tool-activity-row running";
+    row.textContent = pendingSummary;
     list.append(row);
   }
   trace.append(summary, list);
   return trace;
+}
+
+function activityInputText(input: Record<string, unknown> | undefined): string {
+  if (!input) return "";
+  const path = typeof input.path === "string" ? input.path : "";
+  const command = typeof input.command === "string" ? input.command : "";
+  const query = typeof input.query === "string" ? input.query : "";
+  const pattern = typeof input.pattern === "string" ? input.pattern : "";
+  return [path, command, query || pattern].find(Boolean)?.slice(0, 100) ?? "";
+}
+
+function safeActivitySummary(
+  tool: string,
+  input?: Record<string, unknown>,
+): string {
+  const value = activityInputText(input);
+  switch (tool) {
+    case "read_file":
+      return value ? `Reading ${value}` : "Reading a workspace file";
+    case "write_file":
+    case "replace_in_file":
+      return value ? `Updating ${value}` : "Updating a workspace file";
+    case "list_directory":
+      return value ? `Listing ${value}` : "Listing workspace files";
+    case "search_files":
+    case "grep":
+      return value ? `Searching for ${value}` : "Searching workspace files";
+    case "run_terminal":
+      return value ? `Running ${value}` : "Running a workspace command";
+    case "git_status":
+    case "git_diff":
+      return "Inspecting Git changes";
+    case "apply_patch":
+      return "Applying a focused patch";
+    case "update_plan":
+      return "Updating the task plan";
+    case "web_search":
+      return value ? `Searching the web for ${value}` : "Searching the web";
+    case "web_fetch":
+      return "Reading a web page";
+    default:
+      return `Running ${tool.replaceAll("_", " ")}`;
+  }
 }
 
 function pastedFileName(mimeType: string): string {
@@ -4167,6 +4227,16 @@ function appendTerminal(text: string): void {
   terminalOutput.scrollTop = terminalOutput.scrollHeight;
 }
 
+function openAnnouncedServerPreview(commandId: string, text: string): void {
+  const output = `${terminalOutputByCommand.get(commandId) ?? ""}${text}`.slice(-12_000);
+  terminalOutputByCommand.set(commandId, output);
+  const url = previewServerUrlFromOutput(output);
+  if (!url || previewUrlByTerminalCommand.get(commandId) === url) return;
+  previewUrlByTerminalCommand.set(commandId, url);
+  navigatePreview(url);
+  notify(`Opened server preview: ${url}`);
+}
+
 function handleEvent(message: DesktopEvent): void {
   if (message.type === "agents") {
     applyAgentsSnapshot(message.snapshot);
@@ -4247,9 +4317,26 @@ function handleEvent(message: DesktopEvent): void {
   }
   if (message.type === "terminal-output") {
     appendTerminal(message.text);
+    openAnnouncedServerPreview(message.commandId, message.text);
     return;
   }
   if (message.type === "approval") {
+    const approvalConversation = activeConversation();
+    if (approvalConversation) {
+      const waitingSummary = `Waiting for approval: ${safeActivitySummary(message.tool, message.input)}`;
+      setToolActivity(
+        approvalConversation.id,
+        (toolActivityByConversation.get(approvalConversation.id) ?? []).map(
+          (activity) =>
+            activity.callId === message.callId
+              ? { ...activity, summary: waitingSummary }
+              : activity,
+        ),
+      );
+      agentActivity = "Waiting for approval";
+      renderChat();
+      renderRuntime();
+    }
     const approval = document.createElement("div");
     approval.className = "tool-message";
     approval.textContent = `Allow ${message.tool} ${JSON.stringify(message.input)}?`;
@@ -4347,7 +4434,7 @@ function handleEvent(message: DesktopEvent): void {
     });
     if (!streamStartedAt) streamStartedAt = performance.now();
     streamedTextCharacters += (event.text ?? "").length;
-    agentActivity = "Generating";
+    agentActivity = "Writing the response";
     if (conversation.id === desktopState.activeConversationId) renderChat();
     renderRuntime();
     saveConversations();
@@ -4362,20 +4449,25 @@ function handleEvent(message: DesktopEvent): void {
       previous?.status === "progress"
         ? [
             ...activities.slice(0, -1),
-            { ...previous, tool: `${previous.tool}${note}` },
+            {
+              ...previous,
+              tool: `${previous.tool}${note}`,
+              summary: `${previous.summary ?? previous.tool}${note}`,
+            },
           ]
         : [
             ...activities,
-            { callId: createId(), tool: note, status: "progress" },
+            { callId: createId(), tool: note, summary: note, status: "progress" },
           ];
     setToolActivity(conversation.id, nextActivities);
-    agentActivity = nextActivities.at(-1)?.tool.trim() || "Thinking";
+    agentActivity = nextActivities.at(-1)?.summary?.trim() || "Thinking about the next step";
     if (conversation.id === desktopState.activeConversationId) renderChat();
     renderRuntime();
     return;
   }
   if (event.type === "tool_call_requested") {
-    agentActivity = `Running ${event.tool ?? "tool"}`;
+    const summary = safeActivitySummary(event.tool ?? "tool", event.input);
+    agentActivity = summary;
     renderRuntime();
     if (conversation) {
       const activities = toolActivityByConversation.get(conversation.id) ?? [];
@@ -4384,6 +4476,7 @@ function handleEvent(message: DesktopEvent): void {
         {
           callId: event.callId ?? createId(),
           tool: event.tool ?? "unknown",
+          summary,
           status: "running",
         },
       ]);
@@ -4391,7 +4484,9 @@ function handleEvent(message: DesktopEvent): void {
     }
   }
   if (event.type === "tool_completed") {
-    agentActivity = "Thinking";
+    agentActivity = event.result?.isError
+      ? "Recovering from a tool error"
+      : "Thinking about the next step";
     renderRuntime();
     const tool = event.tool ?? "tool";
     const result = event.result?.content ?? "";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import {
@@ -20,6 +20,7 @@ import {
   searchFilesTool,
   writeFileTool,
   type ModelProvider,
+  type ModelStreamEvent,
   type RuntimeEvent
 } from "./index.js";
 
@@ -289,6 +290,46 @@ describe("AgentRuntime", () => {
 
     const session = await runtime.createSession();
     await expect(runtime.run(session.id, "summarize the README")).resolves.toBeUndefined();
+  });
+
+  it("forces a failed file write to recover after rereading the current file", async () => {
+    const workspaceRoot = join(process.cwd(), ".test-workspaces", randomUUID());
+    await mkdir(workspaceRoot, { recursive: true });
+    await writeFile(join(workspaceRoot, "script.js"), "const value = 1;\n", "utf8");
+    let turns = 0;
+    const provider: ModelProvider = { id: "fake", async *stream(request): AsyncIterable<ModelStreamEvent> {
+      turns += 1;
+      if (turns === 1) {
+        yield { type: "tool_call", id: "write-stale", name: "replace_in_file", input: { path: "script.js", oldText: "const value = 0;", newText: "const value = 2;" } } as const;
+        yield { type: "finish", reason: "tool_calls" } as const;
+      } else if (turns === 2) {
+        expect(request.messages[0]?.content).toContain("WRITE RECOVERY");
+        yield { type: "tool_call", id: "read-current", name: "read_file", input: { path: "script.js" } } as const;
+        yield { type: "finish", reason: "tool_calls" } as const;
+      } else if (turns === 3) {
+        yield { type: "tool_call", id: "write-current", name: "replace_in_file", input: { path: "script.js", oldText: "const value = 1;", newText: "const value = 2;" } } as const;
+        yield { type: "finish", reason: "tool_calls" } as const;
+      } else {
+        yield { type: "text_delta", text: "Updated script.js." } as const;
+        yield { type: "finish", reason: "stop" } as const;
+      }
+    }};
+    const tools = new ToolRegistry();
+    registerFilesystemTools(tools);
+    const progress: string[] = [];
+    const events = new EventBus<RuntimeEvent>();
+    events.subscribe((event) => { if (event.type === "progress_delta") progress.push(event.text); });
+    const runtime = new AgentRuntime({ provider, tools, sessions: new InMemorySessionStore(), context: new RecentHistoryContextManager(), events, workspaceRoot, requireWriteForEditIntent: true, deferTextUntilToolDecision: true });
+
+    try {
+      const session = await runtime.createSession();
+      await runtime.run(session.id, "Update script.js");
+      await expect(readFile(join(workspaceRoot, "script.js"), "utf8")).resolves.toBe("const value = 2;\n");
+      expect(progress).toContain("Recovery: reread script.js and retry the file change with its current contents.");
+      expect(turns).toBe(4);
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
   });
 
   it("persists completed task state for future workspace context", async () => {

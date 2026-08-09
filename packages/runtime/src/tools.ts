@@ -72,7 +72,7 @@ export const writeFileTool: AgentTool = {
 };
 
 export const replaceInFileTool: AgentTool = {
-  name: "replace_in_file", description: "Safely replace one unique contiguous string in a UTF-8 workspace file. Read the file first and copy the exact oldText. Line-ending differences are handled automatically. Absolute paths are not allowed.",
+  name: "replace_in_file", description: "Safely replace one unique contiguous string in a UTF-8 workspace file. Read the file first and copy the exact oldText. If the target file is blank, newText initializes it. Line-ending differences are handled automatically. Absolute paths are not allowed.",
   inputSchema: { type: "object", properties: { path: { type: "string" }, oldText: { type: "string" }, newText: { type: "string" } }, required: ["path", "oldText", "newText"] },
   async execute(input, context) {
     const oldText = stringInput(input, "oldText");
@@ -80,6 +80,13 @@ export const replaceInFileTool: AgentTool = {
     if (newText === undefined) throw new Error("'newText' must be a string");
     const fullPath = resolveWorkspacePath(context.workspaceRoot, stringInput(input, "path"));
     const existing = await readFile(fullPath, "utf8");
+    // A model can reasonably use a focused replacement while scaffolding a
+    // file. There is no exact excerpt to match in a blank file, so initialize
+    // it from newText rather than entering an unrecoverable retry loop.
+    if (!existing.trim()) {
+      await writeFile(fullPath, newText, "utf8");
+      return { content: "File was blank; wrote replacement content." };
+    }
     const countOccurrences = (source: string, search: string) => source.split(search).length - 1;
     let sourceText = oldText;
     let replacementText = newText;

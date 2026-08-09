@@ -26,6 +26,7 @@ function isFileWrite(call: ToolCall): boolean {
 function toolFailureRecovery(tool: string): string {
   if (tool === "web_fetch") return "Do not infer page or file contents from this failure. web_fetch reads only public HTTP/HTTPS URLs; to inspect a workspace file, retry with read_file using its workspace-relative path.";
   if (tool === "web_search") return "Do not infer search results from this failure. Correct the tool arguments and retry, or use a workspace tool when the request concerns local files.";
+  if (tool === "replace_in_file") return "Do not infer a file state from this failure. Call read_file for the current workspace file, then retry replace_in_file with one exact contiguous oldText excerpt from that read. Do not answer until the write succeeds or the failure is clearly unrecoverable.";
   return "Do not infer a result from this failure. Correct the arguments and retry the appropriate tool before answering.";
 }
 
@@ -120,6 +121,7 @@ export class AgentRuntime {
     let assistantText = "";
     let recoveryReason: "no_tools" | "write_failed" | undefined;
     let recoveryAttempts = 0;
+    const pendingWriteRecoveryPaths = new Set<string>();
     await this.recordMemory({ id: taskId, sessionId, objective: prompt, status: "running", startedAt, tools: [], modifiedFiles: [] });
     session.messages.push({ role: "user", content: prompt, ...(attachments.length ? { attachments } : {}) }); session.checkpoint = checkpoint(session); await this.options.sessions.save(session);
     await this.emit({ type: "run_started", sessionId });
@@ -140,7 +142,7 @@ export class AgentRuntime {
         let usage: ModelTokenUsage | undefined;
         const progressParser = new ProgressStreamParser();
         const recoveryInstruction = recoveryReason === "write_failed"
-          ? "WRITE RECOVERY: A previous file write failed. The current file contents are in the tool history. Do not stop after reading. Call read_file if needed, then retry one focused write using an exact contiguous excerpt. Verify the write with read_file before responding."
+          ? `WRITE RECOVERY: A previous file write failed${pendingWriteRecoveryPaths.size ? ` for ${[...pendingWriteRecoveryPaths].join(", ")}` : ""}. Do not answer or stop after reading. Call read_file for each failed path, then retry each focused write using an exact contiguous oldText excerpt copied from the newest read. Verify every repaired write with read_file before responding.`
           : recoveryReason === "no_tools"
             ? "EXECUTION RECOVERY: Your previous response described work but did not call any tools. This is Edit mode. Do not explain or propose a plan. Immediately call one relevant workspace inspection tool, then make the requested file change with write_file or replace_in_file and read the changed file to verify it."
             : undefined;
@@ -175,6 +177,13 @@ export class AgentRuntime {
         // reconstruct the native provider conversation accurately.
         if (text || calls.length) session.messages.push({ role: "assistant", content: text, toolCalls: calls });
         if (!calls.length) {
+          if (pendingWriteRecoveryPaths.size) {
+            recoveryAttempts += 1;
+            if (recoveryAttempts >= 2) {
+              throw new Error(`Agent could not recover the failed file write for ${[...pendingWriteRecoveryPaths].join(", ")} after recovery attempts.`);
+            }
+            continue;
+          }
           if (this.options.requireWriteForEditIntent && hasEditIntent(prompt) && !modifiedFiles.size) {
             if (recoveryAttempts < 2) {
               recoveryReason ??= "no_tools";
@@ -196,6 +205,7 @@ export class AgentRuntime {
           await this.emit({ type: "run_completed", sessionId, modifiedFiles: [...modifiedFiles] });
           return;
         }
+        let failedWriteThisTurn = false;
         for (const call of calls) {
           const command = call.name === "run_terminal" && typeof call.input.command === "string" ? call.input.command.trim() : undefined;
           const path = workspacePath(call);
@@ -221,8 +231,30 @@ export class AgentRuntime {
           if (execution.succeeded && isFileWrite(call) && path) {
             modifiedFiles.add(path);
             filesNeedingVerification.add(path);
+            pendingWriteRecoveryPaths.delete(path);
+            if (!pendingWriteRecoveryPaths.size) {
+              recoveryReason = undefined;
+              recoveryAttempts = 0;
+            }
           }
-          if (!execution.succeeded && isFileWrite(call)) recoveryReason = "write_failed";
+          if (!execution.succeeded && execution.recoveryRequired) {
+            failedWriteThisTurn = true;
+            recoveryReason = "write_failed";
+            if (path) {
+              pendingWriteRecoveryPaths.add(path);
+              await this.emit({
+                type: "progress_delta",
+                sessionId,
+                text: `Recovery: reread ${path} and retry the file change with its current contents.`,
+              });
+            }
+          }
+        }
+        if (pendingWriteRecoveryPaths.size && !failedWriteThisTurn) {
+          recoveryAttempts += 1;
+          if (recoveryAttempts >= 2) {
+            throw new Error(`Agent could not recover the failed file write for ${[...pendingWriteRecoveryPaths].join(", ")} after recovery attempts.`);
+          }
         }
         await this.options.sessions.save(session);
       }
@@ -234,7 +266,7 @@ export class AgentRuntime {
       throw normalized;
     }
   }
-  private async executeCall(session: Session, call: ToolCall, signal?: AbortSignal, preflightError?: string): Promise<WorkspaceToolRecord> {
+  private async executeCall(session: Session, call: ToolCall, signal?: AbortSignal, preflightError?: string): Promise<WorkspaceToolRecord & { readonly recoveryRequired?: boolean }> {
     const { id: callId, name: tool, input } = call; await this.emit({ type: "tool_call_requested", sessionId: session.id, callId, tool, input });
     const implementation = this.options.tools.get(tool);
     let result: ToolResult;
@@ -253,7 +285,10 @@ export class AgentRuntime {
     }
     session.messages.push({ role: "tool", name: tool, toolCallId: callId, content: result.content });
     await this.emit({ type: "tool_completed", sessionId: session.id, callId, tool, result });
-    return { name: tool, succeeded: !result.isError };
+    const recoveryRequired = tool === "replace_in_file" && result.isError &&
+      !result.content.startsWith("Tool call denied:") &&
+      !result.content.startsWith("Unknown tool:");
+    return { name: tool, succeeded: !result.isError, recoveryRequired };
   }
   private summary(text: string): string | undefined { return text ? text.slice(-1_500) : undefined; }
   private async recordMemory(task: WorkspaceTaskRecord): Promise<void> {

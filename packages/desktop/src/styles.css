@@ -2022,12 +2022,33 @@ dialog::backdrop {
 }
 
 .tool-activity summary {
+    display: flex;
+    align-items: center;
+    gap: 7px;
     min-height: 28px;
     padding: 7px 9px;
     cursor: pointer;
     color: #d2dfe2;
     font-weight: 700;
     list-style-position: inside;
+}
+
+.tool-activity summary::before {
+    width: 6px;
+    height: 6px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: #54d7b0;
+    content: "";
+}
+
+.tool-activity[open] summary {
+    border-bottom: 1px solid #26353c;
+    background: #172228;
+}
+
+.tool-activity-row.running {
+    animation: activity-pulse 1.6s ease-in-out infinite;
 }
 
 .tool-activity-list {
@@ -2069,6 +2090,12 @@ dialog::backdrop {
 .tool-activity-row.failed {
     border-color: #dc7d78;
     color: #efaaa4;
+}
+
+@keyframes activity-pulse {
+    0%,
+    100% { opacity: .7; }
+    50% { opacity: 1; }
 }
 
 .editor-tabs::-webkit-scrollbar { height: 4px; }
