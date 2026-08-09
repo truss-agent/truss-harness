@@ -7,6 +7,21 @@ Release, publishing, deployment, and contributor-only procedures live in
 intentionally private. Keep the root `README.md` focused on product users:
 installation, configuration, client usage, screenshots, and documentation.
 
+## Required change workflow
+
+Every code or documentation change must follow this workflow without exception:
+
+1. Start from an up-to-date default branch and create a fresh dedicated branch.
+2. Create an issue from the applicable repository issue template before implementation.
+3. Open a pull request from that branch using the pull request template, with a
+   closing reference to the issue (for example, `Closes #123`).
+4. Complete every applicable template checkbox honestly and wait for required
+   checks before merge.
+
+Never commit directly to `master` or `main`, skip the issue, or open an
+unlinked or incomplete pull request. This workflow protects the repository and
+is mandatory even for small changes.
+
 Build a source-available agent harness similar in capability to Cline, Continue, Roo Code, and OpenHands.
 
 The objective is NOT to clone any existing project.
