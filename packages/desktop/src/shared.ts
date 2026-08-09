@@ -249,6 +249,7 @@ export type DesktopEvent =
         | "error";
       readonly version?: string;
       readonly percent?: number;
+      readonly manual?: boolean;
       readonly message?: string;
     }
   | {

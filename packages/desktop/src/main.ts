@@ -104,6 +104,13 @@ import {
 import QRCode from "qrcode";
 import { configureLinuxCredentialStorage } from "./credential-storage.js";
 import { recoverStartupRuntime } from "./startup-runtime.js";
+import {
+  findReleaseAsset,
+  isNewerVersion,
+  normalizedVersion,
+  type DesktopReleaseAsset,
+  type DesktopUpdateArtifact,
+} from "./update-support.js";
 
 const execFile = promisify(execFileCallback);
 const ignoredDirectories = new Set([
@@ -157,6 +164,7 @@ let trussGoGateway: RunningRemoteGateway | undefined;
 const trussGoClients: Array<Awaited<ReturnType<typeof createClientRuntime>>> =
   [];
 let updaterConfigured = false;
+let hostedUpdateUrl: string | undefined;
 const approvalResolvers = new Map<string, (approved: boolean) => void>();
 let sessionAllowsAllTools = false;
 const sessionConversationIds = new Map<string, string>();
@@ -315,7 +323,7 @@ function updaterError(error: unknown): void {
   send({ type: "update", status: "error", message });
 }
 
-function updaterSupported(): boolean {
+function nativeUpdaterSupported(): boolean {
   return (
     app.isPackaged &&
     (process.platform === "win32" ||
@@ -325,31 +333,129 @@ function updaterSupported(): boolean {
   );
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+async function updateArtifact(): Promise<DesktopUpdateArtifact> {
+  if (process.platform === "win32") return "windows";
+  if (process.env.APPIMAGE) return "appimage";
+  try {
+    const packageType = (
+      await readFile(join(process.resourcesPath, "package-type"), "utf8")
+    ).trim();
+    if (packageType === "deb" || packageType === "rpm") return packageType;
+    if (packageType === "pacman") return "pacman";
+  } catch {
+    // Portable archives do not have electron-builder's package-type marker.
+  }
+  return "archive";
+}
+
+function trustedUpdateUrl(value: string): string | undefined {
+  try {
+    const url = new URL(value);
+    if (
+      url.protocol !== "https:" ||
+      url.hostname !== "github.com" ||
+      !url.pathname.startsWith("/truss-agent/truss-harness/")
+    )
+      return undefined;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+async function checkHostedUpdate(): Promise<void> {
+  const response = await fetch(
+    "https://api.github.com/repos/truss-agent/truss-harness/releases/latest",
+    {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "User-Agent": "Truss-Desktop",
+      },
+      signal: AbortSignal.timeout(10_000),
+    },
+  );
+  if (!response.ok)
+    throw new Error("GitHub update check failed (" + response.status + ").");
+  const payload: unknown = await response.json();
+  if (!isRecord(payload)) throw new Error("GitHub returned an invalid release.");
+  const tagName = typeof payload.tag_name === "string" ? payload.tag_name : "";
+  const version = normalizedVersion(tagName);
+  const pageUrl =
+    typeof payload.html_url === "string"
+      ? trustedUpdateUrl(payload.html_url)
+      : undefined;
+  if (!version || !pageUrl) throw new Error("GitHub returned an invalid release.");
+
+  const currentVersion = app.getVersion();
+  if (!isNewerVersion(version, currentVersion)) {
+    hostedUpdateUrl = undefined;
+    send({ type: "update", status: "not-available", version });
+    return;
+  }
+
+  const artifact = await updateArtifact();
+  const assets: DesktopReleaseAsset[] = Array.isArray(payload.assets)
+    ? payload.assets.flatMap((value): DesktopReleaseAsset[] => {
+        if (!isRecord(value)) return [];
+        const name = typeof value.name === "string" ? value.name : undefined;
+        const url =
+          typeof value.browser_download_url === "string"
+            ? trustedUpdateUrl(value.browser_download_url)
+            : undefined;
+        return name && url ? [{ name, url }] : [];
+      })
+    : [];
+  const asset = findReleaseAsset(assets, version, artifact, process.arch);
+  hostedUpdateUrl = asset?.url ?? pageUrl;
+  send({
+    type: "update",
+    status: "available",
+    version,
+    manual: true,
+  });
+}
+
 function configureUpdater(): void {
-  if (!updaterSupported() || updaterConfigured) return;
+  if (updaterConfigured) return;
   updaterConfigured = true;
-  autoUpdater.autoDownload = persisted.updates.autoDownload;
-  autoUpdater.autoInstallOnAppQuit = false;
-  autoUpdater.on("checking-for-update", () =>
-    send({ type: "update", status: "checking" }),
-  );
-  autoUpdater.on("update-available", (info) =>
-    send({ type: "update", status: "available", version: info.version }),
-  );
-  autoUpdater.on("update-not-available", (info) =>
-    send({ type: "update", status: "not-available", version: info.version }),
-  );
-  autoUpdater.on("download-progress", (progress) =>
-    send({ type: "update", status: "downloading", percent: progress.percent }),
-  );
-  autoUpdater.on("update-downloaded", (info) =>
-    send({ type: "update", status: "downloaded", version: info.version }),
-  );
-  autoUpdater.on("error", updaterError);
+  if (nativeUpdaterSupported()) {
+    autoUpdater.autoDownload = persisted.updates.autoDownload;
+    autoUpdater.autoInstallOnAppQuit = false;
+    autoUpdater.on("checking-for-update", () =>
+      send({ type: "update", status: "checking" }),
+    );
+    autoUpdater.on("update-available", (info) =>
+      send({ type: "update", status: "available", version: info.version }),
+    );
+    autoUpdater.on("update-not-available", (info) =>
+      send({ type: "update", status: "not-available", version: info.version }),
+    );
+    autoUpdater.on("download-progress", (progress) =>
+      send({ type: "update", status: "downloading", percent: progress.percent }),
+    );
+    autoUpdater.on("update-downloaded", (info) =>
+      send({ type: "update", status: "downloaded", version: info.version }),
+    );
+    autoUpdater.on("error", updaterError);
+  }
   if (persisted.updates.checkOnLaunch) {
     setTimeout(() => {
-      void autoUpdater.checkForUpdates().catch(updaterError);
+      void checkForUpdates().catch(updaterError);
     }, 1_500);
+  }
+}
+
+async function checkForUpdates(): Promise<void> {
+  if (!app.isPackaged)
+    throw new Error("Updates are available only in installed desktop builds.");
+  if (nativeUpdaterSupported()) await autoUpdater.checkForUpdates();
+  else {
+    send({ type: "update", status: "checking" });
+    await checkHostedUpdate();
   }
 }
 
@@ -1798,31 +1904,31 @@ ipcMain.handle(
         autoDownload: updates.autoDownload === true,
       },
     };
-    autoUpdater.autoDownload = persisted.updates.autoDownload;
+    if (nativeUpdaterSupported())
+      autoUpdater.autoDownload = persisted.updates.autoDownload;
     await persistState();
     return persisted;
   },
 );
 ipcMain.handle("truss:check-for-updates", async (): Promise<void> => {
-  if (!updaterSupported())
-    throw new Error(
-      "In-app updates are available in installed Windows and Linux AppImage builds. Update this package through its installer or package manager.",
-    );
-  await autoUpdater.checkForUpdates();
+  await checkForUpdates();
 });
 ipcMain.handle("truss:download-update", async (): Promise<void> => {
-  if (!updaterSupported())
-    throw new Error(
-      "In-app updates are available in installed Windows and Linux AppImage builds. Update this package through its installer or package manager.",
-    );
-  await autoUpdater.downloadUpdate();
+  if (nativeUpdaterSupported()) {
+    await autoUpdater.downloadUpdate();
+    return;
+  }
+  const url = hostedUpdateUrl;
+  if (!url) {
+    await checkHostedUpdate();
+    return;
+  }
+  await shell.openExternal(url);
 });
 ipcMain.handle("truss:install-update", (): void => {
-  if (!updaterSupported())
-    throw new Error(
-      "In-app updates are available in installed Windows and Linux AppImage builds. Update this package through its installer or package manager.",
-    );
-  autoUpdater.quitAndInstall(false, true);
+  if (nativeUpdaterSupported()) autoUpdater.quitAndInstall(false, true);
+  else if (hostedUpdateUrl) void shell.openExternal(hostedUpdateUrl);
+  else throw new Error("Check for updates before opening the update download.");
 });
 ipcMain.handle(
   "truss:choose-workspace",

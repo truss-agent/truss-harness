@@ -41,9 +41,7 @@ The terminal accepts both ordinary shell commands and Truss workspace commands. 
 
 ## Updates
 
-Installed Windows and Linux x64 AppImage builds check the latest stable GitHub release when **Check for updates when Truss starts** is enabled in Settings. This preference is on by default. Enable **Automatically download available updates** for background downloads, or use **Check now** and **Download** manually. Choose **Restart to update** when the update is ready.
-
-Debian, RPM, pacman, and Linux ARM64 packages are updated through their installer or package manager. Development builds intentionally do not check for updates.
+Every installed Windows and Linux package checks the latest stable GitHub release when **Check for updates when Truss starts** is enabled in Settings. This preference is on by default. Windows and AppImage builds can download and restart into an update. Portable archives and Debian, RPM, and pacman packages open the matching release asset for the user to install with the normal archive or package-manager workflow. **Automatically download updates when supported** applies to native in-app updating. Development builds intentionally do not check for updates.
 
 ## Security model
 
