@@ -159,9 +159,7 @@ function buildLabel(build: Build): string {
   return `${build.format} · ${architecture}`;
 }
 
-function platformLabel(
-  build: Pick<Build, "platform" | "arch">,
-): string {
+function platformLabel(build: Pick<Build, "platform" | "arch">): string {
   const platform = build.platform === "windows" ? "Windows" : "Linux";
   const architecture = build.arch === "x64" ? "x64" : "ARM64";
   return `${platform} ${architecture}`;
@@ -334,6 +332,7 @@ function ReleaseCard({
   detailsLabel,
   downloadLabel,
   primaryHref,
+  badge,
 }: {
   readonly eyebrow: string;
   readonly title: string;
@@ -350,13 +349,19 @@ function ReleaseCard({
   readonly detailsLabel: string;
   readonly downloadLabel: string;
   readonly primaryHref?: string;
+  readonly badge?: string;
 }) {
   const published = releaseDate(release);
   return (
     <article className="download-client-card">
       <header>
         <p className="site-eyebrow">{eyebrow}</p>
-        <h2>{title}</h2>
+        <div className="download-client-title-row">
+          <h2>{title}</h2>
+          {badge ? (
+            <span className="download-client-badge">{badge}</span>
+          ) : null}
+        </div>
         <p>{description}</p>
       </header>
       <div className="download-client-release">
@@ -581,6 +586,7 @@ export function DownloadClient({
           <ReleaseCard
             eyebrow="Truss for Neovim"
             title="truss.nvim"
+            badge="Beta"
             description="Bring Chat, Plan, Edit, approvals, and local-model controls into Neovim or LazyVim without moving credentials into Lua."
             release={neovimRelease}
             asset={neovimArchive}
