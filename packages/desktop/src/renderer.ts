@@ -3143,10 +3143,12 @@ async function formatActiveFile(): Promise<void> {
   formatFileButton.disabled = true;
   try {
     tab.content = await window.trussDesktop.formatFile(tab.path, tab.content);
-    tab.dirty = true;
+    await window.trussDesktop.writeFile(tab.path, tab.content);
+    tab.dirty = false;
     renderEditorTabs();
     renderEditorContent(tab);
-    notify(`Formatted ${tab.path}`);
+    await Promise.all([loadFiles(), refreshGit()]);
+    notify(`Formatted and saved ${tab.path}`);
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error));
   } finally {
@@ -3406,7 +3408,9 @@ function renderUpdate(
     status.status === "checking"
       ? "Checking for updates..."
       : status.status === "available"
-        ? `Version${version} is available.`
+        ? status.manual
+          ? `Version${version} is available. Download the update for this package.`
+          : `Version${version} is available.`
         : status.status === "not-available"
           ? "Truss is up to date."
           : status.status === "downloading"
@@ -3416,6 +3420,7 @@ function renderUpdate(
               : (status.message ?? "Unable to check for updates.");
   downloadUpdate.hidden = status.status !== "available";
   installUpdate.hidden = status.status !== "downloaded";
+  downloadUpdate.textContent = status.manual ? "Open download" : "Download";
   checkUpdates.disabled =
     status.status === "checking" || status.status === "downloading";
   downloadUpdate.disabled = status.status === "downloading";
