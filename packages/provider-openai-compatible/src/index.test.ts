@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ModelRequestError } from "@truss-harness/runtime";
-import { OllamaProvider, OpenAICompatibleProvider, cloudProviderDefinitions, createCloudModelProvider, detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, generateLocalText, listLocalModels, normalizeLocalBaseUrl } from "./index.js";
+import { OllamaProvider, OpenAICompatibleProvider, cloudProviderDefinitions, createCloudModelProvider, detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, generateCloudText, generateLocalText, listLocalModels, normalizeLocalBaseUrl } from "./index.js";
 import type { CredentialProvider } from "@truss-harness/runtime";
 
 describe("OpenAICompatibleProvider", () => {
@@ -333,6 +333,30 @@ describe("OpenAICompatibleProvider", () => {
     for await (const _event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
     expect(provider.id).toBe("ollama-cloud");
     expect(url).toBe("https://ollama.com/api/chat");
+    expect(authorization).toBe("Bearer secret");
+  });
+
+  it("generates autocomplete text through a cloud provider adapter", async () => {
+    let authorization = "";
+    const text = await generateCloudText(
+      {
+        provider: "openai",
+        model: "gpt-test",
+        credential: { id: "openai-key", async resolve() { return { kind: "bearer", token: "secret" }; } }
+      },
+      "Complete the code.",
+      {
+        fetch: async (_input, init) => {
+          authorization = new Headers(init?.headers).get("authorization") ?? "";
+          return new Response(
+            'data: {"choices":[{"delta":{"content":"const value = 1;"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+            { headers: { "content-type": "text/event-stream" } }
+          );
+        }
+      }
+    );
+
+    expect(text).toBe("const value = 1;");
     expect(authorization).toBe("Bearer secret");
   });
 });
