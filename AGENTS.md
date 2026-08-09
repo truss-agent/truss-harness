@@ -9,7 +9,9 @@ installation, configuration, client usage, screenshots, and documentation.
 
 ## Required change workflow
 
-Every code or documentation change must follow this workflow without exception:
+Every code or documentation change and every push must follow this workflow
+without exception. It is a hard rule and cannot be bypassed, shortened, or
+treated as optional:
 
 1. Start from an up-to-date default branch and create a fresh dedicated branch.
 2. Create an issue from the applicable repository issue template before implementation.
@@ -18,9 +20,24 @@ Every code or documentation change must follow this workflow without exception:
 4. Complete every applicable template checkbox honestly and wait for required
    checks before merge.
 
-Never commit directly to `master` or `main`, skip the issue, or open an
-unlinked or incomplete pull request. This workflow protects the repository and
-is mandatory even for small changes.
+Never commit directly to `master` or `main`; push work without its issue and
+dedicated-branch PR; skip the issue; or open an unlinked or incomplete pull
+request. The initial branch push required to create a PR is permitted only
+after its issue exists, and the PR must be opened immediately afterward. This
+workflow protects the repository and is mandatory even for small changes.
+
+## Required release workflow
+
+When a change affects a package or client that must be versioned and rebuilt,
+update its version and any required changelog in the same working feature
+branch before opening its PR. Never create a separate release or version-bump
+branch for work that belongs to an existing change.
+
+After the linked PR is merged and required checks pass, create a clean release
+tag from the merged `master` commit when authorized. Never tag an unmerged
+feature branch. Coordinate all affected client/package releases from that
+merged commit rather than creating extra PRs that consume CI minutes without
+shipping product work.
 
 Build a source-available agent harness similar in capability to Cline, Continue, Roo Code, and OpenHands.
 
