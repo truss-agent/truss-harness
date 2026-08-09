@@ -1137,6 +1137,31 @@ body {
     margin-bottom: 10px;
 }
 
+.download-client-title-row {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+}
+
+.download-client-title-row h2 {
+    margin-bottom: 10px;
+}
+
+.download-client-badge {
+    align-self: flex-start;
+    background: #f28b30;
+    border-radius: 999px;
+    color: #201208;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    line-height: 1;
+    margin-top: 7px;
+    padding: 5px 8px;
+    text-transform: uppercase;
+}
+
 .download-client-card header > p:last-child {
     color: #52675e;
     line-height: 1.6;

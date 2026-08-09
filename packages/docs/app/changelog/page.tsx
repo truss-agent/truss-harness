@@ -4,12 +4,30 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.33",
+    label: "Desktop editing and terminal reliability",
+    changes: [
+      "Simplified the Desktop menu and made the Agent panel's Hide and Full size controls immediately available instead of nesting them in a second menu.",
+      "Made Ctrl+C interrupt the complete Truss-managed terminal process tree, including shell-launched development servers.",
+      "Allowed saves to complete even when format-on-save finds syntax errors, then marked affected editor tabs, file-tree entries, and Git entries in red with the diagnostic details.",
+    ],
+  },
+  {
     version: "Desktop 0.1.32 · VS Code 0.1.17 · CLI 0.1.18 · TUI 0.1.14",
     label: "Cloud autocomplete and tool-call recovery",
     changes: [
       "Enabled Desktop tab autocomplete for configured cloud models through the saved provider credentials.",
       "Recovered malformed model tool-call JSON as a retryable tool error instead of stopping the agent before write_file could be retried safely.",
       "Coordinated the runtime, provider, MCP, gateway, agent-host, CLI, TUI, VS Code, and Desktop release versions for the next publication.",
+    ],
+  },
+  {
+    version: "Desktop 0.1.29–0.1.31",
+    label: "Desktop activity, preview, and formatting",
+    changes: [
+      "Added a visible, collapsible tool-activity trace and a dockable full-size Agent workspace without exposing hidden model reasoning.",
+      "Let Preview follow announced local development servers while rejecting ambiguous or unsafe URLs.",
+      "Added format-on-save and kept workspace editor state separate from virtual settings and diff tabs.",
     ],
   },
   {

@@ -122,6 +122,7 @@ const bridge: DesktopBridge = {
   gitPush: () => ipcRenderer.invoke("truss:git-push"),
   runTerminal: (command: string) =>
     ipcRenderer.invoke("truss:run-terminal", command),
+  stopTerminal: () => ipcRenderer.invoke("truss:stop-terminal"),
   openExternal: (url: string) => ipcRenderer.invoke("truss:open-external", url),
   connectTrussGo: () => ipcRenderer.invoke("truss:connect-truss-go"),
   disconnectTrussGo: () => ipcRenderer.invoke("truss:disconnect-truss-go"),

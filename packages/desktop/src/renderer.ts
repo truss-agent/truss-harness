@@ -253,6 +253,11 @@ let inlineCompletion = "";
 let completionTimer: number | undefined;
 let completionRequest = 0;
 let syntaxTimer: number | undefined;
+type SyntaxDiagnostic = {
+  readonly line: number;
+  readonly message: string;
+};
+const syntaxDiagnosticsByPath = new Map<string, readonly SyntaxDiagnostic[]>();
 let lastZoomWheelAt = 0;
 type EditorTabMode = "file" | "diff" | "settings";
 type EditorTabState = "loading" | "ready" | "error";
@@ -1148,9 +1153,10 @@ function setChatCollapsed(next: boolean): void {
   chatCollapsed = next;
   chatArea.classList.toggle("chat-collapsed", next);
   workbench.classList.toggle("chat-collapsed", next && !chatDocked);
-  toggleChat.textContent = next ? "Restore" : "Minimize";
-  toggleChat.title = next ? "Restore agent panel" : "Minimize agent panel";
+  toggleChat.textContent = next ? "Show" : "Hide";
+  toggleChat.title = next ? "Show agent panel" : "Hide agent panel";
   toggleChat.setAttribute("aria-expanded", String(!next));
+  toggleChatDock.hidden = next;
 }
 
 function setChatDocked(next: boolean): void {
@@ -1164,7 +1170,7 @@ function setChatDocked(next: boolean): void {
     centerSurface.append(chatArea);
     chatSplitter.hidden = true;
     chatArea.classList.add("chat-docked");
-    toggleChatDock.textContent = "Side";
+    toggleChatDock.textContent = "Side panel";
     toggleChatDock.title = "Return agent panel to the side";
     toggleChatDock.setAttribute("aria-pressed", "true");
     workbench.classList.add("chat-docked");
@@ -1179,6 +1185,36 @@ function setChatDocked(next: boolean): void {
   toggleChatDock.setAttribute("aria-pressed", "false");
   workbench.classList.remove("chat-docked");
   setCenterView("editor");
+}
+
+function syntaxDiagnostics(path: string): readonly SyntaxDiagnostic[] {
+  return syntaxDiagnosticsByPath.get(editorPath(path)) ?? [];
+}
+
+function syntaxErrorTitle(path: string): string | undefined {
+  const diagnostic = syntaxDiagnostics(path)[0];
+  return diagnostic
+    ? `Syntax error on line ${diagnostic.line}: ${diagnostic.message}`
+    : undefined;
+}
+
+function hasSyntaxError(path: string): boolean {
+  return syntaxDiagnostics(path).length > 0;
+}
+
+function setSyntaxDiagnostics(
+  path: string,
+  diagnostics: readonly SyntaxDiagnostic[],
+): void {
+  const normalizedPath = editorPath(path);
+  const hadErrors = syntaxDiagnosticsByPath.has(normalizedPath);
+  if (diagnostics.length) syntaxDiagnosticsByPath.set(normalizedPath, diagnostics);
+  else syntaxDiagnosticsByPath.delete(normalizedPath);
+  if (hadErrors !== (diagnostics.length > 0)) {
+    renderEditorTabs();
+    renderFiles();
+    renderGit();
+  }
 }
 
 function cancelActiveRunForNavigation(): void {
@@ -1593,7 +1629,9 @@ function renderGit(): void {
       const open = document.createElement("button");
       open.className = "git-file-name";
       open.textContent = file.path;
-      open.title = file.path;
+      const syntaxError = syntaxErrorTitle(file.path);
+      row.classList.toggle("has-syntax-error", Boolean(syntaxError));
+      open.title = syntaxError ? `${file.path}\n${syntaxError}` : file.path;
       open.onclick = () => void openFile(file.path, false);
       const actions = document.createElement("div");
       actions.className = "git-row-actions";
@@ -1746,7 +1784,9 @@ function renderFiles(): void {
       row.className = "tree-row file filtered";
       const button = document.createElement("button");
       appendFileLabel(button, file.path, file.path);
-      button.title = file.path;
+      const syntaxError = syntaxErrorTitle(file.path);
+      row.classList.toggle("has-syntax-error", Boolean(syntaxError));
+      button.title = syntaxError ? `${file.path}\n${syntaxError}` : file.path;
       button.dataset.path = editorPath(file.path);
       if (editorPath(file.path) === activeFile) button.classList.add("active");
       button.onclick = () => void openFile(file.path, false);
@@ -1831,7 +1871,9 @@ function renderFiles(): void {
         file.path,
         file.path.split(/[\\/]/).at(-1) ?? file.path,
       );
-      button.title = file.path;
+      const syntaxError = syntaxErrorTitle(file.path);
+      row.classList.toggle("has-syntax-error", Boolean(syntaxError));
+      button.title = syntaxError ? `${file.path}\n${syntaxError}` : file.path;
       button.dataset.path = editorPath(file.path);
       if (editorPath(file.path) === activeFile) button.classList.add("active");
       button.onclick = () => void openFile(file.path, false);
@@ -2546,6 +2588,7 @@ function renderEditorContent(tab: EditorTab | undefined): void {
           .checkSyntax(tab.path, input.value)
           .then((items) => {
             if (input.value !== tab.content) return;
+            setSyntaxDiagnostics(tab.path, items);
             diagnostics.hidden = items.length === 0;
             diagnostics.textContent = items
               .map((item) => `Line ${item.line}: ${item.message}`)
@@ -2958,7 +3001,7 @@ function renderEditorTabs(): void {
   editorTitle.hidden = openEditorTabs.length > 0;
   const tabs = openEditorTabs.map((tab) => {
     const container = document.createElement("div");
-    container.className = `editor-tab ${tab.mode === "diff" ? "diff" : ""} ${tab.path === activeFile ? "active" : ""}`;
+    container.className = `editor-tab ${tab.mode === "diff" ? "diff" : ""} ${tab.path === activeFile ? "active" : ""} ${hasSyntaxError(tab.path) ? "has-syntax-error" : ""}`;
     container.setAttribute("role", "presentation");
     const select = document.createElement("button");
     select.className = "editor-tab-main";
@@ -2972,10 +3015,12 @@ function renderEditorTabs(): void {
         tab.path,
         `${tab.dirty ? "* " : ""}${tab.path.split(/[\\/]/).at(-1) ?? tab.path}`,
       );
-    select.title =
+    const title =
       tab.mode === "settings"
         ? "Settings"
         : `${tab.mode === "diff" ? "Diff: " : ""}${tab.path}`;
+    const syntaxError = syntaxErrorTitle(tab.path);
+    select.title = syntaxError ? `${title}\n${syntaxError}` : title;
     select.onclick = () => selectEditorTab(tab);
     const close = document.createElement("button");
     close.className = "editor-tab-close";
@@ -3072,14 +3117,34 @@ async function saveActiveFile(): Promise<void> {
   const tab = activeEditorTab();
   if (!tab || tab.mode !== "file" || mediaKindForPath(tab.path) || !tab.dirty)
     return;
-  try {
-    if (configuration().formatOnSave)
+  let formatError: unknown;
+  if (configuration().formatOnSave) {
+    try {
       tab.content = await window.trussDesktop.formatFile(tab.path, tab.content);
+    } catch (error) {
+      // Formatting must not prevent a user from saving an unfinished file.
+      formatError = error;
+    }
+  }
+  try {
     await window.trussDesktop.writeFile(tab.path, tab.content);
     tab.dirty = false;
     renderEditorTabs();
+    renderEditorContent(tab);
+    try {
+      setSyntaxDiagnostics(
+        tab.path,
+        await window.trussDesktop.checkSyntax(tab.path, tab.content),
+      );
+    } catch {
+      // Syntax feedback is best-effort for formats without a local parser.
+    }
     await Promise.all([loadFiles(), refreshGit()]);
-    notify(`Saved ${tab.path}`);
+    notify(
+      formatError
+        ? `Saved ${tab.path}; formatting was skipped because it has syntax errors.`
+        : `Saved ${tab.path}`,
+    );
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error));
     renderEditorTabs();
@@ -4621,6 +4686,7 @@ element<HTMLButtonElement>("chooseWorkspace").onclick = async () => {
   activeFile = undefined;
   showingDiff = false;
   openEditorTabs.splice(0, openEditorTabs.length);
+  syntaxDiagnosticsByPath.clear();
   expandedDirectories.clear();
   loadedDirectoryContents.clear();
   setCenterView("editor");
@@ -4639,22 +4705,6 @@ element<HTMLButtonElement>("chooseWorkspace").onclick = async () => {
   renderConversations();
   renderChat();
   renderRuntime();
-};
-element<HTMLButtonElement>("refreshModels").onclick = () => {
-  void window.trussDesktop
-    .refreshLocalModel()
-    .then(async (returned) => {
-      desktopState = returned;
-      populateSettings();
-      await discover(returned.configuration);
-      renderRuntime();
-      notify(
-        `Detected ${returned.configuration?.provider ?? "local provider"} / ${returned.configuration?.model ?? "model"}`,
-      );
-    })
-    .catch((error) =>
-      notify(error instanceof Error ? error.message : String(error)),
-    );
 };
 element<HTMLButtonElement>("refreshFiles").onclick = () => void loadFiles();
 fileSearch.oninput = () => {
@@ -4846,7 +4896,6 @@ window.addEventListener(
   { passive: false, capture: true },
 );
 element<HTMLButtonElement>("settingsButton").onclick = openSettings;
-element<HTMLButtonElement>("openChat").onclick = () => setCenterView("chat");
 toggleChat.onclick = () => setChatCollapsed(!chatCollapsed);
 toggleChatDock.onclick = () => setChatDocked(!chatDocked);
 element<HTMLButtonElement>("dialogRefresh").onclick = () => {
@@ -5308,12 +5357,42 @@ chatInput.onkeydown = (event) => {
   }
 };
 cancelChatButton.onclick = () => void window.trussDesktop.stopChat();
+const terminalInput = element<HTMLInputElement>("terminalInput");
+
+function interruptTerminal(): void {
+  void window.trussDesktop
+    .stopTerminal()
+    .then((stopped) => {
+      if (!stopped) {
+        notify("No Truss terminal process is running.");
+        return;
+      }
+      appendTerminal(
+        `^C\n[stopping ${stopped} terminal process${stopped === 1 ? "" : "es"}]\n`,
+      );
+    })
+    .catch((error: unknown) =>
+      notify(error instanceof Error ? error.message : String(error)),
+    );
+}
+
+terminalInput.onkeydown = (event) => {
+  if (
+    (event.ctrlKey || event.metaKey) &&
+    !event.altKey &&
+    event.key.toLowerCase() === "c" &&
+    terminalInput.selectionStart === terminalInput.selectionEnd
+  ) {
+    event.preventDefault();
+    interruptTerminal();
+  }
+};
+
 element<HTMLFormElement>("terminalForm").onsubmit = (event) => {
   event.preventDefault();
-  const input = element<HTMLInputElement>("terminalInput");
-  const command = input.value.trim();
+  const command = terminalInput.value.trim();
   if (!command) return;
-  input.value = "";
+  terminalInput.value = "";
   appendTerminal(`\n> ${command}\n`);
   void window.trussDesktop.runTerminal(command);
 };
