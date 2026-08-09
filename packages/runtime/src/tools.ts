@@ -53,7 +53,7 @@ export const readFileTool: AgentTool = {
 };
 
 export const writeFileTool: AgentTool = {
-  name: "write_file", description: "Create or fully replace a UTF-8 file using a workspace-relative path. For a focused change to an existing file, prefer replace_in_file. Absolute paths are not allowed.",
+  name: "write_file", description: "Create a new UTF-8 file or fully replace a small file using a workspace-relative path. For an existing or large file, read it first and use replace_in_file for one focused edit; do not send an entire large file in one tool call. Absolute paths are not allowed.",
   inputSchema: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] },
   async execute(input, context) {
     const content = stringInput(input, "content");

@@ -33,6 +33,8 @@ export interface ToolCall {
   readonly id: string;
   readonly name: string;
   readonly input: JsonObject;
+  /** Provider-side argument parsing failed; the runtime must not execute this call. */
+  readonly parseError?: string;
 }
 
 export interface ToolDefinition {

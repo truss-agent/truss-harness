@@ -4,12 +4,12 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
-    version: "Desktop 0.1.27 · VS Code 0.1.16 · CLI 0.1.17 · TUI 0.1.13",
-    label: "Provider recovery and Desktop workflow",
+    version: "Desktop 0.1.32 · VS Code 0.1.17 · CLI 0.1.18 · TUI 0.1.14",
+    label: "Cloud autocomplete and tool-call recovery",
     changes: [
-      "Added bounded provider retries before streaming begins for rate limits, retry delays, transient network failures, timeouts, and server errors across every runtime client.",
-      "Added safe, actionable provider failure messages and rate-limit progress that report the selected model, token-budget figures, retry delay, and retry attempt without exposing provider response bodies or organization identifiers.",
-      "Improved Desktop agent setup with complete BYOK provider choices, provider-default endpoints, authenticated model pickers, full tool activity counts, and centered in-app confirmations.",
+      "Enabled Desktop tab autocomplete for configured cloud models through the saved provider credentials.",
+      "Recovered malformed model tool-call JSON as a retryable tool error instead of stopping the agent before write_file could be retried safely.",
+      "Coordinated the runtime, provider, MCP, gateway, agent-host, CLI, TUI, VS Code, and Desktop release versions for the next publication.",
     ],
   },
   {

@@ -283,7 +283,7 @@ function contentText(content: OpenAIContent | undefined): string {
 
 function parseToolCalls(partial: Map<number, PartialToolCall>): ToolCall[] {
   return [...partial.entries()].sort(([left], [right]) => left - right).map(([index, call]) => {
-    if (!call.id || !call.name) throw new Error(`Incomplete tool call at index ${index}`);
+    if (!call.name) throw new Error(`Incomplete tool call at index ${index}`);
 
     let input: JsonObject;
     try {
@@ -294,10 +294,15 @@ function parseToolCalls(partial: Map<number, PartialToolCall>): ToolCall[] {
       input = parsed as JsonObject;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Invalid arguments for tool '${call.name}': ${message}`);
+      return {
+        id: call.id ?? `malformed-tool-${index}`,
+        name: call.name,
+        input: {},
+        parseError: `Invalid arguments for tool '${call.name}': ${message}`
+      };
     }
 
-    return { id: call.id, name: call.name, input };
+    return { id: call.id ?? `tool-${index}`, name: call.name, input };
   });
 }
 

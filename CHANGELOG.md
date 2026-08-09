@@ -2,6 +2,20 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.32] - 2026-08-09
+
+### Fixed
+
+- Enabled Desktop tab autocomplete for configured cloud models through the
+  saved provider credentials.
+- Recovered malformed model tool-call JSON as a retryable tool error instead
+  of stopping the agent before `write_file` could be retried safely.
+
+### Changed
+
+- Coordinated the runtime, provider, MCP, gateway, agent-host, CLI, TUI,
+  VS Code, and Desktop release versions for the next publication.
+
 ## [0.1.25] - 2026-08-02
 
 ### Added

@@ -26,6 +26,7 @@ function isFileWrite(call: ToolCall): boolean {
 function toolFailureRecovery(tool: string): string {
   if (tool === "web_fetch") return "Do not infer page or file contents from this failure. web_fetch reads only public HTTP/HTTPS URLs; to inspect a workspace file, retry with read_file using its workspace-relative path.";
   if (tool === "web_search") return "Do not infer search results from this failure. Correct the tool arguments and retry, or use a workspace tool when the request concerns local files.";
+  if (tool === "write_file") return "Read the current file first. For an existing file, use replace_in_file with one focused contiguous edit instead of sending the entire file in one large write_file call.";
   if (tool === "replace_in_file") return "Do not infer a file state from this failure. Call read_file for the current workspace file, then retry replace_in_file with one exact contiguous oldText excerpt from that read. Do not answer until the write succeeds or the failure is clearly unrecoverable.";
   return "Do not infer a result from this failure. Correct the arguments and retry the appropriate tool before answering.";
 }
@@ -272,6 +273,12 @@ export class AgentRuntime {
     let result: ToolResult;
     if (preflightError) result = { content: preflightError, isError: true };
     else if (!implementation) result = { content: `Unknown tool: ${tool}`, isError: true };
+    else if (call.parseError) {
+      result = {
+        content: `Tool call was not executed because its arguments could not be parsed: ${call.parseError}\n\nRECOVERY: ${toolFailureRecovery(tool)}`,
+        isError: true
+      };
+    }
     else if (!await (this.options.approval ?? allowAllTools).approve(call, session)) result = { content: `Tool call denied: ${tool}`, isError: true };
     else {
       try {

@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/branding",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Shared product identity configuration for Truss clients.",
   "type": "module",
   "exports": {
