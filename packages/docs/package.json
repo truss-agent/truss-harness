@@ -17,7 +17,7 @@
     "nextra-theme-docs": "4.0.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "@truss-harness/branding": "0.1.0"
+    "@truss-harness/branding": "0.1.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",

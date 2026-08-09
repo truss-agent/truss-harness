@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/agent-host",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Provider-aware host composition for isolated Truss agent runtimes.",
   "type": "module",
   "exports": {
@@ -40,8 +40,8 @@
     "access": "public"
   },
   "dependencies": {
-    "@truss-harness/mcp": "0.1.9",
-    "@truss-harness/provider-openai-compatible": "0.1.10",
-    "@truss-harness/runtime": "0.1.9"
+    "@truss-harness/mcp": "0.1.10",
+    "@truss-harness/provider-openai-compatible": "0.1.11",
+    "@truss-harness/runtime": "0.1.10"
   }
 }

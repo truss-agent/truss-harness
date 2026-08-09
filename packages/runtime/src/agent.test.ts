@@ -72,6 +72,33 @@ describe("AgentRuntime", () => {
     expect(await runtime.listSessions()).toHaveLength(1);
   });
 
+  it("returns malformed tool arguments to the model without executing them", async () => {
+    const provider: ModelProvider = { id: "fake", async *stream(request): AsyncIterable<ModelStreamEvent> {
+      const toolResults = request.messages.filter((message) => message.role === "tool");
+      if (!toolResults.length) {
+        yield { type: "tool_call", id: "bad-1", name: "write_file", input: {}, parseError: "Invalid arguments: Unterminated string" } as const;
+        yield { type: "finish", reason: "tool_calls" } as const;
+      } else if (toolResults.length === 1) {
+        expect(toolResults[0]?.content).toContain("was not executed");
+        expect(toolResults[0]?.content).toContain("replace_in_file");
+        yield { type: "tool_call", id: "write-1", name: "write_file", input: { path: "README.md", content: "updated" } } as const;
+        yield { type: "finish", reason: "tool_calls" } as const;
+      } else {
+        yield { type: "text_delta", text: "Updated README.md." } as const;
+        yield { type: "finish", reason: "stop" } as const;
+      }
+    }};
+    let writes = 0;
+    const tools = new ToolRegistry();
+    tools.register({ name: "write_file", description: "writes", inputSchema: { type: "object" }, async execute() { writes += 1; return { content: "File written." }; } });
+    const runtime = new AgentRuntime({ provider, tools, sessions: new InMemorySessionStore(), context: new RecentHistoryContextManager(), events: new EventBus<RuntimeEvent>(), workspaceRoot: process.cwd() });
+
+    const session = await runtime.createSession();
+    await runtime.run(session.id, "Update README.md");
+
+    expect(writes).toBe(1);
+  });
+
   it("allows a multi-step tool workflow to continue beyond 24 turns by default", async () => {
     let turns = 0;
     const provider: ModelProvider = { id: "fake", async *stream() {

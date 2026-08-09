@@ -50,6 +50,31 @@ describe("OpenAICompatibleProvider", () => {
     ]);
   });
 
+  it("returns a recoverable tool event when streamed arguments are malformed", async () => {
+    const body = [
+      `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "call_bad", function: { name: "write_file", arguments: '{"path":"README.md","content":"unterminated' } }] } }] })}\n\n`,
+      `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "tool_calls" }] })}\n\n`,
+      "data: [DONE]\n\n"
+    ].join("");
+    const provider = new OpenAICompatibleProvider({
+      baseUrl: "http://localhost:11434/v1",
+      model: "test",
+      fetch: async () => new Response(body, { headers: { "content-type": "text/event-stream" } })
+    });
+
+    const events = [];
+    for await (const event of provider.stream({ messages: [{ role: "user", content: "write it" }], tools: [] })) events.push(event);
+
+    expect(events[0]).toMatchObject({
+      type: "tool_call",
+      id: "call_bad",
+      name: "write_file",
+      input: {},
+      parseError: expect.stringContaining("Unterminated string")
+    });
+    expect(events.at(-1)).toEqual({ type: "finish", reason: "tool_calls" });
+  });
+
   it("accepts a clean local-server close without an OpenAI [DONE] marker", async () => {
     const body = [
       'data: {"choices":[{"delta":{"content":"feat: add local commit messages"}}]}\n\n',

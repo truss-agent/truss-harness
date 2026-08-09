@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/desktop",
-  "version": "0.1.31",
+  "version": "0.1.32",
   "description": "Standalone desktop client for the Truss runtime.",
   "author": "Truss Contributors",
   "desktopName": "truss-harness.desktop",
@@ -114,18 +114,18 @@
     "url": "git+https://github.com/truss-agent/truss-harness.git"
   },
   "dependencies": {
-    "@truss-harness/agent-host": "0.1.5",
-    "@truss-harness/gateway": "0.1.9",
+    "@truss-harness/agent-host": "0.1.6",
+    "@truss-harness/gateway": "0.1.10",
     "@types/qrcode": "^1.5.6",
     "electron-updater": "^6.3.9",
     "highlight.js": "11.11.1",
     "prettier": "3.6.2",
     "qrcode": "^1.5.4",
-    "@truss-harness/branding": "0.1.0",
-    "@truss-harness/cli": "0.1.17",
-    "@truss-harness/mcp": "0.1.9",
-    "@truss-harness/provider-openai-compatible": "0.1.10",
-    "@truss-harness/runtime": "0.1.9"
+    "@truss-harness/branding": "0.1.1",
+    "@truss-harness/cli": "0.1.18",
+    "@truss-harness/mcp": "0.1.10",
+    "@truss-harness/provider-openai-compatible": "0.1.11",
+    "@truss-harness/runtime": "0.1.10"
   },
   "devDependencies": {
     "electron": "37.10.3",
