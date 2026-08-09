@@ -4,6 +4,16 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.34",
+    label: "Settings workspace and chat controls",
+    changes: [
+      "Reworked Desktop Settings into a full editor workspace with clearer local-model, cloud-provider, and application sections.",
+      "Added a startup update notice when a newer Desktop version is available, with a direct path to update settings.",
+      "Made Hide collapse the complete Chat panel and splitter, with a compact Chat control to restore it without wasting editor space.",
+      "Marked the VS Code extension as Beta on the Downloads page while the client continues to mature.",
+    ],
+  },
+  {
     version: "Desktop 0.1.33",
     label: "Desktop editing and terminal reliability",
     changes: [

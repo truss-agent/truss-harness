@@ -523,6 +523,7 @@ export function DownloadClient({
           <ReleaseCard
             eyebrow="Truss for VS Code"
             title="VS Code"
+            badge="Beta"
             description="Keep Truss inside your editor with chat, file context, completions, approvals, and a bundled runtime service."
             release={undefined}
             asset={undefined}

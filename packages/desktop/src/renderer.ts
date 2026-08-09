@@ -122,6 +122,7 @@ const terminalPrompt = element<HTMLDivElement>("terminalPrompt");
 const chatMessages = element<HTMLDivElement>("chatMessages");
 const chatArea = document.querySelector<HTMLElement>(".chat-area") as HTMLElement;
 const toggleChat = element<HTMLButtonElement>("toggleChat");
+const showChatPanel = element<HTMLButtonElement>("showChatPanel");
 const chatSplitter = element<HTMLDivElement>("chatSplitter");
 const toggleChatDock = element<HTMLButtonElement>("toggleChatDock");
 const planPanel = element<HTMLElement>("planPanel");
@@ -221,6 +222,9 @@ const updateStatus = element<HTMLSpanElement>("updateStatus");
 const checkUpdates = element<HTMLButtonElement>("checkUpdates");
 const downloadUpdate = element<HTMLButtonElement>("downloadUpdate");
 const installUpdate = element<HTMLButtonElement>("installUpdate");
+const updateAvailableDialog = element<HTMLDialogElement>("updateAvailableDialog");
+const updateAvailableMessage = element<HTMLElement>("updateAvailableMessage");
+const openUpdateSettings = element<HTMLButtonElement>("openUpdateSettings");
 const toast = element<HTMLDivElement>("toast");
 
 let desktopState: DesktopState = {
@@ -309,6 +313,7 @@ let activeSettingsTab: SettingsTab = "local";
 let modelSettingsTab: "local" | "byok" = "local";
 let selectedProviderAccountId: string | undefined;
 let creatingProviderAccount = false;
+let announcedUpdateVersion: string | undefined;
 const maxAttachmentCount = 5;
 const maxAttachmentBytes = 4 * 1024 * 1024;
 const maxAttachmentTotalBytes = 12 * 1024 * 1024;
@@ -1154,9 +1159,11 @@ function setChatCollapsed(next: boolean): void {
   chatArea.classList.toggle("chat-collapsed", next);
   workbench.classList.toggle("chat-collapsed", next && !chatDocked);
   toggleChat.textContent = next ? "Show" : "Hide";
-  toggleChat.title = next ? "Show agent panel" : "Hide agent panel";
+  toggleChat.title = next ? "Show chat panel" : "Hide chat panel";
   toggleChat.setAttribute("aria-expanded", String(!next));
   toggleChatDock.hidden = next;
+  showChatPanel.hidden = !next;
+  if (next && chatDocked) setCenterView("editor");
 }
 
 function setChatDocked(next: boolean): void {
@@ -1171,7 +1178,7 @@ function setChatDocked(next: boolean): void {
     chatSplitter.hidden = true;
     chatArea.classList.add("chat-docked");
     toggleChatDock.textContent = "Side panel";
-    toggleChatDock.title = "Return agent panel to the side";
+    toggleChatDock.title = "Return chat panel to the side";
     toggleChatDock.setAttribute("aria-pressed", "true");
     workbench.classList.add("chat-docked");
     setCenterView("chat");
@@ -1181,7 +1188,7 @@ function setChatDocked(next: boolean): void {
   chatSplitter.hidden = false;
   chatArea.classList.remove("chat-docked");
   toggleChatDock.textContent = "Full size";
-  toggleChatDock.title = "Move agent panel into the editor area";
+  toggleChatDock.title = "Move chat panel into the editor area";
   toggleChatDock.setAttribute("aria-pressed", "false");
   workbench.classList.remove("chat-docked");
   setCenterView("editor");
@@ -3489,6 +3496,15 @@ function renderUpdate(
   checkUpdates.disabled =
     status.status === "checking" || status.status === "downloading";
   downloadUpdate.disabled = status.status === "downloading";
+  if (
+    status.status === "available" &&
+    status.version &&
+    announcedUpdateVersion !== status.version
+  ) {
+    announcedUpdateVersion = status.version;
+    updateAvailableMessage.textContent = `Truss ${status.version} is available. You can review the download and install options now or later.`;
+    if (!updateAvailableDialog.open) updateAvailableDialog.showModal();
+  }
 }
 
 function populateSettings(): void {
@@ -4897,6 +4913,10 @@ window.addEventListener(
 );
 element<HTMLButtonElement>("settingsButton").onclick = openSettings;
 toggleChat.onclick = () => setChatCollapsed(!chatCollapsed);
+showChatPanel.onclick = () => {
+  setChatCollapsed(false);
+  if (chatDocked) setCenterView("chat");
+};
 toggleChatDock.onclick = () => setChatDocked(!chatDocked);
 element<HTMLButtonElement>("dialogRefresh").onclick = () => {
   const provider = providerSelect.value as "ollama" | "openai-compatible";
@@ -5192,6 +5212,16 @@ saveCustomTheme.onclick = () => {
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error));
   }
+};
+openUpdateSettings.onclick = () => {
+  updateAvailableDialog.close();
+  if (activeEditorTab()?.mode !== "settings") openSettings();
+  setSettingsTab("other");
+  window.requestAnimationFrame(() => {
+    document
+      .querySelector<HTMLElement>(".update-settings")
+      ?.scrollIntoView({ block: "nearest" });
+  });
 };
 checkUpdates.onclick = () =>
   void window.trussDesktop.checkForUpdates().catch((error) =>

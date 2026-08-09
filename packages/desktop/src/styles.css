@@ -326,6 +326,7 @@ button:focus-visible {
 }
 
 .editor-area {
+    position: relative;
     display: grid;
     grid-template-rows: 38px minmax(0, 1fr) minmax(155px, 27%);
     background: #11161a;
@@ -814,7 +815,7 @@ button:focus-visible {
     color: #e7eef1;
 }
 
-.chat-heading div {
+.chat-heading > div:first-child {
     display: grid;
     gap: 1px;
 }
@@ -842,6 +843,29 @@ button:focus-visible {
 
 .chat-area.chat-collapsed .chat-content {
     display: none;
+}
+
+.chat-area.chat-collapsed {
+    display: none;
+}
+
+.workbench.chat-collapsed {
+    grid-template-columns: minmax(190px, var(--sidebar-width)) 6px minmax(360px, 1fr);
+}
+
+.workbench.chat-collapsed #chatSplitter {
+    display: none;
+}
+
+.show-chat-panel {
+    position: absolute;
+    z-index: 4;
+    top: 4px;
+    right: 8px;
+    min-height: 28px;
+    border-color: #3a8072;
+    color: #d8fff5;
+    background: #1a2d2b;
 }
 
 .chat-area.chat-docked {
@@ -1197,11 +1221,25 @@ dialog::backdrop {
     justify-content: flex-end;
 }
 
+.update-available-form {
+    display: grid;
+    gap: 16px;
+    padding: 18px;
+}
+
+.update-available-form > p {
+    margin: 0;
+    color: #b7c7cc;
+    line-height: 1.5;
+}
+
 .settings-form {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-    padding: 15px;
+    align-content: start;
+    gap: 18px;
+    min-height: 100%;
+    padding: 22px clamp(18px, 3vw, 42px) 78px;
 }
 
 .settings-editor {
@@ -1212,27 +1250,27 @@ dialog::backdrop {
     overflow: auto;
     overscroll-behavior: contain;
     scrollbar-gutter: stable;
-    padding: 20px clamp(16px, 3vw, 36px);
+    padding: 0;
     background: var(--desktop-background, #11161a);
 }
 
 .settings-editor .settings-form {
-    width: min(920px, 100%);
+    width: 100%;
     box-sizing: border-box;
-    margin: 0 auto;
-    border: 1px solid var(--desktop-border, #2b383f);
-    border-radius: 6px;
-    background: var(--desktop-surface, #151d22);
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
 }
 
 .settings-editor .dialog-actions {
     position: sticky;
-    bottom: -15px;
+    bottom: 0;
     z-index: 1;
-    margin: 0 -15px -15px;
-    padding: 12px 15px;
+    margin: 10px calc(-1 * clamp(18px, 3vw, 42px)) -78px;
+    padding: 14px clamp(18px, 3vw, 42px);
     border-top: 1px solid var(--desktop-border, #2b383f);
-    background: var(--desktop-surface, #151d22);
+    background: var(--desktop-panel, #131a1f);
 }
 
 .dialog-heading,
@@ -1246,6 +1284,15 @@ dialog::backdrop {
     display: flex;
     justify-content: space-between;
     gap: 8px;
+}
+
+.settings-heading {
+    padding-bottom: 2px;
+}
+
+.settings-heading strong {
+    color: #e7eef1;
+    font-size: 18px;
 }
 
 .dialog-heading div {
@@ -1265,35 +1312,74 @@ dialog::backdrop {
 .settings-tabs {
     display: flex;
     gap: 4px;
-    padding: 4px;
-    border: 1px solid #304047;
-    border-radius: 6px;
-    background: #10171b;
+    padding: 0;
+    border: 0;
+    border-bottom: 1px solid #304047;
+    border-radius: 0;
+    background: transparent;
 }
 
 .settings-tabs button {
     flex: 1;
-    border-color: transparent;
+    min-height: 38px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
     color: #9badb5;
     background: transparent;
 }
 
 .settings-tabs button:hover {
-    border-color: #40515a;
     color: #e7eef1;
+    background: #182126;
 }
 
 .settings-tabs button.active {
-    border-color: #3a8072;
+    border-color: #54d7b0;
     color: #d8fff5;
-    background: #1c3a36;
+    background: #1a2d2b;
 }
 
 .settings-panel {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+    gap: 14px;
     min-width: 0;
+}
+
+.settings-section-heading {
+    display: flex;
+    grid-column: 1 / -1;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 4px 0 14px;
+    border-bottom: 1px solid #2b383f;
+}
+
+.settings-section-heading > div {
+    display: grid;
+    gap: 5px;
+}
+
+.settings-section-heading h2,
+.settings-section-heading p {
+    margin: 0;
+}
+
+.settings-section-heading h2 {
+    color: #e7eef1;
+    font-size: 15px;
+}
+
+.settings-section-heading p {
+    color: #9badb5;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.settings-section-heading button {
+    flex: 0 0 auto;
 }
 
 .settings-panel[hidden] {
@@ -1308,6 +1394,15 @@ dialog::backdrop {
     line-height: 1.45;
 }
 
+.settings-subheading {
+    grid-column: 1 / -1;
+    margin: 6px 0 -2px;
+    color: #c6d1d6;
+    font-size: 12px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
 .settings-wide,
 .settings-panel-actions,
 .provider-connection-result {
@@ -1316,6 +1411,7 @@ dialog::backdrop {
 
 .settings-panel-actions {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-start;
     gap: 8px;
 }
@@ -1986,7 +2082,7 @@ dialog::backdrop {
     background: #11171b;
     color: #b9c8cd;
     font-size: 11px;
-    margin: 8px 8px 0;
+    margin: 8px;
 }
 
 .tool-activity summary {
@@ -2484,6 +2580,10 @@ dialog::backdrop {
     grid-template-rows: 38px minmax(0, 1fr) 6px minmax(120px, var(--terminal-height));
 }
 
+.workbench.chat-collapsed .editor-area {
+    grid-template-rows: 38px minmax(52px, 1fr) 6px minmax(120px, var(--terminal-height));
+}
+
 .git-body[hidden] {
     display: none !important;
 }
@@ -2573,6 +2673,11 @@ body.resizing * {
         grid-template-rows: minmax(0, 1fr);
     }
 
+    .workbench.chat-collapsed {
+        grid-template-columns: minmax(175px, var(--sidebar-width)) 6px minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+    }
+
     .sidebar {
         grid-column: 1;
         grid-row: 1;
@@ -2623,6 +2728,11 @@ body.resizing * {
     }
 
     .workbench.chat-docked {
+        grid-template-columns: 1fr;
+        grid-template-rows: 250px minmax(240px, 1fr);
+    }
+
+    .workbench.chat-collapsed {
         grid-template-columns: 1fr;
         grid-template-rows: 250px minmax(240px, 1fr);
     }

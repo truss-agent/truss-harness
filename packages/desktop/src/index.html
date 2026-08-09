@@ -46,10 +46,11 @@
       </div>
       <div id="terminalSplitter" class="pane-splitter horizontal" role="separator" aria-label="Resize terminal"></div>
       <section class="terminal"><div class="terminal-heading">Terminal</div><pre id="terminalOutput" class="terminal-output">Terminal ready.</pre><form id="terminalForm" class="terminal-form"><div id="terminalPrompt" class="terminal-prompt" aria-label="Terminal context"></div><input id="terminalInput" autocomplete="off" placeholder="Run a command in the workspace"><button type="submit">Run</button></form></section>
+      <button id="showChatPanel" class="show-chat-panel" type="button" title="Show chat panel" aria-label="Show chat panel" hidden>Chat</button>
     </section>
     <div id="chatSplitter" class="pane-splitter vertical" role="separator" aria-label="Resize agent panel"></div>
     <section class="chat-area">
-      <div class="chat-heading"><div><strong>Agent</strong><span id="chatStatus">Ready</span></div><div class="chat-heading-actions"><button id="toggleChat" type="button" aria-expanded="true" aria-controls="chatContent" title="Hide agent panel">Hide</button><button id="toggleChatDock" type="button" title="Move agent panel into the editor area" aria-pressed="false">Full size</button></div></div>
+      <div class="chat-heading"><div><strong>Agent</strong><span id="chatStatus">Ready</span></div><div class="chat-heading-actions"><button id="toggleChat" type="button" aria-expanded="true" aria-controls="chatContent" title="Hide chat panel">Hide</button><button id="toggleChatDock" type="button" title="Move chat panel into the editor area" aria-pressed="false">Full size</button></div></div>
       <div id="chatContent" class="chat-content">
         <div id="toolActivityPanel" class="tool-activity-panel" role="status" aria-live="polite" hidden></div>
         <section id="planPanel" class="plan-panel" hidden></section>
@@ -61,26 +62,27 @@
   </main>
   <section id="settingsPanel" class="settings-editor" hidden>
     <form class="settings-form">
-      <div class="dialog-heading"><div><strong>Model settings</strong><span>Connect a local model or a provider you bring a key for.</span></div></div>
+      <div class="dialog-heading settings-heading"><div><strong>Settings</strong><span>Choose a model, manage provider accounts, and tailor Truss to this workspace.</span></div></div>
       <div class="settings-tabs" role="tablist" aria-label="Settings sections">
-        <button type="button" role="tab" id="settingsTabLocal" data-settings-tab="local" aria-controls="settingsPanelLocal">Local provider</button>
-        <button type="button" role="tab" id="settingsTabByok" data-settings-tab="byok" aria-controls="settingsPanelByok">BYOK</button>
-        <button type="button" role="tab" id="settingsTabOther" data-settings-tab="other" aria-controls="settingsPanelOther">Other</button>
+        <button type="button" role="tab" id="settingsTabLocal" data-settings-tab="local" aria-controls="settingsPanelLocal">Local models</button>
+        <button type="button" role="tab" id="settingsTabByok" data-settings-tab="byok" aria-controls="settingsPanelByok">Cloud &amp; API keys</button>
+        <button type="button" role="tab" id="settingsTabOther" data-settings-tab="other" aria-controls="settingsPanelOther">App &amp; tools</button>
       </div>
       <section id="settingsPanelLocal" class="settings-panel" role="tabpanel" aria-labelledby="settingsTabLocal">
-        <p class="settings-panel-intro">Use a model server running on this machine or your local network.</p>
+        <header class="settings-section-heading"><div><h2>Local models</h2><p>Use a model server running on this machine or your local network.</p></div><button id="dialogRefresh" type="button">Refresh local models</button></header>
         <label>Detected server<select id="endpointSelect"><option value="">Custom endpoint</option></select></label>
         <label>Provider<select id="providerSelect"><option value="ollama">Ollama</option><option value="openai-compatible">Compatible API</option></select></label>
         <label class="settings-wide">Endpoint<input id="baseUrlInput" placeholder="http://127.0.0.1:11434"></label>
         <label class="settings-wide">Model<input id="modelInput" list="modelOptions" placeholder="Refresh to discover models"><datalist id="modelOptions"></datalist></label>
-        <div class="settings-panel-actions"><button id="dialogRefresh" type="button">Refresh local models</button></div>
       </section>
       <section id="settingsPanelByok" class="settings-panel" role="tabpanel" aria-labelledby="settingsTabByok" hidden>
-        <p class="settings-panel-intro">Choose a supported provider, enter its model ID, and store your key only on this device.</p>
+        <header class="settings-section-heading"><div><h2>Cloud &amp; API keys</h2><p>Choose a supported provider, then save one or more named accounts only on this device.</p></div></header>
+        <h3 class="settings-subheading">Provider account</h3>
         <label>Provider<select id="byokProviderSelect"><option value="openai" data-base-url="https://api.openai.com/v1">OpenAI</option><option value="anthropic" data-base-url="https://api.anthropic.com/v1">Anthropic</option><option value="openrouter" data-base-url="https://openrouter.ai/api/v1">OpenRouter</option><option value="groq" data-base-url="https://api.groq.com/openai/v1">Groq</option><option value="together" data-base-url="https://api.together.ai/v1">Together AI</option><option value="gemini" data-base-url="https://generativelanguage.googleapis.com/v1beta/openai">Gemini</option><option value="xai" data-base-url="https://api.x.ai/v1">xAI</option><option value="mistral" data-base-url="https://api.mistral.ai/v1">Mistral AI</option><option value="deepseek" data-base-url="https://api.deepseek.com">DeepSeek</option><option value="perplexity" data-base-url="https://api.perplexity.ai">Perplexity</option><option value="fireworks" data-base-url="https://api.fireworks.ai/inference/v1">Fireworks AI</option><option value="nvidia-nim" data-base-url="https://integrate.api.nvidia.com/v1">NVIDIA NIM</option><option value="xiaomi-mimo" data-base-url="https://api.xiaomimimo.com/v1">Xiaomi MiMo</option><option value="ollama-cloud" data-base-url="https://ollama.com">Ollama Cloud</option></select></label>
         <label>Endpoint<input id="byokBaseUrl" readonly></label>
         <label>Account<select id="providerAccountSelect"></select></label>
         <label>Account label<input id="providerAccountLabel" placeholder="Personal"></label>
+        <h3 class="settings-subheading">Model</h3>
         <label class="settings-wide">Available models<select id="byokModelSelect"><option value="">Refresh models to load choices</option></select></label>
         <label class="settings-wide">Model ID<input id="byokModelInput" placeholder="Or enter a model ID manually"></label>
         <label class="settings-wide">API key<input id="apiKeyInput" type="password" autocomplete="new-password" placeholder="Stored securely; enter a replacement key"></label>
@@ -90,11 +92,13 @@
         <p id="providerConnectionResult" class="provider-connection-result" role="status" hidden></p>
       </section>
       <section id="settingsPanelOther" class="settings-panel" role="tabpanel" aria-labelledby="settingsTabOther" hidden>
-        <p class="settings-panel-intro">Set runtime permissions, integrations, and desktop update preferences.</p>
+        <header class="settings-section-heading"><div><h2>App &amp; tools</h2><p>Set appearance, agent behavior, trusted tool integrations, and update preferences.</p></div></header>
+        <h3 class="settings-subheading">Appearance</h3>
         <label class="settings-wide">Theme<select id="themeSelect"><option value="default">Default</option><option value="blue">Blue</option><option value="orange">Orange</option><option value="multicolor">Multicolor</option><option value="custom">Custom</option></select></label>
         <label id="customThemeSetting" class="mcp-setting" hidden>Custom palette (JSON)<textarea id="customThemeInput" rows="8" spellcheck="false" placeholder='{"background":"#11161A","surface":"#151D22","panel":"#131A1F","border":"#2B383F","text":"#E7EEF1","muted":"#9BADB5","accent":"#54D7B0","accentText":"#07100F","warning":"#F4C968","error":"#F0A0A0"}'></textarea></label>
         <div id="customThemeHelp" class="mcp-status" hidden>Use any subset of the shown #RRGGBB tokens. Missing values use the Default theme.</div>
         <div id="customThemeActions" class="settings-panel-actions" hidden><button id="saveCustomTheme" type="button">Save custom theme</button></div>
+        <h3 class="settings-subheading">Agent behavior</h3>
         <label>Context window<input id="contextInput" type="number" min="512" max="2000000" step="512"></label>
         <label>Tool permissions<select id="permissionSelect"><option value="ask">Ask every time</option><option value="auto-read">Auto-allow read-only</option><option value="auto-all">Auto-allow all tools</option></select></label>
         <label class="checkbox-setting settings-wide"><input id="internetAccessInput" type="checkbox"><span>Allow public internet research</span></label>
@@ -127,6 +131,13 @@
       <div class="dialog-actions"><button id="applySettings" class="primary" type="button">Apply</button></div>
     </form>
   </section>
+  <dialog id="updateAvailableDialog">
+    <form method="dialog" class="update-available-form">
+      <div class="dialog-heading"><div><strong>Update available</strong><span id="updateAvailableMessage">A newer version of Truss is ready.</span></div></div>
+      <p>Review the update details and choose how to install it.</p>
+      <div class="dialog-actions"><button id="dismissUpdateAvailable" value="cancel" type="submit">Later</button><button id="openUpdateSettings" class="primary" type="button">View update</button></div>
+    </form>
+  </dialog>
   <dialog id="trussGoDialog"><div class="dialog-heading"><div><strong>Connect Truss Go</strong><span>Scan this QR in the Truss Go phone app while on the same Wi-Fi.</span></div><button id="closeTrussGo" value="cancel" aria-label="Close">x</button></div><div class="qr-pairing"><img id="trussGoQr" alt="Truss Go pairing QR code"><strong id="trussGoWorkspace"></strong><button id="disconnectTrussGo" type="button">Disconnect</button></div></dialog>
   <dialog id="fileEntryDialog">
     <form id="fileEntryForm" method="dialog" class="file-entry-form">
