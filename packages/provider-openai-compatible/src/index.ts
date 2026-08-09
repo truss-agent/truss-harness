@@ -57,6 +57,11 @@ export interface LocalTextGenerationOptions {
   readonly signal?: AbortSignal;
 }
 
+export interface CloudTextGenerationOptions {
+  readonly fetch?: typeof globalThis.fetch;
+  readonly signal?: AbortSignal;
+}
+
 export type CloudProviderId =
   | "openai"
   | "anthropic"
@@ -849,5 +854,24 @@ export async function generateLocalText(configuration: LocalModelConfiguration, 
     ? payload.message?.content ?? payload.response
     : payload.choices?.[0]?.message?.content ?? payload.choices?.[0]?.text;
   if (typeof content !== "string" || !content.trim()) throw new Error("The model returned an empty response.");
+  return content;
+}
+
+/** Generates a short completion through a configured cloud provider adapter. */
+export async function generateCloudText(configuration: CloudModelConfiguration, prompt: string, options: CloudTextGenerationOptions = {}): Promise<string> {
+  const provider = createCloudModelProvider({
+    ...configuration,
+    ...(options.fetch ? { fetch: options.fetch } : {})
+  });
+  let content = "";
+  for await (const event of provider.stream({
+    messages: [{ role: "user", content: prompt }],
+    tools: [],
+    signal: options.signal
+  })) {
+    if (event.type === "text_delta") content += event.text;
+    else if (event.type === "error") throw event.error;
+  }
+  if (!content.trim()) throw new Error("The model returned an empty response.");
   return content;
 }

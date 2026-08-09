@@ -55,6 +55,7 @@ import {
   detectActiveLocalModel,
   detectLocalContextWindow,
   detectLocalEndpoints,
+  generateCloudText,
   generateLocalText,
   isCloudProviderId,
   isLocalEndpointKind,
@@ -2824,11 +2825,7 @@ ipcMain.handle(
     input: { prefix?: unknown; suffix?: unknown; path?: unknown },
   ): Promise<string> => {
     const configuration = persisted.configuration;
-    if (
-      !configuration?.autocomplete?.enabled ||
-      !isLocalConfiguration(configuration)
-    )
-      return "";
+    if (!configuration?.autocomplete?.enabled) return "";
     const prefix =
       typeof input.prefix === "string" ? input.prefix.slice(-6_000) : "";
     const suffix =
@@ -2836,10 +2833,34 @@ ipcMain.handle(
     if (!prefix.trim()) return "";
     const model = configuration.autocomplete.model || configuration.model;
     const prompt = `Complete the code at the cursor. Return ONLY the text to insert, with no Markdown, explanation, or repeated context.\n\nFile: ${typeof input.path === "string" ? input.path : "unknown"}\n\nBefore cursor:\n${prefix}\n\nAfter cursor:\n${suffix}`;
-    const completion = await generateLocalText(
-      { kind: configuration.provider, baseUrl: configuration.baseUrl, model },
-      prompt,
-    );
+    const completion = isLocalConfiguration(configuration)
+      ? await generateLocalText(
+          { kind: configuration.provider, baseUrl: configuration.baseUrl, model },
+          prompt,
+        )
+      : await (async () => {
+          if (!isCloudProviderId(configuration.provider)) return "";
+          const credential = await storedCredential(
+            configuration.credentialAccountId ?? configuration.provider,
+          );
+          if (!credential)
+            throw new Error(
+              "Enter an API key for " +
+                cloudProviderDefinition(configuration.provider).label +
+                ".",
+            );
+          return generateCloudText(
+            {
+              provider: configuration.provider,
+              model,
+              credential: new ApiKeyCredential(
+                "desktop:autocomplete:" + configuration.provider,
+                credential,
+              ),
+            },
+            prompt,
+          );
+        })();
     return completion
       .replace(/^```[\w-]*\s*/i, "")
       .replace(/\s*```$/, "")
