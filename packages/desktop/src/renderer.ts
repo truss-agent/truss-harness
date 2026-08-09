@@ -29,6 +29,7 @@ import {
   type DesktopToolActivity,
   type DesktopWorkspaceUiState,
 } from "./shared.js";
+import { previewServerUrlFromOutput } from "./preview-url.js";
 import { scheduleConversationNavigation } from "./conversation-navigation.js";
 
 declare global {
@@ -296,6 +297,8 @@ let centerView: "editor" | "preview" | "agents" | "chat" = "editor";
 let agentsSnapshot: DesktopAgentsSnapshot = { profiles: [], runs: [] };
 let selectedAgentRunId: string | undefined;
 let pendingAttachments: ChatAttachment[] = [];
+const terminalOutputByCommand = new Map<string, string>();
+const previewUrlByTerminalCommand = new Map<string, string>();
 type SettingsTab = "local" | "byok" | "other";
 let activeSettingsTab: SettingsTab = "local";
 let modelSettingsTab: "local" | "byok" = "local";
@@ -4224,6 +4227,16 @@ function appendTerminal(text: string): void {
   terminalOutput.scrollTop = terminalOutput.scrollHeight;
 }
 
+function openAnnouncedServerPreview(commandId: string, text: string): void {
+  const output = `${terminalOutputByCommand.get(commandId) ?? ""}${text}`.slice(-12_000);
+  terminalOutputByCommand.set(commandId, output);
+  const url = previewServerUrlFromOutput(output);
+  if (!url || previewUrlByTerminalCommand.get(commandId) === url) return;
+  previewUrlByTerminalCommand.set(commandId, url);
+  navigatePreview(url);
+  notify(`Opened server preview: ${url}`);
+}
+
 function handleEvent(message: DesktopEvent): void {
   if (message.type === "agents") {
     applyAgentsSnapshot(message.snapshot);
@@ -4304,6 +4317,7 @@ function handleEvent(message: DesktopEvent): void {
   }
   if (message.type === "terminal-output") {
     appendTerminal(message.text);
+    openAnnouncedServerPreview(message.commandId, message.text);
     return;
   }
   if (message.type === "approval") {
