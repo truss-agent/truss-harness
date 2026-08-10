@@ -104,7 +104,7 @@ Options:
   --gateway-workspace <path> Share a workspace; repeat to offer multiple workspaces
 
 Modes:
-  chat                   Conversation only; optional internet tools
+  chat                   Grounded conversation with read-only workspace tools
   plan                   Read-only inspection and a saved implementation plan
   edit                   Filesystem, planning, and terminal tools
 

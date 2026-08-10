@@ -8,6 +8,28 @@ Install [**Truss** from the VS Code Marketplace](https://marketplace.visualstudi
 
 Repository-only Extension Development Host instructions are available in [Development](/docs/development).
 
+## Install a downloaded VSIX
+
+Every stable VS Code release on the [Downloads page](/download) also provides a
+`.vsix` file for manual installation. The same VSIX works on Windows, macOS,
+and Linux.
+
+| Platform | Install in VS Code |
+| --- | --- |
+| Windows | Press `Ctrl+Shift+X` to open **Extensions**, open the **…** menu, choose **Install from VSIX…**, and select the downloaded `.vsix` file. |
+| macOS | Press `Cmd+Shift+X` to open **Extensions**, open the **…** menu, choose **Install from VSIX…**, and select the downloaded `.vsix` file. |
+| Linux | Press `Ctrl+Shift+X` to open **Extensions**, open the **…** menu, choose **Install from VSIX…**, and select the downloaded `.vsix` file. |
+
+If the `code` command is available in your terminal, this equivalent command
+works on every platform:
+
+```sh
+code --install-extension /path/to/truss-harness-vscode-<version>.vsix
+```
+
+Restart or reload VS Code if prompted. Marketplace installation remains the
+easiest way to receive future updates automatically.
+
 ## Bring your own key
 
 Run **Truss: Configure BYOK Provider** from the Command Palette, select OpenAI, Anthropic, OpenRouter, Groq, Together AI, Gemini, xAI, Mistral AI, DeepSeek, Perplexity, Fireworks AI, NVIDIA NIM, Xiaomi MiMo, or Ollama Cloud, and supply a model ID and key. The key is stored in VS Code Secret Storage, never in the workspace, conversation state, or extension settings. Use **Truss: Remove BYOK Provider Key** to delete it. Local Ollama remains separate and does not need a key.
@@ -33,7 +55,7 @@ Type `@/` in the chat composer to fuzzy-search workspace files. Use the arrow ke
 
 | Mode | Tool access |
 | --- | --- |
-| Chat | No workspace tools |
+| Chat | Read, list, search, and grep workspace files |
 | Plan | Read-only file inspection tools |
 | Edit | Full filesystem and terminal tools |
 
@@ -68,4 +90,4 @@ The chat composer accepts `/init`, `/update [note]`, `/status`, `/clear-memory`,
 
 ## MCP servers
 
-Enter an `mcpServers` JSON object in the panel's **MCP servers (JSON)** setting. Applying settings restarts the runtime service on the next request and displays server connection diagnostics in the panel. Plan mode loads only servers marked `readOnly`; Agent mode loads every enabled server. See [MCP Servers](/docs/runtime/mcp).
+Enter an `mcpServers` JSON object in the panel's **MCP servers (JSON)** setting. Applying settings restarts the runtime service on the next request and displays server connection diagnostics in the panel. Chat and Plan modes load only servers marked `readOnly`; Agent mode loads every enabled server. See [MCP Servers](/docs/runtime/mcp).

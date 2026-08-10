@@ -25,7 +25,7 @@ chmod +x Truss-*.AppImage
 
 Install native packages with `apt install ./file.deb`, `dnf install ./file.rpm`, or `pacman -U ./file.pacman` as appropriate. Then start a local model server, open a workspace, select the endpoint and model in **Settings**, and choose a mode and permission policy.
 
-The Settings dialog also accepts an `mcpServers` JSON object for local stdio MCP servers. Agent mode loads enabled servers, Plan mode loads only servers marked `readOnly`, and MCP tool calls use the normal approval policy.
+The Settings dialog also accepts an `mcpServers` JSON object for local stdio MCP servers. Agent mode loads enabled servers; Chat and Plan modes load only servers marked `readOnly`; MCP tool calls use the normal approval policy.
 
 ## Bring your own key
 

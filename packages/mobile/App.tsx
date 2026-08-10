@@ -81,6 +81,8 @@ export default function App() {
   const [eventConnected, setEventConnected] = useState(false);
   const [savedGateways, setSavedGateways] = useState<readonly SavedGateway[]>([]);
   const [pairingCode, setPairingCode] = useState("");
+  const [autoConnectAfterPairing, setAutoConnectAfterPairing] = useState(false);
+  const [autoOpenWorkspace, setAutoOpenWorkspace] = useState(false);
   const [agentProfiles, setAgentProfiles] = useState<readonly AgentProfile[]>([]);
   const [agentRuns, setAgentRuns] = useState<readonly AgentRun[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string>();
@@ -120,7 +122,8 @@ export default function App() {
     setGatewayUrl(gateway.url);
     setToken(gateway.token);
     setScreen("home");
-    setStatus(`Paired with ${gateway.name}. Connect when you are ready.`);
+    setStatus(`Paired with ${gateway.name}. Connecting to its workspace...`);
+    setAutoConnectAfterPairing(true);
   }, [saveGateway]);
 
   const command = useCallback(async (body: Record<string, unknown>, version = 1) => {
@@ -261,12 +264,12 @@ export default function App() {
     if (!token.trim()) throw new Error("A gateway token is required.");
     setStatus("Connecting securely to your gateway...");
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8_000);
+    const timeout = setTimeout(() => controller.abort(), 20_000);
     let response: Response;
     try {
       response = await fetch(gatewayPath(gatewayUrl, "/v1/workspaces"), { headers: { authorization: `Bearer ${token}` }, signal: controller.signal });
     } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") throw new Error("The Truss gateway did not respond. Use the QR code from Truss Desktop or VS Code and keep its pairing window open.");
+      if (error instanceof Error && error.name === "AbortError") throw new Error("The Truss gateway did not respond within 20 seconds. Keep the Truss Desktop or VS Code pairing window open while connecting.");
       throw new Error("Could not reach a Truss gateway at this address. LM Studio is the model server and cannot be entered here directly.");
     } finally {
       clearTimeout(timeout);
@@ -292,8 +295,16 @@ export default function App() {
     setWorkspaceId(first.id);
     setMode(first.capabilities.modes.includes(mode) ? mode : first.capabilities.modes[0] ?? "chat");
     setApprovalMode(supportedApprovals.includes(approvalMode) ? approvalMode : supportedApprovals[0]);
-    setStatus("Gateway connected. Pick a workspace to continue.");
+    setStatus("Gateway connected. Choose a workspace or open it now.");
   }, [approvalMode, ensureEventConnection, gatewayUrl, mode, token]);
+
+  useEffect(() => {
+    if (!autoConnectAfterPairing || !gatewayUrl || !token) return;
+    setAutoConnectAfterPairing(false);
+    void connectGateway()
+      .then(() => setAutoOpenWorkspace(true))
+      .catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Paired, but the gateway could not connect."));
+  }, [autoConnectAfterPairing, connectGateway, gatewayUrl, token]);
 
   const selectedWorkspace = workspaces.find((item) => item.id === workspaceId);
   const selectedAgent = agentProfiles.find((profile) => profile.id === selectedAgentId);
@@ -421,6 +432,12 @@ export default function App() {
       setOpeningSession(false);
     }
   }, [approvalMode, command, ensureEventConnection, mode, selectedWorkspace, workspaceId]);
+
+  useEffect(() => {
+    if (!autoOpenWorkspace || !workspaceId || !selectedWorkspace) return;
+    setAutoOpenWorkspace(false);
+    void beginSession();
+  }, [autoOpenWorkspace, beginSession, selectedWorkspace, workspaceId]);
 
   const changeMode = useCallback(async (nextMode: AgentMode, nextApprovalMode = approvalMode) => {
     if (!sessionId) return;
@@ -662,7 +679,7 @@ export default function App() {
         <View style={styles.liveStatus}><View style={[styles.statusDot, (openingSession || running) && styles.statusDotWorking, sessionError && styles.statusDotError]} /><Text style={styles.liveStatusText}>{status}</Text></View>
         {sessionError && <View style={styles.sessionError}><Text style={styles.sessionErrorTitle}>Could not open this workspace</Text><Text style={styles.sessionErrorText}>{sessionError}</Text><View style={styles.sessionErrorActions}><Pressable style={styles.denyButton} onPress={goHome}><Text style={styles.denyButtonText}>Back</Text></Pressable><Pressable style={styles.allowButton} onPress={() => void beginSession()}><Text style={styles.allowButtonText}>Try again</Text></Pressable></View></View>}
         {approval && <View style={styles.approvalSheet}><View style={styles.approvalHeading}><View><Text style={styles.approvalKicker}>TOOL APPROVAL</Text><Text style={styles.approvalTitle}>Allow {approval.tool.replaceAll("_", " ")}?</Text></View><Pill tone="warning">Action needed</Pill></View><Text style={styles.approvalText}>Truss wants to run this workspace tool with the following input.</Text><Text style={styles.approvalInput}>{JSON.stringify(approval.input, null, 2)}</Text><View style={styles.approvalActions}><Pressable style={styles.denyButton} onPress={() => void decideTool(false).catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to deny tool."))}><Text style={styles.denyButtonText}>Deny</Text></Pressable><Pressable style={styles.allowButton} onPress={() => void decideTool(true).catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to approve tool."))}><Text style={styles.allowButtonText}>Allow tool</Text></Pressable></View></View>}
-        <FlatList style={styles.messages} contentContainerStyle={[styles.messageContent, messages.length === 0 && styles.emptyMessageContent]} data={messages} keyExtractor={(item) => item.id} ListEmptyComponent={sessionError ? null : <View style={styles.emptyChat}>{openingSession && <ActivityIndicator color="#74e3ba" size="large" />}<Text style={styles.emptyChatTitle}>{openingSession ? "Opening your workspace..." : "Start with a clear task."}</Text><Text style={styles.emptyChatText}>{openingSession ? "Truss is creating a secure session on the paired computer." : "Ask a question, request a plan, or have Truss work in the selected workspace."}</Text></View>} renderItem={({ item }) => item.role === "system" ? <View style={styles.systemMessage}><Text style={styles.systemMessageText}>{item.content}</Text></View> : <View style={[styles.message, item.role === "user" ? styles.userMessage : styles.agentMessage]}><Text style={[styles.role, item.role === "user" && styles.userRole]}>{item.role === "user" ? "YOU" : "TRUSS"}</Text><Text style={styles.messageText}>{item.content}</Text></View>} />
+        <FlatList style={styles.messages} contentContainerStyle={[styles.messageContent, messages.length === 0 && styles.emptyMessageContent]} data={messages} keyExtractor={(item) => item.id} ListEmptyComponent={sessionError ? null : <View style={styles.emptyChat}>{openingSession && <ActivityIndicator color="#74e3ba" size="large" />}<Text style={styles.emptyChatTitle}>{openingSession ? "Opening your workspace..." : "Start with a clear task."}</Text><Text style={styles.emptyChatText}>{openingSession ? "Truss is creating a secure session on the paired computer." : "Ask a question, request a plan, or have Truss work in the selected workspace."}</Text></View>} ListFooterComponent={running && messages.at(-1)?.role !== "assistant" ? <View style={styles.thinkingMessage}><ActivityIndicator color="#74e3ba" size="small" /><View><Text style={styles.thinkingRole}>TRUSS</Text><Text style={styles.thinkingText}>Thinking...</Text></View></View> : null} renderItem={({ item }) => item.role === "system" ? <View style={styles.systemMessage}><Text style={styles.systemMessageText}>{item.content}</Text></View> : <View style={[styles.message, item.role === "user" ? styles.userMessage : styles.agentMessage]}><Text style={[styles.role, item.role === "user" && styles.userRole]}>{item.role === "user" ? "YOU" : "TRUSS"}</Text><Text style={styles.messageText}>{item.content}</Text></View>} />
         <View style={styles.composer}><View style={styles.composerInputWrap}><TextInput style={styles.prompt} multiline value={prompt} onChangeText={setPrompt} editable={!running && !openingSession && Boolean(sessionId)} placeholder={openingSession ? "Opening workspace..." : running ? "Truss is working..." : sessionId ? "Ask Truss to help" : "Workspace is not connected"} placeholderTextColor="#71827c" /></View><View style={styles.composerActions}>{running ? <Pressable style={styles.stopButton} onPress={() => void interrupt().catch((error: unknown) => setStatus(error instanceof Error ? error.message : "Unable to interrupt."))}><Text style={styles.stopButtonText}>Stop</Text></Pressable> : <Pressable style={[styles.sendButton, (!prompt.trim() || !sessionId || openingSession) && styles.disabled]} disabled={!prompt.trim() || !sessionId || openingSession} onPress={() => void send()}><Text style={styles.sendButtonText}>Send</Text><Text style={styles.sendArrow}>↑</Text></Pressable>}</View></View>
       </View>}
     </KeyboardAvoidingView>
@@ -817,6 +834,9 @@ const styles = StyleSheet.create({
   emptyChat: { alignItems: "center", gap: 10, marginHorizontal: 28, marginTop: -32 },
   emptyChatTitle: { color: "#ecf5f0", fontSize: 18, fontWeight: "800", textAlign: "center" },
   emptyChatText: { color: "#91a69e", fontSize: 14, lineHeight: 20, textAlign: "center" },
+  thinkingMessage: { alignItems: "center", alignSelf: "flex-start", backgroundColor: "#16241f", borderBottomLeftRadius: 3, borderRadius: 13, flexDirection: "row", gap: 10, maxWidth: "88%", padding: 12 },
+  thinkingRole: { color: "#74e3ba", fontSize: 11, fontWeight: "800", letterSpacing: 1 },
+  thinkingText: { color: "#91a69e", fontSize: 14, marginTop: 2 },
   message: { borderRadius: 13, maxWidth: "88%", padding: 12 },
   userMessage: { alignSelf: "flex-end", backgroundColor: "#1e624d", borderBottomRightRadius: 3 },
   agentMessage: { alignSelf: "flex-start", backgroundColor: "#16241f", borderBottomLeftRadius: 3 },

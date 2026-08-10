@@ -22,7 +22,7 @@ For LM Studio and llama.cpp, use the server's model ID rather than its display n
 
 ## The model chats but does not edit files
 
-Select Agent/Edit mode and use a model with native tool calling. Chat mode has no workspace tools, and Plan mode is read-only. Very small or instruction-only models may emit tool-shaped text instead of native calls; Truss cannot safely treat simulated tool text as an executed operation.
+Select Agent/Edit mode and use a model with native tool calling. Chat and Plan modes are read-only; only Agent/Edit can change files or run commands. Very small or instruction-only models may emit tool-shaped text instead of native calls; Truss cannot safely treat simulated tool text as an executed operation.
 
 Use an interactive client to inspect each requested and completed tool call. A claimed edit is not a successful edit unless a write tool completed.
 

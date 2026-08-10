@@ -120,7 +120,7 @@ Set the matching credential outside the configuration file: `OPENAI_API_KEY`, `A
 
 Anthropic's current compatibility endpoint is intended primarily for evaluation; use it as an initial BYOK path while a native adapter is developed. OAuth/account sign-in, AWS IAM signing, Azure Entra, and client keychain UI are not part of this first rollout.
 
-MCP stdio servers can be defined under `mcpServers`. User-level definitions load normally. Workspace definitions can launch local processes and are ignored unless the user configuration sets `"allowWorkspaceMcpServers": true`. Plan mode loads only servers marked `"readOnly": true`; Agent mode loads all enabled servers. MCP calls follow the selected approval policy.
+MCP stdio servers can be defined under `mcpServers`. User-level definitions load normally. Workspace definitions can launch local processes and are ignored unless the user configuration sets `"allowWorkspaceMcpServers": true`. Chat and Plan modes load only servers marked `"readOnly": true`; Agent mode loads all enabled servers. MCP calls follow the selected approval policy.
 
 Inspect connections without starting an agent:
 

@@ -30,7 +30,7 @@ Add an `mcpServers` object to a CLI or TUI configuration file, or paste the same
 | `cwd` | Working directory, resolved from the open workspace |
 | `env` | Extra environment variables; `${env:NAME}` reads from the parent environment |
 | `enabled` | Set to `false` without deleting the definition |
-| `readOnly` | Allows this server's tools in Plan mode |
+| `readOnly` | Allows this server's tools in Chat and Plan modes |
 
 The server named `filesystem` contributes namespaced tools such as `mcp_filesystem_read_file`. Namespacing prevents ordinary MCP tool names from replacing built-in tools.
 
@@ -50,8 +50,7 @@ The workspace file cannot grant this permission to itself. User-level `mcpServer
 
 ## Modes and approvals
 
-- Chat mode does not load MCP tools.
-- Plan mode loads tools only from servers marked `readOnly: true`.
+- Chat and Plan modes load tools only from servers marked `readOnly: true`.
 - Agent mode loads every enabled server.
 - Ask and Auto-allow read-only both request approval before MCP calls.
 - Auto-allow all permits MCP calls without a prompt.

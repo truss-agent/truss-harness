@@ -135,6 +135,48 @@ describe("AgentHost", () => {
     await created.dispose();
   });
 
+  it("gives Chat mode only read-only workspace tools", async () => {
+    const registry = new AgentProviderRegistry();
+    let tools: string[] = [];
+    registry.register({
+      descriptor: {
+        id: "test-provider",
+        label: "Test provider",
+        requiresCredential: false,
+      },
+      async validate() {},
+      async create() {
+        return {
+          id: "test-provider",
+          async *stream(request): AsyncIterable<ModelStreamEvent> {
+            tools = request.tools.map((tool) => tool.name);
+            yield { type: "finish", reason: "stop" };
+          },
+        } satisfies ModelProvider;
+      },
+    });
+    const host = new AgentHost({
+      workspaceRoot: process.cwd(),
+      providerRegistry: registry,
+    });
+    const hosted = await host.createRuntime(
+      profile({
+        mode: "chat",
+        provider: { providerId: "test-provider", modelId: "test-model" },
+      }),
+    );
+    const session = await hosted.runtime.createSession();
+    await hosted.runtime.run(session.id, "What files define the agent loop?");
+    await hosted.dispose();
+
+    expect(tools).toEqual([
+      "read_file",
+      "list_directory",
+      "search_files",
+      "grep",
+    ]);
+  });
+
   it("tests a provider connection through the selected provider without exposing its credential", async () => {
     const created: AgentProfile["provider"][] = [];
     const registry = new AgentProviderRegistry();

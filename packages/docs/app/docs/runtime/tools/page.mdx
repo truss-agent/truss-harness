@@ -21,8 +21,8 @@ Filesystem paths are resolved against the workspace root and cannot escape it.
 
 ## Modes and tool availability
 
-- Chat mode exposes no workspace tools.
-- Plan mode exposes `read_file`, `list_directory`, `search_files`, and `grep`.
+- Chat mode exposes `read_file`, `list_directory`, `search_files`, and `grep` for grounded codebase conversations.
+- Plan mode exposes the same read-only tools and saves a requested implementation checklist.
 - Edit mode exposes every built-in tool. When an active plan exists, it also receives the plan as context and uses `update_plan` to keep progress accurate.
 
 When `internetAccess` is enabled, `web_search` and `web_fetch` are added in every mode. This lets Chat answer current questions, Plan research current documentation, and Agent use current references while working.

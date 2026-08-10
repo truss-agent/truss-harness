@@ -3,6 +3,7 @@ import {
   selectDesktopRelease,
   selectNeovimRelease,
   selectTrussGoRelease,
+  selectVscodeRelease,
 } from "./release-selection";
 
 describe("selectDesktopRelease", () => {
@@ -43,5 +44,15 @@ describe("selectDesktopRelease", () => {
     ];
 
     expect(selectNeovimRelease(releases)?.tag_name).toBe("nvim-v0.2.1");
+  });
+
+  it("selects the newest stable VS Code release without treating it as Desktop", () => {
+    const releases = [
+      { tag_name: "v0.1.22", draft: false, prerelease: false },
+      { tag_name: "vscode-v0.1.19", draft: false, prerelease: false },
+      { tag_name: "vscode-v0.1.20-beta.1", draft: false, prerelease: true },
+    ];
+
+    expect(selectVscodeRelease(releases)?.tag_name).toBe("vscode-v0.1.19");
   });
 });

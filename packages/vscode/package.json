@@ -2,7 +2,7 @@
   "name": "truss-harness-vscode",
   "displayName": "Truss",
   "description": "VS Code client for the Truss runtime.",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "license": "SEE LICENSE IN LICENSE",
   "publisher": "truss-harness",
   "repository": {
@@ -95,8 +95,8 @@
         "command": "trussHarness.generateCommitMessage",
         "title": "Truss: Generate Commit Message",
         "icon": {
-          "light": "media/truss-commit-light.svg",
-          "dark": "media/truss-commit-dark.svg"
+          "light": "media/truss-harness.png",
+          "dark": "media/truss-harness.png"
         }
       },
       {
@@ -152,12 +152,12 @@
     "prepublishOnly": "npm run package"
   },
   "dependencies": {
-    "@truss-harness/agent-host": "0.1.6",
+    "@truss-harness/agent-host": "0.1.7",
     "@truss-harness/gateway": "0.1.10",
     "@types/qrcode": "^1.5.6",
     "qrcode": "^1.5.4",
     "@truss-harness/branding": "0.1.1",
-    "@truss-harness/cli": "0.1.18",
+    "@truss-harness/cli": "0.1.19",
     "@truss-harness/mcp": "0.1.10",
     "@truss-harness/provider-openai-compatible": "0.1.11",
     "@truss-harness/runtime": "0.1.10"
