@@ -372,6 +372,9 @@ function systemPrompt(options: {
 }): string {
   return [
     options.systemPrompt,
+    options.mode === "chat"
+      ? "You are in Chat mode. Use the available read-only workspace tools when they would make an answer more accurate. You can inspect files and search the workspace, but you cannot make changes, run commands, or create or update plans. Answer conversationally and do not present a plan unless the user asks for one."
+      : undefined,
     options.mode === "plan"
       ? "You are in Plan mode. Inspect the workspace with read-only tools as needed, then finish with a concise Markdown checklist exactly in this form: a heading '# Plan: <title>' followed by 3 to 8 actionable '- [ ] <step>' lines. Do not make changes."
       : undefined,
@@ -478,11 +481,13 @@ export class AgentHost {
     const tools = new ToolRegistry();
     const memory = new FileWorkspaceMemoryStore(this.options.workspaceRoot);
     const plans = new FileWorkspacePlanStore(this.options.workspaceRoot);
+    const usesReadOnlyWorkspaceTools =
+      profile.mode === "chat" || profile.mode === "plan";
     if (profile.mode === "edit") {
       registerCoreTools(tools);
       tools.register(createUpdatePlanTool(plans));
     }
-    if (profile.mode === "plan") {
+    if (usesReadOnlyWorkspaceTools) {
       tools.register(readFileTool);
       tools.register(listDirectoryTool);
       tools.register(searchFilesTool);
@@ -492,7 +497,7 @@ export class AgentHost {
     const enabledMcpServers =
       profile.mode === "edit"
         ? this.options.mcpServers
-        : profile.mode === "plan"
+        : usesReadOnlyWorkspaceTools
           ? Object.fromEntries(
               Object.entries(this.options.mcpServers ?? {}).filter(
                 ([, server]) => server.readOnly,
