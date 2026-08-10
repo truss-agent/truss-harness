@@ -95,8 +95,8 @@
         "command": "trussHarness.generateCommitMessage",
         "title": "Truss: Generate Commit Message",
         "icon": {
-          "light": "media/truss-commit-light.svg",
-          "dark": "media/truss-commit-dark.svg"
+          "light": "media/truss-harness.png",
+          "dark": "media/truss-harness.png"
         }
       },
       {

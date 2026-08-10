@@ -1323,6 +1323,13 @@ body {
     min-height: 44px;
 }
 
+.download-client-manual-install {
+    color: #5b6f66;
+    font-size: 13px;
+    line-height: 1.55;
+    margin: -2px 0 0;
+}
+
 .download-client-all-releases {
     font-size: 13px;
     margin-top: auto;
@@ -1345,6 +1352,7 @@ body {
 :root[data-truss-theme="dark"] .download-client-section > header > p:last-child,
 :root[data-truss-theme="dark"] .download-client-card header > p:last-child,
 :root[data-truss-theme="dark"] .download-client-release span:last-child,
+:root[data-truss-theme="dark"] .download-client-manual-install,
 :root[data-truss-theme="dark"] .download-client-package-label,
 :root[data-truss-theme="dark"] .download-client-package-choice small,
 :root[data-truss-theme="dark"] .download-client-package-menu h3,

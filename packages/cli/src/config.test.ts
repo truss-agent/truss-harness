@@ -9,7 +9,7 @@ import {
 } from "./config.js";
 
 describe("resolveConfiguration", () => {
-  it("merges environment, user profiles, workspace profiles, and explicit overrides in precedence order", async () => {
+  it("gives explicit overrides and client environment settings precedence over persisted profiles", async () => {
     const root = join(process.cwd(), ".test-workspaces", randomUUID());
     const paths = {
       user: join(root, "user.json"),
@@ -61,7 +61,7 @@ describe("resolveConfiguration", () => {
         provider: "ollama",
         baseUrl: "http://workspace:11434",
         model: "flag-model",
-        mode: "edit",
+        mode: "plan",
         permission: "auto-all",
         internetAccess: true,
         profile: "local",
@@ -87,6 +87,45 @@ describe("resolveConfiguration", () => {
         environment: { TRUSS_HARNESS_TUI_THEME: "dusk" },
       });
       expect(resolved.tuiTheme).toBe("dusk");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not let a persisted local profile override a client-injected cloud runtime", async () => {
+    const root = join(process.cwd(), ".test-workspaces", randomUUID());
+    const paths = {
+      user: join(root, "user.json"),
+      workspace: join(root, "workspace.json"),
+    };
+    await mkdir(root, { recursive: true });
+    try {
+      await writeFile(
+        paths.user,
+        JSON.stringify({
+          provider: "ollama",
+          baseUrl: "http://127.0.0.1:11434",
+          model: "stale-local-model",
+        }),
+      );
+
+      const resolved = await resolveConfiguration({
+        workspaceRoot: root,
+        paths,
+        environment: {
+          TRUSS_HARNESS_PROVIDER: "openrouter",
+          TRUSS_HARNESS_BASE_URL: "https://openrouter.ai/api/v1",
+          TRUSS_HARNESS_MODEL: "openai/gpt-4.1-mini",
+          TRUSS_HARNESS_API_KEY: "test-key",
+        },
+      });
+
+      expect(resolved).toMatchObject({
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "openai/gpt-4.1-mini",
+        apiKey: "test-key",
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

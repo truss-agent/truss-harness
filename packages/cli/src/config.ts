@@ -276,11 +276,15 @@ export async function resolveConfiguration(options: {
   const workspaceProfile = profile ? workspace.profiles?.[profile] : undefined;
   const environmentProfile = environmentConfiguration(environment);
   const merged = mergeProfiles(
-    environmentProfile,
     user,
     userProfile,
     workspace,
     workspaceProfile,
+    // Environment values are injected by clients such as VS Code and Desktop
+    // for their short-lived service process. They must take precedence over
+    // persisted CLI profiles; otherwise the UI can display one provider while
+    // the service silently starts another one.
+    environmentProfile,
     options.overrides,
   );
   const workspaceMcpServers = user.allowWorkspaceMcpServers
@@ -288,10 +292,10 @@ export async function resolveConfiguration(options: {
     : undefined;
   const mcpServers =
     options.overrides?.mcpServers ??
+    environmentProfile.mcpServers ??
     workspaceMcpServers ??
     userProfile?.mcpServers ??
-    user.mcpServers ??
-    environmentProfile.mcpServers;
+    user.mcpServers;
   let provider = merged.provider ?? "ollama";
   let baseUrl = merged.baseUrl;
   let model = merged.model;

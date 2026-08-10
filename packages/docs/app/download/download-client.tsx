@@ -5,6 +5,7 @@ import {
   selectDesktopRelease,
   selectNeovimRelease,
   selectTrussGoRelease,
+  selectVscodeRelease,
 } from "./release-selection";
 
 type ReleaseAsset = {
@@ -333,6 +334,8 @@ function ReleaseCard({
   downloadLabel,
   primaryHref,
   badge,
+  additionalAction,
+  manualInstall,
 }: {
   readonly eyebrow: string;
   readonly title: string;
@@ -350,6 +353,11 @@ function ReleaseCard({
   readonly downloadLabel: string;
   readonly primaryHref?: string;
   readonly badge?: string;
+  readonly additionalAction?: {
+    readonly href: string;
+    readonly label: string;
+  };
+  readonly manualInstall?: string;
 }) {
   const published = releaseDate(release);
   return (
@@ -414,10 +422,23 @@ function ReleaseCard({
             {sourceLabel}
           </a>
         )}
+        {additionalAction ? (
+          <a
+            className="site-button site-button-secondary"
+            href={additionalAction.href}
+            target="_blank"
+            rel="noreferrer"
+          >
+            {additionalAction.label}
+          </a>
+        ) : null}
         <a className="site-button site-button-secondary" href={detailsHref}>
           {detailsLabel}
         </a>
       </div>
+      {manualInstall ? (
+        <p className="download-client-manual-install">{manualInstall}</p>
+      ) : null}
       <a
         className="site-text-link download-client-all-releases"
         href={sourceHref}
@@ -488,6 +509,10 @@ export function DownloadClient({
     () => selectNeovimRelease(releases),
     [releases],
   );
+  const vscodeRelease = useMemo(
+    () => selectVscodeRelease(releases),
+    [releases],
+  );
   const androidApk = useMemo(
     () =>
       androidRelease?.assets.find((asset) =>
@@ -525,18 +550,24 @@ export function DownloadClient({
             title="VS Code"
             badge="Beta"
             description="Keep Truss inside your editor with chat, file context, completions, approvals, and a bundled runtime service."
-            release={undefined}
-            asset={undefined}
+            release={vscodeRelease}
+            asset={vscodeRelease?.assets.find((asset) =>
+              asset.name.toLowerCase().endsWith(".vsix"),
+            )}
             distribution={{
-              label: "VS Code Marketplace",
-              description: "Install the latest published extension.",
+              label: "VS Code release unavailable",
+              description: "Check the VS Code releases for the current VSIX.",
             }}
-            sourceHref="https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode"
-            sourceLabel="View on Marketplace"
+            sourceHref={releasesUrl}
+            sourceLabel="View VS Code releases"
             detailsHref="/docs/clients/vscode"
             detailsLabel="VS Code guide"
-            downloadLabel="Install extension"
-            primaryHref="https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode"
+            downloadLabel="Download VSIX"
+            additionalAction={{
+              href: "https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode",
+              label: "Install from Marketplace",
+            }}
+            manualInstall="Manual VSIX install: open Extensions, choose the … menu, select Install from VSIX…, then choose the downloaded file."
           />
           <ReleaseCard
             eyebrow="Truss command line"

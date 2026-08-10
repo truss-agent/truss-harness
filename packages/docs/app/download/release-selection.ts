@@ -7,6 +7,7 @@ export type ReleaseMetadata = {
 const desktopReleaseTag = /^v\d+(?:\.\d+){1,2}(?:$|-)/i;
 const trussGoReleaseTag = /^truss-go-v\d+(?:\.\d+){1,2}(?:$|-)/i;
 const neovimReleaseTag = /^nvim-v\d+(?:\.\d+){1,2}(?:$|-)/i;
+const vscodeReleaseTag = /^vscode-v\d+(?:\.\d+){1,2}(?:$|-)/i;
 
 function selectStableRelease<T extends ReleaseMetadata>(
   releases: readonly T[],
@@ -34,4 +35,10 @@ export function selectNeovimRelease<T extends ReleaseMetadata>(
   releases: readonly T[],
 ): T | undefined {
   return selectStableRelease(releases, neovimReleaseTag);
+}
+
+export function selectVscodeRelease<T extends ReleaseMetadata>(
+  releases: readonly T[],
+): T | undefined {
+  return selectStableRelease(releases, vscodeReleaseTag);
 }
