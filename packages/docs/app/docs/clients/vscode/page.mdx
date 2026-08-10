@@ -33,7 +33,7 @@ Type `@/` in the chat composer to fuzzy-search workspace files. Use the arrow ke
 
 | Mode | Tool access |
 | --- | --- |
-| Chat | No workspace tools |
+| Chat | Read, list, search, and grep workspace files |
 | Plan | Read-only file inspection tools |
 | Edit | Full filesystem and terminal tools |
 
@@ -68,4 +68,4 @@ The chat composer accepts `/init`, `/update [note]`, `/status`, `/clear-memory`,
 
 ## MCP servers
 
-Enter an `mcpServers` JSON object in the panel's **MCP servers (JSON)** setting. Applying settings restarts the runtime service on the next request and displays server connection diagnostics in the panel. Plan mode loads only servers marked `readOnly`; Agent mode loads every enabled server. See [MCP Servers](/docs/runtime/mcp).
+Enter an `mcpServers` JSON object in the panel's **MCP servers (JSON)** setting. Applying settings restarts the runtime service on the next request and displays server connection diagnostics in the panel. Chat and Plan modes load only servers marked `readOnly`; Agent mode loads every enabled server. See [MCP Servers](/docs/runtime/mcp).

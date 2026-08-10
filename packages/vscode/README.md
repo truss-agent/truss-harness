@@ -16,7 +16,7 @@ Use **Truss: Manage MCP Servers** or the **Manage MCP** Settings button to add,
 edit, enable/disable, test, inspect, or remove local stdio servers. Testing is
 isolated from the active agent and reports only safe lifecycle/tool metadata.
 The JSON field remains available as an advanced import/export path. Agent mode
-loads enabled servers and Plan mode loads only servers marked `readOnly`.
+loads enabled servers and Chat and Plan modes load only servers marked `readOnly`.
 
 ## Side panel
 
@@ -38,7 +38,7 @@ Modes govern the agent's available tools:
 
 | Mode | Access |
 | --- | --- |
-| Chat | Chat only; no workspace tools. Optional internet tools remain available when enabled. |
+| Chat | Read, list, search, and grep. Optional internet tools remain available when enabled. |
 | Plan | Read, list, search, and grep. |
 | Agent | Full registered tools, including writes and terminal commands. |
 

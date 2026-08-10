@@ -161,7 +161,7 @@ Choose the mode that fits the task:
 
 | Mode | Access |
 | --- | --- |
-| Chat | Conversation only; no workspace tools |
+| Chat | Read-only workspace inspection and conversation |
 | Plan | Read-only workspace inspection |
 | Edit | Reads, writes, search, grep, and terminal execution |
 
@@ -189,8 +189,8 @@ CLI/TUI users can add the same definitions to their shared configuration:
 }
 ~~~
 
-Chat mode does not load MCP tools. Plan mode loads only servers marked
-readOnly; Edit mode loads every enabled server. Workspace MCP definitions are
+Chat and Plan modes load only servers marked readOnly; Edit mode loads every
+enabled server. Workspace MCP definitions are
 ignored by default because they can start local processes; explicitly trust
 them with "allowWorkspaceMcpServers": true in your user configuration when
 appropriate.

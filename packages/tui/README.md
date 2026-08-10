@@ -32,7 +32,7 @@ Inside the TUI, open settings with `m`, Tab to **Theme**, and use Left or Right 
 Configured MCP stdio servers are connected when an Agent session starts, and
 their connection status appears in the Terminal pane. Press `c` outside the
 chat/terminal panes to inspect safe server and tool status, then `R` to test
-the configured servers. Plan mode loads only servers explicitly marked
+the configured servers. Chat and Plan modes load only servers explicitly marked
 `readOnly`. Run `truss-cli config path` to locate the shared user and workspace
 configuration files.
 
