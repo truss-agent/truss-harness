@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/cli",
-  "version": "0.1.18",
+  "version": "0.1.19",
   "description": "Command-line client and runtime service for Truss.",
   "type": "module",
   "exports": {
@@ -64,7 +64,7 @@
     "local-first"
   ],
   "dependencies": {
-    "@truss-harness/agent-host": "0.1.6",
+    "@truss-harness/agent-host": "0.1.7",
     "@truss-harness/gateway": "0.1.10",
     "@types/qrcode-terminal": "^0.12.2",
     "qrcode-terminal": "^0.11.0",

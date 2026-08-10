@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/agent-host",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Provider-aware host composition for isolated Truss agent runtimes.",
   "type": "module",
   "exports": {

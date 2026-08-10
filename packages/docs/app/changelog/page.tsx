@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.35 · VS Code 0.1.19 · CLI 0.1.19 · TUI 0.1.15",
+    label: "Grounded read-only chat",
+    changes: [
+      "Let Chat inspect and search the workspace with read, list, search, and grep tools, so codebase questions can be answered from the actual project.",
+      "Kept Chat strictly non-mutating: it cannot write files, apply patches, run terminal commands, or create implementation plans.",
+      "Limited Chat MCP access to servers explicitly marked read-only, matching the existing Plan-mode safety boundary.",
+    ],
+  },
+  {
     version: "Desktop 0.1.34",
     label: "Settings workspace and chat controls",
     changes: [
