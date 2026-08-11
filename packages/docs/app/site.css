@@ -1323,11 +1323,31 @@ body {
     min-height: 44px;
 }
 
+.download-client-action-with-badge {
+    gap: 8px;
+}
+
+.download-client-action-badge {
+    background: #f28b30;
+    border-radius: 999px;
+    color: #201208;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .06em;
+    line-height: 1;
+    padding: 4px 6px;
+    text-transform: uppercase;
+}
+
 .download-client-manual-install {
     color: #5b6f66;
     font-size: 13px;
     line-height: 1.55;
-    margin: -2px 0 0;
+    padding-top: 22px;
+}
+
+.download-client-manual-install p {
+    margin: 0;
 }
 
 .download-client-all-releases {
