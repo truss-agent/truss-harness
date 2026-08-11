@@ -4,7 +4,7 @@ Truss is a local-first coding-agent side panel for VS Code. It connects to Ollam
 
 ## Bring your own key
 
-Run **Truss: Configure BYOK Provider** from the Command Palette. Choose OpenAI, Anthropic, OpenRouter, Groq, Together AI, Gemini, xAI, Mistral AI, DeepSeek, Perplexity, Fireworks AI, NVIDIA NIM, Xiaomi MiMo, or Ollama Cloud, then enter a model ID and API key. The extension stores the key in VS Code Secret Storage—not workspace settings, conversations, or Truss configuration files. Use **Truss: Remove BYOK Provider Key** to remove a stored key. Local Ollama remains key-free.
+Run **Truss: Configure BYOK Provider** from the Command Palette. Choose OpenAI, Anthropic, OpenRouter, Groq, Together AI, Gemini, xAI, Mistral AI, DeepSeek, Perplexity, Fireworks AI, NVIDIA NIM, Xiaomi MiMo, Sakana Fugu, or Ollama Cloud, then enter a model ID and API key. The extension stores the key in VS Code Secret Storage—not workspace settings, conversations, or Truss configuration files. Use **Truss: Remove BYOK Provider Key** to remove a stored key. Local Ollama remains key-free.
 
 ## Install
 

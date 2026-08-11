@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.36 · VS Code 0.1.20 · CLI 0.1.20 · TUI 0.1.16",
+    label: "Sakana Fugu BYOK",
+    changes: [
+      "Added Sakana Fugu as a first-class API-key provider across Desktop, VS Code, the CLI, and TUI, using its OpenAI-compatible chat-completions endpoint.",
+      "Added named-account and environment-variable support through SAKANA_API_KEY, without storing a raw key in workspace or normal configuration files.",
+      "Made fugu-ultra available as the recommended model ID for Fugu Ultra accounts while preserving manual model entry and provider model discovery.",
+    ],
+  },
+  {
     version: "Desktop 0.1.35 · VS Code 0.1.19 · CLI 0.1.19 · TUI 0.1.15 · Truss Go 0.1.4",
     label: "Grounded chat and trusted mobile pairing",
     changes: [

@@ -67,7 +67,7 @@ Keep tokens out of JSON files. Use `apiKeyEnv` to reference an environment varia
 
 ## Bring your own key (BYOK)
 
-The API-key cloud-provider rollout supports `openai`, `anthropic`, `openrouter`, `groq`, `together`, `gemini`, `xai`, `mistral`, `deepseek`, `perplexity`, `fireworks`, `nvidia-nim`, `xiaomi-mimo`, and `ollama-cloud`. Each has a documented default endpoint, so a cloud profile only needs a provider and model:
+The API-key cloud-provider rollout supports `openai`, `anthropic`, `openrouter`, `groq`, `together`, `gemini`, `xai`, `mistral`, `deepseek`, `perplexity`, `fireworks`, `nvidia-nim`, `xiaomi-mimo`, `sakana-fugu`, and `ollama-cloud`. Each has a documented default endpoint, so a cloud profile only needs a provider and model:
 
 ```json
 {
@@ -82,9 +82,9 @@ The API-key cloud-provider rollout supports `openai`, `anthropic`, `openrouter`,
 }
 ```
 
-Set the key outside JSON using the matching provider variable: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `TOGETHER_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `PERPLEXITY_API_KEY`, `FIREWORKS_API_KEY`, `NVIDIA_API_KEY`, `MIMO_API_KEY`, or `OLLAMA_API_KEY`. `TRUSS_HARNESS_API_KEY` and a profile's `apiKeyEnv` remain available when a custom environment-variable name is required.
+Set the key outside JSON using the matching provider variable: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `TOGETHER_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `PERPLEXITY_API_KEY`, `FIREWORKS_API_KEY`, `NVIDIA_API_KEY`, `MIMO_API_KEY`, `SAKANA_API_KEY`, or `OLLAMA_API_KEY`. `TRUSS_HARNESS_API_KEY` and a profile's `apiKeyEnv` remain available when a custom environment-variable name is required.
 
-`xiaomi-mimo` uses Xiaomi MiMo's OpenAI-compatible endpoint. `ollama-cloud` uses Ollama's native hosted API and requires `OLLAMA_API_KEY`; it is separate from local `ollama`, which continues to use `http://127.0.0.1:11434` without a key.
+`xiaomi-mimo` and `sakana-fugu` use OpenAI-compatible chat-completions endpoints. Sakana Fugu uses `https://api.sakana.ai/v1` with `SAKANA_API_KEY`; choose `fugu-ultra` as the model when using a Fugu Ultra account. `ollama-cloud` uses Ollama's native hosted API and requires `OLLAMA_API_KEY`; it is separate from local `ollama`, which continues to use `http://127.0.0.1:11434` without a key.
 
 In VS Code, use **Truss: Configure BYOK Provider** from the Command Palette instead. Its key is held in VS Code Secret Storage rather than workspace state.
 

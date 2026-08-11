@@ -29,7 +29,7 @@ The Settings dialog also accepts an `mcpServers` JSON object for local stdio MCP
 
 ## Bring your own key
 
-Settings are split into **Local provider**, **BYOK**, and **Other** tabs. In **BYOK**, choose OpenAI, Anthropic, OpenRouter, Groq, Together AI, Gemini, xAI, Mistral AI, DeepSeek, Perplexity, Fireworks AI, NVIDIA NIM, Xiaomi MiMo, or Ollama Cloud; enter its model ID and API key; then select **Apply**. The Desktop app encrypts the key with Electron secure storage before writing its local credential record. The regular desktop state file stores only provider and model configuration. Enter a new key to replace it, or use **Remove stored provider key** to delete it. Local Ollama remains key-free; Ollama Cloud is only for direct hosted API access with `OLLAMA_API_KEY`.
+Settings are split into **Local provider**, **BYOK**, and **Other** tabs. In **BYOK**, choose OpenAI, Anthropic, OpenRouter, Groq, Together AI, Gemini, xAI, Mistral AI, DeepSeek, Perplexity, Fireworks AI, NVIDIA NIM, Xiaomi MiMo, Sakana Fugu, or Ollama Cloud; enter its model ID and API key; then select **Apply**. The Desktop app encrypts the key with Electron secure storage before writing its local credential record. The regular desktop state file stores only provider and model configuration. Enter a new key to replace it, or use **Remove stored provider key** to delete it. Local Ollama remains key-free; Ollama Cloud is only for direct hosted API access with `OLLAMA_API_KEY`.
 
 ## Themes
 
