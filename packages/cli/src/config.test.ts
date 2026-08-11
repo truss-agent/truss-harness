@@ -160,7 +160,7 @@ describe("resolveConfiguration", () => {
     }
   });
 
-  it("resolves Xiaomi MiMo and Ollama Cloud as separate credentialed providers", async () => {
+  it("resolves Xiaomi MiMo, Sakana Fugu, and Ollama Cloud as separate credentialed providers", async () => {
     const root = join(process.cwd(), ".test-workspaces", randomUUID());
     const paths = {
       user: join(root, "user.json"),
@@ -173,6 +173,7 @@ describe("resolveConfiguration", () => {
         JSON.stringify({
           profiles: {
             mimo: { provider: "xiaomi-mimo", model: "mimo-v2.5" },
+            sakana: { provider: "sakana-fugu", model: "fugu-ultra" },
             ollamaCloud: { provider: "ollama-cloud", model: "qwen3-coder:480b" },
           },
         }),
@@ -189,6 +190,18 @@ describe("resolveConfiguration", () => {
         provider: "xiaomi-mimo",
         baseUrl: "https://api.xiaomimimo.com/v1",
         apiKey: "mimo-key",
+      });
+      await expect(
+        resolveConfiguration({
+          workspaceRoot: root,
+          paths,
+          environment: { SAKANA_API_KEY: "sakana-key" },
+          overrides: { profile: "sakana" },
+        }),
+      ).resolves.toMatchObject({
+        provider: "sakana-fugu",
+        baseUrl: "https://api.sakana.ai/v1",
+        apiKey: "sakana-key",
       });
       await expect(
         resolveConfiguration({

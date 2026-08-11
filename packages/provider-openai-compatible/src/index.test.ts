@@ -324,7 +324,7 @@ describe("OpenAICompatibleProvider", () => {
   });
 
   it("offers typed BYOK definitions for supported cloud providers", async () => {
-    expect(cloudProviderDefinitions.map(({ id }) => id)).toEqual(["openai", "anthropic", "openrouter", "groq", "together", "gemini", "xai", "mistral", "deepseek", "perplexity", "fireworks", "nvidia-nim", "xiaomi-mimo", "ollama-cloud"]);
+    expect(cloudProviderDefinitions.map(({ id }) => id)).toEqual(["openai", "anthropic", "openrouter", "groq", "together", "gemini", "xai", "mistral", "deepseek", "perplexity", "fireworks", "nvidia-nim", "xiaomi-mimo", "sakana-fugu", "ollama-cloud"]);
     let url = "";
     const provider = createCloudModelProvider({
       provider: "gemini",
@@ -359,6 +359,22 @@ describe("OpenAICompatibleProvider", () => {
     expect(provider.id).toBe("ollama-cloud");
     expect(url).toBe("https://ollama.com/api/chat");
     expect(authorization).toBe("Bearer secret");
+
+    const sakanaProvider = createCloudModelProvider({
+      provider: "sakana-fugu",
+      model: "fugu-ultra",
+      credential: { id: "sakana-key", async resolve() { return { kind: "bearer", token: "sakana-secret" }; } },
+      fetch: async (input, init) => {
+        url = String(input);
+        authorization = new Headers(init?.headers).get("authorization") ?? "";
+        return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+      },
+    });
+
+    for await (const _event of sakanaProvider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
+    expect(sakanaProvider.id).toBe("sakana-fugu");
+    expect(url).toBe("https://api.sakana.ai/v1/chat/completions");
+    expect(authorization).toBe("Bearer sakana-secret");
   });
 
   it("generates autocomplete text through a cloud provider adapter", async () => {
