@@ -1756,7 +1756,7 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
 <html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <style>
-  :root { color-scheme: dark light; font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-sideBar-background); }
+  :root { color-scheme: light dark; font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-sideBar-background); }
   html, body { width: 100%; height: 100%; min-height: 0; overflow: hidden; } * { box-sizing: border-box; } body { position: fixed; inset: 0; margin: 0; min-width: 0; display: flex; flex-direction: column; overflow: hidden; font-size: 13px; }
   button, select, input, textarea { font: inherit; color: var(--vscode-input-foreground); background: var(--vscode-input-background); border: 1px solid var(--vscode-input-border); border-radius: 4px; }
   button { min-height: 28px; padding: 4px 8px; cursor: pointer; } button:hover { background: var(--vscode-button-hoverBackground); } button.primary { color: var(--vscode-button-foreground); background: var(--vscode-button-background); border-color: var(--vscode-button-background); }
@@ -1789,7 +1789,7 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
   .meter { background: var(--vscode-editorWidget-border); }
   .meter > span.active { background: var(--truss-green); }
   #settings { gap: 12px; padding: 14px 12px 16px; border-bottom-color: var(--truss-border); background: var(--vscode-editor-background); }
-  #settings.open { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+  #settings.open { display: flex; flex-direction: column; align-items: stretch; }
   .settings-intro { grid-column: 1 / -1; display: flex; align-items: end; justify-content: space-between; gap: 14px; padding: 0 0 10px; border-bottom: 1px solid var(--vscode-panel-border); }
   .settings-intro span { display: block; margin-bottom: 3px; color: var(--truss-green); font-size: 10px; font-weight: 800; letter-spacing: .7px; }
   .settings-intro strong { font-size: 14px; }
@@ -1801,11 +1801,15 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
   .settings-section-heading strong { color: var(--vscode-foreground); font-size: 12px; }
   .settings-section-heading span { color: var(--vscode-descriptionForeground); font-size: 10px; line-height: 1.35; text-align: right; }
   #settings label { gap: 5px; font-weight: 600; }
+  body.vscode-dark, body.vscode-high-contrast { color-scheme: dark; }
+  body.vscode-light, body.vscode-high-contrast-light { color-scheme: light; }
   #settings input, #settings select, #settings textarea { border-color: var(--vscode-input-border); background: var(--vscode-input-background); }
+  select { color-scheme: inherit; color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground)); background: var(--vscode-dropdown-background, var(--vscode-input-background)); }
+  select option, select optgroup { color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground)); background-color: var(--vscode-dropdown-background, var(--vscode-input-background)); }
   .model-picker { position: relative; min-width: 0; display: grid; gap: 5px; color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 600; }
   #modelPickerButton { width: 100%; min-height: 30px; overflow: hidden; padding-right: 26px; border-color: var(--vscode-input-border); background: var(--vscode-input-background); color: var(--vscode-input-foreground); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
   #modelPickerButton[aria-expanded="true"] { border-color: var(--truss-green); box-shadow: 0 0 0 1px var(--truss-green); }
-  #modelPickerMenu { position: absolute; z-index: 10; top: calc(100% + 5px); right: 0; left: 0; display: grid; gap: 6px; min-width: 250px; padding: 7px; border: 1px solid var(--truss-border); border-radius: 7px; background: var(--vscode-editorWidget-background); box-shadow: 0 8px 24px rgba(0, 0, 0, .36); }
+  #modelPickerMenu { position: absolute; z-index: 10; top: calc(100% + 5px); right: 0; left: 0; display: grid; gap: 6px; min-width: 250px; padding: 7px; border: 1px solid var(--truss-border); border-radius: 7px; color: var(--vscode-dropdown-foreground, var(--vscode-input-foreground)); background: var(--vscode-dropdown-background, var(--vscode-editorWidget-background, var(--vscode-input-background))); box-shadow: 0 8px 24px rgba(0, 0, 0, .36); }
   #modelPickerMenu[hidden] { display: none; }
   #modelPickerSearch { padding: 6px 7px; }
   #modelPickerOptions { max-height: 250px; overflow: auto; display: grid; gap: 2px; }
@@ -1859,7 +1863,7 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
   #quickModel { border: 0; background: transparent; }
   #modelStatus { justify-self: end; max-width: 180px; color: var(--vscode-descriptionForeground); font-size: 11px; }
   @media (max-width: 700px) { #settings.open { grid-template-columns: 1fr; } .settings-section { grid-template-columns: repeat(2, minmax(0, 1fr)); } .settings-section.full-width { grid-column: auto; } }
-  @media (max-width: 560px) { .brand-row { grid-template-columns: 1fr; } .header-actions { width: 100%; } #headerAction { width: 100%; } .settings-intro { display: block; } .settings-intro p { margin-top: 6px; } .settings-section { grid-template-columns: 1fr; } .settings-section-heading { display: block; } .settings-section-heading span { display: block; margin-top: 3px; text-align: left; } #chat { padding: 10px; } #agentControls { gap: 6px; } #modelStatus { justify-self: start; max-width: none; } }
+  @media (max-width: 560px) { .brand-row { grid-template-columns: minmax(0, 1fr) auto; } .header-actions { width: auto; } #headerAction { width: clamp(84px, 32vw, 126px); } .settings-intro { display: block; } .settings-intro p { margin-top: 6px; } .settings-section { grid-template-columns: 1fr; } .settings-section-heading { display: block; } .settings-section-heading span { display: block; margin-top: 3px; text-align: left; } #chat { padding: 10px; } #agentControls { gap: 6px; } #modelStatus { justify-self: start; max-width: none; } }
 </style></head><body>
 <header><div class="brand-row"><div class="brand-lockup"><img class="brand-mark" src="${logoUri}" alt=""><span class="brand">${brand.productName}</span></div><div class="header-actions"><select id="headerAction" aria-label="Truss actions" title="Truss actions"><option value="">Actions</option><option value="new">New conversation</option><option value="settings">Settings</option><option value="help">Help</option><option value="trussGo">Connect Truss Go</option></select></div></div><div id="telemetry"><div class="telemetry-context" title="Estimated from the active conversation. Local model servers do not consistently report prompt-token usage."><span class="telemetry-label">CONTEXT</span><span id="contextValue">0 / 8.2k</span><div class="meter"><span id="contextMeter"></span></div></div><div title="Estimated from streamed response text"><span class="telemetry-label">SPEED </span><span id="rateValue">-- tok/s</span></div></div></header>
 <section id="settings">
