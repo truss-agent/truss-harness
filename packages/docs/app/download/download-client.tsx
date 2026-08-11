@@ -356,6 +356,7 @@ function ReleaseCard({
   readonly additionalAction?: {
     readonly href: string;
     readonly label: string;
+    readonly badge?: string;
   };
   readonly manualInstall?: string;
 }) {
@@ -424,12 +425,19 @@ function ReleaseCard({
         )}
         {additionalAction ? (
           <a
-            className="site-button site-button-secondary"
+            className={`site-button site-button-secondary${
+              additionalAction.badge ? " download-client-action-with-badge" : ""
+            }`}
             href={additionalAction.href}
             target="_blank"
             rel="noreferrer"
           >
             {additionalAction.label}
+            {additionalAction.badge ? (
+              <span className="download-client-action-badge">
+                {additionalAction.badge}
+              </span>
+            ) : null}
           </a>
         ) : null}
         <a className="site-button site-button-secondary" href={detailsHref}>
@@ -566,6 +574,7 @@ export function DownloadClient({
             additionalAction={{
               href: "https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode",
               label: "Install from Marketplace",
+              badge: "Outdated",
             }}
             manualInstall="Manual VSIX install: open Extensions, choose the … menu, select Install from VSIX…, then choose the downloaded file."
           />
