@@ -445,7 +445,9 @@ function ReleaseCard({
         </a>
       </div>
       {manualInstall ? (
-        <p className="download-client-manual-install">{manualInstall}</p>
+        <div className="download-client-manual-install">
+          <p>{manualInstall}</p>
+        </div>
       ) : null}
       <a
         className="site-text-link download-client-all-releases"

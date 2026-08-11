@@ -1343,7 +1343,11 @@ body {
     color: #5b6f66;
     font-size: 13px;
     line-height: 1.55;
-    margin: 28px 0 0;
+    padding-top: 22px;
+}
+
+.download-client-manual-install p {
+    margin: 0;
 }
 
 .download-client-all-releases {
