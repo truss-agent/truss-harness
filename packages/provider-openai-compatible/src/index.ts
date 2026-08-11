@@ -76,6 +76,7 @@ export type CloudProviderId =
   | "fireworks"
   | "nvidia-nim"
   | "xiaomi-mimo"
+  | "sakana-fugu"
   | "ollama-cloud";
 export type ModelProviderKind = LocalEndpointKind | CloudProviderId;
 
@@ -103,6 +104,7 @@ export const cloudProviderDefinitions: readonly CloudProviderDefinition[] = [
   { id: "fireworks", label: "Fireworks AI", baseUrl: "https://api.fireworks.ai/inference/v1", apiKeyEnvironmentVariable: "FIREWORKS_API_KEY", compatibility: "openai-chat-completions" },
   { id: "nvidia-nim", label: "NVIDIA NIM", baseUrl: "https://integrate.api.nvidia.com/v1", apiKeyEnvironmentVariable: "NVIDIA_API_KEY", compatibility: "openai-chat-completions" },
   { id: "xiaomi-mimo", label: "Xiaomi MiMo", baseUrl: "https://api.xiaomimimo.com/v1", apiKeyEnvironmentVariable: "MIMO_API_KEY", compatibility: "openai-chat-completions" },
+  { id: "sakana-fugu", label: "Sakana Fugu", baseUrl: "https://api.sakana.ai/v1", apiKeyEnvironmentVariable: "SAKANA_API_KEY", compatibility: "openai-chat-completions" },
   { id: "ollama-cloud", label: "Ollama Cloud", baseUrl: "https://ollama.com", apiKeyEnvironmentVariable: "OLLAMA_API_KEY", compatibility: "ollama-api" }
 ];
 

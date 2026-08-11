@@ -689,6 +689,7 @@ const agentCloudProviders = [
   ["fireworks", "Fireworks AI", "https://api.fireworks.ai/inference/v1"],
   ["nvidia-nim", "NVIDIA NIM", "https://integrate.api.nvidia.com/v1"],
   ["xiaomi-mimo", "Xiaomi MiMo", "https://api.xiaomimimo.com/v1"],
+  ["sakana-fugu", "Sakana Fugu", "https://api.sakana.ai/v1"],
   ["ollama-cloud", "Ollama Cloud", "https://ollama.com"],
 ] as const;
 

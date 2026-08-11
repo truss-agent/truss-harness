@@ -116,7 +116,7 @@ The API-key cloud-provider rollout supports `openai`, `anthropic`, `openrouter`,
 }
 ```
 
-Set the matching credential outside the configuration file: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `TOGETHER_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `PERPLEXITY_API_KEY`, `FIREWORKS_API_KEY`, `NVIDIA_API_KEY`, `MIMO_API_KEY`, or `OLLAMA_API_KEY`. `TRUSS_HARNESS_API_KEY` remains available for custom OpenAI-compatible endpoints, and `apiKeyEnv` can name a different environment variable in a profile. Local `ollama` stays key-free; `ollama-cloud` is the credentialed direct API path.
+Set the matching credential outside the configuration file: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `TOGETHER_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `PERPLEXITY_API_KEY`, `FIREWORKS_API_KEY`, `NVIDIA_API_KEY`, `MIMO_API_KEY`, `SAKANA_API_KEY`, or `OLLAMA_API_KEY`. `TRUSS_HARNESS_API_KEY` remains available for custom OpenAI-compatible endpoints, and `apiKeyEnv` can name a different environment variable in a profile. Local `ollama` stays key-free; `ollama-cloud` is the credentialed direct API path.
 
 Anthropic's current compatibility endpoint is intended primarily for evaluation; use it as an initial BYOK path while a native adapter is developed. OAuth/account sign-in, AWS IAM signing, Azure Entra, and client keychain UI are not part of this first rollout.
 
