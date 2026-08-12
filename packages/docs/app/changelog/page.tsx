@@ -4,6 +4,16 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "VS Code 0.1.21",
+    label: "Concurrent conversations and reliable stop",
+    changes: [
+      "Let independent VS Code conversations run at the same time, each with its own runtime session, streaming output, tool activity, approvals, and conversation history.",
+      "Made Stop cancel only the selected conversation's request, including an immediate cancel while its runtime session is still starting.",
+      "Kept a second send in the same conversation blocked until that conversation finishes, while other conversations remain available.",
+      "Fixed the model settings panel error during saved-key checks and restored the quick model selector as a dropdown.",
+    ],
+  },
+  {
     version: "Desktop 0.1.36 · VS Code 0.1.20 · CLI 0.1.20 · TUI 0.1.16",
     label: "Sakana Fugu BYOK",
     changes: [
