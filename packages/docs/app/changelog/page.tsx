@@ -5,12 +5,14 @@ import { createPageMetadata } from "../site-metadata";
 const entries = [
   {
     version: "VS Code 0.1.21",
-    label: "Concurrent conversations and reliable stop",
+    label: "Concurrent conversations and manual updates",
     changes: [
       "Let independent VS Code conversations run at the same time, each with its own runtime session, streaming output, tool activity, approvals, and conversation history.",
       "Made Stop cancel only the selected conversation's request, including an immediate cancel while its runtime session is still starting.",
       "Kept a second send in the same conversation blocked until that conversation finishes, while other conversations remain available.",
       "Fixed the model settings panel error during saved-key checks and restored the quick model selector as a dropdown.",
+      "Added a daily update check for manually installed VSIX builds, plus a Command Palette action that links directly to the newest signed VSIX GitHub Release.",
+      "Temporarily removed MCP configuration and management from the VS Code interface while preserving existing stored configuration and runtime support.",
     ],
   },
   {

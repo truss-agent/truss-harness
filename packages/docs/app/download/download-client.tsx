@@ -573,11 +573,6 @@ export function DownloadClient({
             detailsHref="/docs/clients/vscode"
             detailsLabel="VS Code guide"
             downloadLabel="Download VSIX"
-            additionalAction={{
-              href: "https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode",
-              label: "Install from Marketplace",
-              badge: "Outdated",
-            }}
             manualInstall="Manual VSIX install: open Extensions, choose the … menu, select Install from VSIX…, then choose the downloaded file."
           />
           <ReleaseCard

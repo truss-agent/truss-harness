@@ -62,16 +62,16 @@ export const clientContent: Record<ClientId, ClientContent> = {
     description: "Bring streaming chat, focused file context, inline completions, approvals, and Git-aware actions into a VS Code side panel.",
     screenshotSrc: "/screenshots/vscode.png",
     screenshotAlt: "Truss running in VS Code beside the editor and integrated terminal.",
-    installLabel: "Install from the Marketplace",
-    installDescription: "Install the Truss extension, open the Activity Bar icon, then select a local server and model from Settings.",
-    primaryAction: { label: "Get the VS Code extension", href: "https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode", external: true },
+    installLabel: "Download the VSIX",
+    installDescription: "Download the signed VSIX, install it from the Extensions menu, then select a local server and model from Settings.",
+    primaryAction: { label: "Download the VS Code extension", href: "/download" },
     docsHref: "/docs/clients/vscode",
     highlights: [
       { title: "Editor-aware chat", description: "Attach up to eight workspace files through the composer and preserve useful conversation history in workspace state." },
       { title: "Agent modes and approvals", description: "Switch between Chat, Plan, and Edit while keeping tool permissions explicit and appropriate to the workspace." },
       { title: "Useful editor actions", description: "Accept local-model inline completions and generate a conventional commit message from Git changes without creating the commit for you." }
     ],
-    workflow: ["Install Truss from the VS Code Marketplace.", "Open the Truss Activity Bar view and configure a detected endpoint or custom compatible server.", "Choose a model, mode, and tool policy, then use chat and editor actions from the workspace."]
+    workflow: ["Download the signed VSIX from the Truss website and install it from the VS Code Extensions menu.", "Open the Truss Activity Bar view and configure a detected endpoint or custom compatible server.", "Choose a model, mode, and tool policy, then use chat and editor actions from the workspace."]
   },
   desktop: {
     id: "desktop",

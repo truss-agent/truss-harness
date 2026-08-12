@@ -8,14 +8,17 @@ import { brand } from "@truss-harness/branding";
 import { FileAgentProfileStore, FileAgentRunHistoryStore, profileFromConfiguration } from "@truss-harness/cli/agents";
 import type { ClientConfiguration } from "@truss-harness/cli/runtime";
 import { AgentHost } from "@truss-harness/agent-host";
-import { McpServerManager, type McpServerConfigurations, type McpServerStatus, type McpStdioServerConfiguration } from "@truss-harness/mcp";
-import { AgentCoordinator, ApiKeyCredential, defaultProviderAccountId, executeWorkspaceCommand, isProviderAccount, ToolRegistry, type AgentProfile, type AgentRunSummary, type ChatAttachment, type ContextBlock, type ProviderAccount, type ToolApproval, type ToolCall, type WorkspacePlan } from "@truss-harness/runtime";
+import type { McpServerConfigurations } from "@truss-harness/mcp";
+import { AgentCoordinator, ApiKeyCredential, defaultProviderAccountId, executeWorkspaceCommand, isProviderAccount, type AgentProfile, type AgentRunSummary, type ChatAttachment, type ContextBlock, type ProviderAccount, type ToolApproval, type ToolCall, type WorkspacePlan } from "@truss-harness/runtime";
 import { createPairingUri, detectLanAddress } from "@truss-harness/gateway";
 import QRCode from "qrcode";
 import * as vscode from "vscode";
 import { ConversationRunRegistry } from "./conversation-runs.js";
+import { availableVsCodeUpdate, type VsCodeRelease } from "./extension-updates.js";
 
 const execFile = promisify(execFileCallback);
+const vscodeReleasesApi = "https://api.github.com/repos/truss-agent/truss-harness/releases?per_page=30";
+const automaticUpdateCheckInterval = 24 * 60 * 60 * 1_000;
 
 type AgentMode = "chat" | "plan" | "edit";
 type PermissionMode = "ask" | "auto-read" | "auto-all";
@@ -191,8 +194,7 @@ type WebviewRequest =
       readonly callId: string;
       readonly approved: boolean;
     }
-  | { readonly type: "connectTrussGo" }
-  | { readonly type: "manageMcp" };
+  | { readonly type: "connectTrussGo" };
 
 type AgentDashboardRequest =
   | { readonly type: "ready" }
@@ -542,6 +544,57 @@ export function activate(context: vscode.ExtensionContext): void {
     context.workspaceState.get("providerAccounts"),
   );
 
+  const checkForUpdates = async (interactive: boolean): Promise<void> => {
+    const now = Date.now();
+    const lastCheck = context.globalState.get<number>("lastUpdateCheck", 0);
+    if (!interactive && now - lastCheck < automaticUpdateCheckInterval) return;
+    await context.globalState.update("lastUpdateCheck", now);
+    try {
+      const response = await fetch(vscodeReleasesApi, {
+        headers: {
+          Accept: "application/vnd.github+json",
+          "User-Agent": "truss-harness-vscode",
+          "X-GitHub-Api-Version": "2022-11-28",
+        },
+      });
+      if (!response.ok) throw new Error(`GitHub returned ${response.status}.`);
+      const releases = (await response.json()) as VsCodeRelease[];
+      const currentVersion = String(context.extension.packageJSON.version ?? "0.0.0");
+      const update = availableVsCodeUpdate(currentVersion, releases);
+      if (!update) {
+        if (interactive) {
+          await vscode.window.showInformationMessage(
+            `${brand.productName} for VS Code ${currentVersion} is up to date.`,
+          );
+        }
+        return;
+      }
+      const lastNotified = context.globalState.get<string>("lastNotifiedVersion");
+      if (!interactive && lastNotified === update.version) return;
+      await context.globalState.update("lastNotifiedVersion", update.version);
+      const action = await vscode.window.showInformationMessage(
+        `${brand.productName} for VS Code ${update.version} is available. Download the signed VSIX, then use Extensions: Install from VSIX to update.`,
+        "Download VSIX",
+        "View release",
+      );
+      const target = action === "Download VSIX"
+        ? update.downloadUrl
+        : action === "View release"
+          ? update.releaseUrl
+          : undefined;
+      if (target) await vscode.env.openExternal(vscode.Uri.parse(target));
+    } catch (error) {
+      output.appendLine(
+        `[updates] ${error instanceof Error ? error.message : String(error)}`,
+      );
+      if (interactive) {
+        await vscode.window.showWarningMessage(
+          `${brand.productName} could not check for updates. See the Truss output for details.`,
+        );
+      }
+    }
+  };
+
   const legacyCredentialKey = (provider: ModelProviderKind): string =>
     `model-provider-api-key:${provider}`;
   const credentialKey = (accountId: string): string =>
@@ -746,233 +799,6 @@ export function activate(context: vscode.ExtensionContext): void {
       await disposeAgentCoordinator();
     }
   };
-  const persistMcpServers = async (
-    mcpServers: McpServerConfigurations,
-  ): Promise<void> => {
-    configuration = { ...configuration, mcpServers };
-    await context.workspaceState.update("modelConfiguration", configuration);
-    disposeService();
-    await disposeAgentCoordinator();
-    post({ type: "runtimeReset" });
-    await sendState();
-  };
-  const editMcpServer = async (
-    existingName?: string,
-  ): Promise<
-    | {
-        readonly name: string;
-        readonly configuration: McpStdioServerConfiguration;
-      }
-    | undefined
-  > => {
-    const existing = existingName
-      ? configuration.mcpServers[existingName]
-      : undefined;
-    const name = await vscode.window.showInputBox({
-      prompt: "MCP server name",
-      value: existingName ?? "",
-      validateInput(value) {
-        const normalized = value.trim();
-        if (!normalized) return "A server name is required.";
-        if (!/^[A-Za-z0-9_-]+$/.test(normalized))
-          return "Use letters, numbers, dashes, or underscores.";
-        if (
-          normalized !== existingName &&
-          configuration.mcpServers[normalized]
-        )
-          return "A server with this name already exists.";
-        return undefined;
-      },
-    });
-    if (!name?.trim()) return undefined;
-    const command = await vscode.window.showInputBox({
-      prompt: "Executable used to start this MCP server",
-      value: existing?.command ?? "",
-      validateInput: (value) =>
-        value.trim() ? undefined : "A command is required.",
-    });
-    if (!command?.trim()) return undefined;
-    const args = await vscode.window.showInputBox({
-      prompt: "Arguments, one per line",
-      value: (existing?.args ?? []).join("\n"),
-    });
-    if (args === undefined) return undefined;
-    const cwd = await vscode.window.showInputBox({
-      prompt: "Working directory relative to this workspace (optional)",
-      value: existing?.cwd ?? "",
-    });
-    if (cwd === undefined) return undefined;
-    const trust = await vscode.window.showQuickPick(
-      [
-        {
-          label: "Approval-controlled tools",
-          description: "Treat tools as potentially mutating.",
-          readOnly: false,
-        },
-        {
-          label: "Read-only tools",
-          description: "Expose this server in Plan mode.",
-          readOnly: true,
-        },
-      ],
-      {
-        placeHolder: "How should Truss classify this server's tools?",
-      },
-    );
-    if (!trust) return undefined;
-    return {
-      name: name.trim(),
-      configuration: {
-        command: command.trim(),
-        args: args
-          .split(/\r?\n/)
-          .map((value) => value.trim())
-          .filter(Boolean),
-        cwd: cwd.trim() || undefined,
-        env: existing?.env,
-        enabled: existing?.enabled !== false,
-        readOnly: trust.readOnly,
-      },
-    };
-  };
-  const testMcpServer = async (
-    name: string,
-    server: McpStdioServerConfiguration,
-  ): Promise<McpServerStatus> => {
-    const manager = new McpServerManager(
-      new ToolRegistry(),
-      { [name]: { ...server, enabled: true } },
-      { workspaceRoot: workspaceRoot() },
-    );
-    try {
-      return (
-        (await manager.connect(name)) ?? {
-          name,
-          state: "failed",
-          toolCount: 0,
-          error: "The MCP server is no longer configured.",
-        }
-      );
-    } finally {
-      await manager.close();
-    }
-  };
-  const manageMcpServers = async (): Promise<void> => {
-    for (;;) {
-      const servers = Object.entries(configuration.mcpServers);
-      const selected = await vscode.window.showQuickPick(
-        [
-          {
-            label: "$(add) Add MCP server",
-            description: "Configure a local stdio server.",
-            name: undefined,
-          },
-          ...servers.map(([name, server]) => ({
-            label: `${server.enabled === false ? "$(circle-slash)" : "$(plug)"} ${name}`,
-            description:
-              server.enabled === false
-                ? "disabled"
-                : server.readOnly
-                  ? "enabled · read-only"
-                  : "enabled · approval-controlled",
-            detail: server.command,
-            name,
-          })),
-        ],
-        {
-          placeHolder:
-            "Manage MCP servers. Commands and environment values stay on this host.",
-        },
-      );
-      if (!selected) return;
-      if (!selected.name) {
-        const created = await editMcpServer();
-        if (!created) continue;
-        await persistMcpServers({
-          ...configuration.mcpServers,
-          [created.name]: created.configuration,
-        });
-        continue;
-      }
-      const name = selected.name;
-      const server = configuration.mcpServers[name];
-      if (!server) continue;
-      const action = await vscode.window.showQuickPick(
-        [
-          { label: "$(debug-start) Test and inspect tools", action: "test" },
-          {
-            label:
-              server.enabled === false
-                ? "$(check) Enable"
-                : "$(circle-slash) Disable",
-            action: "toggle",
-          },
-          { label: "$(edit) Edit", action: "edit" },
-          { label: "$(trash) Remove", action: "remove" },
-        ],
-        { placeHolder: `MCP server: ${name}` },
-      );
-      if (!action) continue;
-      if (action.action === "test") {
-        const status = await testMcpServer(name, server);
-        if (status.state !== "connected") {
-          void vscode.window.showWarningMessage(
-            `${name}: ${status.error ?? "The MCP server could not connect."}`,
-          );
-          continue;
-        }
-        const tools = status.tools ?? [];
-        await vscode.window.showQuickPick(
-          tools.length
-            ? tools.map((tool) => ({
-                label: tool.name,
-                description: tool.readOnly
-                  ? "read-only"
-                  : "approval-controlled",
-                detail: tool.description,
-              }))
-            : [
-                {
-                  label: "No tools discovered.",
-                  description: "",
-                  detail: undefined,
-                },
-              ],
-          {
-            placeHolder: `${name} connected with ${status.toolCount} tool${status.toolCount === 1 ? "" : "s"}`,
-          },
-        );
-        continue;
-      }
-      if (action.action === "toggle") {
-        await persistMcpServers({
-          ...configuration.mcpServers,
-          [name]: { ...server, enabled: server.enabled === false },
-        });
-        continue;
-      }
-      if (action.action === "edit") {
-        const edited = await editMcpServer(name);
-        if (!edited) continue;
-        const { [name]: _old, ...remaining } = configuration.mcpServers;
-        await persistMcpServers({
-          ...remaining,
-          [edited.name]: edited.configuration,
-        });
-        continue;
-      }
-      const confirmed = await vscode.window.showWarningMessage(
-        `Remove MCP server '${name}'?`,
-        { modal: true },
-        "Remove",
-      );
-      if (confirmed === "Remove") {
-        const { [name]: _removed, ...remaining } =
-          configuration.mcpServers;
-        await persistMcpServers(remaining);
-      }
-    }
-  };
   const runtimeEnvironment = async (): Promise<NodeJS.ProcessEnv> => {
     const environment: NodeJS.ProcessEnv = {
       ...process.env,
@@ -1135,9 +961,6 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }, (text) => {
       output.append(text);
-      for (const line of text.split(/\r?\n/).filter((item) => item.startsWith("[mcp]"))) {
-        post({ type: "mcpDiagnostic", message: line.replace(/^\[mcp\]\s*/, "") });
-      }
     });
     context.subscriptions.push(service);
     return service;
@@ -1496,14 +1319,6 @@ ${diff}`);
         case "connectTrussGo":
           await connectTrussGo().catch((error: unknown) => post({ type: "error", message: error instanceof Error ? error.message : String(error) }));
           break;
-        case "manageMcp":
-          await manageMcpServers().catch((error: unknown) =>
-            post({
-              type: "error",
-              message: error instanceof Error ? error.message : String(error),
-            }),
-          );
-          break;
       }
     }, undefined, context.subscriptions);
   };
@@ -1539,7 +1354,7 @@ ${diff}`);
     await openAgentControlCenter();
   }));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.connectTrussGo", () => connectTrussGo().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
-  context.subscriptions.push(vscode.commands.registerCommand("trussHarness.manageMcpServers", () => manageMcpServers().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
+  context.subscriptions.push(vscode.commands.registerCommand("trussHarness.checkForUpdates", () => checkForUpdates(true)));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.testProviderConnection", () => showProviderConnectionResult().catch((error: unknown) => vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error)))));
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.configureByokProvider", async () => {
     const selected = await vscode.window.showQuickPick(cloudProviderDefinitions.map((provider) => ({
@@ -1690,6 +1505,9 @@ ${diff}`);
       }
     }
   }));
+  if (context.extensionMode === vscode.ExtensionMode.Production) {
+    void checkForUpdates(false);
+  }
 }
 
 export function deactivate(): void {}
@@ -1816,7 +1634,7 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
   header { flex: 0 0 auto; padding: 11px 10px 9px; border-bottom: 1px solid var(--vscode-panel-border); display: grid; gap: 9px; background: var(--vscode-sideBar-background); } .brand-row, .actions, .segmented { display: flex; align-items: center; gap: 5px; min-width: 0; } .brand { font-weight: 700; letter-spacing: .2px; white-space: nowrap; margin-right: auto; } #modelStatus { color: var(--vscode-descriptionForeground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } 
   .segmented { padding: 2px; border: 1px solid var(--vscode-panel-border); border-radius: 5px; } .segmented button { border: 0; background: transparent; min-height: 24px; padding: 3px 7px; } .segmented button.active { background: var(--vscode-button-background); color: var(--vscode-button-foreground); box-shadow: inset 0 0 0 1px var(--vscode-focusBorder); }
   #telemetry { display: grid; grid-template-columns: minmax(130px, 1fr) auto; align-items: center; gap: 10px; min-width: 0; color: var(--vscode-descriptionForeground); font-size: 11px; } .telemetry-context { min-width: 0; display: grid; grid-template-columns: auto minmax(52px, 1fr); gap: 5px 7px; align-items: center; } .telemetry-label { color: var(--vscode-descriptionForeground); font-size: 10px; font-weight: 700; letter-spacing: .35px; } #contextValue, #rateValue { color: var(--vscode-foreground); font-variant-numeric: tabular-nums; white-space: nowrap; } .meter { height: 4px; min-width: 0; overflow: hidden; background: var(--vscode-progressBar-background); border-radius: 999px; } .meter > span { display: block; width: 0; height: 100%; background: var(--vscode-progressBar-background, var(--vscode-focusBorder)); border-radius: inherit; transition: width 120ms linear, background-color 120ms linear; } .meter > span.active { background: var(--vscode-focusBorder); } .meter > span.warning { background: var(--vscode-editorWarning-foreground); } .meter > span.critical { background: var(--vscode-editorError-foreground); }
-  #settings { display: none; flex: 0 1 auto; max-height: 52vh; overflow: auto; padding: 10px; gap: 8px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); } #settings.open { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); } label { min-width: 0; display: grid; gap: 4px; color: var(--vscode-descriptionForeground); font-size: 11px; } input, select { width: 100%; min-width: 0; padding: 5px 6px; } #settings .actions { align-self: end; } .mcp-setting, #mcpStatus { grid-column: 1 / -1; } .mcp-setting textarea { min-height: 96px; max-height: 180px; resize: vertical; font-family: var(--vscode-editor-font-family); font-size: 11px; line-height: 1.45; } #mcpStatus { color: var(--vscode-descriptionForeground); font-size: 11px; overflow-wrap: anywhere; }
+  #settings { display: none; flex: 0 1 auto; max-height: 52vh; overflow: auto; padding: 10px; gap: 8px; border-bottom: 1px solid var(--vscode-panel-border); background: var(--vscode-editor-background); } #settings.open { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); } label { min-width: 0; display: grid; gap: 4px; color: var(--vscode-descriptionForeground); font-size: 11px; } input, select { width: 100%; min-width: 0; padding: 5px 6px; } #settings .actions { align-self: end; }
   #workspace { flex: 1 1 0; min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(118px, 30%) minmax(0, 1fr); } #history { min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; border-right: 1px solid var(--vscode-panel-border); padding: 7px; } .history-title { color: var(--vscode-descriptionForeground); font-size: 11px; text-transform: uppercase; margin: 2px 3px 7px; } .conversation-row { display: grid; grid-template-columns: minmax(0, 1fr) 24px; align-items: center; margin-bottom: 2px; } .conversation { display: block; width: 100%; text-align: left; background: transparent; border: 0; border-radius: 3px; padding: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .conversation.active { background: var(--vscode-list-activeSelectionBackground); color: var(--vscode-list-activeSelectionForeground); } .delete-conversation { min-height: 24px; padding: 0; border: 0; background: transparent; color: var(--vscode-descriptionForeground); } .delete-conversation:hover { color: var(--vscode-errorForeground); background: var(--vscode-list-hoverBackground); }
   #chat { min-width: 0; min-height: 0; height: 100%; padding: 12px; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 12px; } .plan { display: grid; gap: 4px; padding: 8px; border: 1px solid var(--vscode-panel-border); border-radius: 4px; background: var(--vscode-textBlockQuote-background); font-size: 12px; } .plan strong { overflow-wrap: anywhere; } .plan-step { overflow-wrap: anywhere; color: var(--vscode-descriptionForeground); } .plan-step.in_progress { color: var(--vscode-editorWarning-foreground); } .plan-step.completed { color: var(--vscode-terminal-ansiGreen); text-decoration: line-through; } .empty { color: var(--vscode-descriptionForeground); line-height: 1.5; margin: auto 0; } .message { white-space: pre-wrap; line-height: 1.5; overflow-wrap: anywhere; } .message-header { color: var(--vscode-descriptionForeground); font-size: 11px; font-weight: 700; margin-bottom: 3px; } .message.user { padding-left: 8px; border-left: 2px solid var(--vscode-focusBorder); } .message.assistant { padding-left: 8px; border-left: 2px solid var(--vscode-terminal-ansiGreen); } .tool { padding: 7px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-textBlockQuote-background); border-radius: 4px; color: var(--vscode-descriptionForeground); } .tool button { margin: 6px 4px 0 0; }
   #composer { flex: 0 0 auto; min-width: 0; min-height: 0; position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 6px; padding: 9px 10px 6px; border-top: 1px solid var(--vscode-panel-border); background: var(--vscode-sideBar-background); box-shadow: 0 -3px 10px color-mix(in srgb, var(--vscode-sideBar-background) 78%, transparent); } textarea { min-height: 36px; max-height: 120px; resize: vertical; padding: 7px; } #attachments { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 5px; } .attachment { display: inline-flex; align-items: center; gap: 5px; max-width: 180px; padding: 3px 5px; border: 1px solid var(--vscode-panel-border); background: var(--vscode-textBlockQuote-background); font-size: 11px; } .attachment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .attachment img { width: 32px; height: 28px; object-fit: cover; } .attachment button { min-height: 20px; padding: 0 4px; } .message-attachments { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; } #stop { display: none; } body.streaming #stop { display: inline-block; } body.streaming #send { display: none; } #agentControls { flex: 0 0 auto; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; align-items: center; padding: 0 10px 9px; background: var(--vscode-sideBar-background); } .quick-model { min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 5px; } .quick-model span { color: var(--vscode-descriptionForeground); font-size: 10px; font-weight: 700; letter-spacing: .35px; } #quickModel { min-width: 0; height: 28px; padding: 3px 6px; }
@@ -1876,11 +1694,6 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
   #settings .provider-status.failed { color: var(--vscode-errorForeground); }
   #settings .actions { position: relative; z-index: 1; grid-column: 1 / -1; display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; padding-top: 2px; }
   #settings .actions #apply { min-width: 78px; }
-  .mcp-section { display: block; min-height: 44px; padding: 0; overflow: hidden; }
-  .mcp-section summary { display: flex; align-items: baseline; gap: 7px; cursor: pointer; padding: 11px; color: var(--vscode-foreground); font-weight: 700; line-height: 1.35; }
-  .mcp-section summary span { margin-left: auto; color: var(--vscode-descriptionForeground); font-size: 10px; font-weight: 400; white-space: nowrap; }
-  .mcp-section[open] summary { border-bottom: 1px solid var(--vscode-panel-border); }
-  .mcp-section-body { display: grid; gap: 9px; padding: 11px; }
   #workspace { border-top: 0; background: var(--vscode-editor-background); }
   #history { padding: 9px 7px; border-right-color: var(--truss-border); background: var(--truss-surface); }
   .history-title { margin: 2px 5px 8px; color: var(--truss-green); font-size: 10px; font-weight: 800; letter-spacing: .75px; }
@@ -1919,19 +1732,18 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
 </style></head><body>
 <header><div class="brand-row"><div class="brand-lockup"><img class="brand-mark" src="${logoUri}" alt=""><span class="brand">${brand.productName}</span></div><div class="header-actions"><select id="headerAction" aria-label="Truss actions" title="Truss actions"><option value="">Actions</option><option value="new">New conversation</option><option value="settings">Settings</option><option value="help">Help</option><option value="trussGo">Connect Truss Go</option></select></div></div><div id="telemetry"><div class="telemetry-context" title="Estimated from the active conversation. Local model servers do not consistently report prompt-token usage."><span class="telemetry-label">CONTEXT</span><span id="contextValue">0 / 8.2k</span><div class="meter"><span id="contextMeter"></span></div></div><div title="Estimated from streamed response text"><span class="telemetry-label">SPEED </span><span id="rateValue">-- tok/s</span></div></div></header>
 <section id="settings">
-  <div class="settings-intro"><div><span>CONNECTION</span><strong>Model &amp; agent settings</strong></div><p>Choose the model, permissions, and optional MCP tools for this workspace.</p></div>
+  <div class="settings-intro"><div><span>CONNECTION</span><strong>Model &amp; agent settings</strong></div><p>Choose the model, permissions, and internet access for this workspace.</p></div>
   <section class="settings-section full-width"><div class="settings-section-heading"><strong>Provider connection</strong><span>Choose a local server or cloud provider.</span></div><label>Detected server<select id="server"><option value="">Custom / manual</option></select></label><label>Provider<select id="provider"><option value="ollama">Ollama</option><option value="openai-compatible">Compatible API</option><option value="openai">OpenAI</option><option value="anthropic">Anthropic</option><option value="openrouter">OpenRouter</option><option value="groq">Groq</option><option value="together">Together AI</option><option value="gemini">Google Gemini</option><option value="xai">xAI</option><option value="mistral">Mistral AI</option><option value="deepseek">DeepSeek</option><option value="perplexity">Perplexity</option><option value="fireworks">Fireworks AI</option><option value="nvidia-nim">NVIDIA NIM</option><option value="xiaomi-mimo">Xiaomi MiMo</option><option value="sakana-fugu">Sakana Fugu</option><option value="ollama-cloud">Ollama Cloud</option></select></label><label class="full-width-label">Endpoint<input id="endpoint" placeholder="http://127.0.0.1:11434"></label></section>
   <section class="settings-section full-width"><div class="settings-section-heading"><strong>Model &amp; account</strong><span>Keys stay only in VS Code Secret Storage.</span></div><label>Model ID<input id="model" list="models" placeholder="Enter a model ID"><datalist id="models"></datalist></label><div class="model-picker"><span>Discovered models</span><button id="modelPickerButton" type="button" aria-haspopup="listbox" aria-expanded="false">Discover models to choose one</button><div id="modelPickerMenu" hidden><input id="modelPickerSearch" type="search" placeholder="Filter discovered models"><div id="modelPickerOptions" role="listbox" aria-label="Discovered models"></div></div></div><label id="contextWindowSetting"><span id="contextWindowLabel">Context window</span><input id="contextWindow" type="number" min="512" max="1000000" step="512" value="8192"></label><label class="cloud-setting" id="providerAccountSetting">Account<select id="providerAccount"></select></label><label class="cloud-setting" id="providerAccountLabelSetting">Account label<input id="providerAccountLabel" placeholder="Personal"></label><label class="cloud-setting full-width-label" id="providerApiKeySetting">API key<input id="providerApiKey" type="password" autocomplete="off" placeholder="Stored only in VS Code Secret Storage"></label><div id="providerStatus" class="cloud-setting provider-status full-width-label" role="status" aria-live="polite"></div></section>
   <section class="settings-section"><div class="settings-section-heading"><strong>Agent behavior</strong><span>Choose how tools and research work.</span></div><label>Tool permissions<select id="permission"><option value="ask">Ask every time</option><option value="auto-read">Auto-allow read-only</option><option value="auto-all">Auto-allow all tools</option></select></label><label>Internet research<select id="internetAccess"><option value="false">Disabled</option><option value="true">Enabled</option></select></label></section>
-  <details class="settings-section full-width mcp-section"><summary>Advanced MCP configuration <span>Optional JSON import/export</span></summary><div class="mcp-section-body"><label class="mcp-setting">MCP servers<textarea id="mcpServers" rows="7" spellcheck="false" placeholder='{"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]}}'></textarea></label><div id="mcpStatus">No MCP servers configured.</div></div></details>
-  <div class="actions"><button id="manageMcp" type="button">Manage MCP</button><button id="refresh" type="button">Discover models</button><button id="saveProviderAccount" class="cloud-setting" type="button">Save key</button><button id="testProviderConnection" class="cloud-setting" type="button">Test connection</button><button id="removeProviderAccount" class="cloud-setting" type="button">Remove key</button><button id="apply" class="primary" type="button">Apply</button></div>
+  <div class="actions"><button id="refresh" type="button">Discover models</button><button id="saveProviderAccount" class="cloud-setting" type="button">Save key</button><button id="testProviderConnection" class="cloud-setting" type="button">Test connection</button><button id="removeProviderAccount" class="cloud-setting" type="button">Remove key</button><button id="apply" class="primary" type="button">Apply</button></div>
 </section>
 <main id="workspace"><aside id="history"><div class="history-title">Conversations</div></aside><section id="chat"><div class="empty">Select a local model in Settings, then ask about the workspace. Use Plan for read-only investigation and Agent when you want the agent to change files or run commands.</div></section></main>
 <form id="composer"><div id="slashMenu" role="listbox" hidden></div><div id="attachments" hidden></div><input id="attachmentInput" type="file" multiple hidden><button id="attach" type="button" title="Attach images or text files">Attach files</button><div id="composerRow"><textarea id="prompt" placeholder="Ask about this workspace. Type @/ to attach a file; /help for commands." rows="2"></textarea><button id="stop" type="button">Cancel</button><button id="send" class="primary" type="submit">Send</button></div></form>
   <section id="agentControls" aria-label="Agent controls"><div class="segmented" aria-label="Agent mode"><button data-mode="chat">Chat</button><button data-mode="plan">Plan</button><button data-mode="edit">Agent</button></div><label class="quick-model"><span>MODEL</span><select id="quickModel" title="Switch local model"><option value="">Choose model</option></select></label><span id="modelStatus">Choose a local model</span></section>
 <script nonce="${nonce}">
   const vscode = acquireVsCodeApi(); const savedState = vscode.getState(); const state = savedState && typeof savedState === 'object' && Array.isArray(savedState.conversations) ? savedState : { conversations: [], activeId: undefined }; state.conversations = state.conversations.filter((item) => item && typeof item === 'object' && typeof item.id === 'string').map((item) => ({ ...item, title: typeof item.title === 'string' ? item.title : 'Conversation', messages: Array.isArray(item.messages) ? item.messages.filter((message) => message && (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string') : [], updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : new Date().toISOString() })); if (!state.conversations.some((item) => item.id === state.activeId)) state.activeId = state.conversations[0]?.id; vscode.setState(state); const history = document.getElementById('history'); const chat = document.getElementById('chat'); const settings = document.getElementById('settings'); const status = document.getElementById('modelStatus'); let persistTimer; const activePlans = new Map(); const streamingConversationIds = new Set(); const activeTools = new Map(); const pendingApprovals = new Map();
-  const server = document.getElementById('server'); const provider = document.getElementById('provider'); const endpoint = document.getElementById('endpoint'); const model = document.getElementById('model'); const modelOptions = document.getElementById('models'); const modelPickerButton = document.getElementById('modelPickerButton'); const modelPickerMenu = document.getElementById('modelPickerMenu'); const modelPickerSearch = document.getElementById('modelPickerSearch'); const modelPickerOptions = document.getElementById('modelPickerOptions'); const quickModel = document.getElementById('quickModel'); const permission = document.getElementById('permission'); const internetAccess = document.getElementById('internetAccess'); const contextWindow = document.getElementById('contextWindow'); const contextValue = document.getElementById('contextValue'); const contextMeter = document.getElementById('contextMeter'); const rateValue = document.getElementById('rateValue'); const mcpServers = document.getElementById('mcpServers'); const mcpStatus = document.getElementById('mcpStatus'); const prompt = document.getElementById('prompt'); const slashMenu = document.getElementById('slashMenu'); const attachmentInput = document.getElementById('attachmentInput'); const attachmentView = document.getElementById('attachments'); let configuration; let streamStartedAt = 0; let generatedTokens = 0; let workspaceFiles = []; let slashResults = []; let slashIndex = 0; let pendingAttachments = [];
+  const server = document.getElementById('server'); const provider = document.getElementById('provider'); const endpoint = document.getElementById('endpoint'); const model = document.getElementById('model'); const modelOptions = document.getElementById('models'); const modelPickerButton = document.getElementById('modelPickerButton'); const modelPickerMenu = document.getElementById('modelPickerMenu'); const modelPickerSearch = document.getElementById('modelPickerSearch'); const modelPickerOptions = document.getElementById('modelPickerOptions'); const quickModel = document.getElementById('quickModel'); const permission = document.getElementById('permission'); const internetAccess = document.getElementById('internetAccess'); const contextWindow = document.getElementById('contextWindow'); const contextValue = document.getElementById('contextValue'); const contextMeter = document.getElementById('contextMeter'); const rateValue = document.getElementById('rateValue'); const prompt = document.getElementById('prompt'); const slashMenu = document.getElementById('slashMenu'); const attachmentInput = document.getElementById('attachmentInput'); const attachmentView = document.getElementById('attachments'); let configuration; let streamStartedAt = 0; let generatedTokens = 0; let workspaceFiles = []; let slashResults = []; let slashIndex = 0; let pendingAttachments = [];
   const providerAccount = document.getElementById('providerAccount'); const providerAccountLabel = document.getElementById('providerAccountLabel'); const providerApiKey = document.getElementById('providerApiKey'); const providerStatus = document.getElementById('providerStatus'); const contextWindowLabel = document.getElementById('contextWindowLabel'); let cloudProviders = []; let providerAccounts = []; let discoveredModels = [];
   const persist = () => { vscode.setState(state); clearTimeout(persistTimer); persistTimer = setTimeout(() => vscode.postMessage({ type: 'saveConversations', state: { conversations: state.conversations, activeId: state.activeId } }), 250); }; const active = () => state.conversations.find((item) => item.id === state.activeId); const byId = (conversationId) => state.conversations.find((item) => item.id === conversationId); const isStreaming = (conversationId) => Boolean(conversationId && streamingConversationIds.has(conversationId)); const renderComposer = () => document.body.classList.toggle('streaming', isStreaming(active()?.id)); const id = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const addConversation = () => { const conversation = { id: id(), title: 'New conversation', messages: [], updatedAt: new Date().toISOString() }; state.conversations.unshift(conversation); state.activeId = conversation.id; persist(); return conversation; };
@@ -1995,8 +1807,7 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
   const pendingApprovalView = (conversationId, approval) => { const item = document.createElement('div'); item.className = 'tool'; item.textContent = 'Allow ' + approval.tool + ' ' + JSON.stringify(approval.input) + '? '; const allow = document.createElement('button'); allow.textContent = 'Allow'; const deny = document.createElement('button'); deny.textContent = 'Deny'; const resolve = (approved) => { pendingApprovals.delete(conversationId); vscode.postMessage({ type: 'toolApproval', conversationId, requestId: approval.requestId, callId: approval.callId, approved }); renderChat(); }; allow.onclick = () => resolve(true); deny.onclick = () => resolve(false); item.append(allow, deny); return item; };
   const renderChat = () => { chat.replaceChildren(); const conversation = active(); renderComposer(); const plan = planView(conversation && activePlans.get(conversation.id)); if (plan) chat.append(plan); if (!conversation || !conversation.messages.length) { const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = 'Select a local model in Settings, then ask about the workspace. Use Plan for read-only investigation and Agent when you want the agent to change files or run commands.'; chat.append(empty); renderTelemetry(); return; } conversation.messages.forEach((item) => { const view = message(item.role, item.content, item.attachments || [], isStreaming(conversation.id)); chat.append(view.element); }); const activeTool = activeTools.get(conversation.id); if (activeTool) { const item = document.createElement('div'); item.className = 'tool'; item.textContent = 'Running tool: ' + activeTool; chat.append(item); } const approval = pendingApprovals.get(conversation.id); if (approval) chat.append(pendingApprovalView(conversation.id, approval)); chat.scrollTop = chat.scrollHeight; renderTelemetry(); };
   const addMessage = (role, content, attachments) => { const conversation = current(); conversation.messages.push({ role, content, ...(attachments && attachments.length ? { attachments } : {}) }); conversation.updatedAt = new Date().toISOString(); if (role === 'user' && conversation.title === 'New conversation') conversation.title = content.replace(/\s+/g, ' ').slice(0, 32) || conversation.title; persist(); renderHistory(); renderChat(); return conversation.messages.length - 1; };
-  const parsedMcpServers = () => { const source = mcpServers.value.trim(); if (!source) return {}; const parsed = JSON.parse(source); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('MCP servers must be a JSON object.'); for (const [name, server] of Object.entries(parsed)) { if (!server || typeof server !== 'object' || typeof server.command !== 'string' || !server.command.trim()) throw new Error('MCP server ' + name + ' needs a command.'); } return parsed; };
-  const configurationValue = () => { const cloud = selectedCloudProvider(); const metadata = selectedModelMetadata(); return { provider: provider.value, baseUrl: cloud ? cloud.baseUrl : endpoint.value.trim(), model: model.value.trim(), ...(cloud && providerAccount.value ? { credentialAccountId: providerAccount.value } : {}), mode: configuration ? configuration.mode : 'chat', permission: permission.value, contextWindow: cloud ? (metadata?.contextWindow || 8192) : configuredContextWindow(), internetAccess: internetAccess.value === 'true', mcpServers: parsedMcpServers() }; };
+  const configurationValue = () => { const cloud = selectedCloudProvider(); const metadata = selectedModelMetadata(); return { provider: provider.value, baseUrl: cloud ? cloud.baseUrl : endpoint.value.trim(), model: model.value.trim(), ...(cloud && providerAccount.value ? { credentialAccountId: providerAccount.value } : {}), mode: configuration ? configuration.mode : 'chat', permission: permission.value, contextWindow: cloud ? (metadata?.contextWindow || 8192) : configuredContextWindow(), internetAccess: internetAccess.value === 'true', mcpServers: configuration?.mcpServers || {} }; };
   const postConfigure = () => vscode.postMessage({ type: 'configure', configuration: configurationValue() });
   const beginStream = () => { streamStartedAt = performance.now(); generatedTokens = 0; renderTelemetry(); };
   const slashQuery = () => { const beforeCursor = prompt.value.slice(0, prompt.selectionStart || prompt.value.length); const match = beforeCursor.match(/(?:^|\s)@\/([^\s]*)$/); return match ? { start: beforeCursor.length - match[1].length - 2, query: match[1] } : undefined; };
@@ -2008,8 +1819,8 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
   const toAttachment = async (file) => { if (!file.name) throw new Error('The selected file has no name.'); if (file.size > 4 * 1024 * 1024) throw new Error(file.name + ' exceeds the 4 MB attachment limit.'); if (file.type.startsWith('image/')) { if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) throw new Error(file.name + ' uses an unsupported image type.'); const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Unable to read ' + file.name)); reader.onerror = () => reject(new Error('Unable to read ' + file.name)); reader.readAsDataURL(file); }); return { id: 'attachment-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), kind: 'image', name: file.name, mediaType: file.type, data, size: file.size }; } if (!(file.type.startsWith('text/') || /\.(md|mdx|txt|json|jsonc|ya?ml|toml|ini|cfg|conf|csv|ts|tsx|js|jsx|mjs|cjs|css|html?|xml|svg|py|go|rs|java|php|rb|sh|sql)$/i.test(file.name))) throw new Error(file.name + ' is not a supported text file.'); const text = await file.text(); if (text.includes('\u0000')) throw new Error(file.name + ' appears to be binary.'); return { id: 'attachment-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), kind: 'file', name: file.name, mediaType: file.type || 'text/plain', text: text.slice(0, 120000), size: file.size }; };
   const addFiles = async (files) => { const selected = [...files]; if (!selected.length) return; if (pendingAttachments.length + selected.length > 5) { status.textContent = 'Attach up to five files.'; return; } if (pendingAttachments.reduce((total, item) => total + item.size, 0) + selected.reduce((total, item) => total + item.size, 0) > 12 * 1024 * 1024) { status.textContent = 'Attachments exceed the 12 MB total limit.'; return; } try { pendingAttachments = [...pendingAttachments, ...await Promise.all(selected.map(toAttachment))]; renderAttachments(); } catch (error) { status.textContent = error && error.message ? error.message : String(error); } };
   const sendChat = (text) => { const conversation = current(); if (isStreaming(conversation.id)) return; const history = conversation.messages.map((message) => ({ role: message.role, content: message.content, ...(message.attachments ? { attachments: message.attachments } : {}) })); const attachments = pendingAttachments; streamingConversationIds.add(conversation.id); addMessage('user', text, attachments); addMessage('assistant', ''); prompt.value = ''; attachmentInput.value = ''; pendingAttachments = []; renderAttachments(); slashMenu.hidden = true; beginStream(); vscode.postMessage({ type: 'send', prompt: text, conversationId: conversation.id, history, attachments, attachedPaths: attachedPaths(text) }); };
-  const headerAction = document.getElementById('headerAction'); const settingsAction = headerAction.querySelector('option[value="settings"]'); const setSettingsOpen = (open) => { settings.classList.toggle('open', open); settingsAction.textContent = open ? 'Hide settings' : 'Settings'; }; headerAction.onchange = () => { const action = headerAction.value; headerAction.value = ''; if (action === 'new') { addConversation(); renderHistory(); renderChat(); vscode.postMessage({ type: 'newConversation' }); } if (action === 'settings') setSettingsOpen(!settings.classList.contains('open')); if (action === 'help') sendChat('/help'); if (action === 'trussGo') vscode.postMessage({ type: 'connectTrussGo' }); }; document.getElementById('manageMcp').onclick = () => vscode.postMessage({ type: 'manageMcp' });
-  document.getElementById('refresh').onclick = () => { try { if (selectedCloudProvider()) setProviderStatus(providerApiKey.value.trim() ? 'Discovering models from the provider…' : 'Checking the saved provider key…'); vscode.postMessage({ type: 'discover', configuration: configurationValue(), ...(providerApiKey.value.trim() ? { apiKey: providerApiKey.value } : {}) }); } catch (error) { mcpStatus.textContent = error.message || String(error); } }; document.getElementById('apply').onclick = () => { try { mcpStatus.textContent = 'MCP connections restart when the agent runs.'; postConfigure(); } catch (error) { mcpStatus.textContent = error.message || String(error); } };
+  const headerAction = document.getElementById('headerAction'); const settingsAction = headerAction.querySelector('option[value="settings"]'); const setSettingsOpen = (open) => { settings.classList.toggle('open', open); settingsAction.textContent = open ? 'Hide settings' : 'Settings'; }; headerAction.onchange = () => { const action = headerAction.value; headerAction.value = ''; if (action === 'new') { addConversation(); renderHistory(); renderChat(); vscode.postMessage({ type: 'newConversation' }); } if (action === 'settings') setSettingsOpen(!settings.classList.contains('open')); if (action === 'help') sendChat('/help'); if (action === 'trussGo') vscode.postMessage({ type: 'connectTrussGo' }); };
+  document.getElementById('refresh').onclick = () => { try { if (selectedCloudProvider()) setProviderStatus(providerApiKey.value.trim() ? 'Discovering models from the provider…' : 'Checking the saved provider key…'); vscode.postMessage({ type: 'discover', configuration: configurationValue(), ...(providerApiKey.value.trim() ? { apiKey: providerApiKey.value } : {}) }); } catch (error) { status.textContent = error.message || String(error); } }; document.getElementById('apply').onclick = () => { try { postConfigure(); } catch (error) { status.textContent = error.message || String(error); } };
   document.getElementById('saveProviderAccount').onclick = () => { try { const cloud = selectedCloudProvider(); if (!cloud) return; const next = configurationValue(); if (!next.model) return setProviderStatus('Enter a model ID before saving this account.', 'failed'); if (!providerApiKey.value.trim()) return setProviderStatus('Enter an API key before saving this account.', 'failed'); vscode.postMessage({ type: 'saveProviderAccount', provider: cloud.id, accountId: providerAccount.value || undefined, accountLabel: providerAccountLabel.value.trim(), apiKey: providerApiKey.value, configuration: next }); } catch (error) { setProviderStatus(error.message || String(error), 'failed'); } };
   document.getElementById('testProviderConnection').onclick = () => { try { const cloud = selectedCloudProvider(); if (cloud) setProviderStatus('Testing provider connection…'); vscode.postMessage({ type: 'testProviderConnection', configuration: configurationValue(), ...(providerApiKey.value.trim() ? { apiKey: providerApiKey.value } : {}) }); } catch (error) { setProviderStatus(error.message || String(error), 'failed'); } };
   document.getElementById('removeProviderAccount').onclick = () => { if (!providerAccount.value) return setProviderStatus('Choose a saved account before removing a key.', 'failed'); vscode.postMessage({ type: 'removeProviderAccount', accountId: providerAccount.value }); };
@@ -2042,8 +1853,6 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
       permission.value = configuration.permission;
       internetAccess.value = configuration.internetAccess ? 'true' : 'false';
       contextWindow.value = configuration.contextWindow || 8192;
-      mcpServers.value = Object.keys(configuration.mcpServers || {}).length ? JSON.stringify(configuration.mcpServers, null, 2) : '';
-      mcpStatus.textContent = Object.keys(configuration.mcpServers || {}).length ? Object.keys(configuration.mcpServers).length + ' MCP server(s) configured.' : 'No MCP servers configured.';
       modelOptions.replaceChildren(...discoveredModels.map((entry) => { const option = document.createElement('option'); option.value = entry.id; option.label = entry.contextWindow ? entry.id + ' · ' + formatTokens(entry.contextWindow) + ' context' : entry.id; return option; }));
       renderModelPicker();
       const quickModels = sortedModelIds([configuration.model, ...discoveredModels.map((entry) => entry.id)]);
@@ -2057,7 +1866,6 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
       renderTelemetry();
     }
     if (message.type === 'conversations') { state.conversations = message.state.conversations || []; state.activeId = message.state.activeId; vscode.setState(state); renderHistory(); renderChat(); }
-    if (message.type === 'mcpDiagnostic') { mcpStatus.textContent = message.message; }
     if (message.type === 'workspaceFiles') { workspaceFiles = Array.isArray(message.files) ? message.files : []; }
     if (message.type === 'plan') { const conversation = message.conversationId ? byId(message.conversationId) : active(); if (conversation) { activePlans.set(conversation.id, message.plan); if (conversation.id === state.activeId) renderChat(); } }
     if (message.type === 'assistantStart') { const conversation = byId(message.conversationId); if (conversation) { streamingConversationIds.add(conversation.id); renderHistory(); if (conversation.id === state.activeId) renderChat(); } }

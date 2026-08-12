@@ -22,7 +22,7 @@ control plane.
 | CLI | Scripts and focused coding tasks | npm install --global @truss-harness/cli |
 | Terminal UI | Keyboard-first work in the terminal | npm install --global @truss-harness/tui |
 | Neovim | Native Chat, Plan, and Edit with explicit bounded editor context | [Install truss.nvim](packages/neovim/README.md) |
-| VS Code | Chat, file context, completions, and approvals in the editor | [Install from the Marketplace](https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode) |
+| VS Code | Chat, file context, completions, and approvals in the editor | [Download the VSIX](https://truss-agent.com/download) |
 | Desktop | A dedicated workspace with files, diffs, terminal, Git, and chat | [Download Truss Desktop](https://truss-agent.com/download) |
 | Truss Go | Continue a trusted Desktop or VS Code session from Android | [Explore Truss Go](https://truss-agent.com/truss-go) |
 
@@ -62,7 +62,7 @@ truss-tui
 
 ![Truss running inside VS Code](packages/docs/public/screenshots/vscode.png)
 
-Install the [Truss VS Code extension](https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode), open the Truss Activity Bar view, then select a detected local server or enter your endpoint and model. The extension supports streaming chat, focused file context, inline completions, agent modes, Git-aware actions, and tool approvals.
+Download the [Truss VS Code extension](https://truss-agent.com/download), install the signed `.vsix`, and open the Truss Activity Bar view. Then select a detected local server or enter your endpoint and model. The extension supports streaming chat, focused file context, inline completions, agent modes, Git-aware actions, and tool approvals.
 
 ### Neovim
 
