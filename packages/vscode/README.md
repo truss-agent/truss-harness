@@ -10,13 +10,9 @@ Run **Truss: Configure BYOK Provider** from the Command Palette. Choose OpenAI, 
 
 Install [**Truss for VS Code**](https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode) from the Marketplace, then open the Truss icon in the Activity Bar. The extension includes its runtime service, so the CLI is not required.
 
-In **Settings**, select a detected local server or enter an endpoint, refresh models, and set the context window, permission policy, and optional internet research access. Use the bottom control bar to switch models and agent modes during a session. Agent responses render Markdown and formatted code blocks. Type `@/` in the chat composer to fuzzy-search workspace files; choose a file with arrow keys and Enter or Tab to attach its bounded contents to the next prompt. Slash commands such as `/status`, `/update`, and `/help` remain reserved for local workspace actions.
+Manual `.vsix` installs check the signed VS Code releases on startup at most once per day and notify you when a newer build is available. Run **Truss: Check for Updates** from the Command Palette to check immediately; the update notice links directly to the signed VSIX and its GitHub Release.
 
-Use **Truss: Manage MCP Servers** or the **Manage MCP** Settings button to add,
-edit, enable/disable, test, inspect, or remove local stdio servers. Testing is
-isolated from the active agent and reports only safe lifecycle/tool metadata.
-The JSON field remains available as an advanced import/export path. Agent mode
-loads enabled servers and Chat and Plan modes load only servers marked `readOnly`.
+In **Settings**, select a detected local server or enter an endpoint, refresh models, and set the context window, permission policy, and optional internet research access. Use the bottom control bar to switch models and agent modes during a session. Agent responses render Markdown and formatted code blocks. Type `@/` in the chat composer to fuzzy-search workspace files; choose a file with arrow keys and Enter or Tab to attach its bounded contents to the next prompt. Slash commands such as `/status`, `/update`, and `/help` remain reserved for local workspace actions.
 
 ## Side panel
 

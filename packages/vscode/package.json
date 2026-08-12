@@ -21,12 +21,13 @@
     "Other"
   ],
   "activationEvents": [
+    "onStartupFinished",
     "onView:trussHarness.chat",
     "onCommand:trussHarness.openChat",
     "onCommand:trussHarness.openAgentControlCenter",
     "onCommand:trussHarness.connectTrussGo",
     "onCommand:trussHarness.configureByokProvider",
-    "onCommand:trussHarness.manageMcpServers",
+    "onCommand:trussHarness.checkForUpdates",
     "onCommand:trussHarness.testProviderConnection",
     "onCommand:trussHarness.removeByokCredential",
     "onCommand:trussHarness.generateCommitMessage",
@@ -84,8 +85,8 @@
         "title": "Truss: Test Provider Connection"
       },
       {
-        "command": "trussHarness.manageMcpServers",
-        "title": "Truss: Manage MCP Servers"
+        "command": "trussHarness.checkForUpdates",
+        "title": "Truss: Check for Updates"
       },
       {
         "command": "trussHarness.removeByokCredential",
