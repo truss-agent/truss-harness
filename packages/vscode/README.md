@@ -8,7 +8,7 @@ Run **Truss: Configure BYOK Provider** from the Command Palette. Choose OpenAI, 
 
 ## Install
 
-Install [**Truss for VS Code**](https://marketplace.visualstudio.com/items?itemName=truss-harness.truss-harness-vscode) from the Marketplace, then open the Truss icon in the Activity Bar. The extension includes its runtime service, so the CLI is not required.
+Download [**Truss for VS Code**](https://truss-agent.com/download), then open Extensions in VS Code, choose the **…** menu, select **Install from VSIX…**, and choose the downloaded file. Open the Truss icon in the Activity Bar after installation. The extension includes its runtime service, so the CLI is not required.
 
 Manual `.vsix` installs check the signed VS Code releases on startup at most once per day and notify you when a newer build is available. Run **Truss: Check for Updates** from the Command Palette to check immediately; the update notice links directly to the signed VSIX and its GitHub Release.
 
@@ -74,7 +74,7 @@ Truss registers VS Code inline completions for editor documents. When a completi
 | `trussHarness.model` | Optional model identifier fallback. The panel's workspace state takes precedence. |
 | `trussHarness.baseUrl` | Optional local endpoint fallback. The panel's workspace state takes precedence. |
 
-## Package for the Marketplace
+## Package a VSIX
 
 The extension is bundled before packaging so its runtime dependencies are included. From this package directory, run:
 
@@ -82,7 +82,7 @@ The extension is bundled before packaging so its runtime dependencies are includ
 npm run package
 ```
 
-This produces a `.vsix` file for local installation or Marketplace submission. Set the final `publisher`, `name`, version, repository links, and a PNG Marketplace icon before publishing under an organization account.
+This produces a `.vsix` file for local validation and GitHub Release delivery. Official release assets are built by GitHub Actions from a matching `vscode-v*` tag.
 
 ## License and contributions
 
