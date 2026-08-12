@@ -13,6 +13,7 @@ import { AgentCoordinator, ApiKeyCredential, defaultProviderAccountId, executeWo
 import { createPairingUri, detectLanAddress } from "@truss-harness/gateway";
 import QRCode from "qrcode";
 import * as vscode from "vscode";
+import { ConversationRunRegistry } from "./conversation-runs.js";
 
 const execFile = promisify(execFileCallback);
 
@@ -178,12 +179,18 @@ type WebviewRequest =
       readonly apiKey?: string;
     }
   | { readonly type: "send"; readonly prompt: string; readonly conversationId: string; readonly history: readonly ConversationMessage[]; readonly attachments?: readonly ChatAttachment[]; readonly attachedPaths?: readonly string[] }
-  | { readonly type: "stop" }
+  | { readonly type: "stop"; readonly conversationId: string }
   | { readonly type: "newConversation" }
   | { readonly type: "selectConversation"; readonly conversationId: string }
   | { readonly type: "deleteConversation"; readonly conversationId: string }
   | { readonly type: "saveConversations"; readonly state: StoredConversationState }
-  | { readonly type: "toolApproval"; readonly callId: string; readonly approved: boolean }
+  | {
+      readonly type: "toolApproval";
+      readonly conversationId: string;
+      readonly requestId: string;
+      readonly callId: string;
+      readonly approved: boolean;
+    }
   | { readonly type: "connectTrussGo" }
   | { readonly type: "manageMcp" };
 
@@ -519,9 +526,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel(brand.productName);
   let view: vscode.WebviewView | undefined;
   let service: RuntimeService | undefined;
-  let sessionId: string | undefined;
-  let activeChatRequest: string | undefined;
-  let activeChatConversationId: string | undefined;
+  const activeChatRuns = new ConversationRunRegistry();
+  const cancelledConversationIds = new Set<string>();
+  const deletedConversationIds = new Set<string>();
   const liveSessionIds = new Map<string, string>();
   const inlineBuffers = new Map<string, string>();
   let configuration = normalizeConfiguration(context.workspaceState.get("modelConfiguration"));
@@ -1080,12 +1087,16 @@ export function activate(context: vscode.ExtensionContext): void {
     void view?.webview.postMessage(message).then(undefined, () => undefined);
   };
   const disposeService = (): void => {
+    const activeRuns = activeChatRuns.clear();
+    cancelledConversationIds.clear();
     service?.dispose();
     service = undefined;
-    sessionId = undefined;
-    activeChatRequest = undefined;
-    activeChatConversationId = undefined;
     liveSessionIds.clear();
+    for (const run of activeRuns) {
+      if (!deletedConversationIds.has(run.conversationId)) {
+        post({ type: "assistantEnd", conversationId: run.conversationId, aborted: true });
+      }
+    }
   };
   const startService = async (): Promise<RuntimeService> => {
     if (service) return service;
@@ -1102,16 +1113,20 @@ export function activate(context: vscode.ExtensionContext): void {
       ...(await runtimeEnvironment()),
       ...(configuredCommand ? {} : { ELECTRON_RUN_AS_NODE: "1" })
     }, (message) => {
-      if (message.event.type === "plan_updated" && message.event.plan) post({ type: "plan", plan: message.event.plan });
-      if (message.requestId === activeChatRequest) {
-        if (message.event.type === "text_delta") post({ type: "delta", conversationId: activeChatConversationId, text: message.event.text ?? "" });
+      const conversationId = activeChatRuns.conversationForRequest(message.requestId);
+      if (conversationId && deletedConversationIds.has(conversationId)) return;
+      if (conversationId && message.event.type === "plan_updated" && message.event.plan) {
+        post({ type: "plan", conversationId, plan: message.event.plan });
+      }
+      if (conversationId) {
+        if (message.event.type === "text_delta") post({ type: "delta", conversationId, text: message.event.text ?? "" });
         if (message.event.type === "tool_call_requested") {
           const tool = message.event.tool ?? "unknown";
           const isReadOnly = ["read_file", "list_directory", "search_files", "grep"].includes(tool);
           const requiresApproval = configuration.permission === "ask" || (configuration.permission === "auto-read" && !isReadOnly);
           post(requiresApproval
-            ? { type: "approval", conversationId: activeChatConversationId, callId: message.event.callId, tool, input: message.event.input ?? {} }
-            : { type: "tool", conversationId: activeChatConversationId, tool });
+            ? { type: "approval", conversationId, requestId: message.requestId, callId: message.event.callId, tool, input: message.event.input ?? {} }
+            : { type: "tool", conversationId, tool });
         }
       }
       const buffer = inlineBuffers.get(message.requestId);
@@ -1194,30 +1209,56 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const sendPrompt = async (prompt: string, conversationId: string, history: readonly ConversationMessage[], attachments?: readonly ChatAttachment[], attachedPaths?: readonly string[]): Promise<void> => {
     if (!prompt.trim()) return;
-    const command = await executeWorkspaceCommand({ workspaceRoot: workspaceRoot(), input: prompt });
-    if (command.handled) {
-      post({ type: "delta", conversationId, text: command.message });
-      post({ type: "assistantEnd", conversationId });
+    if (activeChatRuns.requestForConversation(conversationId)) {
+      post({ type: "error", conversationId, message: "That conversation already has an active run." });
       return;
     }
-    const current = await startService();
-    sessionId = liveSessionIds.get(conversationId) ?? await current.createSession(normalizeHistory(history));
-    liveSessionIds.set(conversationId, sessionId);
-    post({ type: "assistantStart", conversationId });
-    const run = current.run(prompt, sessionId, await workspaceFileContext(attachedPaths), attachments);
-    activeChatRequest = run.requestId;
-    activeChatConversationId = conversationId;
+    cancelledConversationIds.delete(conversationId);
+    deletedConversationIds.delete(conversationId);
+    let run: RunHandle | undefined;
+    let aborted = false;
+    let handledWorkspaceCommand = false;
     try {
+      const command = await executeWorkspaceCommand({ workspaceRoot: workspaceRoot(), input: prompt });
+      if (command.handled) {
+        handledWorkspaceCommand = true;
+        post({ type: "delta", conversationId, text: command.message });
+        return;
+      }
+      const current = await startService();
+      const sessionId = liveSessionIds.get(conversationId) ?? await current.createSession(normalizeHistory(history));
+      liveSessionIds.set(conversationId, sessionId);
+      if (cancelledConversationIds.delete(conversationId)) {
+        aborted = true;
+        return;
+      }
+      run = current.run(prompt, sessionId, await workspaceFileContext(attachedPaths), attachments);
+      try {
+        activeChatRuns.start(conversationId, run.requestId);
+      } catch (error) {
+        current.abort(run.requestId);
+        throw error;
+      }
+      post({ type: "assistantStart", conversationId });
       const response = await run.result;
-      sessionId = response.result.sessionId ?? sessionId;
-      if (sessionId) liveSessionIds.set(conversationId, sessionId);
-      post({ type: "session", conversationId });
-      post({ type: "assistantEnd", conversationId, aborted: response.result.aborted === true });
+      const resolvedSessionId = response.result.sessionId ?? sessionId;
+      if (resolvedSessionId && !deletedConversationIds.has(conversationId)) {
+        liveSessionIds.set(conversationId, resolvedSessionId);
+      }
+      aborted = response.result.aborted === true;
+      if (!deletedConversationIds.has(conversationId)) post({ type: "session", conversationId });
     } catch (error) {
-      post({ type: "error", conversationId, message: error instanceof Error ? error.message : String(error) });
+      if (!deletedConversationIds.has(conversationId)) {
+        post({ type: "error", conversationId, message: error instanceof Error ? error.message : String(error) });
+      }
     } finally {
-      activeChatRequest = undefined;
-      activeChatConversationId = undefined;
+      const finished = run ? activeChatRuns.finish(run.requestId) : undefined;
+      if (
+        !deletedConversationIds.has(conversationId) &&
+        (handledWorkspaceCommand || finished || !run)
+      ) {
+        post({ type: "assistantEnd", conversationId, aborted });
+      }
     }
   };
 
@@ -1413,24 +1454,33 @@ ${diff}`);
           await sendPrompt(message.prompt, message.conversationId, message.history, message.attachments, message.attachedPaths);
           break;
         case "stop":
-          if (activeChatRequest) service?.abort(activeChatRequest);
+          {
+            const activeRequestId = activeChatRuns.requestForConversation(
+              message.conversationId,
+            );
+            if (activeRequestId) service?.abort(activeRequestId);
+            else cancelledConversationIds.add(message.conversationId);
+          }
           break;
         case "newConversation":
-          sessionId = undefined;
           post({ type: "conversationReset" });
           break;
         case "selectConversation":
-          sessionId = liveSessionIds.get(message.conversationId);
           break;
         case "deleteConversation": {
           const wasActive = conversations.activeId === message.conversationId;
-          if (activeChatConversationId === message.conversationId && activeChatRequest) service?.abort(activeChatRequest);
+          cancelledConversationIds.add(message.conversationId);
+          deletedConversationIds.add(message.conversationId);
+          const activeRequestId = activeChatRuns.requestForConversation(message.conversationId);
+          if (activeRequestId) {
+            service?.abort(activeRequestId);
+            activeChatRuns.finish(activeRequestId);
+          }
           conversations = normalizeConversationState({
             conversations: conversations.conversations.filter((conversation) => conversation.id !== message.conversationId),
             activeId: wasActive ? conversations.conversations.find((conversation) => conversation.id !== message.conversationId)?.id : conversations.activeId
           });
           liveSessionIds.delete(message.conversationId);
-          if (wasActive) sessionId = conversations.activeId ? liveSessionIds.get(conversations.activeId) : undefined;
           await context.workspaceState.update("conversations", conversations);
           sendConversationState();
           break;
@@ -1439,7 +1489,9 @@ ${diff}`);
           await saveConversations(message.state);
           break;
         case "toolApproval":
-          if (activeChatRequest) service?.approve(activeChatRequest, message.callId, message.approved);
+          if (activeChatRuns.conversationForRequest(message.requestId) === message.conversationId) {
+            service?.approve(message.requestId, message.callId, message.approved);
+          }
           break;
         case "connectTrussGo":
           await connectTrussGo().catch((error: unknown) => post({ type: "error", message: error instanceof Error ? error.message : String(error) }));
@@ -1615,7 +1667,7 @@ ${diff}`);
   context.subscriptions.push(vscode.commands.registerCommand("trussHarness.clearWorkspaceMemory", () => runWorkspaceCommand("/clear-memory")));
   context.subscriptions.push(vscode.languages.registerInlineCompletionItemProvider({ pattern: "**" }, {
     provideInlineCompletionItems: async (document, position, _context, cancellationToken) => {
-      if (!configuration.model || activeChatRequest || cancellationToken.isCancellationRequested) return undefined;
+      if (!configuration.model || cancellationToken.isCancellationRequested) return undefined;
       const prefixStart = new vscode.Position(Math.max(0, position.line - 16), 0);
       const prefix = document.getText(new vscode.Range(prefixStart, position));
       const suffixEnd = new vscode.Position(Math.min(document.lineCount - 1, position.line + 6), document.lineAt(Math.min(document.lineCount - 1, position.line + 6)).range.end.character);
@@ -1876,23 +1928,26 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
 </section>
 <main id="workspace"><aside id="history"><div class="history-title">Conversations</div></aside><section id="chat"><div class="empty">Select a local model in Settings, then ask about the workspace. Use Plan for read-only investigation and Agent when you want the agent to change files or run commands.</div></section></main>
 <form id="composer"><div id="slashMenu" role="listbox" hidden></div><div id="attachments" hidden></div><input id="attachmentInput" type="file" multiple hidden><button id="attach" type="button" title="Attach images or text files">Attach files</button><div id="composerRow"><textarea id="prompt" placeholder="Ask about this workspace. Type @/ to attach a file; /help for commands." rows="2"></textarea><button id="stop" type="button">Cancel</button><button id="send" class="primary" type="submit">Send</button></div></form>
-<section id="agentControls" aria-label="Agent controls"><div class="segmented" aria-label="Agent mode"><button data-mode="chat">Chat</button><button data-mode="plan">Plan</button><button data-mode="edit">Agent</button></div><label class="quick-model"><span>MODEL</span><select id="quickModel" title="Switch local model"></select></label><span id="modelStatus">Choose a local model</span></section>
+  <section id="agentControls" aria-label="Agent controls"><div class="segmented" aria-label="Agent mode"><button data-mode="chat">Chat</button><button data-mode="plan">Plan</button><button data-mode="edit">Agent</button></div><label class="quick-model"><span>MODEL</span><select id="quickModel" title="Switch local model"><option value="">Choose model</option></select></label><span id="modelStatus">Choose a local model</span></section>
 <script nonce="${nonce}">
-  const vscode = acquireVsCodeApi(); const savedState = vscode.getState(); const state = savedState && typeof savedState === 'object' && Array.isArray(savedState.conversations) ? savedState : { conversations: [], activeId: undefined }; state.conversations = state.conversations.filter((item) => item && typeof item === 'object' && typeof item.id === 'string').map((item) => ({ ...item, title: typeof item.title === 'string' ? item.title : 'Conversation', messages: Array.isArray(item.messages) ? item.messages.filter((message) => message && (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string') : [], updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : new Date().toISOString() })); if (!state.conversations.some((item) => item.id === state.activeId)) state.activeId = state.conversations[0]?.id; vscode.setState(state); const history = document.getElementById('history'); const chat = document.getElementById('chat'); const settings = document.getElementById('settings'); const status = document.getElementById('modelStatus'); let persistTimer; let activePlan;
+  const vscode = acquireVsCodeApi(); const savedState = vscode.getState(); const state = savedState && typeof savedState === 'object' && Array.isArray(savedState.conversations) ? savedState : { conversations: [], activeId: undefined }; state.conversations = state.conversations.filter((item) => item && typeof item === 'object' && typeof item.id === 'string').map((item) => ({ ...item, title: typeof item.title === 'string' ? item.title : 'Conversation', messages: Array.isArray(item.messages) ? item.messages.filter((message) => message && (message.role === 'user' || message.role === 'assistant') && typeof message.content === 'string') : [], updatedAt: typeof item.updatedAt === 'string' ? item.updatedAt : new Date().toISOString() })); if (!state.conversations.some((item) => item.id === state.activeId)) state.activeId = state.conversations[0]?.id; vscode.setState(state); const history = document.getElementById('history'); const chat = document.getElementById('chat'); const settings = document.getElementById('settings'); const status = document.getElementById('modelStatus'); let persistTimer; const activePlans = new Map(); const streamingConversationIds = new Set(); const activeTools = new Map(); const pendingApprovals = new Map();
   const server = document.getElementById('server'); const provider = document.getElementById('provider'); const endpoint = document.getElementById('endpoint'); const model = document.getElementById('model'); const modelOptions = document.getElementById('models'); const modelPickerButton = document.getElementById('modelPickerButton'); const modelPickerMenu = document.getElementById('modelPickerMenu'); const modelPickerSearch = document.getElementById('modelPickerSearch'); const modelPickerOptions = document.getElementById('modelPickerOptions'); const quickModel = document.getElementById('quickModel'); const permission = document.getElementById('permission'); const internetAccess = document.getElementById('internetAccess'); const contextWindow = document.getElementById('contextWindow'); const contextValue = document.getElementById('contextValue'); const contextMeter = document.getElementById('contextMeter'); const rateValue = document.getElementById('rateValue'); const mcpServers = document.getElementById('mcpServers'); const mcpStatus = document.getElementById('mcpStatus'); const prompt = document.getElementById('prompt'); const slashMenu = document.getElementById('slashMenu'); const attachmentInput = document.getElementById('attachmentInput'); const attachmentView = document.getElementById('attachments'); let configuration; let streamStartedAt = 0; let generatedTokens = 0; let workspaceFiles = []; let slashResults = []; let slashIndex = 0; let pendingAttachments = [];
   const providerAccount = document.getElementById('providerAccount'); const providerAccountLabel = document.getElementById('providerAccountLabel'); const providerApiKey = document.getElementById('providerApiKey'); const providerStatus = document.getElementById('providerStatus'); const contextWindowLabel = document.getElementById('contextWindowLabel'); let cloudProviders = []; let providerAccounts = []; let discoveredModels = [];
-  const persist = () => { vscode.setState(state); clearTimeout(persistTimer); persistTimer = setTimeout(() => vscode.postMessage({ type: 'saveConversations', state: { conversations: state.conversations, activeId: state.activeId } }), 250); }; const active = () => state.conversations.find((item) => item.id === state.activeId); const byId = (conversationId) => state.conversations.find((item) => item.id === conversationId); const id = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  const persist = () => { vscode.setState(state); clearTimeout(persistTimer); persistTimer = setTimeout(() => vscode.postMessage({ type: 'saveConversations', state: { conversations: state.conversations, activeId: state.activeId } }), 250); }; const active = () => state.conversations.find((item) => item.id === state.activeId); const byId = (conversationId) => state.conversations.find((item) => item.id === conversationId); const isStreaming = (conversationId) => Boolean(conversationId && streamingConversationIds.has(conversationId)); const renderComposer = () => document.body.classList.toggle('streaming', isStreaming(active()?.id)); const id = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   const addConversation = () => { const conversation = { id: id(), title: 'New conversation', messages: [], updatedAt: new Date().toISOString() }; state.conversations.unshift(conversation); state.activeId = conversation.id; persist(); return conversation; };
   const current = () => active() || addConversation();
   const estimateTokens = (value) => value.trim() ? Math.ceil(value.trim().length / 4) : 0;
   const formatTokens = (value) => value >= 1000 ? (value / 1000).toFixed(value >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k' : String(Math.round(value));
+  const compareModelIds = (left, right) => left.localeCompare(right, undefined, { numeric: true, sensitivity: 'base' });
+  const sortedModelIds = (values) => [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort(compareModelIds);
+  const sortedModelEntries = (values) => [...values].sort((left, right) => compareModelIds(left.id, right.id));
   const configuredContextWindow = () => Math.max(512, Math.min(1000000, Number.parseInt(contextWindow.value, 10) || 8192));
   const selectedCloudProvider = () => cloudProviders.find((candidate) => candidate.id === provider.value);
   const selectedProviderAccount = () => providerAccounts.find((candidate) => candidate.id === providerAccount.value && candidate.providerId === provider.value);
   const selectedModelMetadata = () => discoveredModels.find((candidate) => candidate.id === model.value.trim());
   const formatUsd = (amount) => amount < .01 ? '$' + amount.toFixed(4) : '$' + amount.toFixed(amount < 1 ? 3 : 2);
   const modelPickerMetadata = (entry) => { const values = []; if (entry.contextWindow) values.push(formatTokens(entry.contextWindow) + ' ctx'); if (entry.inputCostPerMillion !== undefined && entry.outputCostPerMillion !== undefined) values.push(formatUsd(entry.inputCostPerMillion) + ' in / ' + formatUsd(entry.outputCostPerMillion) + ' out'); return values.join(' · '); };
-  const renderModelPicker = () => { const query = modelPickerSearch.value.trim().toLowerCase(); const matches = discoveredModels.filter((entry) => entry.id.toLowerCase().includes(query)).slice(0, 250); const selected = selectedModelMetadata(); modelPickerButton.textContent = selected ? selected.id : discoveredModels.length ? 'Choose a discovered model' : 'Discover models to choose one'; modelPickerButton.title = selected ? modelPickerMetadata(selected) || selected.id : ''; modelPickerOptions.replaceChildren(); if (!matches.length) { const empty = document.createElement('div'); empty.className = 'model-picker-empty'; empty.textContent = discoveredModels.length ? 'No discovered models match that filter.' : 'Use Discover models after selecting a provider.'; modelPickerOptions.append(empty); return; } matches.forEach((entry) => { const option = document.createElement('button'); option.type = 'button'; option.className = 'model-picker-option'; option.setAttribute('role', 'option'); option.setAttribute('aria-selected', String(entry.id === model.value.trim())); const name = document.createElement('span'); name.className = 'model-picker-name'; name.textContent = entry.id; const meta = document.createElement('span'); meta.className = 'model-picker-meta'; meta.textContent = modelPickerMetadata(entry) || 'Metadata unavailable'; option.append(name, meta); option.title = entry.id + (meta.textContent ? ' · ' + meta.textContent : ''); option.onclick = () => { model.value = entry.id; modelPickerSearch.value = ''; modelPickerMenu.hidden = true; modelPickerButton.setAttribute('aria-expanded', 'false'); syncProviderPresentation(providerAccount.value); renderModelPicker(); }; modelPickerOptions.append(option); }); };
+  const renderModelPicker = () => { const query = modelPickerSearch.value.trim().toLowerCase(); const matches = sortedModelEntries(discoveredModels).filter((entry) => entry.id.toLowerCase().includes(query)).slice(0, 250); const selected = selectedModelMetadata(); modelPickerButton.textContent = selected ? selected.id : discoveredModels.length ? 'Choose a discovered model' : 'Discover models to choose one'; modelPickerButton.title = selected ? modelPickerMetadata(selected) || selected.id : ''; modelPickerOptions.replaceChildren(); if (!matches.length) { const empty = document.createElement('div'); empty.className = 'model-picker-empty'; empty.textContent = discoveredModels.length ? 'No discovered models match that filter.' : 'Use Discover models after selecting a provider.'; modelPickerOptions.append(empty); return; } matches.forEach((entry) => { const option = document.createElement('button'); option.type = 'button'; option.className = 'model-picker-option'; option.setAttribute('role', 'option'); option.setAttribute('aria-selected', String(entry.id === model.value.trim())); const name = document.createElement('span'); name.className = 'model-picker-name'; name.textContent = entry.id; const meta = document.createElement('span'); meta.className = 'model-picker-meta'; meta.textContent = modelPickerMetadata(entry) || 'Metadata unavailable'; option.append(name, meta); option.title = entry.id + (meta.textContent ? ' · ' + meta.textContent : ''); option.onclick = () => { model.value = entry.id; modelPickerSearch.value = ''; modelPickerMenu.hidden = true; modelPickerButton.setAttribute('aria-expanded', 'false'); syncProviderPresentation(providerAccount.value); renderModelPicker(); }; modelPickerOptions.append(option); }); };
   const setModelPickerOpen = (open) => { modelPickerMenu.hidden = !open; modelPickerButton.setAttribute('aria-expanded', String(open)); if (open) { renderModelPicker(); modelPickerSearch.focus(); } };
   const setProviderStatus = (message, kind = '') => { providerStatus.textContent = message || ''; providerStatus.className = 'cloud-setting provider-status ' + kind; };
   const renderProviderAccounts = (preferredId) => {
@@ -1930,14 +1985,15 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
     renderTelemetry();
   };
   const renderTelemetry = () => { const conversation = active(); const used = (conversation ? conversation.messages.reduce((total, item) => total + estimateTokens(item.content), 0) : 0) + 400; const limit = configuredContextWindow(); const ratio = Math.min(1, used / limit); contextValue.textContent = formatTokens(used) + ' / ' + formatTokens(limit); contextMeter.style.width = (ratio * 100).toFixed(1) + '%'; contextMeter.className = ratio >= .9 ? 'critical' : ratio >= .7 ? 'warning' : ratio > 0 ? 'active' : ''; const elapsed = streamStartedAt ? (performance.now() - streamStartedAt) / 1000 : 0; rateValue.textContent = generatedTokens && elapsed > 0 ? (generatedTokens / elapsed).toFixed(1) + ' tok/s' : '-- tok/s'; };
-  const deleteConversation = (conversationId) => { const conversation = byId(conversationId); if (!conversation) return; const wasActive = state.activeId === conversationId; state.conversations = state.conversations.filter((item) => item.id !== conversationId); if (wasActive) state.activeId = state.conversations[0]?.id; vscode.postMessage({ type: 'deleteConversation', conversationId }); persist(); renderHistory(); renderChat(); };
-  const renderHistory = () => { history.replaceChildren(); const label = document.createElement('div'); label.className = 'history-title'; label.textContent = 'Conversations'; history.append(label); state.conversations.forEach((conversation) => { const row = document.createElement('div'); row.className = 'conversation-row'; const button = document.createElement('button'); button.className = 'conversation' + (conversation.id === state.activeId ? ' active' : ''); button.textContent = conversation.title; button.onclick = () => { state.activeId = conversation.id; persist(); renderHistory(); renderChat(); vscode.postMessage({ type: 'selectConversation', conversationId: conversation.id }); }; const remove = document.createElement('button'); remove.className = 'delete-conversation'; remove.type = 'button'; remove.textContent = 'x'; remove.title = 'Delete conversation'; remove.setAttribute('aria-label', 'Delete ' + conversation.title); remove.onclick = () => deleteConversation(conversation.id); row.append(button, remove); history.append(row); }); };
+  const deleteConversation = (conversationId) => { const conversation = byId(conversationId); if (!conversation) return; const wasActive = state.activeId === conversationId; streamingConversationIds.delete(conversationId); activeTools.delete(conversationId); pendingApprovals.delete(conversationId); activePlans.delete(conversationId); state.conversations = state.conversations.filter((item) => item.id !== conversationId); if (wasActive) state.activeId = state.conversations[0]?.id; vscode.postMessage({ type: 'deleteConversation', conversationId }); persist(); renderHistory(); renderChat(); };
+  const renderHistory = () => { history.replaceChildren(); const label = document.createElement('div'); label.className = 'history-title'; label.textContent = 'Conversations'; history.append(label); state.conversations.forEach((conversation) => { const row = document.createElement('div'); row.className = 'conversation-row'; const button = document.createElement('button'); button.className = 'conversation' + (conversation.id === state.activeId ? ' active' : ''); button.textContent = conversation.title + (isStreaming(conversation.id) ? ' · Working' : ''); button.onclick = () => { state.activeId = conversation.id; persist(); renderHistory(); renderChat(); vscode.postMessage({ type: 'selectConversation', conversationId: conversation.id }); }; const remove = document.createElement('button'); remove.className = 'delete-conversation'; remove.type = 'button'; remove.textContent = 'x'; remove.title = 'Delete conversation'; remove.setAttribute('aria-label', 'Delete ' + conversation.title); remove.onclick = () => deleteConversation(conversation.id); row.append(button, remove); history.append(row); }); renderComposer(); };
   const appendInlineMarkdown = (parent, text) => { const token = /(\`[^\`]*\`)|(\[([^\]]+)\]\(([^\s)]+)\))|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)/g; let cursor = 0; for (const match of text.matchAll(token)) { const index = match.index || 0; if (index > cursor) parent.append(document.createTextNode(text.slice(cursor, index))); if (match[1]) { const code = document.createElement('code'); code.textContent = match[1].slice(1, -1); parent.append(code); } else if (match[2]) { const link = document.createElement('a'); const href = match[4] || ''; link.textContent = match[3] || href; if (/^(https?:|mailto:)/i.test(href)) { link.href = href; link.target = '_blank'; link.rel = 'noreferrer'; } parent.append(link); } else if (match[5]) { const strong = document.createElement('strong'); strong.textContent = match[6] || ''; parent.append(strong); } else if (match[7]) { const emphasis = document.createElement('em'); emphasis.textContent = match[8] || ''; parent.append(emphasis); } cursor = index + match[0].length; } if (cursor < text.length) parent.append(document.createTextNode(text.slice(cursor))); };
   const appendHighlightedCode = (parent, code) => { const token = /(\/\/[^\n]*|#[^\n]*)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|(\b(?:const|let|var|function|return|if|else|for|while|class|interface|type|import|export|from|async|await|new|public|private|static|def|fn|match|use|package)\b)|(\b\d+(?:\.\d+)?\b)/g; let cursor = 0; for (const match of code.matchAll(token)) { const index = match.index || 0; if (index > cursor) parent.append(document.createTextNode(code.slice(cursor, index))); const span = document.createElement('span'); span.className = match[1] ? 'token-comment' : match[2] ? 'token-string' : match[3] ? 'token-keyword' : 'token-number'; span.textContent = match[0]; parent.append(span); cursor = index + match[0].length; } if (cursor < code.length) parent.append(document.createTextNode(code.slice(cursor))); };
   const renderMarkdown = (container, content) => { const lines = content.replace(/\r\n/g, '\n').split('\n'); for (let index = 0; index < lines.length;) { const line = lines[index]; const fence = line.match(/^\`\`\`([^\s]*)\s*$/); if (fence) { const language = fence[1] || 'text'; const code = []; index += 1; while (index < lines.length && !/^\`\`\`\s*$/.test(lines[index])) code.push(lines[index++]); if (index < lines.length) index += 1; const block = document.createElement('div'); block.className = 'code-block'; const label = document.createElement('div'); label.className = 'code-language'; label.textContent = language; const pre = document.createElement('pre'); const codeElement = document.createElement('code'); appendHighlightedCode(codeElement, code.join('\n')); pre.append(codeElement); block.append(label, pre); container.append(block); continue; } const heading = line.match(/^(#{1,4})\s+(.+)$/); if (heading) { const element = document.createElement('h' + heading[1].length); appendInlineMarkdown(element, heading[2]); container.append(element); index += 1; continue; } const list = line.match(/^[-*+]\s+(.+)$/); if (list) { const listElement = document.createElement('ul'); do { const item = document.createElement('li'); appendInlineMarkdown(item, lines[index].replace(/^[-*+]\s+/, '')); listElement.append(item); index += 1; } while (index < lines.length && /^[-*+]\s+/.test(lines[index])); container.append(listElement); continue; } const quote = line.match(/^>\s?(.*)$/); if (quote) { const blockquote = document.createElement('blockquote'); appendInlineMarkdown(blockquote, quote[1]); container.append(blockquote); index += 1; continue; } if (!line.trim()) { index += 1; continue; } const paragraph = document.createElement('p'); const paragraphLines = [line]; index += 1; while (index < lines.length && lines[index].trim() && !/^(#{1,4}\s|\`\`\`|[-*+]\s+|>\s?)/.test(lines[index])) paragraphLines.push(lines[index++]); appendInlineMarkdown(paragraph, paragraphLines.join('\n')); container.append(paragraph); } };
-  const message = (role, content, attachments = []) => { const element = document.createElement('div'); element.className = 'message ' + role; const label = document.createElement('div'); label.className = 'message-header'; label.textContent = role === 'user' ? 'YOU' : 'AGENT'; const body = document.createElement('div'); if (role === 'assistant' && !content && document.body.classList.contains('streaming')) { body.className = 'thinking'; body.textContent = 'Thinking...'; } else { body.className = 'markdown'; renderMarkdown(body, content); } element.append(label, body); if (attachments.length) { const list = document.createElement('div'); list.className = 'message-attachments'; attachments.forEach((attachment) => { const item = document.createElement('div'); item.className = 'attachment'; if (attachment.kind === 'image' && attachment.data) { const image = document.createElement('img'); image.src = attachment.data; image.alt = attachment.name; item.append(image); } const name = document.createElement('span'); name.textContent = attachment.name; item.append(name); list.append(item); }); element.append(list); } return { element, body }; };
-  const planView = () => { if (!activePlan) return undefined; const view = document.createElement('section'); view.className = 'plan'; const title = document.createElement('strong'); title.textContent = activePlan.title; view.append(title); activePlan.steps.forEach((step) => { const row = document.createElement('div'); row.className = 'plan-step ' + step.status; row.textContent = (step.status === 'completed' ? '[x] ' : step.status === 'in_progress' ? '[..] ' : '[ ] ') + step.content; view.append(row); }); return view; };
-  const renderChat = () => { chat.replaceChildren(); const plan = planView(); if (plan) chat.append(plan); const conversation = active(); if (!conversation || !conversation.messages.length) { const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = 'Select a local model in Settings, then ask about the workspace. Use Plan for read-only investigation and Agent when you want the agent to change files or run commands.'; chat.append(empty); renderTelemetry(); return; } conversation.messages.forEach((item) => { const view = message(item.role, item.content, item.attachments || []); chat.append(view.element); }); chat.scrollTop = chat.scrollHeight; renderTelemetry(); };
+  const message = (role, content, attachments = [], streaming = false) => { const element = document.createElement('div'); element.className = 'message ' + role; const label = document.createElement('div'); label.className = 'message-header'; label.textContent = role === 'user' ? 'YOU' : 'AGENT'; const body = document.createElement('div'); if (role === 'assistant' && !content && streaming) { body.className = 'thinking'; body.textContent = 'Thinking...'; } else { body.className = 'markdown'; renderMarkdown(body, content); } element.append(label, body); if (attachments.length) { const list = document.createElement('div'); list.className = 'message-attachments'; attachments.forEach((attachment) => { const item = document.createElement('div'); item.className = 'attachment'; if (attachment.kind === 'image' && attachment.data) { const image = document.createElement('img'); image.src = attachment.data; image.alt = attachment.name; item.append(image); } const name = document.createElement('span'); name.textContent = attachment.name; item.append(name); list.append(item); }); element.append(list); } return { element, body }; };
+  const planView = (plan) => { if (!plan) return undefined; const view = document.createElement('section'); view.className = 'plan'; const title = document.createElement('strong'); title.textContent = plan.title; view.append(title); plan.steps.forEach((step) => { const row = document.createElement('div'); row.className = 'plan-step ' + step.status; row.textContent = (step.status === 'completed' ? '[x] ' : step.status === 'in_progress' ? '[..] ' : '[ ] ') + step.content; view.append(row); }); return view; };
+  const pendingApprovalView = (conversationId, approval) => { const item = document.createElement('div'); item.className = 'tool'; item.textContent = 'Allow ' + approval.tool + ' ' + JSON.stringify(approval.input) + '? '; const allow = document.createElement('button'); allow.textContent = 'Allow'; const deny = document.createElement('button'); deny.textContent = 'Deny'; const resolve = (approved) => { pendingApprovals.delete(conversationId); vscode.postMessage({ type: 'toolApproval', conversationId, requestId: approval.requestId, callId: approval.callId, approved }); renderChat(); }; allow.onclick = () => resolve(true); deny.onclick = () => resolve(false); item.append(allow, deny); return item; };
+  const renderChat = () => { chat.replaceChildren(); const conversation = active(); renderComposer(); const plan = planView(conversation && activePlans.get(conversation.id)); if (plan) chat.append(plan); if (!conversation || !conversation.messages.length) { const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = 'Select a local model in Settings, then ask about the workspace. Use Plan for read-only investigation and Agent when you want the agent to change files or run commands.'; chat.append(empty); renderTelemetry(); return; } conversation.messages.forEach((item) => { const view = message(item.role, item.content, item.attachments || [], isStreaming(conversation.id)); chat.append(view.element); }); const activeTool = activeTools.get(conversation.id); if (activeTool) { const item = document.createElement('div'); item.className = 'tool'; item.textContent = 'Running tool: ' + activeTool; chat.append(item); } const approval = pendingApprovals.get(conversation.id); if (approval) chat.append(pendingApprovalView(conversation.id, approval)); chat.scrollTop = chat.scrollHeight; renderTelemetry(); };
   const addMessage = (role, content, attachments) => { const conversation = current(); conversation.messages.push({ role, content, ...(attachments && attachments.length ? { attachments } : {}) }); conversation.updatedAt = new Date().toISOString(); if (role === 'user' && conversation.title === 'New conversation') conversation.title = content.replace(/\s+/g, ' ').slice(0, 32) || conversation.title; persist(); renderHistory(); renderChat(); return conversation.messages.length - 1; };
   const parsedMcpServers = () => { const source = mcpServers.value.trim(); if (!source) return {}; const parsed = JSON.parse(source); if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('MCP servers must be a JSON object.'); for (const [name, server] of Object.entries(parsed)) { if (!server || typeof server !== 'object' || typeof server.command !== 'string' || !server.command.trim()) throw new Error('MCP server ' + name + ' needs a command.'); } return parsed; };
   const configurationValue = () => { const cloud = selectedCloudProvider(); const metadata = selectedModelMetadata(); return { provider: provider.value, baseUrl: cloud ? cloud.baseUrl : endpoint.value.trim(), model: model.value.trim(), ...(cloud && providerAccount.value ? { credentialAccountId: providerAccount.value } : {}), mode: configuration ? configuration.mode : 'chat', permission: permission.value, contextWindow: cloud ? (metadata?.contextWindow || 8192) : configuredContextWindow(), internetAccess: internetAccess.value === 'true', mcpServers: parsedMcpServers() }; };
@@ -1951,7 +2007,7 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
   const renderAttachments = () => { attachmentView.hidden = !pendingAttachments.length; attachmentView.replaceChildren(...pendingAttachments.map((attachment) => { const item = document.createElement('div'); item.className = 'attachment'; if (attachment.kind === 'image' && attachment.data) { const image = document.createElement('img'); image.src = attachment.data; image.alt = ''; item.append(image); } const name = document.createElement('span'); name.textContent = attachment.name; const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = 'x'; remove.title = 'Remove ' + attachment.name; remove.onclick = () => { pendingAttachments = pendingAttachments.filter((candidate) => candidate.id !== attachment.id); renderAttachments(); }; item.append(name, remove); return item; })); };
   const toAttachment = async (file) => { if (!file.name) throw new Error('The selected file has no name.'); if (file.size > 4 * 1024 * 1024) throw new Error(file.name + ' exceeds the 4 MB attachment limit.'); if (file.type.startsWith('image/')) { if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) throw new Error(file.name + ' uses an unsupported image type.'); const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('Unable to read ' + file.name)); reader.onerror = () => reject(new Error('Unable to read ' + file.name)); reader.readAsDataURL(file); }); return { id: 'attachment-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), kind: 'image', name: file.name, mediaType: file.type, data, size: file.size }; } if (!(file.type.startsWith('text/') || /\.(md|mdx|txt|json|jsonc|ya?ml|toml|ini|cfg|conf|csv|ts|tsx|js|jsx|mjs|cjs|css|html?|xml|svg|py|go|rs|java|php|rb|sh|sql)$/i.test(file.name))) throw new Error(file.name + ' is not a supported text file.'); const text = await file.text(); if (text.includes('\u0000')) throw new Error(file.name + ' appears to be binary.'); return { id: 'attachment-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8), kind: 'file', name: file.name, mediaType: file.type || 'text/plain', text: text.slice(0, 120000), size: file.size }; };
   const addFiles = async (files) => { const selected = [...files]; if (!selected.length) return; if (pendingAttachments.length + selected.length > 5) { status.textContent = 'Attach up to five files.'; return; } if (pendingAttachments.reduce((total, item) => total + item.size, 0) + selected.reduce((total, item) => total + item.size, 0) > 12 * 1024 * 1024) { status.textContent = 'Attachments exceed the 12 MB total limit.'; return; } try { pendingAttachments = [...pendingAttachments, ...await Promise.all(selected.map(toAttachment))]; renderAttachments(); } catch (error) { status.textContent = error && error.message ? error.message : String(error); } };
-  const sendChat = (text) => { const conversation = current(); const history = conversation.messages.map((message) => ({ role: message.role, content: message.content, ...(message.attachments ? { attachments: message.attachments } : {}) })); const attachments = pendingAttachments; document.body.classList.add('streaming'); addMessage('user', text, attachments); addMessage('assistant', ''); prompt.value = ''; attachmentInput.value = ''; pendingAttachments = []; renderAttachments(); slashMenu.hidden = true; beginStream(); vscode.postMessage({ type: 'send', prompt: text, conversationId: conversation.id, history, attachments, attachedPaths: attachedPaths(text) }); };
+  const sendChat = (text) => { const conversation = current(); if (isStreaming(conversation.id)) return; const history = conversation.messages.map((message) => ({ role: message.role, content: message.content, ...(message.attachments ? { attachments: message.attachments } : {}) })); const attachments = pendingAttachments; streamingConversationIds.add(conversation.id); addMessage('user', text, attachments); addMessage('assistant', ''); prompt.value = ''; attachmentInput.value = ''; pendingAttachments = []; renderAttachments(); slashMenu.hidden = true; beginStream(); vscode.postMessage({ type: 'send', prompt: text, conversationId: conversation.id, history, attachments, attachedPaths: attachedPaths(text) }); };
   const headerAction = document.getElementById('headerAction'); const settingsAction = headerAction.querySelector('option[value="settings"]'); const setSettingsOpen = (open) => { settings.classList.toggle('open', open); settingsAction.textContent = open ? 'Hide settings' : 'Settings'; }; headerAction.onchange = () => { const action = headerAction.value; headerAction.value = ''; if (action === 'new') { addConversation(); renderHistory(); renderChat(); vscode.postMessage({ type: 'newConversation' }); } if (action === 'settings') setSettingsOpen(!settings.classList.contains('open')); if (action === 'help') sendChat('/help'); if (action === 'trussGo') vscode.postMessage({ type: 'connectTrussGo' }); }; document.getElementById('manageMcp').onclick = () => vscode.postMessage({ type: 'manageMcp' });
   document.getElementById('refresh').onclick = () => { try { if (selectedCloudProvider()) setProviderStatus(providerApiKey.value.trim() ? 'Discovering models from the provider…' : 'Checking the saved provider key…'); vscode.postMessage({ type: 'discover', configuration: configurationValue(), ...(providerApiKey.value.trim() ? { apiKey: providerApiKey.value } : {}) }); } catch (error) { mcpStatus.textContent = error.message || String(error); } }; document.getElementById('apply').onclick = () => { try { mcpStatus.textContent = 'MCP connections restart when the agent runs.'; postConfigure(); } catch (error) { mcpStatus.textContent = error.message || String(error); } };
   document.getElementById('saveProviderAccount').onclick = () => { try { const cloud = selectedCloudProvider(); if (!cloud) return; const next = configurationValue(); if (!next.model) return setProviderStatus('Enter a model ID before saving this account.', 'failed'); if (!providerApiKey.value.trim()) return setProviderStatus('Enter an API key before saving this account.', 'failed'); vscode.postMessage({ type: 'saveProviderAccount', provider: cloud.id, accountId: providerAccount.value || undefined, accountLabel: providerAccountLabel.value.trim(), apiKey: providerApiKey.value, configuration: next }); } catch (error) { setProviderStatus(error.message || String(error), 'failed'); } };
@@ -1960,7 +2016,7 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
   contextWindow.oninput = renderTelemetry;
   const setMode = (mode) => { configuration = { ...(configuration || configurationValue()), mode }; document.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === mode)); postConfigure(); };
   document.querySelectorAll('[data-mode]').forEach((button) => button.onclick = () => setMode(button.dataset.mode));
-  quickModel.onchange = () => { if (!quickModel.value || quickModel.value === model.value) return; model.value = quickModel.value; configuration = { ...(configuration || configurationValue()), model: quickModel.value }; postConfigure(); };
+  quickModel.onchange = () => { const value = quickModel.value.trim(); if (!value || value === model.value) return; model.value = value; configuration = { ...(configuration || configurationValue()), model: value }; postConfigure(); };
   provider.onchange = () => { model.value = ''; modelPickerSearch.value = ''; discoveredModels = []; setModelPickerOpen(false); syncProviderPresentation(); renderModelPicker(); vscode.postMessage({ type: 'discover', configuration: configurationValue(), ...(providerApiKey.value.trim() ? { apiKey: providerApiKey.value } : {}) }); };
   providerAccount.onchange = () => { syncProviderPresentation(providerAccount.value); };
   model.onchange = () => { syncProviderPresentation(providerAccount.value); renderModelPicker(); };
@@ -1970,32 +2026,16 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
   server.onchange = () => { if (!server.value) return; const selected = JSON.parse(server.value); provider.value = selected.kind; endpoint.value = selected.baseUrl; syncProviderPresentation(); vscode.postMessage({ type: 'discover', configuration: configurationValue(), ...(providerApiKey.value.trim() ? { apiKey: providerApiKey.value } : {}) }); };
   document.getElementById('attach').onclick = () => attachmentInput.click(); attachmentInput.onchange = () => addFiles(attachmentInput.files || []); document.getElementById('composer').ondragover = (event) => event.preventDefault(); document.getElementById('composer').ondrop = (event) => { event.preventDefault(); addFiles(event.dataTransfer.files || []); };
   prompt.oninput = () => { slashIndex = 0; renderSlashMenu(); };
-  prompt.onkeydown = (event) => { if (event.ctrlKey && event.key === 'Enter') { event.preventDefault(); if (document.body.classList.contains('streaming')) return; const text = prompt.value.trim() || (pendingAttachments.length ? 'Review the attached files.' : ''); if (text) sendChat(text); return; } if (slashMenu.hidden || !slashResults.length) return; if (event.key === 'ArrowDown') { event.preventDefault(); slashIndex = (slashIndex + 1) % slashResults.length; renderSlashMenu(); } if (event.key === 'ArrowUp') { event.preventDefault(); slashIndex = (slashIndex - 1 + slashResults.length) % slashResults.length; renderSlashMenu(); } if ((event.key === 'Enter' || event.key === 'Tab') && slashResults[slashIndex]) { event.preventDefault(); insertSlashFile(slashResults[slashIndex]); } if (event.key === 'Escape') slashMenu.hidden = true; };
+  prompt.onkeydown = (event) => { if (event.ctrlKey && event.key === 'Enter') { event.preventDefault(); if (isStreaming(active()?.id)) return; const text = prompt.value.trim() || (pendingAttachments.length ? 'Review the attached files.' : ''); if (text) sendChat(text); return; } if (slashMenu.hidden || !slashResults.length) return; if (event.key === 'ArrowDown') { event.preventDefault(); slashIndex = (slashIndex + 1) % slashResults.length; renderSlashMenu(); } if (event.key === 'ArrowUp') { event.preventDefault(); slashIndex = (slashIndex - 1 + slashResults.length) % slashResults.length; renderSlashMenu(); } if ((event.key === 'Enter' || event.key === 'Tab') && slashResults[slashIndex]) { event.preventDefault(); insertSlashFile(slashResults[slashIndex]); } if (event.key === 'Escape') slashMenu.hidden = true; };
   document.getElementById('composer').onsubmit = (event) => { event.preventDefault(); const text = prompt.value.trim() || (pendingAttachments.length ? 'Review the attached files.' : ''); if (!text) return; sendChat(text); };
-  document.getElementById('stop').onclick = () => vscode.postMessage({ type: 'stop' });
-  window.addEventListener('message', (event) => { try { const message = event.data;
-    if (message.type === 'conversations') { state.conversations = message.state.conversations || []; state.activeId = message.state.activeId; vscode.setState(state); renderHistory(); renderChat(); }
-    if (message.type === 'state') { const next = message.state; configuration = next.configuration; provider.value = configuration.provider; endpoint.value = configuration.baseUrl; model.value = configuration.model; permission.value = configuration.permission; internetAccess.value = configuration.internetAccess ? 'true' : 'false'; contextWindow.value = configuration.contextWindow || 8192; mcpServers.value = Object.keys(configuration.mcpServers || {}).length ? JSON.stringify(configuration.mcpServers, null, 2) : ''; mcpStatus.textContent = Object.keys(configuration.mcpServers || {}).length ? Object.keys(configuration.mcpServers).length + ' MCP server(s) configured.' : 'No MCP servers configured.'; modelOptions.replaceChildren(...next.models.map((name) => { const option = document.createElement('option'); option.value = name; return option; })); const quickModels = [...new Set([configuration.model, ...next.models].filter(Boolean))]; quickModel.replaceChildren(...quickModels.map((name) => { const option = document.createElement('option'); option.value = name; option.textContent = name; return option; })); quickModel.value = configuration.model; server.replaceChildren(...[{ label: 'Custom / manual', kind: '', baseUrl: '' }, ...next.endpoints].map((item) => { const option = document.createElement('option'); option.value = item.kind ? JSON.stringify(item) : ''; option.textContent = item.label + (item.baseUrl ? ' (' + item.baseUrl + ')' : ''); return option; })); document.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === configuration.mode)); status.textContent = configuration.model ? configuration.provider + ' / ' + configuration.model : 'Choose a local model'; renderTelemetry(); }
-    if (message.type === 'mcpDiagnostic') { mcpStatus.textContent = message.message; }
-    if (message.type === 'workspaceFiles') { workspaceFiles = Array.isArray(message.files) ? message.files : []; }
-    if (message.type === 'plan') { activePlan = message.plan; renderChat(); }
-    if (message.type === 'delta') { const conversation = byId(message.conversationId) || active(); const last = conversation && conversation.messages.at(-1); if (last && last.role === 'assistant') { last.content += message.text; generatedTokens += estimateTokens(message.text); conversation.updatedAt = new Date().toISOString(); persist(); if (conversation.id === state.activeId) renderChat(); else renderTelemetry(); } }
-    if (message.type === 'tool') { const item = document.createElement('div'); item.className = 'tool'; item.textContent = 'Running tool: ' + message.tool; chat.append(item); chat.scrollTop = chat.scrollHeight; }
-    if (message.type === 'approval') { const item = document.createElement('div'); item.className = 'tool'; item.textContent = 'Allow ' + message.tool + ' ' + JSON.stringify(message.input) + '? '; const allow = document.createElement('button'); allow.textContent = 'Allow'; const deny = document.createElement('button'); deny.textContent = 'Deny'; allow.onclick = () => { vscode.postMessage({ type: 'toolApproval', callId: message.callId, approved: true }); item.replaceChildren(document.createTextNode('Allowed ' + message.tool)); }; deny.onclick = () => { vscode.postMessage({ type: 'toolApproval', callId: message.callId, approved: false }); item.replaceChildren(document.createTextNode('Denied ' + message.tool)); }; item.append(allow, deny); chat.append(item); chat.scrollTop = chat.scrollHeight; }
-    if (message.type === 'session') { persist(); }
-    if (message.type === 'runtimeReset') { persist(); }
-    if (message.type === 'workspaceCommand') { current(); addMessage('user', message.command); addMessage('assistant', message.message); }
-    if (message.type === 'assistantEnd') { document.body.classList.remove('streaming'); renderTelemetry(); }
-    if (message.type === 'conversationReset') { renderHistory(); renderChat(); }
-    if (message.type === 'error') { const conversation = byId(message.conversationId) || active(); const last = conversation?.messages.at(-1); if (last?.role === 'assistant' && !last.content) last.content = 'Error: ' + message.message; else addMessage('assistant', 'Error: ' + message.message); document.body.classList.remove('streaming'); persist(); renderChat(); }
-  } catch (error) { status.textContent = 'Panel error'; const detail = document.createElement('div'); detail.className = 'tool'; detail.textContent = 'Panel error: ' + (error && error.message ? error.message : String(error)); chat.append(detail); } });
+  document.getElementById('stop').onclick = () => { const conversation = active(); if (conversation) vscode.postMessage({ type: 'stop', conversationId: conversation.id }); };
   window.addEventListener('message', ({ data: message }) => {
     if (message.type === 'state') {
       const next = message.state;
       configuration = next.configuration;
       cloudProviders = Array.isArray(next.cloudProviders) ? next.cloudProviders : [];
       providerAccounts = Array.isArray(next.providerAccounts) ? next.providerAccounts : [];
-      discoveredModels = Array.isArray(next.models) ? next.models : [];
+      discoveredModels = Array.isArray(next.models) ? sortedModelEntries(next.models) : [];
       provider.value = configuration.provider;
       endpoint.value = configuration.baseUrl;
       model.value = configuration.model;
@@ -2006,8 +2046,8 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
       mcpStatus.textContent = Object.keys(configuration.mcpServers || {}).length ? Object.keys(configuration.mcpServers).length + ' MCP server(s) configured.' : 'No MCP servers configured.';
       modelOptions.replaceChildren(...discoveredModels.map((entry) => { const option = document.createElement('option'); option.value = entry.id; option.label = entry.contextWindow ? entry.id + ' · ' + formatTokens(entry.contextWindow) + ' context' : entry.id; return option; }));
       renderModelPicker();
-      const quickModels = [...new Set([configuration.model, ...discoveredModels.map((entry) => entry.id)].filter(Boolean))];
-      quickModel.replaceChildren(...quickModels.map((name) => { const option = document.createElement('option'); option.value = name; option.textContent = name; return option; }));
+      const quickModels = sortedModelIds([configuration.model, ...discoveredModels.map((entry) => entry.id)]);
+      quickModel.replaceChildren(...(quickModels.length ? quickModels : ['']).map((name) => { const option = document.createElement('option'); option.value = name; option.textContent = name || 'Choose model'; return option; }));
       quickModel.value = configuration.model;
       server.replaceChildren(...[{ label: 'Custom / manual', kind: '', baseUrl: '' }, ...(next.endpoints || [])].map((item) => { const option = document.createElement('option'); option.value = item.kind ? JSON.stringify(item) : ''; option.textContent = item.label + (item.baseUrl ? ' (' + item.baseUrl + ')' : ''); return option; }));
       document.querySelectorAll('[data-mode]').forEach((button) => button.classList.toggle('active', button.dataset.mode === configuration.mode));
@@ -2016,6 +2056,20 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
       status.textContent = configuration.model ? providerLabel + ' / ' + configuration.model : 'Choose a model in Settings';
       renderTelemetry();
     }
+    if (message.type === 'conversations') { state.conversations = message.state.conversations || []; state.activeId = message.state.activeId; vscode.setState(state); renderHistory(); renderChat(); }
+    if (message.type === 'mcpDiagnostic') { mcpStatus.textContent = message.message; }
+    if (message.type === 'workspaceFiles') { workspaceFiles = Array.isArray(message.files) ? message.files : []; }
+    if (message.type === 'plan') { const conversation = message.conversationId ? byId(message.conversationId) : active(); if (conversation) { activePlans.set(conversation.id, message.plan); if (conversation.id === state.activeId) renderChat(); } }
+    if (message.type === 'assistantStart') { const conversation = byId(message.conversationId); if (conversation) { streamingConversationIds.add(conversation.id); renderHistory(); if (conversation.id === state.activeId) renderChat(); } }
+    if (message.type === 'delta') { const conversation = byId(message.conversationId); const last = conversation && conversation.messages.at(-1); if (last && last.role === 'assistant') { last.content += message.text; if (conversation.id === state.activeId) generatedTokens += estimateTokens(message.text); conversation.updatedAt = new Date().toISOString(); persist(); if (conversation.id === state.activeId) renderChat(); else renderHistory(); } }
+    if (message.type === 'tool') { const conversation = byId(message.conversationId); if (conversation) { activeTools.set(conversation.id, message.tool); if (conversation.id === state.activeId) renderChat(); } }
+    if (message.type === 'approval') { const conversation = byId(message.conversationId); if (conversation) { pendingApprovals.set(conversation.id, message); if (conversation.id === state.activeId) renderChat(); else renderHistory(); } }
+    if (message.type === 'session') { persist(); }
+    if (message.type === 'runtimeReset') { persist(); }
+    if (message.type === 'workspaceCommand') { current(); addMessage('user', message.command); addMessage('assistant', message.message); }
+    if (message.type === 'assistantEnd') { const conversation = byId(message.conversationId); if (conversation) { const last = conversation.messages.at(-1); if (message.aborted && last?.role === 'assistant' && !last.content) last.content = 'Cancelled.'; streamingConversationIds.delete(conversation.id); activeTools.delete(conversation.id); pendingApprovals.delete(conversation.id); persist(); renderHistory(); if (conversation.id === state.activeId) renderChat(); else renderTelemetry(); } }
+    if (message.type === 'conversationReset') { renderHistory(); renderChat(); }
+    if (message.type === 'error') { const conversation = message.conversationId ? byId(message.conversationId) : undefined; if (!conversation) { status.textContent = message.message || 'Truss error'; return; } const last = conversation.messages.at(-1); if (last?.role === 'assistant' && !last.content) last.content = 'Error: ' + message.message; else conversation.messages.push({ role: 'assistant', content: 'Error: ' + message.message }); conversation.updatedAt = new Date().toISOString(); streamingConversationIds.delete(conversation.id); activeTools.delete(conversation.id); pendingApprovals.delete(conversation.id); persist(); renderHistory(); if (conversation.id === state.activeId) renderChat(); }
     if (message.type === 'providerAccountSaved') { providerApiKey.value = ''; setProviderStatus(message.message, 'connected'); }
     if (message.type === 'providerAccountRemoved') { providerApiKey.value = ''; setProviderStatus(message.message); }
     if (message.type === 'providerAccountError') setProviderStatus(message.message, 'failed');
