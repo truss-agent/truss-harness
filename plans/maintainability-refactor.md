@@ -349,6 +349,70 @@ Validation at this checkpoint:
 Next checkpoint after merge: extract the Desktop chat/conversation controller,
 then Git and terminal controllers, in separate reviewable slices.
 
+### 2026-08-13 — Desktop chat and conversation checkpoint
+
+Completed locally on `refactor/desktop-chat-controller` for issue #217; the
+interactive Electron smoke remains before push.
+
+- Moved conversation creation, updates, active lookup, deletion fallback, and
+  persisted tool-activity restoration into a dedicated chat controller.
+- Centralized primary-agent busy/run identity, visible activity status,
+  streaming throughput metrics, tool-call expansion state, pending
+  attachments, and slash-file selection behind that controller.
+- Extracted deterministic fuzzy workspace-file ranking and grounded slash-file
+  reference parsing for direct unit coverage while preserving the Files search
+  and Chat request payload behavior.
+- Preserved chat rendering, Markdown, provider/runtime IPC, approval prompts,
+  conversation focus recovery, attachment conversion, and DOM event wiring in
+  the renderer composition boundary.
+- Added focused coverage for conversation transitions, run lifecycle and
+  cancellation, activity and attachment state, slash navigation, ranking, and
+  workspace-reference extraction; bumped Desktop to 0.1.41 and updated the
+  public changelog in the same feature branch.
+
+Validation at this checkpoint:
+
+- Desktop and root builds pass; all 66 repository test files and 248 tests
+  pass, including seven focused chat-controller tests.
+- The isolated documentation production build generates all 38 routes.
+- Targeted Biome and Prettier checks and `git diff --check` pass; the renderer
+  composition file is now under 5,000 lines.
+- Interactive Electron smoke should cover new/select/delete conversation,
+  send/stream/stop, tool activity and approvals, attachments, slash file
+  references, persisted conversations, and Files search before push.
+
+### Required follow-up — OpenRouter tool-routing reliability
+
+The Desktop chat-controller smoke test exposed a shared-provider reliability
+gap while using `openrouter/auto`: OpenRouter returned pseudo-tool syntax such
+as `cmd:default_api:read_file{...}` as ordinary assistant text instead of a
+structured `tool_calls` response. Truss correctly did not execute that text,
+but the resulting conversation was confusing and unable to use workspace
+tools.
+
+Handle this immediately after the Desktop chat-controller PR merges, on a
+fresh shared-provider branch and linked issue:
+
+- When an OpenRouter request includes Truss tools, send the OpenRouter routing
+  constraint `provider.require_parameters: true` and an explicit
+  `tool_choice: "auto"` so the request is eligible only for backends that
+  advertise support for the supplied parameters.
+- Keep the behavior provider-specific; do not add OpenRouter routing fields to
+  other OpenAI-compatible services.
+- Never interpret or execute tool-like assistant text. Only structured tool
+  calls from the provider protocol may enter the Runtime tool-execution path.
+- Add request-payload coverage for OpenRouter with and without tools and retain
+  the existing transport, fragmented-call, malformed-argument, and
+  credential-safety tests.
+- Verify an explicit tool-capable OpenRouter model and `openrouter/auto` with a
+  real read-only workspace tool call, then validate Desktop, VS Code, CLI, TUI,
+  Neovim, and Mobile through their shared provider/runtime boundary.
+- Version every affected shared package and client in that feature branch and
+  coordinate the resulting releases only after its linked PR is merged.
+
+After that reliability slice: extract the Desktop Git controller, then the
+terminal controller, in separate reviewable slices.
+
 ## 1. Why this refactor is needed
 
 Several modules have become application subsystems rather than files. Their

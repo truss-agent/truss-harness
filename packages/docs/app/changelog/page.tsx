@@ -4,6 +4,16 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.41",
+    label: "Focused chat and conversation controller",
+    changes: [
+      "Moved conversation creation, updates, removal fallback, and active selection into a dedicated chat controller.",
+      "Centralized primary-agent run lifecycle, stream throughput state, visible tool activity, pending attachments, and slash-file selection behind one tested state boundary.",
+      "Extracted reusable workspace-file fuzzy matching and grounded slash-reference parsing while preserving the existing file search and chat attachment behavior.",
+      "Added focused coverage for conversation transitions, run completion and cancellation, activity restoration, attachments, slash navigation, and workspace references.",
+    ],
+  },
+  {
     version: "Desktop 0.1.40",
     label: "Focused editor and workspace-files controllers",
     changes: [
