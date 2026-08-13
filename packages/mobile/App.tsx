@@ -17,8 +17,17 @@ import {
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as SecureStore from "expo-secure-store";
 import type { AgentMode, AgentProfile, AgentRun, AgentToolApproval, ApprovalMode, ChatItem, RemoteEvent, SavedGateway, Screen, ToolApproval, Workspace } from "./src/contracts";
-import { gatewayCommand, gatewayEventUrl, gatewayWorkspaces } from "./src/gateway-transport";
+import { gatewayCommand, gatewayWorkspaces } from "./src/gateway-transport";
 import { allApprovalModes, parsePairing, parsePreferences, savedGatewaysKey, savedPreferencesKey, upsertGateway } from "./src/pairing";
+import {
+  appendAssistantMessage,
+  appendSystemMessage,
+  approvalForRemoteEvent,
+  changeRemoteSessionMode,
+  createRemoteSession,
+  describeToolFailure,
+  MobileGatewayEventController,
+} from "./src/remote-session-controller";
 
 const approvalCopy: Record<ApprovalMode, { readonly title: string; readonly detail: string; readonly badge: string }> = {
   ask: { title: "Ask every time", detail: "Review every workspace tool before it runs.", badge: "Recommended" },
@@ -66,11 +75,13 @@ export default function App() {
   const [agentApproval, setAgentApproval] = useState<AgentToolApproval>();
   const [agentsLoading, setAgentsLoading] = useState(false);
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
-  const eventSocket = useRef<WebSocket | undefined>(undefined);
-  const eventConnectedRef = useRef(false);
+  const eventController = useRef<MobileGatewayEventController | undefined>(undefined);
+  if (!eventController.current) eventController.current = new MobileGatewayEventController();
   const scanLocked = useRef(false);
   const approvalModeRef = useRef<ApprovalMode>(approvalMode);
   const modeRef = useRef<AgentMode>(mode);
+
+  useEffect(() => () => eventController.current?.close(), []);
 
   useEffect(() => {
     void SecureStore.getItemAsync(savedGatewaysKey)
@@ -107,14 +118,9 @@ export default function App() {
   }, [gatewayUrl, token]);
 
   const appendAssistant = useCallback((text: string) => {
-    setMessages((current) => {
-      const last = current.at(-1);
-      return last?.role === "assistant"
-        ? [...current.slice(0, -1), { ...last, content: last.content + text }]
-        : [...current, { id: nextId(), role: "assistant", content: text }];
-    });
+    setMessages((current) => appendAssistantMessage(current, text, nextId));
   }, []);
-  const appendSystem = useCallback((content: string) => setMessages((current) => [...current, { id: nextId(), role: "system", content }]), []);
+  const appendSystem = useCallback((content: string) => setMessages((current) => appendSystemMessage(current, content, nextId)), []);
 
   useEffect(() => { approvalModeRef.current = approvalMode; }, [approvalMode]);
   useEffect(() => { modeRef.current = mode; }, [mode]);
@@ -150,74 +156,29 @@ export default function App() {
     }
     if (event.type === "run_failed") { setRunning(false); setStatus(event.message ?? "Run failed."); }
     const activeApprovalMode = approvalModeRef.current;
-    if (event.type === "tool_call_requested" && event.tool && (activeApprovalMode === "auto-all" || (activeApprovalMode === "auto-read" && readOnlyTools.has(event.tool)))) {
+    const requestedApproval = approvalForRemoteEvent(event, activeApprovalMode, readOnlyTools);
+    if (event.type === "tool_call_requested" && event.tool && !requestedApproval) {
       setStatus(`Running ${event.tool.replaceAll("_", " ")}...`);
-    } else if (event.type === "tool_call_requested" && event.callId && event.tool && event.input) {
-      setApproval({ callId: event.callId, tool: event.tool, input: event.input });
+    } else if (requestedApproval) {
+      setApproval(requestedApproval);
       setStatus("A tool needs your approval.");
     }
-    if (event.type === "tool_completed" && event.tool && event.result?.isError) {
-      const detail = event.result.content.length > 360 ? `${event.result.content.slice(0, 357)}...` : event.result.content;
+    const toolFailure = describeToolFailure(event);
+    if (toolFailure && event.tool) {
       setStatus(`${event.tool.replaceAll("_", " ")} failed.`);
-      appendSystem(`${event.tool} failed: ${detail}`);
+      appendSystem(toolFailure);
     }
   }, [appendAssistant, appendSystem, updateAgentRun, workspaceId]);
 
-  const connectEvents = useCallback(() => new Promise<void>((resolve, reject) => {
-    eventSocket.current?.close();
-    eventConnectedRef.current = false;
-    setEventConnected(false);
-    const socket = new WebSocket(gatewayEventUrl(gatewayUrl));
-    eventSocket.current = socket;
-    let connected = false;
-    let settled = false;
-    const timeout = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      socket.close();
-      reject(new Error("The gateway event stream did not authenticate within 8 seconds."));
-    }, 8_000);
-    const rejectConnection = (message: string) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      reject(new Error(message));
-    };
-    socket.onopen = () => socket.send(JSON.stringify({ type: "authenticate", token, protocolVersions: [3, 2, 1] }));
-    socket.onmessage = ({ data }) => {
-      let event: RemoteEvent;
-      try { event = JSON.parse(String(data)) as RemoteEvent; } catch { return; }
-      if (event.type === "connected") {
-        connected = true;
-        eventConnectedRef.current = true;
-        setEventConnected(true);
-        if (!settled) {
-          settled = true;
-          clearTimeout(timeout);
-          resolve();
-        }
-        return;
-      }
-      handleEvent(event);
-    };
-    socket.onerror = () => {
-      if (!connected) rejectConnection("Unable to connect to the gateway event stream. Keep the paired host open and confirm both devices are on the same network.");
-      else if (eventSocket.current === socket) setStatus("Gateway event stream disconnected.");
-    };
-    socket.onclose = ({ code }) => {
-      if (eventSocket.current === socket) {
-        eventConnectedRef.current = false;
-        setEventConnected(false);
-      }
-      if (!connected) rejectConnection(code === 1008 ? "The gateway rejected event-stream authentication. Pair the device again to refresh its token." : "The gateway event stream closed before authentication.");
-      else if (eventSocket.current === socket) setStatus("Gateway event stream disconnected. Truss will reconnect before the next request.");
-    };
-  }), [gatewayUrl, handleEvent, token]);
-
   const ensureEventConnection = useCallback(async () => {
-    if (eventConnectedRef.current && eventSocket.current?.readyState === 1) return;
-    await connectEvents();
-  }, [connectEvents]);
+    await eventController.current!.ensureConnected({
+      gatewayUrl,
+      token,
+      onConnectionChange: setEventConnected,
+      onEvent: handleEvent,
+      onDisconnected: setStatus,
+    });
+  }, [gatewayUrl, handleEvent, token]);
 
   const connectGateway = useCallback(async () => {
     if (!token.trim()) throw new Error("A gateway token is required.");
@@ -359,9 +320,12 @@ export default function App() {
     setStatus(`Opening ${selectedWorkspace.displayName}...`);
     try {
       await ensureEventConnection();
-      const result = await command({ type: "create_session", workspaceId, mode, toolApprovalMode: approvalMode });
-      if (result.type !== "session_created" || !result.sessionId) throw new Error("The gateway did not create a usable session.");
-      setSessionId(result.sessionId);
+      const nextSessionId = await createRemoteSession({ command }, {
+        workspace: selectedWorkspace,
+        mode,
+        approvalMode,
+      });
+      setSessionId(nextSessionId);
       setStatus("Connected. What would you like to work on?");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to open the workspace.";
@@ -381,9 +345,12 @@ export default function App() {
   const changeMode = useCallback(async (nextMode: AgentMode, nextApprovalMode = approvalMode) => {
     if (!sessionId) return;
     if (running) throw new Error("Wait for the current run to finish before changing modes.");
-    const result = await command({ type: "change_session_mode", sessionId, mode: nextMode, toolApprovalMode: nextApprovalMode });
-    if (result.type !== "session_created" || !result.sessionId) throw new Error("The gateway did not create a usable replacement session.");
-    setSessionId(result.sessionId);
+    const nextSessionId = await changeRemoteSessionMode({ command }, {
+      sessionId,
+      mode: nextMode,
+      approvalMode: nextApprovalMode,
+    });
+    setSessionId(nextSessionId);
     setMode(nextMode);
     setApprovalMode(nextApprovalMode);
     setApproval(undefined);
@@ -463,11 +430,6 @@ export default function App() {
     }
     setScreen("scanner");
   }, [cameraPermission?.granted, requestCameraPermission]);
-
-  useEffect(() => () => {
-    eventConnectedRef.current = false;
-    eventSocket.current?.close();
-  }, []);
 
   const renderModeSelector = (onSelect: (candidate: AgentMode) => void) => <View style={styles.modeSelector}>
     {(["chat", "plan", "edit"] as const).map((candidate) => {
