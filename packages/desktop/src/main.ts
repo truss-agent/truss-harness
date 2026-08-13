@@ -46,7 +46,7 @@ import {
   validatedPreviewUrl,
 } from "./main/window-service.js";
 import { WorkspaceService } from "./main/workspace-service.js";
-import type { DesktopEvent } from "./shared.js";
+import type { DesktopConfiguration, DesktopEvent } from "./shared.js";
 
 const execFile = promisify(execFileCallback);
 
@@ -102,7 +102,7 @@ const gitService = new GitService(
   (path) => workspaceService.resolvePath(path),
   async (command, args, options) => execFile(command, [...args], options),
   () => persisted.configuration,
-  generateLocalText,
+  generateConfiguredText,
 );
 const updateService = new DesktopUpdateService(
   {
@@ -176,6 +176,42 @@ async function storedCredential(
   reference: string,
 ): Promise<string | undefined> {
   return credentialService.get(reference);
+}
+
+async function generateConfiguredText(
+  configuration: DesktopConfiguration,
+  prompt: string,
+  model = configuration.model,
+): Promise<string> {
+  if (isLocalConfiguration(configuration))
+    return generateLocalText(
+      {
+        kind: configuration.provider,
+        baseUrl: configuration.baseUrl,
+        model,
+      },
+      prompt,
+    );
+  if (!isCloudProviderId(configuration.provider))
+    throw new Error("Choose a supported model provider.");
+  const credential = await storedCredential(
+    configuration.credentialAccountId ?? configuration.provider,
+  );
+  if (!credential)
+    throw new Error(
+      `Enter an API key for ${cloudProviderDefinition(configuration.provider).label}.`,
+    );
+  return generateCloudText(
+    {
+      provider: configuration.provider,
+      model,
+      credential: new ApiKeyCredential(
+        `desktop:generation:${configuration.provider}`,
+        credential,
+      ),
+    },
+    prompt,
+  );
 }
 
 async function loadPersistedState(): Promise<void> {
@@ -258,34 +294,7 @@ ${prefix}
 
 After cursor:
 ${suffix}`;
-  const completion = isLocalConfiguration(configuration)
-    ? await generateLocalText(
-        { kind: configuration.provider, baseUrl: configuration.baseUrl, model },
-        prompt,
-      )
-    : await (async () => {
-        if (!isCloudProviderId(configuration.provider)) return "";
-        const credential = await storedCredential(
-          configuration.credentialAccountId ?? configuration.provider,
-        );
-        if (!credential)
-          throw new Error(
-            "Enter an API key for " +
-              cloudProviderDefinition(configuration.provider).label +
-              ".",
-          );
-        return generateCloudText(
-          {
-            provider: configuration.provider,
-            model,
-            credential: new ApiKeyCredential(
-              `desktop:autocomplete:${configuration.provider}`,
-              credential,
-            ),
-          },
-          prompt,
-        );
-      })();
+  const completion = await generateConfiguredText(configuration, prompt, model);
   return completion
     .replace(/^```[\w-]*\s*/i, "")
     .replace(/\s*```$/, "")

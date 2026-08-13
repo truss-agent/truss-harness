@@ -10,6 +10,7 @@ const entries = [
       "Established a single typed preload boundary and centralized shared renderer state, configuration, provider-model metadata, credential-storage status, and conversation selectors.",
       "Moved custom-theme validation and application, Markdown parsing and rendering, syntax highlighting, and responsive sidebar calculations into focused renderer modules without introducing a framework or changing the Desktop UI.",
       "Added DOM-independent coverage for renderer state, bridge availability, theme safety, Markdown structure and link handling, code-language aliases, and pane resizing and collapse behavior.",
+      "Enabled Git commit-message generation with the selected BYOK cloud provider as well as local models, using the account credential already stored by Desktop.",
     ],
   },
   {

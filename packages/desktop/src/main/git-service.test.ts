@@ -50,4 +50,44 @@ describe("GitService", () => {
     expect(compacted).toContain("diff --git a/src/a.ts");
     expect(compacted.length).toBeLessThan(generated.length + source.length);
   });
+
+  it("delegates commit generation for cloud configurations", async () => {
+    const generated: Array<{
+      readonly provider: string;
+      readonly prompt: string;
+    }> = [];
+    const service = new GitService(
+      () => "/workspace",
+      (path) => `/workspace/${path}`,
+      async (_command, args) => ({
+        stdout: args[0] === "diff" ? "diff --git a/a.ts b/a.ts\n+change" : "",
+        stderr: "",
+      }),
+      () => ({
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "openai/gpt-4.1-mini",
+        credentialAccountId: "openrouter-personal",
+        mode: "chat",
+        permission: "ask",
+        contextWindow: 32_000,
+        internetAccess: false,
+        mcpServers: {},
+      }),
+      async (configuration, prompt) => {
+        generated.push({ provider: configuration.provider, prompt });
+        return "```gitcommit\nrefactor(desktop): split renderer state\n```";
+      },
+    );
+
+    await expect(service.generateCommitMessage()).resolves.toBe(
+      "refactor(desktop): split renderer state",
+    );
+    expect(generated).toEqual([
+      {
+        provider: "openrouter",
+        prompt: expect.stringContaining("diff --git a/a.ts b/a.ts"),
+      },
+    ]);
+  });
 });

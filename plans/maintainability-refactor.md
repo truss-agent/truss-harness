@@ -251,12 +251,15 @@ Completed locally on `refactor/desktop-renderer-foundation` for issue #211.
 - Rewired the existing renderer without a framework change and preserved all
   channel names, DOM structure, CSS classes, keyboard behavior, and
   renderer-to-main payloads.
-- Added 12 focused tests across the new state, IPC, theme, Markdown, and layout
-  foundations and bumped Desktop to 0.1.38 on the feature branch.
+- Replaced the remaining placeholder in Git commit-message generation so the
+  selected stored BYOK account works alongside local models.
+- Added 13 focused tests across the new state, IPC, theme, Markdown, layout,
+  and cloud commit-generation boundaries and bumped Desktop to 0.1.38 on the
+  feature branch.
 
 Validation at this checkpoint:
 
-- Desktop build and all 36 focused Desktop tests passing.
+- Desktop build and all 37 focused Desktop tests passing.
 - Targeted Biome checks pass with four unchanged renderer style suggestions;
   Prettier and `git diff --check` pass.
 - Full repository build and suite passing: 59 test files and 215 tests.

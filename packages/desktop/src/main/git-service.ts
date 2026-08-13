@@ -4,7 +4,6 @@ import type {
   DesktopGitGraph,
   DesktopGitStatus,
 } from "../shared.js";
-import { isLocalConfiguration } from "./desktop-configuration.js";
 
 type ExecFile = (
   command: string,
@@ -18,12 +17,8 @@ export class GitService {
     private readonly resolveWorkspacePath: (path: string) => string,
     private readonly execFile: ExecFile,
     private readonly configuration: () => DesktopConfiguration | undefined,
-    private readonly generateLocalText: (
-      endpoint: {
-        readonly kind: "ollama" | "openai-compatible";
-        readonly baseUrl: string;
-        readonly model: string;
-      },
+    private readonly generateText: (
+      configuration: DesktopConfiguration,
       prompt: string,
     ) => Promise<string>,
   ) {}
@@ -180,13 +175,7 @@ export class GitService {
   async generateCommitMessage(): Promise<string> {
     const configuration = this.configuration();
     if (!configuration?.model)
-      throw new Error(
-        "Choose a local model before generating a commit message.",
-      );
-    if (!isLocalConfiguration(configuration))
-      throw new Error(
-        "Commit-message generation for cloud providers will use the shared agent runtime in the next Desktop slice.",
-      );
+      throw new Error("Choose a model before generating a commit message.");
     let diff = await this.output(["diff", "--cached", "--no-ext-diff"]);
     if (!diff.trim()) diff = await this.output(["diff", "--no-ext-diff"]);
     if (!diff.trim())
@@ -203,14 +192,7 @@ Requirements:
 
 Diff:
 ${compactCommitDiff(diff, configuration.contextWindow)}`;
-    const response = await this.generateLocalText(
-      {
-        kind: configuration.provider,
-        baseUrl: configuration.baseUrl,
-        model: configuration.model,
-      },
-      prompt,
-    );
+    const response = await this.generateText(configuration, prompt);
     const message = normalizeCommitMessage(response);
     if (!message)
       throw new Error("The model returned an empty commit message.");
