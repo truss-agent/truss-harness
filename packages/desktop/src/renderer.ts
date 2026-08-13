@@ -1,8 +1,4 @@
 import type {
-  McpServerStatus,
-  McpStdioServerConfiguration,
-} from "@truss-harness/mcp";
-import type {
   AgentApprovalPolicy,
   ChatAttachment,
   ProviderAccount,
@@ -10,19 +6,25 @@ import type {
 } from "@truss-harness/runtime";
 import { scheduleConversationNavigation } from "./conversation-navigation.js";
 import { previewServerUrlFromOutput } from "./preview-url.js";
-import { desktopClient } from "./renderer/ipc/desktop-client.js";
 import { markChangedAgentRuns } from "./renderer/agents/snapshot.js";
+import { desktopClient } from "./renderer/ipc/desktop-client.js";
 import {
-  balancedSidebarTracks,
-  clamp,
-  collapsedSidebarTracks,
-  expandedSidebarTracks,
-  resizeSidebarTracks,
-} from "./renderer/layout/panes.js";
+  type CenterView,
+  DesktopLayoutController,
+} from "./renderer/layout/layout-controller.js";
 import {
   appendHighlightedCode,
   createMarkdownRenderer,
 } from "./renderer/markdown/markdown.js";
+import {
+  buildProviderConnectionConfiguration,
+  buildSettingsConfiguration,
+  isLocalProvider,
+  parseMcpConfigurations,
+  preferredProviderAccount,
+  SettingsController,
+} from "./renderer/settings/settings-controller.js";
+import { desktopSettingsElements } from "./renderer/settings/settings-elements.js";
 import {
   initialDesktopState,
   RendererStateStore,
@@ -168,78 +170,66 @@ const usageMeter = element<HTMLSpanElement>("usageMeter");
 const rateMeter = document.getElementById(
   "rateMeter",
 ) as HTMLSpanElement | null;
-const settingsPanel = element<HTMLElement>("settingsPanel");
+const {
+  settingsPanel,
+  endpointSelect,
+  providerSelect,
+  byokProviderSelect,
+  baseUrlInput,
+  modelInput,
+  byokBaseUrl,
+  byokModelSelect,
+  byokModelInput,
+  providerAccountSelect,
+  providerAccountLabel,
+  newProviderAccount,
+  saveProviderAccount,
+  deleteProviderAccount,
+  discoverByokModels,
+  apiKeyInput,
+  clearApiKey,
+  testProviderConnection,
+  providerConnectionResult,
+  credentialStorageStatus,
+  modelOptions,
+  contextInput,
+  permissionSelect,
+  internetAccessInput,
+  autocompleteEnabled,
+  autocompleteModel,
+  formatOnSave,
+  mcpServersInput,
+  mcpStatus,
+  mcpServerList,
+  mcpServerEditor,
+  mcpEditorTitle,
+  mcpNameInput,
+  mcpCommandInput,
+  mcpArgsInput,
+  mcpCwdInput,
+  mcpEnabledInput,
+  mcpReadOnlyInput,
+  checkUpdatesOnLaunch,
+  autoDownloadUpdates,
+  themeSelect,
+  customThemeSetting,
+  customThemeInput,
+  customThemeHelp,
+  customThemeActions,
+  saveCustomTheme,
+  updateStatus,
+  checkUpdates,
+  downloadUpdate,
+  installUpdate,
+  updateAvailableDialog,
+  updateAvailableMessage,
+  openUpdateSettings,
+} = desktopSettingsElements(document);
 const settingsPanelHome = document.createComment("settings-panel-home");
 settingsPanel.before(settingsPanelHome);
-const endpointSelect = element<HTMLSelectElement>("endpointSelect");
-const providerSelect = element<HTMLSelectElement>("providerSelect");
-const byokProviderSelect = element<HTMLSelectElement>("byokProviderSelect");
-const baseUrlInput = element<HTMLInputElement>("baseUrlInput");
-const modelInput = element<HTMLInputElement>("modelInput");
-const byokBaseUrl = element<HTMLInputElement>("byokBaseUrl");
-const byokModelSelect = element<HTMLSelectElement>("byokModelSelect");
-const byokModelInput = element<HTMLInputElement>("byokModelInput");
-const providerAccountSelect = element<HTMLSelectElement>(
-  "providerAccountSelect",
-);
-const providerAccountLabel = element<HTMLInputElement>("providerAccountLabel");
-const newProviderAccount = element<HTMLButtonElement>("newProviderAccount");
-const saveProviderAccount = element<HTMLButtonElement>("saveProviderAccount");
-const deleteProviderAccount = element<HTMLButtonElement>(
-  "deleteProviderAccount",
-);
-const discoverByokModels = element<HTMLButtonElement>("discoverByokModels");
-const apiKeyInput = element<HTMLInputElement>("apiKeyInput");
-const clearApiKey = element<HTMLButtonElement>("clearApiKey");
-const testProviderConnection = element<HTMLButtonElement>(
-  "testProviderConnection",
-);
-const providerConnectionResult = element<HTMLParagraphElement>(
-  "providerConnectionResult",
-);
-const credentialStorageStatus = element<HTMLParagraphElement>(
-  "credentialStorageStatus",
-);
-const modelOptions = element<HTMLDataListElement>("modelOptions");
-const contextInput = element<HTMLInputElement>("contextInput");
-const permissionSelect = element<HTMLSelectElement>("permissionSelect");
-const internetAccessInput = element<HTMLInputElement>("internetAccessInput");
-const autocompleteEnabled = element<HTMLInputElement>("autocompleteEnabled");
-const autocompleteModel = element<HTMLInputElement>("autocompleteModel");
-const formatOnSave = element<HTMLInputElement>("formatOnSave");
-const mcpServersInput = element<HTMLTextAreaElement>("mcpServersInput");
-const mcpStatus = element<HTMLDivElement>("mcpStatus");
-const mcpServerList = element<HTMLDivElement>("mcpServerList");
-const mcpServerEditor = element<HTMLElement>("mcpServerEditor");
-const mcpEditorTitle = element<HTMLElement>("mcpEditorTitle");
-const mcpNameInput = element<HTMLInputElement>("mcpNameInput");
-const mcpCommandInput = element<HTMLInputElement>("mcpCommandInput");
-const mcpArgsInput = element<HTMLTextAreaElement>("mcpArgsInput");
-const mcpCwdInput = element<HTMLInputElement>("mcpCwdInput");
-const mcpEnabledInput = element<HTMLInputElement>("mcpEnabledInput");
-const mcpReadOnlyInput = element<HTMLInputElement>("mcpReadOnlyInput");
-const checkUpdatesOnLaunch = element<HTMLInputElement>("checkUpdatesOnLaunch");
-const autoDownloadUpdates = element<HTMLInputElement>("autoDownloadUpdates");
-const themeSelect = element<HTMLSelectElement>("themeSelect");
-const customThemeSetting = element<HTMLElement>("customThemeSetting");
-const customThemeInput = element<HTMLTextAreaElement>("customThemeInput");
-const customThemeHelp = element<HTMLDivElement>("customThemeHelp");
-const customThemeActions = element<HTMLDivElement>("customThemeActions");
-const saveCustomTheme = element<HTMLButtonElement>("saveCustomTheme");
-const updateStatus = element<HTMLSpanElement>("updateStatus");
-const checkUpdates = element<HTMLButtonElement>("checkUpdates");
-const downloadUpdate = element<HTMLButtonElement>("downloadUpdate");
-const installUpdate = element<HTMLButtonElement>("installUpdate");
-const updateAvailableDialog = element<HTMLDialogElement>(
-  "updateAvailableDialog",
-);
-const updateAvailableMessage = element<HTMLElement>("updateAvailableMessage");
-const openUpdateSettings = element<HTMLButtonElement>("openUpdateSettings");
 const toast = element<HTMLDivElement>("toast");
 
-let mcpDraft: Record<string, McpStdioServerConfiguration> = {};
-let editingMcpName: string | undefined;
-const testedMcpStatuses = new Map<string, McpServerStatus>();
+const settingsController = new SettingsController();
 let endpoints: readonly DesktopEndpoint[] = [];
 let files: readonly DesktopFile[] = [];
 let fileSearchQuery = "";
@@ -292,16 +282,12 @@ let gitStatus: DesktopGitStatus = {
   files: [],
 };
 let gitGraphData: DesktopGitGraph = { available: false, commits: [] };
-let gitCollapsed = false;
-let gitPanelHeight = 220;
 let activePlan: WorkspacePlan | undefined;
 let streamStartedAt = 0;
 let streamedTextCharacters = 0;
 let agentActivity = "Ready";
 let runningConversationId: string | undefined;
-let chatCollapsed = false;
-let chatDocked = false;
-let centerView: "editor" | "preview" | "agents" | "chat" = "editor";
+let layoutController: DesktopLayoutController;
 let agentsSnapshot: DesktopAgentsSnapshot = { profiles: [], runs: [] };
 const reflectedManagedAgentRunIds = new Set<string>();
 let selectedAgentRunId: string | undefined;
@@ -309,10 +295,6 @@ let pendingAttachments: ChatAttachment[] = [];
 const terminalOutputByCommand = new Map<string, string>();
 const previewUrlByTerminalCommand = new Map<string, string>();
 type SettingsTab = "local" | "byok" | "other";
-let modelSettingsTab: "local" | "byok" = "local";
-let selectedProviderAccountId: string | undefined;
-let creatingProviderAccount = false;
-let announcedUpdateVersion: string | undefined;
 const maxAttachmentCount = 5;
 const maxAttachmentBytes = 4 * 1024 * 1024;
 const maxAttachmentTotalBytes = 12 * 1024 * 1024;
@@ -417,12 +399,6 @@ async function saveTheme(theme: DesktopThemePreference): Promise<void> {
   notify(`${themeDisplayName(theme)} theme saved.`);
 }
 
-function isLocalProvider(
-  provider: DesktopProvider,
-): provider is "ollama" | "openai-compatible" {
-  return provider === "ollama" || provider === "openai-compatible";
-}
-
 function byokBaseUrlForSelectedProvider(): string {
   return byokProviderSelect.selectedOptions[0]?.dataset.baseUrl ?? "";
 }
@@ -439,13 +415,13 @@ function renderProviderAccounts(preferredId?: string): void {
   const provider = byokProviderSelect.value as DesktopProvider;
   const accounts = providerAccountsFor(provider);
   const currentId = configuration().credentialAccountId;
-  const nextId =
-    preferredId && accounts.some((account) => account.id === preferredId)
-      ? preferredId
-      : currentId && accounts.some((account) => account.id === currentId)
-        ? currentId
-        : accounts[0]?.id;
-  selectedProviderAccountId = nextId;
+  const nextId = preferredProviderAccount(
+    accounts,
+    provider,
+    preferredId,
+    currentId,
+  )?.id;
+  settingsController.selectedProviderAccountId = nextId;
   providerAccountSelect.replaceChildren(
     ...(accounts.length
       ? accounts.map((account) => {
@@ -465,11 +441,12 @@ function renderProviderAccounts(preferredId?: string): void {
   );
   providerAccountSelect.value = nextId ?? "";
   const selected = accounts.find((account) => account.id === nextId);
-  providerAccountLabel.value = creatingProviderAccount
+  providerAccountLabel.value = settingsController.creatingProviderAccount
     ? ""
     : (selected?.label ?? "");
-  deleteProviderAccount.disabled = !selected || creatingProviderAccount;
-  saveProviderAccount.textContent = creatingProviderAccount
+  deleteProviderAccount.disabled =
+    !selected || settingsController.creatingProviderAccount;
+  saveProviderAccount.textContent = settingsController.creatingProviderAccount
     ? "Create account"
     : "Save account";
 }
@@ -506,7 +483,7 @@ async function discoverByokModelList(): Promise<void> {
       {
         provider,
         baseUrl: byokBaseUrlForSelectedProvider(),
-        credentialAccountId: selectedProviderAccountId,
+        credentialAccountId: settingsController.selectedProviderAccountId,
       },
       apiKeyInput.value.trim() || undefined,
     );
@@ -526,17 +503,11 @@ async function discoverByokModelList(): Promise<void> {
   }
 }
 
-function selectedSettingsProvider(): DesktopProvider {
-  return modelSettingsTab === "byok"
-    ? (byokProviderSelect.value as DesktopProvider)
-    : (providerSelect.value as DesktopProvider);
-}
-
 function setSettingsTab(tab: SettingsTab): void {
-  if (tab !== "other") modelSettingsTab = tab;
+  if (tab !== "other") settingsController.modelTab = tab;
   if (tab === "byok") {
     byokBaseUrl.value = byokBaseUrlForSelectedProvider();
-    renderProviderAccounts(selectedProviderAccountId);
+    renderProviderAccounts(settingsController.selectedProviderAccountId);
   }
   (document.getElementById("settingsPanelLocal") as HTMLElement).hidden =
     tab !== "local";
@@ -611,22 +582,8 @@ function normalizedPreviewUrl(value: string): string {
   return url.toString();
 }
 
-function setCenterView(next: "editor" | "preview" | "agents" | "chat"): void {
-  if (next === "chat" && !chatDocked) {
-    setChatDocked(true);
-    return;
-  }
-  centerView = next;
-  editor.hidden = next !== "editor";
-  browserPanel.hidden = next !== "preview";
-  agentsPanel.hidden = next !== "agents";
-  chatArea.hidden = chatDocked && next !== "chat";
-  document
-    .querySelectorAll<HTMLButtonElement>("[data-center-view]")
-    .forEach((button) => {
-      button.classList.toggle("active", button.dataset.centerView === next);
-    });
-  if (next === "agents") renderAgents();
+function setCenterView(next: CenterView): void {
+  layoutController.setCenterView(next);
 }
 
 const agentCloudProviders = [
@@ -682,7 +639,7 @@ function applyAgentsSnapshot(snapshot: DesktopAgentsSnapshot): void {
     reflectedManagedAgentRunIds,
   );
   agentsSnapshot = snapshot;
-  if (centerView === "agents") renderAgents();
+  if (layoutController.view === "agents") renderAgents();
   if (workspaceChanged)
     void Promise.all([loadFiles(), refreshGit()]).catch((error) =>
       notify(error instanceof Error ? error.message : String(error)),
@@ -1183,43 +1140,11 @@ function setBusy(next: boolean): void {
 }
 
 function setChatCollapsed(next: boolean): void {
-  chatCollapsed = next;
-  chatArea.classList.toggle("chat-collapsed", next);
-  workbench.classList.toggle("chat-collapsed", next && !chatDocked);
-  toggleChat.textContent = next ? "Show" : "Hide";
-  toggleChat.title = next ? "Show chat panel" : "Hide chat panel";
-  toggleChat.setAttribute("aria-expanded", String(!next));
-  toggleChatDock.hidden = next;
-  showChatPanel.hidden = !next;
-  if (next && chatDocked) setCenterView("editor");
+  layoutController.setChatCollapsed(next);
 }
 
 function setChatDocked(next: boolean): void {
-  if (chatDocked === next) {
-    if (next) setCenterView("chat");
-    return;
-  }
-  chatDocked = next;
-  setChatCollapsed(false);
-  if (next) {
-    centerSurface.append(chatArea);
-    chatSplitter.hidden = true;
-    chatArea.classList.add("chat-docked");
-    toggleChatDock.textContent = "Side panel";
-    toggleChatDock.title = "Return chat panel to the side";
-    toggleChatDock.setAttribute("aria-pressed", "true");
-    workbench.classList.add("chat-docked");
-    setCenterView("chat");
-    return;
-  }
-  chatSplitter.after(chatArea);
-  chatSplitter.hidden = false;
-  chatArea.classList.remove("chat-docked");
-  toggleChatDock.textContent = "Full size";
-  toggleChatDock.title = "Move chat panel into the editor area";
-  toggleChatDock.setAttribute("aria-pressed", "false");
-  workbench.classList.remove("chat-docked");
-  setCenterView("editor");
+  layoutController.setChatDocked(next);
 }
 
 function syntaxDiagnostics(path: string): readonly SyntaxDiagnostic[] {
@@ -1509,67 +1434,12 @@ function renderGitGraph(): void {
   );
 }
 
-function sidebarTracks(): {
-  readonly git: number;
-  readonly files: number;
-  readonly history: number;
-} {
-  return {
-    git: gitPanel.getBoundingClientRect().height,
-    files: filesSection.getBoundingClientRect().height,
-    history: historySection.getBoundingClientRect().height,
-  };
-}
-
-function applySidebarTracks(git: number, files: number, history: number): void {
-  sidebar.style.setProperty("--git-height", `${git}px`);
-  sidebar.style.setProperty("--files-height", `${files}px`);
-  sidebar.style.setProperty("--history-height", `${history}px`);
-}
-
-function resetSidebarTracks(): void {
-  const splitterHeight =
-    element<HTMLDivElement>("gitSplitter").getBoundingClientRect().height +
-    element<HTMLDivElement>("historySplitter").getBoundingClientRect().height;
-  const tracks = balancedSidebarTracks(
-    sidebar.getBoundingClientRect().height,
-    splitterHeight,
-    gitCollapsed,
-  );
-  if (!gitCollapsed) gitPanelHeight = tracks.git;
-  applySidebarTracks(tracks.git, tracks.files, tracks.history);
-}
-
 function setGitCollapsed(collapsed: boolean): void {
-  if (gitCollapsed === collapsed) return;
-  const tracks = sidebarTracks();
-  if (collapsed) gitPanelHeight = tracks.git;
-  gitCollapsed = collapsed;
-  renderGit();
-  const next = collapsed
-    ? collapsedSidebarTracks(tracks)
-    : expandedSidebarTracks(tracks, gitPanelHeight);
-  applySidebarTracks(next.git, next.files, next.history);
+  layoutController.setGitCollapsed(collapsed);
 }
-
-let observedSidebarHeight = 0;
-new ResizeObserver(() => {
-  const sidebarHeight = Math.floor(sidebar.getBoundingClientRect().height);
-  if (!sidebarHeight || sidebarHeight === observedSidebarHeight) return;
-  observedSidebarHeight = sidebarHeight;
-  const splitterHeight =
-    element<HTMLDivElement>("gitSplitter").getBoundingClientRect().height +
-    element<HTMLDivElement>("historySplitter").getBoundingClientRect().height;
-  const tracks = resizeSidebarTracks(
-    sidebarTracks(),
-    sidebarHeight,
-    splitterHeight,
-    gitCollapsed,
-  );
-  applySidebarTracks(tracks.git, tracks.files, tracks.history);
-}).observe(sidebar);
 
 function renderGit(): void {
+  const gitCollapsed = layoutController.gitCollapsed;
   gitPanel.classList.toggle("collapsed", gitCollapsed);
   gitBody.hidden = gitCollapsed;
   const toggle = element<HTMLButtonElement>("toggleGit");
@@ -3059,74 +2929,41 @@ async function discover(input?: Partial<DesktopConfiguration>): Promise<void> {
 }
 
 function settingsConfiguration(): DesktopConfiguration {
-  const current = configuration();
-  const provider = selectedSettingsProvider();
-  const reusingCurrentProvider = provider === current.provider;
-  const baseUrl = isLocalProvider(provider)
-    ? baseUrlInput.value.trim() ||
-      (reusingCurrentProvider ? current.baseUrl : "")
-    : byokBaseUrlForSelectedProvider() ||
-      (reusingCurrentProvider ? current.baseUrl : "");
-  const model =
-    (modelSettingsTab === "byok"
+  const model = (
+    settingsController.modelTab === "byok"
       ? byokModelInput.value
       : modelInput.value
-    ).trim() || (reusingCurrentProvider ? current.model : "");
-  if (!baseUrl || !model)
-    throw new Error(
-      "Choose a provider endpoint and model before applying agent settings.",
-    );
-  const mcpServers = mcpConfigurationsFromAdvancedJson();
-  const modelContextWindow = selectedModelContextWindow(model);
-  return {
-    provider,
-    baseUrl,
-    model,
-    credentialAccountId:
-      modelSettingsTab === "byok" ? selectedProviderAccountId : undefined,
-    mode: current.mode,
-    permission:
-      permissionSelect.value === "auto-read" ||
-      permissionSelect.value === "auto-all"
-        ? permissionSelect.value
-        : "ask",
-    contextWindow: isLocalProvider(provider)
-      ? Math.max(512, Number.parseInt(contextInput.value, 10) || 8_192)
-      : (modelContextWindow ?? 8_192),
-    ...(isLocalProvider(provider) || modelContextWindow === undefined
-      ? {}
-      : { modelContextWindow }),
+  ).trim();
+  return buildSettingsConfiguration({
+    current: configuration(),
+    modelTab: settingsController.modelTab,
+    localProvider: providerSelect.value as DesktopProvider,
+    localBaseUrl: baseUrlInput.value,
+    localModel: modelInput.value,
+    cloudProvider: byokProviderSelect.value as DesktopProvider,
+    cloudBaseUrl: byokBaseUrlForSelectedProvider(),
+    cloudModel: byokModelInput.value,
+    credentialAccountId: settingsController.selectedProviderAccountId,
+    permission: permissionSelect.value,
+    contextWindow: contextInput.value,
+    selectedModel: knownModel(model),
     internetAccess: internetAccessInput.checked,
-    autocomplete: {
-      enabled: autocompleteEnabled.checked,
-      model: autocompleteModel.value.trim() || undefined,
-    },
+    autocompleteEnabled: autocompleteEnabled.checked,
+    autocompleteModel: autocompleteModel.value,
     formatOnSave: formatOnSave.checked,
-    mcpServers,
-  };
-}
-
-function mcpConfigurationsFromAdvancedJson(): Record<
-  string,
-  McpStdioServerConfiguration
-> {
-  const source = mcpServersInput.value.trim();
-  if (!source) return {};
-  const parsed = JSON.parse(source) as unknown;
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-    throw new Error("MCP servers must be a JSON object.");
-  return parsed as Record<string, McpStdioServerConfiguration>;
+    mcpServers: parseMcpConfigurations(mcpServersInput.value),
+  });
 }
 
 function syncMcpAdvancedJson(): void {
-  mcpServersInput.value = Object.keys(mcpDraft).length
-    ? JSON.stringify(mcpDraft, null, 2)
+  mcpServersInput.value = Object.keys(settingsController.mcpDraft).length
+    ? JSON.stringify(settingsController.mcpDraft, null, 2)
     : "";
 }
 
 function openMcpEditor(name?: string): void {
-  editingMcpName = name;
-  const configuration = name ? mcpDraft[name] : undefined;
+  settingsController.editingMcpName = name;
+  const configuration = name ? settingsController.mcpDraft[name] : undefined;
   mcpEditorTitle.textContent = configuration
     ? `Edit ${name}`
     : "Add MCP server";
@@ -3142,7 +2979,7 @@ function openMcpEditor(name?: string): void {
 }
 
 function closeMcpEditor(): void {
-  editingMcpName = undefined;
+  settingsController.editingMcpName = undefined;
   mcpServerEditor.hidden = true;
 }
 
@@ -3153,7 +2990,7 @@ function renderMcpManager(): void {
       status,
     ]),
   );
-  const names = Object.keys(mcpDraft).sort((left, right) =>
+  const names = Object.keys(settingsController.mcpDraft).sort((left, right) =>
     left.localeCompare(right),
   );
   if (!names.length) {
@@ -3167,8 +3004,8 @@ function renderMcpManager(): void {
   }
   mcpServerList.replaceChildren(
     ...names.map((name) => {
-      const configuration = mcpDraft[name];
-      const status = testedMcpStatuses.get(name) ??
+      const configuration = settingsController.mcpDraft[name];
+      const status = settingsController.testedMcpStatuses.get(name) ??
         runtimeStatuses.get(name) ?? {
           name,
           state:
@@ -3233,29 +3070,17 @@ function renderMcpManager(): void {
 }
 
 function providerConnectionConfiguration(): DesktopConfiguration {
-  const current = configuration();
-  const provider = selectedSettingsProvider();
-  const reusingCurrentProvider = provider === current.provider;
-  const baseUrl = isLocalProvider(provider)
-    ? baseUrlInput.value.trim() ||
-      (reusingCurrentProvider ? current.baseUrl : "")
-    : byokBaseUrlForSelectedProvider() ||
-      (reusingCurrentProvider ? current.baseUrl : "");
-  const model =
-    (modelSettingsTab === "byok"
-      ? byokModelInput.value
-      : modelInput.value
-    ).trim() || (reusingCurrentProvider ? current.model : "");
-  if (!baseUrl || !model)
-    throw new Error("Choose a provider endpoint and model before testing.");
-  return {
-    ...current,
-    provider,
-    baseUrl,
-    model,
-    credentialAccountId:
-      modelSettingsTab === "byok" ? selectedProviderAccountId : undefined,
-  };
+  return buildProviderConnectionConfiguration({
+    current: configuration(),
+    modelTab: settingsController.modelTab,
+    localProvider: providerSelect.value as DesktopProvider,
+    localBaseUrl: baseUrlInput.value,
+    localModel: modelInput.value,
+    cloudProvider: byokProviderSelect.value as DesktopProvider,
+    cloudBaseUrl: byokBaseUrlForSelectedProvider(),
+    cloudModel: byokModelInput.value,
+    credentialAccountId: settingsController.selectedProviderAccountId,
+  });
 }
 
 function clearProviderConnectionResult(): void {
@@ -3306,9 +3131,9 @@ function renderUpdate(
   if (
     status.status === "available" &&
     status.version &&
-    announcedUpdateVersion !== status.version
+    settingsController.announcedUpdateVersion !== status.version
   ) {
-    announcedUpdateVersion = status.version;
+    settingsController.announcedUpdateVersion = status.version;
     updateAvailableMessage.textContent = `Truss ${status.version} is available. You can review the download and install options now or later.`;
     if (!updateAvailableDialog.open) updateAvailableDialog.showModal();
   }
@@ -3327,7 +3152,7 @@ function populateSettings(): void {
     byokModelInput.value = current.model;
     rendererState.setModels("cloud", []);
     renderByokModels(current.model);
-    creatingProviderAccount = false;
+    settingsController.creatingProviderAccount = false;
     renderProviderAccounts(current.credentialAccountId);
     setSettingsTab("byok");
   }
@@ -3345,8 +3170,7 @@ function populateSettings(): void {
   autocompleteEnabled.checked = current.autocomplete?.enabled ?? false;
   autocompleteModel.value = current.autocomplete?.model ?? "";
   formatOnSave.checked = current.formatOnSave ?? false;
-  mcpDraft = { ...current.mcpServers };
-  testedMcpStatuses.clear();
+  settingsController.loadMcpDraft(current.mcpServers);
   syncMcpAdvancedJson();
   checkUpdatesOnLaunch.checked = rendererState.desktop.updates.checkOnLaunch;
   autoDownloadUpdates.checked = rendererState.desktop.updates.autoDownload;
@@ -4320,7 +4144,10 @@ function handleEvent(message: DesktopEvent): void {
       }
       void loadEditorTab(tab);
     }
-    if (centerView === "preview" && browserView.getURL() !== "about:blank")
+    if (
+      layoutController.view === "preview" &&
+      browserView.getURL() !== "about:blank"
+    )
       browserView.reload();
     return;
   }
@@ -4425,100 +4252,34 @@ function handleEvent(message: DesktopEvent): void {
   }
 }
 
-function bindPaneResize(
-  id: string,
-  axis: "x" | "y",
-  createMove: () => (delta: number) => void,
-): void {
-  const splitter = element<HTMLDivElement>(id);
-  splitter.tabIndex = 0;
-  splitter.setAttribute(
-    "aria-orientation",
-    axis === "x" ? "vertical" : "horizontal",
-  );
-  splitter.addEventListener("pointerdown", (down) => {
-    down.preventDefault();
-    const start = axis === "x" ? down.clientX : down.clientY;
-    const move = createMove();
-    document.body.classList.add("resizing");
-    splitter.setPointerCapture(down.pointerId);
-    const onMove = (event: PointerEvent): void =>
-      move((axis === "x" ? event.clientX : event.clientY) - start);
-    const onEnd = (): void => {
-      document.body.classList.remove("resizing");
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onEnd);
-      window.removeEventListener("pointercancel", onEnd);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onEnd);
-    window.addEventListener("pointercancel", onEnd);
-  });
-  splitter.addEventListener("keydown", (event) => {
-    const increase =
-      axis === "x" ? event.key === "ArrowRight" : event.key === "ArrowDown";
-    const decrease =
-      axis === "x" ? event.key === "ArrowLeft" : event.key === "ArrowUp";
-    if (!increase && !decrease) return;
-    event.preventDefault();
-    createMove()(
-      increase ? (event.shiftKey ? 48 : 12) : event.shiftKey ? -48 : -12,
-    );
-  });
-}
-
-bindPaneResize("sidebarSplitter", "x", () => {
-  const initial = sidebar.getBoundingClientRect().width;
-  return (delta) =>
-    workbench.style.setProperty(
-      "--sidebar-width",
-      `${clamp(initial + delta, 190, 520)}px`,
-    );
-});
-bindPaneResize("chatSplitter", "x", () => {
-  const initial =
-    document.querySelector<HTMLElement>(".chat-area")?.getBoundingClientRect()
-      .width ?? 390;
-  return (delta) =>
-    workbench.style.setProperty(
-      "--chat-width",
-      `${clamp(initial - delta, 330, 680)}px`,
-    );
-});
-bindPaneResize("gitSplitter", "y", () => {
-  if (gitCollapsed) setGitCollapsed(false);
-  const initial = sidebarTracks();
-  return (delta) => {
-    const applied = clamp(delta, 160 - initial.git, initial.files - 110);
-    gitPanelHeight = initial.git + applied;
-    applySidebarTracks(
-      gitPanelHeight,
-      initial.files - applied,
-      initial.history,
-    );
-  };
-});
-bindPaneResize("historySplitter", "y", () => {
-  const initial = sidebarTracks();
-  return (delta) => {
-    const applied = clamp(delta, 110 - initial.files, initial.history - 110);
-    applySidebarTracks(
-      initial.git,
-      initial.files + applied,
-      initial.history - applied,
-    );
-  };
-});
-element<HTMLDivElement>("gitSplitter").ondblclick = resetSidebarTracks;
-element<HTMLDivElement>("historySplitter").ondblclick = resetSidebarTracks;
-bindPaneResize("terminalSplitter", "y", () => {
-  const initial = terminal.getBoundingClientRect().height;
-  const adjacent = centerSurface.getBoundingClientRect().height;
-  return (delta) => {
-    const applied = clamp(delta, 160 - adjacent, initial - 120);
-    editorArea.style.setProperty("--terminal-height", `${initial - applied}px`);
-  };
-});
+layoutController = new DesktopLayoutController(
+  {
+    document,
+    workbench,
+    sidebar,
+    editorArea,
+    centerSurface,
+    editor,
+    browserPanel,
+    agentsPanel,
+    chatArea,
+    chatSplitter,
+    toggleChat,
+    showChatPanel,
+    toggleChatDock,
+    gitPanel,
+    gitBody,
+    filesSection,
+    historySection,
+    terminal,
+    sidebarSplitter: element<HTMLDivElement>("sidebarSplitter"),
+    gitSplitter: element<HTMLDivElement>("gitSplitter"),
+    historySplitter: element<HTMLDivElement>("historySplitter"),
+    terminalSplitter: element<HTMLDivElement>("terminalSplitter"),
+  },
+  { renderAgents, renderGit },
+);
+layoutController.bind();
 
 element<HTMLButtonElement>("chooseWorkspace").onclick = async () => {
   const next = await desktop.chooseWorkspace();
@@ -4610,7 +4371,7 @@ clearFileSearch.onclick = () => {
 };
 element<HTMLButtonElement>("refreshGit").onclick = () => void refreshGit();
 element<HTMLButtonElement>("toggleGit").onclick = () =>
-  setGitCollapsed(!gitCollapsed);
+  setGitCollapsed(!layoutController.gitCollapsed);
 element<HTMLButtonElement>("stageAll").onclick = () => {
   const staged = gitStatus.files.filter(
     (file) => file.indexStatus !== " " && file.indexStatus !== "?",
@@ -4738,12 +4499,12 @@ window.addEventListener(
   { passive: false, capture: true },
 );
 element<HTMLButtonElement>("settingsButton").onclick = openSettings;
-toggleChat.onclick = () => setChatCollapsed(!chatCollapsed);
+toggleChat.onclick = () => setChatCollapsed(!layoutController.chatCollapsed);
 showChatPanel.onclick = () => {
   setChatCollapsed(false);
-  if (chatDocked) setCenterView("chat");
+  if (layoutController.chatDocked) setCenterView("chat");
 };
-toggleChatDock.onclick = () => setChatDocked(!chatDocked);
+toggleChatDock.onclick = () => setChatDocked(!layoutController.chatDocked);
 element<HTMLButtonElement>("dialogRefresh").onclick = () => {
   const provider = providerSelect.value as "ollama" | "openai-compatible";
   void discover({ provider, baseUrl: baseUrlInput.value });
@@ -4774,7 +4535,7 @@ clearApiKey.onclick = () => {
   void desktop
     .clearCredential(
       byokProviderSelect.value as DesktopProvider,
-      selectedProviderAccountId,
+      settingsController.selectedProviderAccountId,
     )
     .then(() => {
       apiKeyInput.value = "";
@@ -4816,19 +4577,19 @@ testProviderConnection.onclick = () => {
     });
 };
 newProviderAccount.onclick = () => {
-  creatingProviderAccount = true;
-  selectedProviderAccountId = undefined;
+  settingsController.createProviderAccount();
   apiKeyInput.value = "";
   renderProviderAccounts();
   providerAccountLabel.focus();
 };
 providerAccountSelect.onchange = () => {
-  creatingProviderAccount = false;
-  selectedProviderAccountId = providerAccountSelect.value || undefined;
+  settingsController.selectProviderAccount(
+    providerAccountSelect.value || undefined,
+  );
   apiKeyInput.value = "";
   rendererState.setModels("cloud", []);
   renderByokModels();
-  renderProviderAccounts(selectedProviderAccountId);
+  renderProviderAccounts(settingsController.selectedProviderAccountId);
 };
 saveProviderAccount.onclick = () => {
   const provider = byokProviderSelect.value as DesktopProvider;
@@ -4851,7 +4612,9 @@ saveProviderAccount.onclick = () => {
   void desktop
     .saveProviderAccount(
       {
-        id: creatingProviderAccount ? undefined : selectedProviderAccountId,
+        id: settingsController.creatingProviderAccount
+          ? undefined
+          : settingsController.selectedProviderAccountId,
         providerId: provider,
         label,
         authMethod: "api-key",
@@ -4860,15 +4623,16 @@ saveProviderAccount.onclick = () => {
     )
     .then((returned) => {
       rendererState.desktop = returned;
-      creatingProviderAccount = false;
+      settingsController.creatingProviderAccount = false;
       const saved = providerAccountsFor(provider).find(
         (account) =>
-          account.id === selectedProviderAccountId ||
+          account.id === settingsController.selectedProviderAccountId ||
           (!previousAccountIds.has(account.id) && account.label === label),
       );
-      selectedProviderAccountId = saved?.id ?? selectedProviderAccountId;
+      settingsController.selectedProviderAccountId =
+        saved?.id ?? settingsController.selectedProviderAccountId;
       apiKeyInput.value = "";
-      renderProviderAccounts(selectedProviderAccountId);
+      renderProviderAccounts(settingsController.selectedProviderAccountId);
       notify("Provider account saved. Apply settings to use it.");
     })
     .catch((error: unknown) =>
@@ -4879,15 +4643,14 @@ saveProviderAccount.onclick = () => {
     });
 };
 deleteProviderAccount.onclick = () => {
-  const accountId = selectedProviderAccountId;
+  const accountId = settingsController.selectedProviderAccountId;
   if (!accountId) return;
   deleteProviderAccount.disabled = true;
   void desktop
     .deleteProviderAccount(accountId)
     .then((returned) => {
       rendererState.desktop = returned;
-      selectedProviderAccountId = undefined;
-      creatingProviderAccount = false;
+      settingsController.selectProviderAccount();
       apiKeyInput.value = "";
       renderProviderAccounts();
       notify("Provider account deleted.");
@@ -4902,32 +4665,30 @@ deleteProviderAccount.onclick = () => {
 element<HTMLButtonElement>("addMcpServer").onclick = () => openMcpEditor();
 element<HTMLButtonElement>("cancelMcpServer").onclick = closeMcpEditor;
 element<HTMLButtonElement>("saveMcpServer").onclick = () => {
-  const name = (editingMcpName ?? mcpNameInput.value).trim();
+  const name = (settingsController.editingMcpName ?? mcpNameInput.value).trim();
   const command = mcpCommandInput.value.trim();
   if (!name || !command) {
     notify("Enter a name and command for the MCP server.");
     return;
   }
-  if (!editingMcpName && mcpDraft[name]) {
+  if (!settingsController.editingMcpName && settingsController.mcpDraft[name]) {
     notify(`An MCP server named ${name} already exists.`);
     return;
   }
-  const previous = editingMcpName ? mcpDraft[editingMcpName] : undefined;
-  mcpDraft = {
-    ...mcpDraft,
-    [name]: {
-      command,
-      args: mcpArgsInput.value
-        .split(/\r?\n/)
-        .map((value) => value.trim())
-        .filter(Boolean),
-      cwd: mcpCwdInput.value.trim() || undefined,
-      enabled: mcpEnabledInput.checked,
-      readOnly: mcpReadOnlyInput.checked,
-      ...(previous?.env ? { env: previous.env } : {}),
-    },
-  };
-  testedMcpStatuses.delete(name);
+  const previous = settingsController.editingMcpName
+    ? settingsController.mcpDraft[settingsController.editingMcpName]
+    : undefined;
+  settingsController.saveMcpServer(name, {
+    command,
+    args: mcpArgsInput.value
+      .split(/\r?\n/)
+      .map((value) => value.trim())
+      .filter(Boolean),
+    cwd: mcpCwdInput.value.trim() || undefined,
+    enabled: mcpEnabledInput.checked,
+    readOnly: mcpReadOnlyInput.checked,
+    ...(previous?.env ? { env: previous.env } : {}),
+  });
   syncMcpAdvancedJson();
   closeMcpEditor();
   renderMcpManager();
@@ -4938,39 +4699,38 @@ mcpServerList.onclick = (event) => {
   );
   const name = button?.dataset.mcpName;
   const action = button?.dataset.mcpAction;
-  if (!button || !name || !action || !mcpDraft[name]) return;
+  if (!button || !name || !action || !settingsController.mcpDraft[name]) return;
   if (action === "edit") {
     openMcpEditor(name);
     return;
   }
   if (action === "toggle") {
-    mcpDraft = {
-      ...mcpDraft,
-      [name]: { ...mcpDraft[name], enabled: mcpDraft[name].enabled === false },
-    };
-    testedMcpStatuses.delete(name);
+    settingsController.toggleMcpServer(name);
     syncMcpAdvancedJson();
     renderMcpManager();
     return;
   }
   if (action === "remove") {
-    const { [name]: _removed, ...remaining } = mcpDraft;
-    mcpDraft = remaining;
-    testedMcpStatuses.delete(name);
+    const editing = settingsController.editingMcpName === name;
+    settingsController.removeMcpServer(name);
     syncMcpAdvancedJson();
-    if (editingMcpName === name) closeMcpEditor();
+    if (editing) closeMcpEditor();
     renderMcpManager();
     return;
   }
   if (action === "test") {
     button.disabled = true;
-    testedMcpStatuses.set(name, { name, state: "connecting", toolCount: 0 });
+    settingsController.recordMcpStatus({
+      name,
+      state: "connecting",
+      toolCount: 0,
+    });
     renderMcpManager();
     void desktop
-      .testMcpServer(name, mcpDraft[name])
-      .then((status) => testedMcpStatuses.set(name, status))
+      .testMcpServer(name, settingsController.mcpDraft[name])
+      .then((status) => settingsController.recordMcpStatus(status))
       .catch(() =>
-        testedMcpStatuses.set(name, {
+        settingsController.recordMcpStatus({
           name,
           state: "failed",
           toolCount: 0,
@@ -4982,8 +4742,8 @@ mcpServerList.onclick = (event) => {
 };
 mcpServersInput.onchange = () => {
   try {
-    mcpDraft = mcpConfigurationsFromAdvancedJson();
-    testedMcpStatuses.clear();
+    settingsController.mcpDraft = parseMcpConfigurations(mcpServersInput.value);
+    settingsController.testedMcpStatuses.clear();
     closeMcpEditor();
     renderMcpManager();
   } catch (error) {
@@ -5097,8 +4857,7 @@ providerSelect.onchange = () => {
 };
 byokProviderSelect.onchange = () => {
   byokBaseUrl.value = byokBaseUrlForSelectedProvider();
-  creatingProviderAccount = false;
-  selectedProviderAccountId = undefined;
+  settingsController.selectProviderAccount();
   apiKeyInput.value = "";
   rendererState.setModels("cloud", []);
   renderByokModels();
@@ -5330,7 +5089,7 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (
-    centerView === "editor" &&
+    layoutController.view === "editor" &&
     event.ctrlKey &&
     event.key.toLowerCase() === "w" &&
     activeFile
@@ -5340,7 +5099,7 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (
-    centerView === "editor" &&
+    layoutController.view === "editor" &&
     event.ctrlKey &&
     event.key === "Tab" &&
     openEditorTabs.length > 1
@@ -5356,7 +5115,7 @@ window.addEventListener("keydown", (event) => {
     return;
   }
   if (
-    centerView === "preview" &&
+    layoutController.view === "preview" &&
     event.ctrlKey &&
     event.key.toLowerCase() === "l"
   ) {
@@ -5364,11 +5123,11 @@ window.addEventListener("keydown", (event) => {
     browserUrl.focus();
     browserUrl.select();
   }
-  if (centerView === "preview" && event.key === "F5") {
+  if (layoutController.view === "preview" && event.key === "F5") {
     event.preventDefault();
     if (browserView.getURL() !== "about:blank") browserView.reload();
   }
-  if (centerView === "preview" && event.key === "F12") {
+  if (layoutController.view === "preview" && event.key === "F12") {
     event.preventDefault();
     browserView.openDevTools();
   }
@@ -5405,7 +5164,7 @@ void (async () => {
     }),
   ]);
   await restoreWorkspaceUiState();
-  resetSidebarTracks();
+  layoutController.resetSidebarTracks();
   renderConversations();
   renderChat();
   renderRuntime();
