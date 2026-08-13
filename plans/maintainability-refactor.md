@@ -1,6 +1,6 @@
 # Maintainability Refactor Plan
 
-**Status:** In progress — shared layers and Desktop Git checkpoint implemented
+**Status:** In progress — shared layers and Desktop terminal checkpoint implemented
 
 **Created:** 2026-08-12
 
@@ -454,8 +454,38 @@ Validation at this checkpoint:
   open-file actions, stage/unstage/discard, generated commit messages, commit,
   pull/push safety, and automatic Files/Git refresh.
 
-Next checkpoint after merge: extract the Desktop terminal controller in a
-fresh branch, keeping it separate from remaining renderer domains.
+### 2026-08-13 — Desktop terminal controller checkpoint
+
+Implemented locally on `refactor/desktop-terminal-controller` for issue #223:
+
+- Moved terminal command submission, managed-process interruption, bounded
+  output, per-command preview detection, prompt projection, and user feedback
+  into a dedicated controller.
+- Moved terminal form submission, Ctrl+C detection, input clearing, output
+  scrolling, and prompt DOM rendering into a focused terminal view.
+- Preserved streamed Electron terminal events, `runTerminal` and
+  `stopTerminal` IPC contracts, process-count feedback, Git/workspace/time
+  prompt context, and automatic Preview navigation for announced local
+  development servers.
+- Reduced `packages/desktop/src/renderer.ts` from 4,575 to 4,486 lines and
+  added seven focused terminal-controller tests alongside the existing three
+  preview-detection tests.
+- Bumped Desktop to 0.1.44 and updated the public changelog in the same feature
+  branch.
+
+Validation at this checkpoint:
+
+- Desktop build and focused terminal/preview tests pass.
+- Root build and all 70 repository test files and 268 tests pass.
+- The isolated documentation production build generates all 38 routes.
+- Targeted Biome and Prettier checks and `git diff --check` pass.
+- Interactive Electron smoke passed for command execution, streamed output,
+  Ctrl+C and idle interruption, prompt refresh, and development-server Preview
+  navigation.
+
+Next checkpoint after merge: evaluate the remaining Desktop renderer domains
+and then begin the Mobile and documentation-download decompositions defined in
+Phase 4.
 
 ## 1. Why this refactor is needed
 
