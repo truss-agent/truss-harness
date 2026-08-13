@@ -17,12 +17,18 @@ const forbiddenPackages = [
   "vscode",
 ] as const;
 
-async function productionSources(directory: string): Promise<readonly string[]> {
+async function productionSources(
+  directory: string,
+): Promise<readonly string[]> {
   const files: string[] = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
     const candidate = join(directory, entry.name);
-    if (entry.isDirectory()) files.push(...(await productionSources(candidate)));
-    else if (extname(entry.name) === ".ts" && !entry.name.endsWith(".test.ts")) {
+    if (entry.isDirectory())
+      files.push(...(await productionSources(candidate)));
+    else if (
+      extname(entry.name) === ".ts" &&
+      !entry.name.endsWith(".test.ts")
+    ) {
       files.push(candidate);
     }
   }

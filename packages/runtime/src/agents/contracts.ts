@@ -1,3 +1,4 @@
+import type { ContextBlock } from "../context.js";
 import type {
   ChatAttachment,
   ChatMessage,
@@ -5,7 +6,6 @@ import type {
   RuntimeEvent,
   Session,
 } from "../contracts.js";
-import type { ContextBlock } from "../context.js";
 import type { EventListener } from "../events.js";
 
 /** A stable profile identity, independent from a provider session ID. */

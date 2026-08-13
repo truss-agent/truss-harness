@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ChatAttachment, RuntimeEvent } from "../contracts.js";
 import { EventBus } from "../events.js";
 import type {
+  AgentCoordinatorEvent,
   AgentId,
   AgentLifecycleRecord,
   AgentProfile,
@@ -12,9 +13,8 @@ import type {
   AgentRunState,
   AgentRunSummary,
   AgentRuntimeFactory,
-  AgentCoordinatorEvent,
-  CreatedManagedAgentRuntime,
   CreateAgentProfileInput,
+  CreatedManagedAgentRuntime,
   ManagedAgentEvent,
   StartAgentRunInput,
   UpdateAgentProfileInput,
