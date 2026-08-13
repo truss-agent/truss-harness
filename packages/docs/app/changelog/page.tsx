@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Truss Go 0.1.5",
+    label: "Focused mobile gateway transport",
+    changes: [
+      "Moved trusted QR pairing parsing, saved-gateway updates, and persisted mode and approval preferences into focused Mobile helpers.",
+      "Moved gateway command and workspace-discovery transport into a typed boundary with preserved authentication, request versions, timeout messages, and gateway-specific error guidance.",
+      "Added direct tests for pairing safety, preference normalization, gateway replacement, endpoint selection, command authorization, rejected requests, and workspace discovery.",
+    ],
+  },
+  {
     version: "Desktop 0.1.44",
     label: "Focused terminal controller",
     changes: [
