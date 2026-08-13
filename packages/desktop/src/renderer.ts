@@ -7,6 +7,19 @@ import type {
 import { scheduleConversationNavigation } from "./conversation-navigation.js";
 import { previewServerUrlFromOutput } from "./preview-url.js";
 import { markChangedAgentRuns } from "./renderer/agents/snapshot.js";
+import {
+  DesktopEditorController,
+  type EditorTab,
+  editorPath,
+  type SyntaxDiagnostic,
+} from "./renderer/editor/editor-controller.js";
+import {
+  childEntryPath,
+  entryName,
+  entryParent,
+  type FileContextTarget,
+  WorkspaceFilesController,
+} from "./renderer/files/workspace-files-controller.js";
 import { desktopClient } from "./renderer/ipc/desktop-client.js";
 import {
   type CenterView,
@@ -231,41 +244,18 @@ const toast = element<HTMLDivElement>("toast");
 
 const settingsController = new SettingsController();
 let endpoints: readonly DesktopEndpoint[] = [];
-let files: readonly DesktopFile[] = [];
-let fileSearchQuery = "";
-type FileContextTarget = {
-  readonly kind: "root" | "directory" | "file";
-  readonly path: string;
-};
-let copiedWorkspaceFile: string | undefined;
 let resolveFileEntry: ((value: string | undefined) => void) | undefined;
 let resolveConfirmation: ((value: boolean) => void) | undefined;
-let activeFile: string | undefined;
-let showingDiff = false;
 let inlineCompletion = "";
 let completionTimer: number | undefined;
 let completionRequest = 0;
 let syntaxTimer: number | undefined;
-type SyntaxDiagnostic = {
-  readonly line: number;
-  readonly message: string;
-};
-const syntaxDiagnosticsByPath = new Map<string, readonly SyntaxDiagnostic[]>();
 let lastZoomWheelAt = 0;
-type EditorTabMode = "file" | "diff" | "settings";
-type EditorTabState = "loading" | "ready" | "error";
-interface EditorTab {
-  readonly path: string;
-  mode: EditorTabMode;
-  state: EditorTabState;
-  content: string;
-  dirty: boolean;
-  scrollTop: number;
-  revision: number;
-}
 type ToolActivity = DesktopToolActivity;
-const openEditorTabs: EditorTab[] = [];
 const settingsEditorPath = "__truss_settings__";
+const editorController = new DesktopEditorController(settingsEditorPath);
+const workspaceFilesController = new WorkspaceFilesController();
+const openEditorTabs = editorController.tabs;
 const toolActivityByConversation = new Map<string, ToolActivity[]>();
 const toolActivityExpandedByConversation = new Map<string, boolean>();
 let busy = false;
@@ -273,8 +263,6 @@ let persistTimer: number | undefined;
 let workspaceUiPersistTimer: number | undefined;
 let slashResults: readonly DesktopFile[] = [];
 let slashIndex = 0;
-const expandedDirectories = new Set<string>();
-const loadedDirectoryContents = new Set<string>();
 let gitStatus: DesktopGitStatus = {
   available: false,
   ahead: 0,
@@ -1098,12 +1086,8 @@ function saveConversations(): void {
 function workspaceUiState(): DesktopWorkspaceUiState {
   preserveEditorScroll();
   return {
-    expandedDirectories: [...expandedDirectories],
-    openEditors: openEditorTabs.flatMap((tab) =>
-      tab.mode === "settings"
-        ? []
-        : [{ path: tab.path, mode: tab.mode, scrollTop: tab.scrollTop }],
-    ),
+    expandedDirectories: [...workspaceFilesController.expandedDirectories],
+    openEditors: editorController.persistedTabs(),
     activeFile: activeWorkspaceFilePath(),
     fileTreeScrollTop: fileTree.scrollTop,
   };
@@ -1148,7 +1132,7 @@ function setChatDocked(next: boolean): void {
 }
 
 function syntaxDiagnostics(path: string): readonly SyntaxDiagnostic[] {
-  return syntaxDiagnosticsByPath.get(editorPath(path)) ?? [];
+  return editorController.diagnostics(path);
 }
 
 function syntaxErrorTitle(path: string): string | undefined {
@@ -1166,12 +1150,7 @@ function setSyntaxDiagnostics(
   path: string,
   diagnostics: readonly SyntaxDiagnostic[],
 ): void {
-  const normalizedPath = editorPath(path);
-  const hadErrors = syntaxDiagnosticsByPath.has(normalizedPath);
-  if (diagnostics.length)
-    syntaxDiagnosticsByPath.set(normalizedPath, diagnostics);
-  else syntaxDiagnosticsByPath.delete(normalizedPath);
-  if (hadErrors !== diagnostics.length > 0) {
+  if (editorController.setDiagnostics(path, diagnostics)) {
     renderEditorTabs();
     renderFiles();
     renderGit();
@@ -1613,17 +1592,17 @@ function renderFiles(): void {
   window.requestAnimationFrame(() => {
     fileTree.scrollTop = scrollTop;
   });
-  if (!files.length) {
+  if (!workspaceFilesController.entries.length) {
     const empty = document.createElement("div");
     empty.className = "empty-chat";
     empty.textContent = "No files loaded.";
     fileTree.append(empty);
     return;
   }
-  const query = fileSearchQuery.trim();
+  const query = workspaceFilesController.query.trim();
   clearFileSearch.hidden = !query;
   if (query) {
-    const matches = files
+    const matches = workspaceFilesController.entries
       .filter((file) => file.type === "file")
       .flatMap((file) => {
         const score = fuzzyScore(file.path, query);
@@ -1650,7 +1629,8 @@ function renderFiles(): void {
       row.classList.toggle("has-syntax-error", Boolean(syntaxError));
       button.title = syntaxError ? `${file.path}\n${syntaxError}` : file.path;
       button.dataset.path = editorPath(file.path);
-      if (editorPath(file.path) === activeFile) button.classList.add("active");
+      if (editorPath(file.path) === editorController.activePath)
+        button.classList.add("active");
       button.onclick = () => void openFile(file.path, false);
       row.append(button);
       fileTree.append(row);
@@ -1662,7 +1642,7 @@ function renderFiles(): void {
     readonly files: DesktopFile[];
   }
   const root: TreeNode = { directories: new Map(), files: [] };
-  for (const file of files) {
+  for (const file of workspaceFilesController.entries) {
     const parts = file.path.split(/[\\/]/).filter(Boolean);
     const fileName = file.type === "file" ? parts.pop() : undefined;
     let node = root;
@@ -1686,7 +1666,7 @@ function renderFiles(): void {
       row.className = "tree-row directory";
       row.style.setProperty("--depth", String(depth));
       const button = document.createElement("button");
-      const expanded = expandedDirectories.has(directoryPath);
+      const expanded = workspaceFilesController.isExpanded(directoryPath);
       button.className = "folder-button";
       button.dataset.path = editorPath(directoryPath);
       button.dataset.expanded = String(expanded);
@@ -1702,10 +1682,9 @@ function renderFiles(): void {
       button.title = directoryPath;
       button.setAttribute("aria-expanded", String(expanded));
       button.onclick = async () => {
-        if (expanded) {
-          expandedDirectories.delete(directoryPath);
-        } else {
-          expandedDirectories.add(directoryPath);
+        const isExpanded =
+          workspaceFilesController.toggleExpanded(directoryPath);
+        if (isExpanded) {
           try {
             await loadDirectoryContents(directoryPath);
           } catch (error) {
@@ -1737,7 +1716,8 @@ function renderFiles(): void {
       row.classList.toggle("has-syntax-error", Boolean(syntaxError));
       button.title = syntaxError ? `${file.path}\n${syntaxError}` : file.path;
       button.dataset.path = editorPath(file.path);
-      if (editorPath(file.path) === activeFile) button.classList.add("active");
+      if (editorPath(file.path) === editorController.activePath)
+        button.classList.add("active");
       button.onclick = () => void openFile(file.path, false);
       row.append(button);
       fileTree.append(row);
@@ -1751,23 +1731,22 @@ function updateFileSelection(): void {
   fileTree
     .querySelectorAll<HTMLButtonElement>(".tree-row.file button")
     .forEach((button) => {
-      button.classList.toggle("active", button.dataset.path === activeFile);
+      button.classList.toggle(
+        "active",
+        button.dataset.path === editorController.activePath,
+      );
     });
 }
 
 function mergeFiles(entries: readonly DesktopFile[]): void {
-  const merged = new Map(files.map((file) => [editorPath(file.path), file]));
-  for (const file of entries) merged.set(editorPath(file.path), file);
-  files = [...merged.values()].sort((left, right) =>
-    left.path.localeCompare(right.path),
-  );
+  workspaceFilesController.merge(entries);
 }
 
 async function loadDirectoryContents(path: string): Promise<void> {
-  if (loadedDirectoryContents.has(path)) return;
+  if (!workspaceFilesController.needsDirectory(path)) return;
   const entries = await desktop.listDirectory(path);
   mergeFiles(entries);
-  loadedDirectoryContents.add(path);
+  workspaceFilesController.markDirectoryLoaded(path);
 }
 
 function requestConfirmation(options: {
@@ -1882,7 +1861,7 @@ function workspaceFileReference(path: string): string | undefined {
     normalizedPath.split("/").some((part) => part === "..")
   )
     return undefined;
-  return files.some(
+  return workspaceFilesController.entries.some(
     (file) => file.type === "file" && editorPath(file.path) === normalizedPath,
   )
     ? normalizedPath
@@ -2112,13 +2091,13 @@ function mediaKindForPath(path: string): "image" | "video" | undefined {
 }
 
 function renderFileDiffToggle(): void {
-  fileDiffToggle.textContent = showingDiff ? "File" : "Diff";
-  fileDiffToggle.title = showingDiff
+  fileDiffToggle.textContent = editorController.showingDiff ? "File" : "Diff";
+  fileDiffToggle.title = editorController.showingDiff
     ? "Show the current file"
     : "Show the current file's diff";
   fileDiffToggle.setAttribute(
     "aria-label",
-    showingDiff ? "Show file" : "Show diff",
+    editorController.showingDiff ? "Show file" : "Show diff",
   );
 }
 
@@ -2126,18 +2105,12 @@ function workspaceMediaUrl(path: string): string {
   return `truss-media://workspace/${encodeURIComponent(path.replaceAll("\\", "/"))}`;
 }
 
-function editorPath(path: string): string {
-  return path.replaceAll("\\", "/");
-}
-
 function activeEditorTab(): EditorTab | undefined {
-  return activeFile
-    ? openEditorTabs.find((tab) => tab.path === activeFile)
-    : undefined;
+  return editorController.activeTab();
 }
 
 function activeWorkspaceFilePath(): string | undefined {
-  return activeEditorTab()?.mode === "settings" ? undefined : activeFile;
+  return editorController.activeWorkspacePath();
 }
 
 function preserveEditorScroll(): void {
@@ -2612,8 +2585,7 @@ function renderEditorContent(tab: EditorTab | undefined): void {
 
 function selectEditorTab(tab: EditorTab): void {
   preserveEditorScroll();
-  activeFile = tab.path;
-  showingDiff = tab.mode === "diff";
+  editorController.select(tab);
   setCenterView("editor");
   renderEditorTabs();
   renderEditorContent(tab);
@@ -2623,22 +2595,13 @@ function selectEditorTab(tab: EditorTab): void {
 
 function openSettings(): void {
   let tab = openEditorTabs.find((candidate) => candidate.mode === "settings");
-  if (tab && tab.path === activeFile) {
+  if (tab && tab.path === editorController.activePath) {
     closeEditorTab(tab.path);
     return;
   }
   populateSettings();
   if (!tab) {
-    tab = {
-      path: settingsEditorPath,
-      mode: "settings",
-      state: "ready",
-      content: "",
-      dirty: false,
-      scrollTop: 0,
-      revision: 0,
-    };
-    openEditorTabs.push(tab);
+    tab = editorController.add(settingsEditorPath, "settings", "ready");
   }
   selectEditorTab(tab as EditorTab);
 }
@@ -2660,15 +2623,12 @@ function closeEditorTab(path: string): void {
     });
     return;
   }
-  const wasActive = activeFile === path;
+  const wasActive = editorController.activePath === path;
   if (wasActive) preserveEditorScroll();
-  openEditorTabs.splice(index, 1);
+  const result = editorController.close(path);
   if (wasActive) {
-    const next = openEditorTabs[Math.min(index, openEditorTabs.length - 1)];
-    activeFile = undefined;
-    showingDiff = false;
-    if (next) {
-      selectEditorTab(next);
+    if (result.next) {
+      selectEditorTab(result.next);
       return;
     }
     editorTitle.textContent = "Workspace";
@@ -2683,13 +2643,16 @@ function renderEditorTabs(): void {
   editorTitle.hidden = openEditorTabs.length > 0;
   const tabs = openEditorTabs.map((tab) => {
     const container = document.createElement("div");
-    container.className = `editor-tab ${tab.mode === "diff" ? "diff" : ""} ${tab.path === activeFile ? "active" : ""} ${hasSyntaxError(tab.path) ? "has-syntax-error" : ""}`;
+    container.className = `editor-tab ${tab.mode === "diff" ? "diff" : ""} ${tab.path === editorController.activePath ? "active" : ""} ${hasSyntaxError(tab.path) ? "has-syntax-error" : ""}`;
     container.setAttribute("role", "presentation");
     const select = document.createElement("button");
     select.className = "editor-tab-main";
     select.type = "button";
     select.setAttribute("role", "tab");
-    select.setAttribute("aria-selected", String(tab.path === activeFile));
+    select.setAttribute(
+      "aria-selected",
+      String(tab.path === editorController.activePath),
+    );
     if (tab.mode === "settings") select.textContent = "Settings";
     else
       appendFileLabel(
@@ -2724,7 +2687,7 @@ function renderEditorTabs(): void {
 async function loadEditorTab(tab: EditorTab): Promise<void> {
   const revision = ++tab.revision;
   tab.state = "loading";
-  if (tab.path === activeFile) renderEditorContent(tab);
+  if (tab.path === editorController.activePath) renderEditorContent(tab);
   try {
     const content =
       tab.mode === "file" && mediaKindForPath(tab.path)
@@ -2741,7 +2704,7 @@ async function loadEditorTab(tab: EditorTab): Promise<void> {
     tab.content = `Unable to open ${tab.path}: ${error instanceof Error ? error.message : String(error)}`;
     tab.state = "error";
   }
-  if (tab.path === activeFile) renderEditorContent(tab);
+  if (tab.path === editorController.activePath) renderEditorContent(tab);
 }
 
 async function openFile(
@@ -2750,20 +2713,13 @@ async function openFile(
   switchMode = false,
 ): Promise<void> {
   const normalizedPath = editorPath(path);
-  let tab = openEditorTabs.find(
-    (candidate) => candidate.path === normalizedPath,
-  );
+  let tab = editorController.find(normalizedPath);
   if (!tab) {
-    tab = {
-      path: normalizedPath,
-      mode: diff ? "diff" : "file",
-      state: "loading",
-      content: "",
-      dirty: false,
-      scrollTop: 0,
-      revision: 0,
-    };
-    openEditorTabs.push(tab);
+    tab = editorController.add(
+      normalizedPath,
+      diff ? "diff" : "file",
+      "loading",
+    );
   } else if (switchMode && tab.mode !== (diff ? "diff" : "file")) {
     if (tab.dirty) {
       notify("Save or discard your edits before switching to the diff view.");
@@ -2781,10 +2737,9 @@ async function openFile(
 
 async function loadFiles(): Promise<void> {
   try {
-    files = await desktop.listFiles();
-    loadedDirectoryContents.clear();
+    workspaceFilesController.replace(await desktop.listFiles());
     await Promise.all(
-      [...expandedDirectories].map((path) =>
+      [...workspaceFilesController.expandedDirectories].map((path) =>
         loadDirectoryContents(path).catch(() => undefined),
       ),
     );
@@ -3191,38 +3146,17 @@ function populateSettings(): void {
 
 async function restoreWorkspaceUiState(): Promise<void> {
   const state = rendererState.desktop.workspaceUiState;
-  expandedDirectories.clear();
-  openEditorTabs.splice(0, openEditorTabs.length);
-  activeFile = undefined;
-  showingDiff = false;
+  workspaceFilesController.expandedDirectories.clear();
+  editorController.reset();
   if (state) {
     for (const path of state.expandedDirectories)
-      expandedDirectories.add(editorPath(path));
-    for (const path of [...expandedDirectories].sort(
+      workspaceFilesController.markExpanded(path);
+    for (const path of [...workspaceFilesController.expandedDirectories].sort(
       (left, right) => left.split("/").length - right.split("/").length,
     )) {
       await loadDirectoryContents(path).catch(() => undefined);
     }
-    for (const saved of state.openEditors) {
-      const path = editorPath(saved.path);
-      if (openEditorTabs.some((tab) => tab.path === path)) continue;
-      openEditorTabs.push({
-        path,
-        mode: saved.mode,
-        state: "loading",
-        content: "",
-        dirty: false,
-        scrollTop: saved.scrollTop,
-        revision: 0,
-      });
-    }
-    const savedActiveFile = state.activeFile;
-    const restoredActive = savedActiveFile
-      ? openEditorTabs.find((tab) => tab.path === editorPath(savedActiveFile))
-      : undefined;
-    activeFile = restoredActive?.path ?? openEditorTabs.at(-1)?.path;
-    showingDiff =
-      openEditorTabs.find((tab) => tab.path === activeFile)?.mode === "diff";
+    editorController.restore(state.openEditors, state.activeFile);
   }
   renderFiles();
   renderEditorTabs();
@@ -3278,7 +3212,7 @@ function renderSlashMenu(): void {
     slashResults = [];
     return;
   }
-  slashResults = files
+  slashResults = workspaceFilesController.entries
     .filter((file) => file.type === "file")
     .flatMap((file) => {
       const score = fuzzyScore(file.path, query.query);
@@ -3327,7 +3261,9 @@ function insertSlashFile(path: string): void {
 
 function attachedPaths(prompt: string): readonly string[] {
   const available = new Set(
-    files.filter((file) => file.type === "file").map((file) => file.path),
+    workspaceFilesController.entries
+      .filter((file) => file.type === "file")
+      .map((file) => file.path),
   );
   return [
     ...new Set(
@@ -3513,49 +3449,13 @@ confirmDialog.addEventListener("close", () => {
   resolve?.(confirmDialog.returnValue === "confirm");
 });
 
-function normalizedWorkspaceEntry(value: string): string | undefined {
-  const normalized = value.trim().replaceAll("\\", "/");
-  if (!normalized || normalized.startsWith("/") || /^[a-z]:/i.test(normalized))
-    return undefined;
-  const parts = normalized.split("/");
-  if (parts.some((part) => !part || part === "." || part === ".."))
-    return undefined;
-  return normalized;
-}
-
-function entryParent(path: string): string {
-  const index = path.lastIndexOf("/");
-  return index < 0 ? "" : path.slice(0, index);
-}
-
-function entryName(path: string): string {
-  return path.split("/").at(-1) ?? path;
-}
-
-function childEntryPath(parent: string, name: string): string | undefined {
-  const normalizedName = normalizedWorkspaceEntry(name);
-  if (!normalizedName) return undefined;
-  return parent ? `${parent}/${normalizedName}` : normalizedName;
-}
-
 function removeOpenEditorEntries(path: string, includeChildren: boolean): void {
-  const prefix = `${path}/`;
-  const removedActive =
-    activeFile === path ||
-    (includeChildren && Boolean(activeFile?.startsWith(prefix)));
-  for (let index = openEditorTabs.length - 1; index >= 0; index -= 1) {
-    const tabPath = openEditorTabs[index].path;
-    if (tabPath === path || (includeChildren && tabPath.startsWith(prefix)))
-      openEditorTabs.splice(index, 1);
-  }
-  if (!removedActive) {
+  const result = editorController.removeEntries(path, includeChildren);
+  if (!result.removedActive) {
     renderEditorTabs();
     return;
   }
-  const next = openEditorTabs.at(-1);
-  activeFile = undefined;
-  showingDiff = false;
-  if (next) selectEditorTab(next);
+  if (result.next) selectEditorTab(result.next);
   else {
     editorTitle.textContent = "Workspace";
     renderEditorTabs();
@@ -3612,7 +3512,7 @@ async function createWorkspaceEntry(
   if (kind === "file") await desktop.createWorkspaceFile(path);
   else await desktop.createWorkspaceFolder(path);
   const parentPath = entryParent(path);
-  if (parentPath) expandedDirectories.add(parentPath);
+  workspaceFilesController.markExpanded(parentPath);
   await refreshWorkspaceAfterFileOperation();
   notify(`${kind === "file" ? "Created file" : "Created folder"}: ${path}`);
   if (kind === "file") await openFile(path, false);
@@ -3632,25 +3532,22 @@ async function renameWorkspaceEntry(target: FileContextTarget): Promise<void> {
   if (nextPath === target.path) return;
   await desktop.renameWorkspaceEntry(target.path, nextPath);
   removeOpenEditorEntries(target.path, target.kind === "directory");
-  if (target.kind === "directory") {
-    const wasExpanded = expandedDirectories.delete(target.path);
-    loadedDirectoryContents.delete(target.path);
-    if (wasExpanded) expandedDirectories.add(nextPath);
-  }
+  if (target.kind === "directory")
+    workspaceFilesController.moveDirectoryState(target.path, nextPath);
   await refreshWorkspaceAfterFileOperation();
   notify(`Renamed to ${nextPath}`);
   if (target.kind === "file") await openFile(nextPath, false);
 }
 
 async function pasteWorkspaceFile(target: FileContextTarget): Promise<void> {
-  if (!copiedWorkspaceFile) return;
+  if (!workspaceFilesController.copiedPath) return;
   const parent =
     target.kind === "directory"
       ? target.path
       : target.kind === "file"
         ? entryParent(target.path)
         : "";
-  const sourceName = entryName(copiedWorkspaceFile);
+  const sourceName = entryName(workspaceFilesController.copiedPath);
   const extensionIndex = sourceName.lastIndexOf(".");
   const suggested =
     extensionIndex > 0
@@ -3667,7 +3564,10 @@ async function pasteWorkspaceFile(target: FileContextTarget): Promise<void> {
   const destination = childEntryPath(parent, name);
   if (!destination)
     throw new Error("Use a non-empty relative filename without '..'.");
-  await desktop.copyWorkspaceEntry(copiedWorkspaceFile, destination);
+  await desktop.copyWorkspaceEntry(
+    workspaceFilesController.copiedPath,
+    destination,
+  );
   await refreshWorkspaceAfterFileOperation();
   notify(`Copied to ${destination}`);
   await openFile(destination, false);
@@ -3687,14 +3587,11 @@ async function deleteWorkspaceEntry(target: FileContextTarget): Promise<void> {
     return;
   await desktop.deleteWorkspaceEntry(target.path);
   removeOpenEditorEntries(target.path, target.kind === "directory");
-  expandedDirectories.delete(target.path);
-  loadedDirectoryContents.delete(target.path);
-  if (
-    copiedWorkspaceFile === target.path ||
-    (target.kind === "directory" &&
-      copiedWorkspaceFile?.startsWith(`${target.path}/`))
-  )
-    copiedWorkspaceFile = undefined;
+  workspaceFilesController.removeDirectoryState(target.path);
+  workspaceFilesController.clearCopiedWithin(
+    target.path,
+    target.kind === "directory",
+  );
   await refreshWorkspaceAfterFileOperation();
   notify(`Deleted ${target.path}`);
 }
@@ -3722,7 +3619,7 @@ function showFileContextMenu(
       separatorBefore: true,
     });
     addFileContextAction("Copy", () => {
-      copiedWorkspaceFile = target.path;
+      workspaceFilesController.copiedPath = target.path;
       notify(`Copied ${target.path}`);
     });
     addFileContextAction("Copy Relative Path", async () => {
@@ -3730,13 +3627,14 @@ function showFileContextMenu(
       notify("Copied relative path.");
     });
   }
-  if (copiedWorkspaceFile)
+  if (workspaceFilesController.copiedPath)
     addFileContextAction("Paste File...", () => pasteWorkspaceFile(target), {
       separatorBefore: target.kind !== "file",
     });
   if (target.kind !== "root") {
     addFileContextAction("Rename...", () => renameWorkspaceEntry(target), {
-      separatorBefore: !copiedWorkspaceFile && target.kind !== "file",
+      separatorBefore:
+        !workspaceFilesController.copiedPath && target.kind !== "file",
     });
     addFileContextAction("Reveal in File Manager", () =>
       desktop.revealWorkspaceEntry(target.path),
@@ -4285,12 +4183,9 @@ element<HTMLButtonElement>("chooseWorkspace").onclick = async () => {
   const next = await desktop.chooseWorkspace();
   if (!next) return;
   rendererState.desktop = next;
-  activeFile = undefined;
-  showingDiff = false;
-  openEditorTabs.splice(0, openEditorTabs.length);
-  syntaxDiagnosticsByPath.clear();
-  expandedDirectories.clear();
-  loadedDirectoryContents.clear();
+  editorController.reset();
+  workspaceFilesController.reset();
+  fileSearch.value = "";
   setCenterView("editor");
   editorTitle.textContent = "Workspace";
   renderEditorTabs();
@@ -4310,7 +4205,7 @@ element<HTMLButtonElement>("chooseWorkspace").onclick = async () => {
 };
 element<HTMLButtonElement>("refreshFiles").onclick = () => void loadFiles();
 fileSearch.oninput = () => {
-  fileSearchQuery = fileSearch.value;
+  workspaceFilesController.query = fileSearch.value;
   renderFiles();
 };
 document.addEventListener("pointerdown", (event) => {
@@ -4359,13 +4254,13 @@ fileSearch.onkeydown = (event) => {
   if (event.key === "Escape") {
     event.preventDefault();
     fileSearch.value = "";
-    fileSearchQuery = "";
+    workspaceFilesController.query = "";
     renderFiles();
   }
 };
 clearFileSearch.onclick = () => {
   fileSearch.value = "";
-  fileSearchQuery = "";
+  workspaceFilesController.query = "";
   renderFiles();
   fileSearch.focus();
 };
@@ -4464,7 +4359,7 @@ element<HTMLButtonElement>("newChat").onclick = () => {
 fileDiffToggle.onclick = () => {
   const path = activeWorkspaceFilePath();
   setCenterView("editor");
-  if (path) void openFile(path, !showingDiff, true);
+  if (path) void openFile(path, !editorController.showingDiff, true);
 };
 formatFileButton.onclick = () => void formatActiveFile();
 editorTabsElement.addEventListener(
@@ -5092,10 +4987,10 @@ window.addEventListener("keydown", (event) => {
     layoutController.view === "editor" &&
     event.ctrlKey &&
     event.key.toLowerCase() === "w" &&
-    activeFile
+    editorController.activePath
   ) {
     event.preventDefault();
-    closeEditorTab(activeFile);
+    closeEditorTab(editorController.activePath);
     return;
   }
   if (
@@ -5105,7 +5000,9 @@ window.addEventListener("keydown", (event) => {
     openEditorTabs.length > 1
   ) {
     event.preventDefault();
-    const current = openEditorTabs.findIndex((tab) => tab.path === activeFile);
+    const current = openEditorTabs.findIndex(
+      (tab) => tab.path === editorController.activePath,
+    );
     const direction = event.shiftKey ? -1 : 1;
     selectEditorTab(
       openEditorTabs[
