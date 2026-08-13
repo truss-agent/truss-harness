@@ -4,6 +4,16 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.42 · VS Code 0.1.23 · CLI 0.1.21 · TUI 0.1.18",
+    label: "Reliable OpenRouter tool routing",
+    changes: [
+      "Required OpenRouter-routed backends to support every supplied request parameter whenever Truss workspace tools are available.",
+      "Sent an explicit automatic tool choice for OpenRouter agent requests while leaving tool-free generation and every other OpenAI-compatible provider unchanged.",
+      "Kept tool-like assistant text non-executable: only structured provider tool calls can enter Truss's approval and execution path.",
+      "Updated the shared provider and agent-host packages alongside every rebuilt host client for one coordinated release.",
+    ],
+  },
+  {
     version: "Desktop 0.1.41",
     label: "Focused chat and conversation controller",
     changes: [
