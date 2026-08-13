@@ -1,135 +1,54 @@
-import {
-  app,
-  BrowserWindow,
-  dialog,
-  ipcMain,
-  protocol,
-  safeStorage,
-  shell,
-  webContents,
-  type OpenDialogOptions,
-} from "electron";
-import { autoUpdater } from "electron-updater";
-import { spawn, type ChildProcess } from "node:child_process";
-import { randomBytes, randomUUID } from "node:crypto";
 import { execFile as execFileCallback } from "node:child_process";
-import { createReadStream } from "node:fs";
-import {
-  copyFile,
-  mkdir,
-  readFile,
-  readdir,
-  rename,
-  rm,
-  stat,
-  writeFile,
-} from "node:fs/promises";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { Readable } from "node:stream";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { brand } from "@truss-harness/branding";
 import {
-  AgentHost,
-  type ProviderConnectionResult,
-} from "@truss-harness/agent-host";
-import {
-  createClientRuntime,
-  type ClientConfiguration,
-} from "@truss-harness/cli/runtime";
-import { FileAgentRunHistoryStore } from "@truss-harness/cli/agents";
-import {
-  createGatewayAgentController,
-  createPairingUri,
-  detectLanAddress,
-  startRemoteGateway,
-  type RunningRemoteGateway,
-} from "@truss-harness/gateway";
-import {
-  McpServerManager,
-  parseMcpServerConfigurations,
-  type McpServerStatus,
-  type McpStdioServerConfiguration,
-} from "@truss-harness/mcp";
-import {
   cloudProviderDefinition,
-  detectActiveLocalModel,
-  detectLocalContextWindow,
-  detectLocalEndpoints,
   generateCloudText,
   generateLocalText,
   isCloudProviderId,
-  isLocalEndpointKind,
-  listLocalModels,
-  type CloudProviderId,
-  type LocalModelEndpoint,
 } from "@truss-harness/provider-openai-compatible";
 import {
-  AgentCoordinator,
   ApiKeyCredential,
-  defaultProviderAccountId,
   executeWorkspaceCommand,
   FileWorkspacePlanStore,
-  isProviderAccount,
-  ToolRegistry,
-  type AgentProfile,
-  type AgentProfileStore,
-  type ChatAttachment,
-  type ContextBlock,
-  type CreateAgentProfileInput,
-  type ProviderAccount,
-  type UpdateProviderAccountInput,
-  type RemoteToolApprovalMode,
-  type ToolApproval,
-  type ToolCall,
-  type UpdateAgentProfileInput,
 } from "@truss-harness/runtime";
 import {
-  desktopThemeNames,
-  type DesktopAgentsSnapshot,
-  type DesktopConfiguration,
-  type DesktopConversation,
-  type DesktopCredentialStorage,
-  type DesktopEndpoint,
-  type DesktopEvent,
-  type DesktopFile,
-  type DesktopGitGraph,
-  type DesktopGitStatus,
-  type DesktopMessage,
-  type DesktopModelInfo,
-  type DesktopState,
-  type DesktopProvider,
-  type DesktopThemePalette,
-  type DesktopThemePreference,
-  type DesktopWorkspaceUiState,
-} from "./shared.js";
-import QRCode from "qrcode";
+  app,
+  dialog,
+  ipcMain,
+  type OpenDialogOptions,
+  protocol,
+  safeStorage,
+  shell,
+} from "electron";
+import { autoUpdater } from "electron-updater";
 import { configureLinuxCredentialStorage } from "./credential-storage.js";
-import { recoverStartupRuntime } from "./startup-runtime.js";
+import { CredentialService } from "./main/credential-service.js";
+import { isLocalConfiguration } from "./main/desktop-configuration.js";
 import {
-  findReleaseAsset,
-  isNewerVersion,
-  normalizedVersion,
-  type DesktopReleaseAsset,
-  type DesktopUpdateArtifact,
-} from "./update-support.js";
+  DesktopStateStore,
+  defaultDesktopState,
+} from "./main/desktop-state-store.js";
+import { TrussGoGatewayService } from "./main/gateway-service.js";
+import { GitService } from "./main/git-service.js";
+import {
+  registerOperationalIpc,
+  registerSettingsIpc,
+} from "./main/ipc-registration.js";
+import { ManagedAgentService } from "./main/managed-agent-service.js";
+import { DesktopRuntimeService } from "./main/runtime-service.js";
+import { DesktopSettingsService } from "./main/settings-service.js";
+import { TerminalService } from "./main/terminal-service.js";
+import { DesktopUpdateService } from "./main/update-service.js";
+import {
+  DesktopWindowService,
+  validatedPreviewUrl,
+} from "./main/window-service.js";
+import { WorkspaceService } from "./main/workspace-service.js";
+import type { DesktopEvent } from "./shared.js";
 
 const execFile = promisify(execFileCallback);
-const ignoredDirectories = new Set([
-  ".git",
-  "node_modules",
-  "dist",
-  "coverage",
-  ".next",
-]);
-const mediaTypes = new Map([
-  [".jpg", "image/jpeg"],
-  [".jpeg", "image/jpeg"],
-  [".png", "image/png"],
-  [".svg", "image/svg+xml"],
-  [".webp", "image/webp"],
-  [".mp4", "video/mp4"],
-  [".webm", "video/webm"],
-]);
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -143,381 +62,102 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-interface PersistedState extends DesktopState {}
-
-let mainWindow: BrowserWindow | undefined;
-const defaultTheme: DesktopThemePreference = { name: "default" };
-let persisted: PersistedState = {
-  workspaceRoot: process.cwd(),
-  zoomFactor: 1,
-  updates: { checkOnLaunch: true, autoDownload: false },
-  theme: defaultTheme,
-  conversations: [],
-};
-let runtimeClient: Awaited<ReturnType<typeof createClientRuntime>> | undefined;
-let unsubscribeEvents: (() => void) | undefined;
-let activeSessionId: string | undefined;
-let activeConversationId: string | undefined;
-let activeAbort: AbortController | undefined;
-let activeRun: Promise<void> | undefined;
-const terminalProcesses = new Set<ChildProcess>();
-let trussGoGateway: RunningRemoteGateway | undefined;
-const trussGoClients: Array<Awaited<ReturnType<typeof createClientRuntime>>> =
-  [];
-let updaterConfigured = false;
-let hostedUpdateUrl: string | undefined;
-const approvalResolvers = new Map<string, (approved: boolean) => void>();
-let sessionAllowsAllTools = false;
-const sessionConversationIds = new Map<string, string>();
-let agentHost: AgentHost | undefined;
-let agentCoordinator: AgentCoordinator | undefined;
-let unsubscribeAgentEvents: (() => void) | undefined;
-// Some Linux desktop sessions do not expose a Secret Service-compatible
-// keyring to Electron. Keep keys in memory in that case rather than writing
-// plaintext credentials to disk. They disappear when the app exits.
-const sessionCredentials = new Map<string, string>();
-
-class DesktopAgentProfileStore implements AgentProfileStore {
-  async list(): Promise<readonly AgentProfile[]> {
-    return persisted.agentProfiles ?? [];
-  }
-  async get(id: string): Promise<AgentProfile | undefined> {
-    return (persisted.agentProfiles ?? []).find((profile) => profile.id === id);
-  }
-  async create(input: CreateAgentProfileInput): Promise<AgentProfile> {
-    if (
-      !input.displayName.trim() ||
-      !input.provider.providerId.trim() ||
-      !input.provider.modelId.trim()
-    )
-      throw new Error("An agent needs a name, provider, and model.");
-    const timestamp = new Date().toISOString();
-    const profile: AgentProfile = {
-      id: randomUUID(),
-      displayName: input.displayName.trim(),
-      ...(input.instructions?.trim()
-        ? { instructions: input.instructions.trim() }
-        : {}),
-      provider: input.provider,
-      mode: input.mode ?? "chat",
-      approvalPolicy: input.approvalPolicy ?? "ask",
-      internetAccess: input.internetAccess ?? false,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    };
-    persisted = {
-      ...persisted,
-      agentProfiles: [...(persisted.agentProfiles ?? []), profile],
-    };
-    await persistState();
-    return profile;
-  }
-  async update(
-    id: string,
-    input: UpdateAgentProfileInput,
-  ): Promise<AgentProfile> {
-    const existing = await this.get(id);
-    if (!existing) throw new Error("Unknown agent profile.");
-    if (input.displayName !== undefined && !input.displayName.trim())
-      throw new Error("An agent needs a name.");
-    if (
-      input.provider &&
-      (!input.provider.providerId.trim() || !input.provider.modelId.trim())
-    )
-      throw new Error("An agent needs a provider and model.");
-    const profile: AgentProfile = {
-      ...existing,
-      ...(input.displayName !== undefined
-        ? { displayName: input.displayName.trim() }
-        : {}),
-      ...(input.instructions !== undefined
-        ? input.instructions.trim()
-          ? { instructions: input.instructions.trim() }
-          : { instructions: undefined }
-        : {}),
-      ...(input.provider ? { provider: input.provider } : {}),
-      ...(input.mode ? { mode: input.mode } : {}),
-      ...(input.approvalPolicy ? { approvalPolicy: input.approvalPolicy } : {}),
-      ...(input.internetAccess !== undefined
-        ? { internetAccess: input.internetAccess }
-        : {}),
-      updatedAt: new Date().toISOString(),
-    };
-    persisted = {
-      ...persisted,
-      agentProfiles: (persisted.agentProfiles ?? []).map((candidate) =>
-        candidate.id === id ? profile : candidate,
-      ),
-    };
-    await persistState();
-    return profile;
-  }
-  async delete(id: string): Promise<boolean> {
-    const profiles = persisted.agentProfiles ?? [];
-    if (!profiles.some((profile) => profile.id === id)) return false;
-    persisted = {
-      ...persisted,
-      agentProfiles: profiles.filter((profile) => profile.id !== id),
-    };
-    await persistState();
-    return true;
-  }
-}
-
+let persisted = defaultDesktopState(process.cwd());
+let stateStore: DesktopStateStore | undefined;
+const workspaceService = new WorkspaceService(() => persisted.workspaceRoot);
+const credentialService = new CredentialService(
+  () => credentialPath(),
+  () => persisted.providerAccounts ?? [],
+  {
+    isAvailable: () => safeStorage.isEncryptionAvailable(),
+    encrypt: (value) => safeStorage.encryptString(value),
+    decrypt: (value) => safeStorage.decryptString(value),
+  },
+);
+const runtimeService = new DesktopRuntimeService(
+  () => persisted,
+  (state) => {
+    persisted = state;
+  },
+  (reference) => credentialService.get(reference),
+  workspaceService,
+  send,
+);
+const managedAgents = new ManagedAgentService(
+  () => persisted,
+  (state) => {
+    persisted = state;
+  },
+  persistState,
+  (reference) => credentialService.get(reference),
+  send,
+);
+const trussGo = new TrussGoGatewayService(
+  () => persisted,
+  () => managedAgents.coordinator,
+  runtimeService,
+);
+const gitService = new GitService(
+  () => persisted.workspaceRoot,
+  (path) => workspaceService.resolvePath(path),
+  async (command, args, options) => execFile(command, [...args], options),
+  () => persisted.configuration,
+  generateLocalText,
+);
+const updateService = new DesktopUpdateService(
+  {
+    isPackaged: app.isPackaged,
+    platform: process.platform,
+    arch: process.arch,
+    appImage: process.env.APPIMAGE,
+    resourcesPath: process.resourcesPath,
+    getVersion: () => app.getVersion(),
+  },
+  autoUpdater,
+  () => persisted.updates,
+  send,
+  (url) => shell.openExternal(url),
+);
+const terminalService = new TerminalService(
+  () => persisted.workspaceRoot,
+  send,
+  executeWorkspaceCommand,
+);
+const windowService = new DesktopWindowService(
+  distDirectory,
+  brand.productName,
+  () => persisted.zoomFactor,
+  () => void trussGo.stop(),
+);
+const settingsService = new DesktopSettingsService(
+  () => persisted,
+  (state) => {
+    persisted = state;
+  },
+  persistState,
+  credentialService,
+  runtimeService,
+  managedAgents,
+  updateService,
+  async () => {
+    const options: OpenDialogOptions = { properties: ["openDirectory"] };
+    windowService.focus();
+    const selection = windowService.current
+      ? await dialog.showOpenDialog(windowService.current, options)
+      : await dialog.showOpenDialog(options);
+    return selection.canceled ? undefined : selection.filePaths[0];
+  },
+  (zoomFactor) => windowService.setZoomFactor(zoomFactor),
+);
 function send(event: DesktopEvent): void {
-  mainWindow?.webContents.send("truss:event", event);
-}
-
-async function agentSnapshot(): Promise<DesktopAgentsSnapshot> {
-  return {
-    profiles: agentCoordinator
-      ? await agentCoordinator.listProfiles()
-      : (persisted.agentProfiles ?? []),
-    runs: agentCoordinator?.listRuns() ?? [],
-  };
-}
-
-async function publishAgents(): Promise<DesktopAgentsSnapshot> {
-  const snapshot = await agentSnapshot();
-  send({ type: "agents", snapshot });
-  return snapshot;
-}
-
-function agentApproval(profile: AgentProfile): ToolApproval & {
-  resolve(callId: string, approved: boolean): boolean;
-  denyAll(): void;
-} {
-  const pending = new Map<string, (approved: boolean) => void>();
-  return {
-    approve(call: ToolCall): Promise<boolean> {
-      const readOnly = [
-        "read_file",
-        "list_directory",
-        "search_files",
-        "grep",
-      ].includes(call.name);
-      if (
-        profile.approvalPolicy === "auto-all" ||
-        (profile.approvalPolicy === "auto-read" && readOnly)
-      )
-        return Promise.resolve(true);
-      return new Promise((resolveApproval) =>
-        pending.set(call.id, resolveApproval),
-      );
-    },
-    resolve(callId: string, approved: boolean): boolean {
-      const resolveApproval = pending.get(callId);
-      if (!resolveApproval) return false;
-      pending.delete(callId);
-      resolveApproval(approved);
-      return true;
-    },
-    denyAll(): void {
-      for (const resolveApproval of pending.values()) resolveApproval(false);
-      pending.clear();
-    },
-  };
-}
-
-function updaterError(error: unknown): void {
-  const message = error instanceof Error ? error.message : String(error);
-  send({ type: "update", status: "error", message });
-}
-
-function nativeUpdaterSupported(): boolean {
-  return (
-    app.isPackaged &&
-    (process.platform === "win32" ||
-      (process.platform === "linux" &&
-        process.arch === "x64" &&
-        Boolean(process.env.APPIMAGE)))
-  );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-async function updateArtifact(): Promise<DesktopUpdateArtifact> {
-  if (process.platform === "win32") return "windows";
-  if (process.env.APPIMAGE) return "appimage";
-  try {
-    const packageType = (
-      await readFile(join(process.resourcesPath, "package-type"), "utf8")
-    ).trim();
-    if (packageType === "deb" || packageType === "rpm") return packageType;
-    if (packageType === "pacman") return "pacman";
-  } catch {
-    // Portable archives do not have electron-builder's package-type marker.
-  }
-  return "archive";
-}
-
-function trustedUpdateUrl(value: string): string | undefined {
-  try {
-    const url = new URL(value);
-    if (
-      url.protocol !== "https:" ||
-      url.hostname !== "github.com" ||
-      !url.pathname.startsWith("/truss-agent/truss-harness/")
-    )
-      return undefined;
-    return url.toString();
-  } catch {
-    return undefined;
-  }
-}
-
-async function checkHostedUpdate(): Promise<void> {
-  const response = await fetch(
-    "https://api.github.com/repos/truss-agent/truss-harness/releases/latest",
-    {
-      headers: {
-        Accept: "application/vnd.github+json",
-        "User-Agent": "Truss-Desktop",
-      },
-      signal: AbortSignal.timeout(10_000),
-    },
-  );
-  if (!response.ok)
-    throw new Error("GitHub update check failed (" + response.status + ").");
-  const payload: unknown = await response.json();
-  if (!isRecord(payload)) throw new Error("GitHub returned an invalid release.");
-  const tagName = typeof payload.tag_name === "string" ? payload.tag_name : "";
-  const version = normalizedVersion(tagName);
-  const pageUrl =
-    typeof payload.html_url === "string"
-      ? trustedUpdateUrl(payload.html_url)
-      : undefined;
-  if (!version || !pageUrl) throw new Error("GitHub returned an invalid release.");
-
-  const currentVersion = app.getVersion();
-  if (!isNewerVersion(version, currentVersion)) {
-    hostedUpdateUrl = undefined;
-    send({ type: "update", status: "not-available", version });
-    return;
-  }
-
-  const artifact = await updateArtifact();
-  const assets: DesktopReleaseAsset[] = Array.isArray(payload.assets)
-    ? payload.assets.flatMap((value): DesktopReleaseAsset[] => {
-        if (!isRecord(value)) return [];
-        const name = typeof value.name === "string" ? value.name : undefined;
-        const url =
-          typeof value.browser_download_url === "string"
-            ? trustedUpdateUrl(value.browser_download_url)
-            : undefined;
-        return name && url ? [{ name, url }] : [];
-      })
-    : [];
-  const asset = findReleaseAsset(assets, version, artifact, process.arch);
-  hostedUpdateUrl = asset?.url ?? pageUrl;
-  send({
-    type: "update",
-    status: "available",
-    version,
-    manual: true,
-  });
-}
-
-function configureUpdater(): void {
-  if (updaterConfigured) return;
-  updaterConfigured = true;
-  if (nativeUpdaterSupported()) {
-    autoUpdater.autoDownload = persisted.updates.autoDownload;
-    autoUpdater.autoInstallOnAppQuit = false;
-    autoUpdater.on("checking-for-update", () =>
-      send({ type: "update", status: "checking" }),
-    );
-    autoUpdater.on("update-available", (info) =>
-      send({ type: "update", status: "available", version: info.version }),
-    );
-    autoUpdater.on("update-not-available", (info) =>
-      send({ type: "update", status: "not-available", version: info.version }),
-    );
-    autoUpdater.on("download-progress", (progress) =>
-      send({ type: "update", status: "downloading", percent: progress.percent }),
-    );
-    autoUpdater.on("update-downloaded", (info) =>
-      send({ type: "update", status: "downloaded", version: info.version }),
-    );
-    autoUpdater.on("error", updaterError);
-  }
-  if (persisted.updates.checkOnLaunch) {
-    setTimeout(() => {
-      void checkForUpdates().catch(updaterError);
-    }, 1_500);
-  }
-}
-
-async function checkForUpdates(): Promise<void> {
-  if (!app.isPackaged)
-    throw new Error("Updates are available only in installed desktop builds.");
-  if (nativeUpdaterSupported()) await autoUpdater.checkForUpdates();
-  else {
-    send({ type: "update", status: "checking" });
-    await checkHostedUpdate();
-  }
-}
-
-function validatedPreviewUrl(value: string): string {
-  const normalized = /^[a-z][a-z\d+.-]*:\/\//i.test(value.trim())
-    ? value.trim()
-    : `http://${value.trim()}`;
-  const url = new URL(normalized);
-  if (url.protocol !== "http:" && url.protocol !== "https:")
-    throw new Error("Preview URLs must use HTTP or HTTPS.");
-  return url.toString();
-}
-
-function isAllowedPreviewUrl(value: string): boolean {
-  if (value === "about:blank") return true;
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
-function stopProcessTree(child: ChildProcess | undefined): boolean {
-  if (!child || child.killed || child.exitCode !== null) return false;
-  if (process.platform === "win32" && child.pid) {
-    void execFile("taskkill", ["/PID", String(child.pid), "/T", "/F"]).catch(
-      () => child.kill(),
-    );
-    return true;
-  }
-  if (child.pid) {
-    try {
-      // Terminal commands run in their own process group, so Ctrl+C can stop
-      // the shell and every process it started (for example npm dev).
-      process.kill(-child.pid, "SIGTERM");
-      return true;
-    } catch {
-      // A process can exit between the check above and the signal. Falling back
-      // still handles shells created before grouped terminal processes existed.
-    }
-  }
-  child.kill("SIGTERM");
-  return true;
-}
-
-function stopManagedTerminalProcesses(): number {
-  let stopped = 0;
-  for (const child of terminalProcesses)
-    if (stopProcessTree(child)) stopped += 1;
-  terminalProcesses.clear();
-  return stopped;
+  windowService.send("truss:event", event);
 }
 
 function shutdownDesktopWork(): void {
-  activeAbort?.abort();
-  void agentCoordinator?.dispose();
-  stopManagedTerminalProcesses();
-  for (const contents of webContents.getAllWebContents()) {
-    if (contents.getType() === "webview") contents.close();
-  }
+  runtimeService.stop();
+  void managedAgents.dispose();
+  terminalService.stopAll();
+  windowService.closeWebviews();
 }
 
 function distDirectory(): string {
@@ -532,1263 +172,20 @@ function credentialPath(): string {
   return join(app.getPath("userData"), "credentials.json");
 }
 
-function providerAccountForReference(
-  reference: string,
-): ProviderAccount | undefined {
-  return persisted.providerAccounts?.find(
-    (account) => account.id === reference,
-  );
-}
-
-/** Creates metadata for the existing single-key configuration during migration. */
-function ensureProviderAccount(
-  provider: CloudProviderId,
-  requestedId?: string,
-): string {
-  const requested = requestedId?.trim();
-  const existing = requested
-    ? providerAccountForReference(requested)
-    : undefined;
-  if (existing?.providerId === provider) return existing.id;
-
-  const id = defaultProviderAccountId(provider);
-  if (providerAccountForReference(id)) return id;
-  const timestamp = new Date().toISOString();
-  const account: ProviderAccount = {
-    id,
-    providerId: provider,
-    label: cloudProviderDefinition(provider).label,
-    authMethod: "api-key",
-    status: "active",
-    createdAt: timestamp,
-    updatedAt: timestamp,
-  };
-  persisted = {
-    ...persisted,
-    providerAccounts: [...(persisted.providerAccounts ?? []), account],
-  };
-  return id;
-}
-
-/** Moves the encrypted legacy provider key under its new account ID without decrypting it. */
-async function migrateLegacyCredential(
-  provider: CloudProviderId,
-  accountId: string,
-): Promise<void> {
-  try {
-    const credentials = { ...(await readCredentials()) };
-    if (!credentials[provider] || credentials[accountId]) return;
-    credentials[accountId] = credentials[provider];
-    delete credentials[provider];
-    await writeFile(
-      credentialPath(),
-      `${JSON.stringify(credentials, null, 2)}\n`,
-      "utf8",
-    );
-  } catch (error) {
-    console.warn(
-      "Unable to migrate the existing provider credential to its account reference:",
-      error instanceof Error ? error.message : String(error),
-    );
-  }
-}
-
-async function readCredentials(): Promise<Readonly<Record<string, string>>> {
-  try {
-    const parsed: unknown = JSON.parse(
-      await readFile(credentialPath(), "utf8"),
-    );
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-      return {};
-    return Object.fromEntries(
-      Object.entries(parsed).filter(([, value]) => typeof value === "string"),
-    ) as Readonly<Record<string, string>>;
-  } catch {
-    return {};
-  }
-}
-
 async function storedCredential(
   reference: string,
 ): Promise<string | undefined> {
-  const account = providerAccountForReference(reference);
-  const provider = account?.providerId ?? reference;
-  if (!isCloudProviderId(provider)) return undefined;
-  const sessionCredential =
-    sessionCredentials.get(reference) ?? sessionCredentials.get(provider);
-  if (sessionCredential) return sessionCredential;
-  if (!safeStorage.isEncryptionAvailable()) return undefined;
-  const credentials = { ...(await readCredentials()) };
-  const encoded = credentials[reference] ?? credentials[provider];
-  if (!encoded) return undefined;
-  try {
-    return safeStorage.decryptString(Buffer.from(encoded, "base64"));
-  } catch {
-    throw new Error(
-      `The stored ${cloudProviderDefinition(provider).label} credential could not be decrypted. Remove it and configure the provider again.`,
-    );
-  }
-}
-
-async function saveCredential(
-  provider: DesktopProvider,
-  value: string,
-  requestedAccountId?: string,
-): Promise<void> {
-  if (!isCloudProviderId(provider)) return;
-  const accountId = ensureProviderAccount(provider, requestedAccountId);
-  if (!safeStorage.isEncryptionAvailable()) {
-    sessionCredentials.set(accountId, value);
-    return;
-  }
-  sessionCredentials.delete(accountId);
-  sessionCredentials.delete(provider);
-  const credentials = { ...(await readCredentials()) };
-  delete credentials[provider];
-  await writeFile(
-    credentialPath(),
-    `${JSON.stringify({ ...credentials, [accountId]: safeStorage.encryptString(value).toString("base64") }, null, 2)}\n`,
-    "utf8",
-  );
-}
-
-async function removeCredential(
-  provider: DesktopProvider,
-  accountId?: string,
-): Promise<void> {
-  if (!isCloudProviderId(provider)) return;
-  if (accountId) sessionCredentials.delete(accountId);
-  else sessionCredentials.delete(provider);
-  const credentials = await readCredentials();
-  const remaining = { ...credentials };
-  if (accountId) delete remaining[accountId];
-  else {
-    delete remaining[provider];
-    for (const account of persisted.providerAccounts ?? [])
-      if (account.providerId === provider) delete remaining[account.id];
-  }
-  await writeFile(
-    credentialPath(),
-    `${JSON.stringify(remaining, null, 2)}\n`,
-    "utf8",
-  );
-}
-
-async function configureAgentCoordinator(): Promise<void> {
-  unsubscribeAgentEvents?.();
-  unsubscribeAgentEvents = undefined;
-  await agentCoordinator?.dispose();
-  agentHost = new AgentHost({
-    workspaceRoot: persisted.workspaceRoot,
-    mcpServers: persisted.configuration?.mcpServers,
-    credentialResolver: {
-      async resolve(reference) {
-        const account = providerAccountForReference(reference);
-        const provider = account?.providerId ?? reference;
-        if (!isCloudProviderId(provider)) return undefined;
-        const value = await storedCredential(reference);
-        return value
-          ? new ApiKeyCredential(`desktop:${provider}:${reference}`, value)
-          : undefined;
-      },
-    },
-    approvalFactory: agentApproval,
-  });
-  agentCoordinator = new AgentCoordinator({
-    profiles: new DesktopAgentProfileStore(),
-    runtimeFactory: agentHost.createRuntimeFactory(),
-    history: new FileAgentRunHistoryStore(persisted.workspaceRoot),
-  });
-  await agentCoordinator.restoreHistory();
-  unsubscribeAgentEvents = agentCoordinator.events.subscribe(() => {
-    void publishAgents();
-  });
+  return credentialService.get(reference);
 }
 
 async function loadPersistedState(): Promise<void> {
-  try {
-    const parsed = JSON.parse(
-      await readFile(statePath(), "utf8"),
-    ) as Partial<PersistedState>;
-    persisted = {
-      workspaceRoot:
-        typeof parsed.workspaceRoot === "string"
-          ? parsed.workspaceRoot
-          : process.cwd(),
-      zoomFactor:
-        typeof parsed.zoomFactor === "number" &&
-        Number.isFinite(parsed.zoomFactor)
-          ? Math.min(2, Math.max(0.7, parsed.zoomFactor))
-          : 1,
-      configuration: isConfiguration(parsed.configuration)
-        ? normalizeConfiguration(parsed.configuration)
-        : undefined,
-      providerAccounts: Array.isArray(parsed.providerAccounts)
-        ? parsed.providerAccounts.filter(isProviderAccount)
-        : [],
-      updates:
-        parsed.updates && typeof parsed.updates === "object"
-          ? {
-              checkOnLaunch:
-                (parsed.updates as { checkOnLaunch?: unknown })
-                  .checkOnLaunch !== false,
-              autoDownload:
-                (parsed.updates as { autoDownload?: unknown }).autoDownload ===
-                true,
-            }
-          : { checkOnLaunch: true, autoDownload: false },
-      theme: isThemePreference(parsed.theme) ? parsed.theme : defaultTheme,
-      conversations: Array.isArray(parsed.conversations)
-        ? parsed.conversations.slice(0, 30)
-        : [],
-      activeConversationId:
-        typeof parsed.activeConversationId === "string"
-          ? parsed.activeConversationId
-          : undefined,
-      workspaceUiState: normalizeWorkspaceUiState(parsed.workspaceUiState),
-      agentProfiles: Array.isArray(parsed.agentProfiles)
-        ? parsed.agentProfiles
-        : undefined,
-    };
-  } catch {
-    persisted = {
-      workspaceRoot: process.cwd(),
-      zoomFactor: 1,
-      updates: { checkOnLaunch: true, autoDownload: false },
-      theme: defaultTheme,
-      conversations: [],
-    };
-  }
+  stateStore = new DesktopStateStore(statePath(), process.cwd());
+  persisted = await stateStore.load();
 }
 
 async function persistState(): Promise<void> {
-  await writeFile(
-    statePath(),
-    `${JSON.stringify(persisted, null, 2)}\n`,
-    "utf8",
-  );
-}
-
-function isConfiguration(value: unknown): value is DesktopConfiguration {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<DesktopConfiguration>;
-  return (
-    (isLocalEndpointKind(candidate.provider) ||
-      isCloudProviderId(candidate.provider)) &&
-    typeof candidate.baseUrl === "string" &&
-    typeof candidate.model === "string" &&
-    (candidate.mode === "chat" ||
-      candidate.mode === "plan" ||
-      candidate.mode === "edit") &&
-    (candidate.permission === "ask" ||
-      candidate.permission === "auto-read" ||
-      candidate.permission === "auto-all") &&
-    typeof candidate.contextWindow === "number" &&
-    (candidate.modelContextWindow === undefined ||
-      typeof candidate.modelContextWindow === "number") &&
-    (candidate.internetAccess === undefined ||
-      typeof candidate.internetAccess === "boolean") &&
-    (candidate.credentialAccountId === undefined ||
-      typeof candidate.credentialAccountId === "string")
-  );
-}
-
-function normalizeConfiguration(
-  value: DesktopConfiguration,
-): DesktopConfiguration {
-  const modelContextWindow = isCloudProviderId(value.provider)
-    ? value.modelContextWindow ?? publishedContextWindow(value.provider, value.model)
-    : undefined;
-  return {
-    ...value,
-    baseUrl: isCloudProviderId(value.provider)
-      ? cloudProviderDefinition(value.provider).baseUrl
-      : value.baseUrl.trim(),
-    model: value.model.trim(),
-    credentialAccountId: isCloudProviderId(value.provider)
-      ? value.credentialAccountId?.trim() || undefined
-      : undefined,
-    contextWindow: Math.max(
-      512,
-      Math.min(2_000_000, Math.floor(value.contextWindow || 8_192)),
-    ),
-    modelContextWindow:
-      modelContextWindow === undefined
-        ? undefined
-        : Math.max(
-            512,
-            Math.min(2_000_000, Math.floor(modelContextWindow)),
-          ),
-    internetAccess: value.internetAccess ?? false,
-    autocomplete: {
-      enabled: value.autocomplete?.enabled ?? false,
-      model: value.autocomplete?.model?.trim() || undefined,
-    },
-    formatOnSave: value.formatOnSave === true,
-    mcpServers: parseMcpServerConfigurations(value.mcpServers),
-  };
-}
-
-function isLocalConfiguration(
-  configuration: DesktopConfiguration,
-): configuration is DesktopConfiguration & {
-  readonly provider: "ollama" | "openai-compatible";
-} {
-  return isLocalEndpointKind(configuration.provider);
-}
-
-function contextBudgetForConfiguration(
-  configuration: DesktopConfiguration,
-): number {
-  // The editable context setting belongs to local endpoints. Cloud models
-  // must use their own published metadata, or a conservative fallback when
-  // the provider does not publish a context window in its model list.
-  return isLocalConfiguration(configuration)
-    ? configuration.contextWindow
-    : configuration.modelContextWindow ?? 8_192;
-}
-
-function normalizeWorkspaceUiState(
-  value: unknown,
-): DesktopWorkspaceUiState | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const candidate = value as Partial<DesktopWorkspaceUiState>;
-  const expandedDirectories = Array.isArray(candidate.expandedDirectories)
-    ? candidate.expandedDirectories.filter(
-        (path): path is string => typeof path === "string",
-      )
-    : [];
-  const openEditors = Array.isArray(candidate.openEditors)
-    ? candidate.openEditors.flatMap((editor) =>
-        editor &&
-        typeof editor === "object" &&
-        typeof editor.path === "string" &&
-        (editor.mode === "file" || editor.mode === "diff")
-          ? [
-              {
-                path: editor.path,
-                mode: editor.mode,
-                scrollTop:
-                  typeof editor.scrollTop === "number" &&
-                  Number.isFinite(editor.scrollTop)
-                    ? Math.max(0, editor.scrollTop)
-                    : 0,
-              },
-            ]
-          : [],
-      )
-    : [];
-  return {
-    expandedDirectories,
-    openEditors,
-    activeFile:
-      typeof candidate.activeFile === "string"
-        ? candidate.activeFile
-        : undefined,
-    fileTreeScrollTop:
-      typeof candidate.fileTreeScrollTop === "number" &&
-      Number.isFinite(candidate.fileTreeScrollTop)
-        ? Math.max(0, candidate.fileTreeScrollTop)
-        : 0,
-  };
-}
-
-function isColor(value: unknown): value is string {
-  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
-}
-
-function isThemePalette(value: unknown): value is DesktopThemePalette {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  return Object.values(value as Record<string, unknown>).every(isColor);
-}
-
-function isThemePreference(value: unknown): value is DesktopThemePreference {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<DesktopThemePreference>;
-  return (
-    typeof candidate.name === "string" &&
-    desktopThemeNames.includes(
-      candidate.name as DesktopThemePreference["name"],
-    ) &&
-    (candidate.custom === undefined || isThemePalette(candidate.custom))
-  );
-}
-
-function localEndpoint(
-  configuration: Pick<DesktopConfiguration, "baseUrl"> & {
-    readonly provider: "ollama" | "openai-compatible";
-  },
-): LocalModelEndpoint {
-  return {
-    id: "configured",
-    label: "Configured endpoint",
-    kind: configuration.provider,
-    baseUrl: configuration.baseUrl,
-  };
-}
-
-async function clientConfiguration(
-  configuration: DesktopConfiguration,
-): Promise<ClientConfiguration> {
-  const approval: ToolApproval = {
-    approve(call: ToolCall): Promise<boolean> {
-      const readOnly = [
-        "read_file",
-        "list_directory",
-        "search_files",
-        "grep",
-      ].includes(call.name);
-      if (
-        sessionAllowsAllTools ||
-        configuration.permission === "auto-all" ||
-        (configuration.permission === "auto-read" && readOnly)
-      )
-        return Promise.resolve(true);
-      return new Promise<boolean>((resolveApproval) => {
-        approvalResolvers.set(call.id, resolveApproval);
-        send({
-          type: "approval",
-          callId: call.id,
-          tool: call.name,
-          input: call.input,
-        });
-      });
-    },
-  };
-  return {
-    workspaceRoot: persisted.workspaceRoot,
-    provider: configuration.provider as ClientConfiguration["provider"],
-    baseUrl: configuration.baseUrl,
-    model: configuration.model,
-    apiKey: await storedCredential(
-      configuration.credentialAccountId ?? configuration.provider,
-    ),
-    mode: configuration.mode,
-    internetAccess: configuration.internetAccess,
-    mcpServers: configuration.mcpServers,
-    approval,
-  };
-}
-
-function mobileApproval(mode: RemoteToolApprovalMode = "ask"): ToolApproval & {
-  resolve(callId: string, approved: boolean): boolean;
-  denyAll(): void;
-} {
-  const pending = new Map<string, (approved: boolean) => void>();
-  return {
-    approve(call: ToolCall): Promise<boolean> {
-      if (mode === "auto-all") return Promise.resolve(true);
-      if (
-        mode === "auto-read" &&
-        ["read_file", "list_directory", "search_files", "grep"].includes(
-          call.name,
-        )
-      )
-        return Promise.resolve(true);
-      return new Promise((resolveApproval) =>
-        pending.set(call.id, resolveApproval),
-      );
-    },
-    resolve(callId: string, approved: boolean): boolean {
-      const resolveApproval = pending.get(callId);
-      if (!resolveApproval) return false;
-      pending.delete(callId);
-      resolveApproval(approved);
-      return true;
-    },
-    denyAll(): void {
-      for (const resolveApproval of pending.values()) resolveApproval(false);
-      pending.clear();
-    },
-  };
-}
-
-async function stopTrussGo(): Promise<void> {
-  await trussGoGateway?.close();
-  trussGoGateway = undefined;
-  await Promise.all(trussGoClients.splice(0).map((client) => client.dispose()));
-}
-
-async function connectTrussGo(): Promise<{
-  readonly workspaceName: string;
-  readonly qrDataUrl: string;
-}> {
-  const configuration = persisted.configuration;
-  if (!configuration?.model)
-    throw new Error("Choose a local model before connecting Truss Go.");
-  const address = detectLanAddress();
-  if (!address)
-    throw new Error(
-      "Could not find a private Wi-Fi address for this computer.",
-    );
-  await stopTrussGo();
-  const token = randomBytes(32).toString("hex");
-  const configuredMcpServers = Object.entries(configuration.mcpServers ?? {});
-  trussGoGateway = await startRemoteGateway({
-    token,
-    host: address,
-    port: 0,
-    workspaces: [
-      {
-        id: "active-workspace",
-        displayName: basename(persisted.workspaceRoot),
-        ...(agentCoordinator
-          ? {
-              agents: createGatewayAgentController(agentCoordinator, {
-                allowStart: true,
-              }),
-            }
-          : {}),
-        ...(configuredMcpServers.length
-          ? {
-              mcp: {
-                list: () =>
-                  configuredMcpServers.map(([name, server]) => {
-                    const live = runtimeClient?.mcpServers.find(
-                      (status) => status.name === name,
-                    );
-                    return (
-                      live ?? {
-                        name,
-                        state: server.enabled === false ? "disabled" : "idle",
-                        toolCount: 0,
-                      }
-                    );
-                  }),
-              },
-            }
-          : {}),
-        createRuntime: async (mode, toolApprovalMode) => {
-          const approval = mobileApproval(toolApprovalMode);
-          const client = await createClientRuntime({
-            ...(await clientConfiguration(configuration)),
-            mode,
-            approval,
-          });
-          trussGoClients.push(client);
-          return {
-            runtime: client.runtime,
-            events: client.events,
-            approval,
-            dispose: client.dispose,
-          };
-        },
-      },
-    ],
-  });
-  const pairingUri = createPairingUri({
-    gatewayUrl: trussGoGateway.url,
-    token,
-    workspaceName: basename(persisted.workspaceRoot),
-  });
-  return {
-    workspaceName: basename(persisted.workspaceRoot),
-    qrDataUrl: await QRCode.toDataURL(pairingUri, { margin: 2, width: 320 }),
-  };
-}
-
-async function releaseOllamaModel(
-  configuration: DesktopConfiguration | undefined,
-): Promise<void> {
-  if (
-    !configuration ||
-    configuration.provider !== "ollama" ||
-    !configuration.model
-  )
-    return;
-  try {
-    await fetch(`${configuration.baseUrl.replace(/\/$/, "")}/api/generate`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: configuration.model, keep_alive: 0 }),
-      signal: AbortSignal.timeout(2_000),
-    });
-  } catch {
-    // Local server lifecycle is provider-owned; release is best-effort.
-  }
-}
-
-async function disposeRuntime(): Promise<void> {
-  activeAbort?.abort();
-  activeAbort = undefined;
-  activeRun = undefined;
-  activeSessionId = undefined;
-  activeConversationId = undefined;
-  sessionAllowsAllTools = false;
-  sessionConversationIds.clear();
-  unsubscribeEvents?.();
-  unsubscribeEvents = undefined;
-  const previousClient = runtimeClient;
-  runtimeClient = undefined;
-  await previousClient?.dispose();
-  for (const resolveApproval of approvalResolvers.values())
-    resolveApproval(false);
-  approvalResolvers.clear();
-}
-
-async function configureRuntime(
-  configuration: DesktopConfiguration,
-): Promise<void> {
-  await disposeRuntime();
-  runtimeClient = await createClientRuntime(
-    await clientConfiguration(configuration),
-  );
-  persisted = {
-    ...persisted,
-    mcpStatuses: runtimeClient.mcpServers,
-    runtimeError: undefined,
-  };
-  unsubscribeEvents = runtimeClient.events.subscribe((event) =>
-    send({
-      type: "agent",
-      conversationId: sessionConversationIds.get(event.sessionId),
-      event,
-    }),
-  );
-}
-
-function safeRuntimeConfigurationError(
-  configuration: DesktopConfiguration,
-  error: unknown,
-): string {
-  const message = error instanceof Error ? error.message : String(error);
-  if (
-    isCloudProviderId(configuration.provider) &&
-    /requires a configured credential/i.test(message)
-  ) {
-    return `Enter an API key for ${cloudProviderDefinition(configuration.provider).label}.`;
-  }
-  return "The configured model runtime could not be started. Review Settings and try again.";
-}
-
-async function configureStartupRuntime(
-  configuration: DesktopConfiguration,
-): Promise<void> {
-  let runtimeConfiguration = configuration;
-  const provider = runtimeConfiguration.provider;
-  if (isCloudProviderId(provider)) {
-    const accountId = ensureProviderAccount(
-      provider,
-      runtimeConfiguration.credentialAccountId,
-    );
-    if (runtimeConfiguration.credentialAccountId !== accountId) {
-      runtimeConfiguration = {
-        ...runtimeConfiguration,
-        credentialAccountId: accountId,
-      };
-      persisted = {
-        ...persisted,
-        configuration: runtimeConfiguration,
-      };
-      await persistState();
-    }
-    await migrateLegacyCredential(provider, accountId);
-  }
-  const result = await recoverStartupRuntime(
-    () => configureRuntime(runtimeConfiguration),
-    disposeRuntime,
-  );
-  if (result.status === "recovered") {
-    persisted = {
-      ...persisted,
-      mcpStatuses: [],
-      runtimeError: safeRuntimeConfigurationError(
-        runtimeConfiguration,
-        result.error,
-      ),
-    };
-  }
-}
-
-function ensurePathInsideWorkspace(path: string): string {
-  const workspace = resolve(persisted.workspaceRoot);
-  const target = resolve(workspace, path);
-  if (target !== workspace && !target.startsWith(`${workspace}${sep}`))
-    throw new Error("Path must remain inside the selected workspace.");
-  return target;
-}
-
-function mediaType(path: string): string | undefined {
-  const extension = path.slice(path.lastIndexOf(".")).toLowerCase();
-  return mediaTypes.get(extension);
-}
-
-async function workspaceMediaResponse(request: Request): Promise<Response> {
-  try {
-    const url = new URL(request.url);
-    if (url.hostname !== "workspace")
-      return new Response("Unknown media source.", { status: 404 });
-    const relativePath = decodeURIComponent(url.pathname.replace(/^\/+/, ""));
-    const target = ensurePathInsideWorkspace(relativePath);
-    const contentType = mediaType(target);
-    if (!contentType)
-      return new Response("Unsupported media type.", { status: 415 });
-    const file = await stat(target);
-    if (!file.isFile())
-      return new Response("Media file not found.", { status: 404 });
-
-    let start = 0;
-    let end = Math.max(0, file.size - 1);
-    let status = 200;
-    const range = request.headers.get("range")?.match(/^bytes=(\d*)-(\d*)$/);
-    if (range && file.size > 0) {
-      if (!range[1] && range[2]) {
-        const suffixLength = Math.min(file.size, Number.parseInt(range[2], 10));
-        start = file.size - suffixLength;
-      } else {
-        start = Number.parseInt(range[1] || "0", 10);
-        end = range[2]
-          ? Math.min(file.size - 1, Number.parseInt(range[2], 10))
-          : file.size - 1;
-      }
-      if (
-        !Number.isFinite(start) ||
-        !Number.isFinite(end) ||
-        start < 0 ||
-        end < start ||
-        start >= file.size
-      ) {
-        return new Response(null, {
-          status: 416,
-          headers: { "content-range": `bytes */${file.size}` },
-        });
-      }
-      status = 206;
-    }
-
-    const length = file.size ? end - start + 1 : 0;
-    const headers: Record<string, string> = {
-      "accept-ranges": "bytes",
-      "cache-control": "no-store",
-      "content-length": String(length),
-      "content-type": contentType,
-    };
-    if (status === 206)
-      headers["content-range"] = `bytes ${start}-${end}/${file.size}`;
-    if (request.method === "HEAD" || file.size === 0)
-      return new Response(null, { status, headers });
-    const body = Readable.toWeb(
-      createReadStream(target, { start, end }),
-    ) as ReadableStream<Uint8Array>;
-    return new Response(body, { status, headers });
-  } catch {
-    return new Response("Media file not found.", { status: 404 });
-  }
-}
-
-async function collectFiles(): Promise<DesktopFile[]> {
-  const files: DesktopFile[] = [];
-  const visit = async (current: string): Promise<void> => {
-    let entries;
-    try {
-      entries = await readdir(current, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const entryPath = join(current, entry.name);
-      const workspacePath = relative(persisted.workspaceRoot, entryPath);
-      if (entry.isDirectory()) {
-        files.push({ path: workspacePath, type: "directory" });
-        if (!ignoredDirectories.has(entry.name)) await visit(entryPath);
-      } else if (entry.isFile() || entry.isSymbolicLink()) {
-        files.push({ path: workspacePath, type: "file" });
-      }
-    }
-  };
-  await visit(persisted.workspaceRoot);
-  return files.sort((left, right) => left.path.localeCompare(right.path));
-}
-
-async function listDirectory(path: string): Promise<DesktopFile[]> {
-  const directory = ensurePathInsideWorkspace(path);
-  const entries = await readdir(directory, { withFileTypes: true });
-  return entries
-    .filter(
-      (entry) =>
-        entry.isDirectory() || entry.isFile() || entry.isSymbolicLink(),
-    )
-    .map((entry) => ({
-      path: relative(persisted.workspaceRoot, join(directory, entry.name)),
-      type: entry.isDirectory() ? ("directory" as const) : ("file" as const),
-    }))
-    .sort((left, right) =>
-      left.type === right.type
-        ? left.path.localeCompare(right.path)
-        : left.type === "directory"
-          ? -1
-          : 1,
-    );
-}
-
-async function gitOutput(args: readonly string[]): Promise<string> {
-  try {
-    return (
-      await execFile("git", [...args], {
-        cwd: persisted.workspaceRoot,
-        maxBuffer: 1_000_000,
-      })
-    ).stdout;
-  } catch (error) {
-    const stdout =
-      error && typeof error === "object" && "stdout" in error
-        ? (error as { readonly stdout?: unknown }).stdout
-        : undefined;
-    return typeof stdout === "string" ? stdout : "";
-  }
-}
-
-function normalizeCommitMessage(value: string): string {
-  return value
-    .trim()
-    .replace(/^```(?:gitcommit|text|markdown)?\s*/i, "")
-    .replace(/\s*```$/, "")
-    .replace(/^(?:commit message|message):\s*/i, "")
-    .trim();
-}
-
-function compactCommitDiff(diff: string, contextWindow: number): string {
-  const limit = Math.max(
-    8_000,
-    Math.min(48_000, Math.floor(contextWindow * 1.25)),
-  );
-  if (diff.length <= limit) return diff;
-
-  const segments = diff.split(/(?=^diff --git )/m).filter(Boolean);
-  const isGenerated = (segment: string): boolean =>
-    /(?:package-lock\.json|(?:^|[/\\])(?:dist|coverage|\.next)(?:[/\\])|\.map(?:\r?$))/m.test(
-      segment,
-    );
-  const selected: string[] = [];
-  let remaining = limit - 240;
-  for (const segment of [
-    ...segments.filter((segment) => !isGenerated(segment)),
-    ...segments.filter(isGenerated),
-  ]) {
-    if (remaining <= 0) break;
-    if (segment.length <= remaining) {
-      selected.push(segment);
-      remaining -= segment.length;
-      continue;
-    }
-    const head = Math.max(1_000, Math.floor(remaining * 0.7));
-    const tail = Math.max(500, remaining - head - 90);
-    selected.push(
-      `${segment.slice(0, head)}\n... diff content omitted for context budget ...\n${segment.slice(-tail)}`,
-    );
-    remaining = 0;
-  }
-  if (!selected.length)
-    selected.push(
-      `${diff.slice(0, Math.floor(limit * 0.7))}\n... diff content omitted for context budget ...\n${diff.slice(-Math.floor(limit * 0.25))}`,
-    );
-  return `The full diff exceeds the configured context budget. Generate a message from this representative selection; do not mention that it was truncated.\n\n${selected.join("\n")}`;
-}
-
-async function generateCommitMessage(): Promise<string> {
-  const configuration = persisted.configuration;
-  if (!configuration?.model)
-    throw new Error("Choose a local model before generating a commit message.");
-  if (!isLocalConfiguration(configuration))
-    throw new Error(
-      "Commit-message generation for cloud providers will use the shared agent runtime in the next Desktop slice.",
-    );
-
-  let diff = await gitOutput(["diff", "--cached", "--no-ext-diff"]);
-  if (!diff.trim()) diff = await gitOutput(["diff", "--no-ext-diff"]);
-  if (!diff.trim())
-    throw new Error("There are no staged or unstaged changes to summarize.");
-
-  const prompt = `You write accurate, production-quality Git commit messages. Analyze the diff and return only one Conventional Commit message.
-
-Requirements:
-- First line format: type(optional scope): imperative summary
-- Choose the most accurate type from feat, fix, refactor, perf, docs, test, build, ci, or chore.
-- Keep the subject under 72 characters and describe the actual user-visible or technical change.
-- Use specific verbs and nouns. Do not use vague wording such as "update", "changes", or "stuff".
-- Add a blank line and a concise body only when it clarifies important behavior, constraints, or follow-up effects.
-- Do not include Markdown, quotes, explanations, issue numbers, or text such as "Commit message:".
-
-Diff:
-${compactCommitDiff(diff, configuration.contextWindow)}`;
-  const response = await generateLocalText(
-    {
-      kind: configuration.provider,
-      baseUrl: configuration.baseUrl,
-      model: configuration.model,
-    },
-    prompt,
-  );
-  const message = normalizeCommitMessage(response);
-  if (!message) throw new Error("The model returned an empty commit message.");
-  return message;
-}
-
-async function gitCommand(args: readonly string[]): Promise<string> {
-  try {
-    const { stdout, stderr } = await execFile("git", [...args], {
-      cwd: persisted.workspaceRoot,
-      maxBuffer: 1_000_000,
-    });
-    return (stdout || stderr || "Git command completed.").trim();
-  } catch (error) {
-    const detail =
-      error && typeof error === "object"
-        ? ["stderr", "stdout"]
-            .map((key) => (error as Record<string, unknown>)[key])
-            .find(
-              (value): value is string =>
-                typeof value === "string" && Boolean(value.trim()),
-            )
-        : undefined;
-    throw new Error(
-      detail?.trim() ||
-        (error instanceof Error ? error.message : String(error)),
-    );
-  }
-}
-
-async function gitPathExistsAtHead(path: string): Promise<boolean> {
-  try {
-    await execFile("git", ["cat-file", "-e", `HEAD:${path}`], {
-      cwd: persisted.workspaceRoot,
-      maxBuffer: 1_000_000,
-    });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function gitPaths(paths: readonly string[]): string[] {
-  if (!Array.isArray(paths) || !paths.length)
-    throw new Error("Select at least one file.");
-  return paths.map((path) =>
-    relative(persisted.workspaceRoot, ensurePathInsideWorkspace(path)),
-  );
-}
-
-async function gitPushRemoteName(): Promise<string | undefined> {
-  try {
-    const { stdout } = await execFile("git", ["remote"], {
-      cwd: persisted.workspaceRoot,
-      maxBuffer: 100_000,
-    });
-    for (const name of stdout.split(/\r?\n/).map((value) => value.trim())) {
-      if (!name) continue;
-      try {
-        const { stdout: url } = await execFile(
-          "git",
-          ["remote", "get-url", "--push", name],
-          { cwd: persisted.workspaceRoot, maxBuffer: 100_000 },
-        );
-        if (url.trim()) return name;
-      } catch {
-        // A remote without a usable push URL is not actionable from the UI.
-      }
-    }
-  } catch {
-    // Git status will carry the unavailable state when this is not a repository.
-  }
-  return undefined;
-}
-
-async function getGitStatus(): Promise<DesktopGitStatus> {
-  try {
-    const output = await gitCommand(["status", "--porcelain=v1", "--branch"]);
-    const pushRemote = await gitPushRemoteName();
-    let branch: string | undefined;
-    let ahead = 0;
-    let behind = 0;
-    const files: DesktopGitStatus["files"][number][] = [];
-    for (const line of output.split(/\r?\n/)) {
-      if (line.startsWith("## ")) {
-        const details = line.slice(3);
-        branch = details.split("...")[0].trim();
-        const aheadBehind = details.match(
-          /\[ahead (\d+)(?:, behind (\d+))?\]|\[behind (\d+)(?:, ahead (\d+))?\]/,
-        );
-        if (aheadBehind) {
-          ahead = Number.parseInt(aheadBehind[1] ?? aheadBehind[4] ?? "0", 10);
-          behind = Number.parseInt(aheadBehind[2] ?? aheadBehind[3] ?? "0", 10);
-        }
-        continue;
-      }
-      if (line.length < 4) continue;
-      files.push({
-        path: line.slice(3),
-        indexStatus: line[0],
-        workTreeStatus: line[1],
-      });
-    }
-    return {
-      available: true,
-      branch,
-      ahead,
-      behind,
-      files,
-      ...(pushRemote ? { pushRemote } : {}),
-    };
-  } catch (error) {
-    return {
-      available: false,
-      ahead: 0,
-      behind: 0,
-      files: [],
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
-async function getGitGraph(): Promise<DesktopGitGraph> {
-  try {
-    const output = await gitCommand([
-      "log",
-      "--all",
-      "--max-count=80",
-      "--date=iso-strict",
-      "--pretty=format:%H%x1f%h%x1f%an%x1f%aI%x1f%P%x1f%D%x1f%s",
-    ]);
-    const commits = output
-      .split(/\r?\n/)
-      .filter(Boolean)
-      .flatMap((line) => {
-        const [hash, shortHash, author, authoredAt, parents, refs, subject] =
-          line.split("\x1f");
-        if (!hash || !shortHash || !subject) return [];
-        return [
-          {
-            hash,
-            shortHash,
-            subject,
-            author: author ?? "Unknown author",
-            authoredAt: authoredAt ?? "",
-            parents: parents ? parents.split(" ").filter(Boolean) : [],
-            refs: refs
-              ? refs
-                  .split(",")
-                  .map((ref) => ref.trim())
-                  .filter(Boolean)
-              : [],
-          },
-        ];
-      });
-    return { available: true, commits };
-  } catch (error) {
-    return {
-      available: false,
-      commits: [],
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
-async function fileContext(
-  activeFilePath: string | undefined,
-  attachedPaths: readonly string[] | undefined,
-  openFilePaths: readonly string[] | undefined,
-): Promise<readonly ContextBlock[]> {
-  const attached = new Set(attachedPaths ?? []);
-  const openFiles = new Set(openFilePaths ?? []);
-  const paths = [
-    ...new Set(
-      [
-        activeFilePath,
-        ...(attachedPaths ?? []),
-        ...(openFilePaths ?? []),
-      ].filter((path): path is string => Boolean(path)),
-    ),
-  ].slice(0, 8);
-  const blocks: ContextBlock[] = [];
-  const primaryBudget = Math.max(
-    2_000,
-    Math.min(
-      20_000,
-      persisted.configuration
-        ? contextBudgetForConfiguration(persisted.configuration)
-        : 8_192,
-    ),
-  );
-  let remaining = 80_000;
-  for (const path of paths) {
-    if (remaining <= 0) break;
-    try {
-      const isPrimary = path === activeFilePath;
-      const isAttached = attached.has(path);
-      const source = isPrimary
-        ? "active-file"
-        : isAttached
-          ? "attached-file"
-          : "open-file";
-      const priority = isPrimary ? 1_000 : isAttached ? 400 : 100;
-      const contentType = mediaType(path);
-      if (contentType && contentType !== "image/svg+xml") {
-        blocks.push({
-          source: `${source}:${path}`,
-          content: `This ${contentType.startsWith("video/") ? "video" : "image"} file is open in the desktop viewer. Binary content is not included in text model context.`,
-          priority,
-        });
-        continue;
-      }
-      const content = await readFile(ensurePathInsideWorkspace(path), "utf8");
-      const clipped = content.slice(
-        0,
-        Math.min(isPrimary ? primaryBudget : 30_000, remaining),
-      );
-      blocks.push({
-        source: `${source}:${path}`,
-        content: isPrimary
-          ? `This is the currently open workspace file and the primary context for this request. Tool results produced later in the run take precedence over this request-start snapshot.\n\n${clipped}`
-          : !isAttached && openFiles.has(path)
-            ? `This workspace file is currently open in another editor tab.\n\n${clipped}`
-            : clipped,
-        priority,
-      });
-      remaining -= clipped.length;
-    } catch {
-      // The renderer only offers workspace files, but a stale entry must not fail a chat request.
-    }
-  }
-  return blocks;
-}
-
-async function executeChat(input: {
-  readonly prompt: string;
-  readonly conversationId: string;
-  readonly history: readonly DesktopMessage[];
-  readonly attachments?: readonly ChatAttachment[];
-  readonly activeFilePath?: string;
-  readonly attachedPaths?: readonly string[];
-  readonly openFilePaths?: readonly string[];
-}): Promise<void> {
-  const configuration = persisted.configuration;
-  if (!configuration || !configuration.model)
-    throw new Error("Choose a local model before starting the agent.");
-  if (!runtimeClient) await configureRuntime(configuration);
-  const client = runtimeClient as Awaited<
-    ReturnType<typeof createClientRuntime>
-  >;
-  if (!activeSessionId || activeConversationId !== input.conversationId) {
-    sessionAllowsAllTools = false;
-    const session = await client.runtime.createSession(input.history);
-    activeSessionId = session.id;
-    activeConversationId = input.conversationId;
-    sessionConversationIds.set(session.id, input.conversationId);
-  }
-  const controller = new AbortController();
-  activeAbort = controller;
-  send({ type: "chat-start", conversationId: input.conversationId });
-  try {
-    await client.runtime.run(
-      activeSessionId,
-      input.prompt,
-      controller.signal,
-      await fileContext(
-        input.activeFilePath,
-        input.attachedPaths,
-        input.openFilePaths,
-      ),
-      input.attachments,
-    );
-    send({
-      type: "chat-end",
-      conversationId: input.conversationId,
-      aborted: controller.signal.aborted,
-    });
-  } catch (error) {
-    if (!controller.signal.aborted)
-      send({
-        type: "chat-error",
-        conversationId: input.conversationId,
-        message: error instanceof Error ? error.message : String(error),
-      });
-    else
-      send({
-        type: "chat-end",
-        conversationId: input.conversationId,
-        aborted: true,
-      });
-  } finally {
-    if (activeAbort === controller) activeAbort = undefined;
-  }
-}
-
-async function runChat(input: {
-  readonly prompt: string;
-  readonly conversationId: string;
-  readonly history: readonly DesktopMessage[];
-  readonly attachments?: readonly ChatAttachment[];
-  readonly activeFilePath?: string;
-  readonly attachedPaths?: readonly string[];
-  readonly openFilePaths?: readonly string[];
-}): Promise<void> {
-  const previousRun = activeRun;
-  if (previousRun) {
-    activeAbort?.abort();
-    await previousRun.catch(() => undefined);
-  }
-  const run = executeChat(input);
-  activeRun = run;
-  try {
-    await run;
-  } finally {
-    if (activeRun === run) activeRun = undefined;
-  }
-}
-
-async function createMainWindow(): Promise<void> {
-  mainWindow = new BrowserWindow({
-    width: 1440,
-    height: 940,
-    minWidth: 960,
-    minHeight: 640,
-    title: brand.productName,
-    icon: join(distDirectory(), "assets", "brand-logo.png"),
-    autoHideMenuBar: true,
-    backgroundColor: "#11161a",
-    webPreferences: {
-      preload: join(distDirectory(), "preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-      webviewTag: true,
-    },
-  });
-  mainWindow.center();
-  mainWindow.webContents.setZoomFactor(persisted.zoomFactor);
-  mainWindow.webContents.on(
-    "will-attach-webview",
-    (event, webPreferences, params) => {
-      if (!isAllowedPreviewUrl(params.src)) {
-        event.preventDefault();
-        return;
-      }
-      delete webPreferences.preload;
-      webPreferences.nodeIntegration = false;
-      webPreferences.contextIsolation = true;
-      webPreferences.sandbox = true;
-    },
-  );
-  mainWindow.webContents.on("did-attach-webview", (_event, contents) => {
-    contents.setWindowOpenHandler(({ url }) => {
-      if (isAllowedPreviewUrl(url) && url !== "about:blank")
-        void shell.openExternal(url);
-      return { action: "deny" };
-    });
-    contents.on("will-navigate", (event, url) => {
-      if (!isAllowedPreviewUrl(url)) event.preventDefault();
-    });
-    contents.on("before-input-event", (event, input) => {
-      if (input.key !== "F12") return;
-      event.preventDefault();
-      contents.openDevTools({ mode: "detach" });
-    });
-  });
-  await mainWindow.loadFile(join(distDirectory(), "index.html"));
-  mainWindow.on("closed", () => {
-    void stopTrussGo();
-    mainWindow = undefined;
-  });
+  stateStore ??= new DesktopStateStore(statePath(), process.cwd());
+  await stateStore.save(persisted);
 }
 
 if (process.platform === "win32")
@@ -1808,14 +205,15 @@ void app
   .whenReady()
   .then(async () => {
     await loadPersistedState();
-    protocol.handle("truss-media", workspaceMediaResponse);
-    await configureAgentCoordinator();
-    if (persisted.configuration)
-      await configureStartupRuntime(persisted.configuration);
-    await createMainWindow();
-    configureUpdater();
+    protocol.handle("truss-media", (request) =>
+      workspaceService.mediaResponse(request),
+    );
+    await managedAgents.configure();
+    await settingsService.configureStartupRuntime();
+    await windowService.create();
+    updateService.configure();
     app.on("activate", () => {
-      if (!mainWindow) void createMainWindow();
+      if (!windowService.current) void windowService.create();
     });
   })
   .catch((error: unknown) => {
@@ -1831,1097 +229,121 @@ app.on("window-all-closed", () => {
 });
 app.on("before-quit", () => {
   shutdownDesktopWork();
-  void stopTrussGo();
-  void disposeRuntime();
+  void trussGo.stop();
+  void runtimeService.dispose();
 });
 
-ipcMain.handle("truss:initial-state", (): DesktopState => persisted);
-ipcMain.handle(
-  "truss:test-mcp-server",
-  async (
-    _event,
-    name: string,
-    input: McpStdioServerConfiguration,
-  ): Promise<McpServerStatus> => {
-    const normalizedName = name.trim();
-    if (!normalizedName) throw new Error("An MCP server name is required.");
-    const configurations = parseMcpServerConfigurations({
-      [normalizedName]: { ...input, enabled: true },
-    });
-    const manager = new McpServerManager(new ToolRegistry(), configurations, {
-      workspaceRoot: persisted.workspaceRoot,
-    });
-    try {
-      return (
-        (await manager.connect(normalizedName)) ?? {
-          name: normalizedName,
-          state: "failed",
-          toolCount: 0,
-          error: "The MCP server could not be tested.",
-        }
-      );
-    } finally {
-      await manager.close();
-    }
-  },
-);
-ipcMain.handle(
-  "truss:credential-storage",
-  (): DesktopCredentialStorage =>
-    safeStorage.isEncryptionAvailable() ? "secure" : "session-only",
-);
-ipcMain.handle(
-  "truss:configure-theme",
-  async (_event, theme: DesktopThemePreference): Promise<DesktopState> => {
-    if (!isThemePreference(theme))
-      throw new Error(
-        "Choose a valid desktop theme and use #RRGGBB colors for custom palette values.",
-      );
-    persisted = {
-      ...persisted,
-      theme:
-        theme.name === "custom"
-          ? { name: "custom", custom: theme.custom ?? {} }
-          : { name: theme.name },
-    };
-    await persistState();
-    return persisted;
-  },
-);
-ipcMain.handle(
-  "truss:adjust-zoom",
-  async (_event, direction: unknown): Promise<number> => {
-    if (direction !== -1 && direction !== 1)
-      throw new Error("Zoom direction must be -1 or 1.");
-    const zoomFactor =
-      Math.round(
-        Math.min(2, Math.max(0.7, persisted.zoomFactor + direction * 0.1)) *
-          100,
-      ) / 100;
-    persisted = { ...persisted, zoomFactor };
-    mainWindow?.webContents.setZoomFactor(zoomFactor);
-    await persistState();
-    return zoomFactor;
-  },
-);
-ipcMain.handle(
-  "truss:configure-updates",
-  async (
-    _event,
-    updates: {
-      readonly checkOnLaunch: boolean;
-      readonly autoDownload: boolean;
-    },
-  ): Promise<DesktopState> => {
-    persisted = {
-      ...persisted,
-      updates: {
-        checkOnLaunch: updates.checkOnLaunch !== false,
-        autoDownload: updates.autoDownload === true,
-      },
-    };
-    if (nativeUpdaterSupported())
-      autoUpdater.autoDownload = persisted.updates.autoDownload;
-    await persistState();
-    return persisted;
-  },
-);
-ipcMain.handle("truss:check-for-updates", async (): Promise<void> => {
-  await checkForUpdates();
-});
-ipcMain.handle("truss:download-update", async (): Promise<void> => {
-  if (nativeUpdaterSupported()) {
-    await autoUpdater.downloadUpdate();
-    return;
-  }
-  const url = hostedUpdateUrl;
-  if (!url) {
-    await checkHostedUpdate();
-    return;
-  }
-  await shell.openExternal(url);
-});
-ipcMain.handle("truss:install-update", (): void => {
-  if (nativeUpdaterSupported()) autoUpdater.quitAndInstall(false, true);
-  else if (hostedUpdateUrl) void shell.openExternal(hostedUpdateUrl);
-  else throw new Error("Check for updates before opening the update download.");
-});
-ipcMain.handle(
-  "truss:choose-workspace",
-  async (): Promise<DesktopState | undefined> => {
-    const options: OpenDialogOptions = { properties: ["openDirectory"] };
-    if (mainWindow) {
-      mainWindow.center();
-      mainWindow.focus();
-    }
-    const selection = mainWindow
-      ? await dialog.showOpenDialog(mainWindow, options)
-      : await dialog.showOpenDialog(options);
-    const workspaceRoot = selection.filePaths[0];
-    if (selection.canceled || !workspaceRoot) return undefined;
-    const workspaceChanged =
-      resolve(workspaceRoot) !== resolve(persisted.workspaceRoot);
-    persisted = {
-      ...persisted,
-      workspaceRoot,
-      workspaceUiState: workspaceChanged
-        ? undefined
-        : persisted.workspaceUiState,
-    };
-    if (workspaceChanged) await configureAgentCoordinator();
-    if (persisted.configuration)
-      await configureRuntime(persisted.configuration);
-    await persistState();
-    return persisted;
-  },
-);
-ipcMain.handle(
-  "truss:save-conversations",
-  async (
-    _event,
-    conversations: readonly DesktopConversation[],
-    activeConversationId?: string,
-  ): Promise<void> => {
-    persisted = {
-      ...persisted,
-      conversations: conversations.slice(0, 30),
-      activeConversationId,
-    };
-    await persistState();
-  },
-);
-function finiteNumber(value: unknown): number | undefined {
-  const number = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(number) && number >= 0 ? number : undefined;
-}
+registerSettingsIpc(ipcMain, settingsService, () => persisted);
 
-function modelKind(value: unknown): DesktopModelInfo["kind"] {
-  if (typeof value !== "string") return undefined;
-  const normalized = value.toLowerCase();
-  if (normalized.includes("embed")) return "embedding";
-  if (normalized.includes("moderation")) return "moderation";
-  if (normalized.includes("image")) return "image";
-  if (normalized.includes("audio") || normalized.includes("speech")) return "audio";
-  if (normalized.includes("chat") || normalized.includes("language")) return "chat";
-  return "other";
-}
+async function complete(input: {
+  readonly prefix?: unknown;
+  readonly suffix?: unknown;
+  readonly path?: unknown;
+}): Promise<string> {
+  const configuration = persisted.configuration;
+  if (!configuration?.autocomplete?.enabled) return "";
+  const prefix =
+    typeof input.prefix === "string" ? input.prefix.slice(-6_000) : "";
+  const suffix =
+    typeof input.suffix === "string" ? input.suffix.slice(0, 1_500) : "";
+  if (!prefix.trim()) return "";
+  const model = configuration.autocomplete.model || configuration.model;
+  const filePath = typeof input.path === "string" ? input.path : "unknown";
+  const prompt = `Complete the code at the cursor. Return ONLY the text to insert, with no Markdown, explanation, or repeated context.
 
-function publishedContextWindow(
-  provider: CloudProviderId,
-  modelId: string,
-): number | undefined {
-  if (provider !== "openai") return undefined;
-  const normalized = modelId.toLowerCase();
-  return ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"].includes(
-    normalized,
-  )
-    ? 1_050_000
-    : undefined;
-}
+File: ${filePath}
 
-function modelInfoFromRecord(
-  value: unknown,
-  provider: CloudProviderId,
-): DesktopModelInfo | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const source = value as Record<string, unknown>;
-  const id = [source.id, source.name, source.model]
-    .find((candidate): candidate is string => typeof candidate === "string" && Boolean(candidate.trim()))
-    ?.trim();
-  if (!id || source.archived === true) return undefined;
-  const capabilities = source.capabilities as Record<string, unknown> | undefined;
-  const supportedParameters = Array.isArray(source.supported_parameters)
-    ? source.supported_parameters.filter((item): item is string => typeof item === "string")
-    : [];
-  const supportedGenerationMethods = Array.isArray(source.supportedGenerationMethods)
-    ? source.supportedGenerationMethods.filter((item): item is string => typeof item === "string")
-    : [];
-  const kind =
-    modelKind(source.type) ??
-    modelKind(source.kind) ??
-    (/(?:embedding|moderation|rerank|whisper|tts|dall-e|image-generation)/i.test(id)
-      ? modelKind(id)
-      : undefined);
-  const pricing = source.pricing as Record<string, unknown> | undefined;
-  const inputPrice = finiteNumber(
-    pricing?.prompt ??
-      pricing?.input ??
-      source.input_cost_per_token ??
-      source.inputCostPerToken,
-  );
-  const outputPrice = finiteNumber(
-    pricing?.completion ??
-      pricing?.output ??
-      source.output_cost_per_token ??
-      source.outputCostPerToken,
-  );
-  const pricingMultiplier = provider === "openrouter" ? 1_000_000 : 1;
-  const supportsTools =
-    supportedParameters.some((item) =>
-      ["tools", "tool_choice", "function_calling"].includes(item),
-    ) || capabilities?.function_calling === true;
-  const contextWindow =
-    finiteNumber(
-    source.context_length ??
-      source.max_context_length ??
-      source.contextWindow ??
-      source.inputTokenLimit ??
-      source.max_input_tokens,
-    ) ?? publishedContextWindow(provider, id);
-  return {
-    id,
-    ...(contextWindow ? { contextWindow } : {}),
-    ...(inputPrice !== undefined
-      ? { inputCostPerMillion: inputPrice * pricingMultiplier }
-      : {}),
-    ...(outputPrice !== undefined
-      ? { outputCostPerMillion: outputPrice * pricingMultiplier }
-      : {}),
-    ...(kind ? { kind } : {}),
-    ...(supportsTools || supportedGenerationMethods.includes("generateContent")
-      ? { supportsTools: true }
-      : {}),
-  };
-}
+Before cursor:
+${prefix}
 
-function usableChatModels(models: readonly DesktopModelInfo[]): DesktopModelInfo[] {
-  return models.filter(
-    (model) =>
-      model.kind !== "embedding" &&
-      model.kind !== "image" &&
-      model.kind !== "audio" &&
-      model.kind !== "moderation",
-  );
-}
-
-ipcMain.handle(
-  "truss:discover-models",
-  async (
-    _event,
-    partial?: Partial<DesktopConfiguration>,
-    apiKey?: string,
-  ) => {
-    if (partial?.provider && isCloudProviderId(partial.provider)) {
-      const definition = cloudProviderDefinition(partial.provider);
-      const credential =
-        apiKey?.trim() ||
-        (partial.credentialAccountId
-          ? await storedCredential(partial.credentialAccountId)
-          : await storedCredential(partial.provider));
-      if (!credential)
-        throw new Error(`Enter an API key for ${definition.label} first.`);
-      const baseUrl = (partial.baseUrl || definition.baseUrl).replace(/\/$/, "");
-      const url =
-        definition.compatibility === "ollama-api"
-          ? `${baseUrl}/api/tags`
-          : `${baseUrl}/models`;
-      const records: unknown[] = [];
-      let nextUrl: string | undefined = url;
-      for (let page = 0; nextUrl && page < 20; page += 1) {
-        const response = await fetch(nextUrl, {
-          headers: { Authorization: `Bearer ${credential}` },
-        });
-        if (!response.ok)
+After cursor:
+${suffix}`;
+  const completion = isLocalConfiguration(configuration)
+    ? await generateLocalText(
+        { kind: configuration.provider, baseUrl: configuration.baseUrl, model },
+        prompt,
+      )
+    : await (async () => {
+        if (!isCloudProviderId(configuration.provider)) return "";
+        const credential = await storedCredential(
+          configuration.credentialAccountId ?? configuration.provider,
+        );
+        if (!credential)
           throw new Error(
-            `${definition.label} model discovery failed (${response.status}).`,
+            "Enter an API key for " +
+              cloudProviderDefinition(configuration.provider).label +
+              ".",
           );
-        const payload = (await response.json()) as {
-          readonly data?: readonly unknown[];
-          readonly models?: readonly unknown[];
-          readonly nextPageToken?: string;
-        };
-        records.push(
-          ...(definition.compatibility === "ollama-api"
-            ? payload.models ?? []
-            : payload.data ?? []),
-        );
-        if (definition.compatibility === "ollama-api" || !payload.nextPageToken) {
-          nextUrl = undefined;
-        } else {
-          const pagedUrl: URL = new URL(nextUrl);
-          pagedUrl.searchParams.set("pageToken", payload.nextPageToken);
-          nextUrl = pagedUrl.toString();
-        }
-      }
-      const models = usableChatModels(
-        records.flatMap((record) => {
-          const info = modelInfoFromRecord(record, partial.provider as CloudProviderId);
-          return info ? [info] : [];
-        }),
-      );
-      return {
-        endpoints: [],
-        models: [...new Map(models.map((model) => [model.id, model])).values()],
-      };
-    }
-    const configuration =
-      partial?.baseUrl && isLocalEndpointKind(partial.provider)
-        ? { provider: partial.provider, baseUrl: partial.baseUrl }
-        : persisted.configuration &&
-            isLocalConfiguration(persisted.configuration)
-          ? {
-              provider: persisted.configuration.provider,
-              baseUrl: persisted.configuration.baseUrl,
-            }
-          : undefined;
-    const endpoints = await detectLocalEndpoints();
-    const endpoint = configuration
-      ? localEndpoint(configuration)
-      : endpoints[0];
-    let models: readonly DesktopModelInfo[] = [];
-    if (endpoint) {
-      try {
-        models = (await listLocalModels(endpoint)).map((model) => ({
-          id: model.name,
-          kind: "chat" as const,
-        }));
-      } catch {
-        /* Manual models remain available. */
-      }
-    }
-    return { endpoints: endpoints as readonly DesktopEndpoint[], models };
-  },
-);
-ipcMain.handle("truss:refresh-local-model", async (): Promise<DesktopState> => {
-  const endpoints = await detectLocalEndpoints();
-  const current = persisted.configuration;
-  const matchingEndpoint =
-    current &&
-    endpoints.find(
-      (endpoint) =>
-        endpoint.kind === current.provider &&
-        endpoint.baseUrl === current.baseUrl,
-    );
-  const selected = matchingEndpoint
-    ? {
-        endpoint: matchingEndpoint,
-        model: (await listLocalModels(matchingEndpoint))[0],
-      }
-    : await detectActiveLocalModel({ endpoints });
-  if (!selected?.model)
-    throw new Error(
-      "No loaded local model was detected. Start a local server and load a model, then refresh.",
-    );
-  let next = normalizeConfiguration({
-    ...(current ?? {
-      mode: "chat" as const,
-      permission: "ask" as const,
-      contextWindow: 8_192,
-      internetAccess: false,
-      mcpServers: {},
-    }),
-    provider: selected.endpoint.kind,
-    baseUrl: selected.endpoint.baseUrl,
-    model: selected.model.name,
-  });
-  const contextWindow = await detectLocalContextWindow(
-    selected.endpoint,
-    selected.model.name,
-  ).catch(() => undefined);
-  if (contextWindow) next = { ...next, contextWindow };
-  const previous = persisted.configuration;
-  persisted = { ...persisted, configuration: next };
-  await configureAgentCoordinator();
-  await configureRuntime(next);
-  if (
-    previous?.model !== next.model ||
-    previous?.baseUrl !== next.baseUrl ||
-    previous?.provider !== next.provider
-  )
-    void releaseOllamaModel(previous);
-  await persistState();
-  return persisted;
-});
-ipcMain.handle(
-  "truss:configure",
-  async (
-    _event,
-    input: DesktopConfiguration,
-    apiKey?: string,
-  ): Promise<DesktopState> => {
-    let next = normalizeConfiguration(input);
-    if (!next.baseUrl || !next.model)
-      throw new Error("An endpoint and model are required.");
-    const provider = next.provider;
-    if (isCloudProviderId(provider)) {
-      const accountId = ensureProviderAccount(
-        provider,
-        next.credentialAccountId,
-      );
-      next = { ...next, credentialAccountId: accountId };
-      await migrateLegacyCredential(provider, accountId);
-    }
-    if (apiKey?.trim())
-      await saveCredential(
-        next.provider,
-        apiKey.trim(),
-        next.credentialAccountId,
-      );
-    if (
-      isCloudProviderId(next.provider) &&
-      !(await storedCredential(next.credentialAccountId ?? next.provider))
-    ) {
-      throw new Error(
-        `Enter an API key for ${cloudProviderDefinition(next.provider).label}.`,
-      );
-    }
-    const detectedContextWindow = isLocalConfiguration(next)
-      ? await detectLocalContextWindow(localEndpoint(next), next.model).catch(
-          () => undefined,
-        )
-      : undefined;
-    if (detectedContextWindow)
-      next = { ...next, contextWindow: detectedContextWindow };
-    const previous = persisted.configuration;
-    persisted = { ...persisted, configuration: next };
-    await configureAgentCoordinator();
-    await configureRuntime(next);
-    if (
-      previous?.model !== next.model ||
-      previous?.baseUrl !== next.baseUrl ||
-      previous?.provider !== next.provider
-    )
-      void releaseOllamaModel(previous);
-    await persistState();
-    return persisted;
-  },
-);
-ipcMain.handle(
-  "truss:test-provider-connection",
-  async (
-    _event,
-    input: DesktopConfiguration,
-    apiKey?: string,
-  ): Promise<ProviderConnectionResult> => {
-    const configuration = normalizeConfiguration(input);
-    if (!configuration.baseUrl || !configuration.model)
-      throw new Error("Choose a provider endpoint and model before testing.");
-    if (!agentHost) await configureAgentCoordinator();
-    const credential =
-      apiKey?.trim() && isCloudProviderId(configuration.provider)
-        ? new ApiKeyCredential(
-            `desktop:test:${configuration.provider}`,
-            apiKey.trim(),
-          )
-        : undefined;
-    return agentHost!.testProviderConnection(
-      {
-        providerId: configuration.provider,
-        endpointUrl: configuration.baseUrl,
-        modelId: configuration.model,
-        ...(isCloudProviderId(configuration.provider)
-          ? {
-              credentialRef:
-                configuration.credentialAccountId ?? configuration.provider,
-            }
-          : {}),
-      },
-      undefined,
-      credential,
-    );
-  },
-);
-ipcMain.handle(
-  "truss:save-workspace-ui-state",
-  async (_event, state: DesktopWorkspaceUiState): Promise<void> => {
-    persisted = {
-      ...persisted,
-      workspaceUiState: normalizeWorkspaceUiState(state),
-    };
-    await persistState();
-  },
-);
-ipcMain.handle(
-  "truss:clear-credential",
-  async (
-    _event,
-    provider: DesktopProvider,
-    accountId?: string,
-  ): Promise<void> => {
-    if (!isCloudProviderId(provider)) return;
-    await removeCredential(provider, accountId);
-    if (
-      persisted.configuration?.provider === provider &&
-      (!accountId || persisted.configuration.credentialAccountId === accountId)
-    )
-      await disposeRuntime();
-  },
-);
-ipcMain.handle(
-  "truss:save-provider-account",
-  async (
-    _event,
-    input: {
-      readonly id?: string;
-      readonly providerId: DesktopProvider;
-      readonly label: string;
-      readonly authMethod: "api-key";
-    },
-    apiKey: string,
-  ): Promise<DesktopState> => {
-    if (!isCloudProviderId(input.providerId))
-      throw new Error("Only cloud providers can store API-key accounts.");
-    if (input.authMethod !== "api-key")
-      throw new Error("This account currently supports API keys only.");
-    if (!input.label.trim())
-      throw new Error("A provider account requires a label.");
-    if (!apiKey.trim()) throw new Error("Enter an API key for this account.");
-
-    const existing = input.id
-      ? providerAccountForReference(input.id)
-      : undefined;
-    if (input.id && (!existing || existing.providerId !== input.providerId))
-      throw new Error("The selected provider account no longer exists.");
-    const timestamp = new Date().toISOString();
-    const account: ProviderAccount = existing
-      ? { ...existing, label: input.label.trim(), updatedAt: timestamp }
-      : {
-          id: randomUUID(),
-          providerId: input.providerId,
-          label: input.label.trim(),
-          authMethod: "api-key",
-          status: "active",
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        };
-    persisted = {
-      ...persisted,
-      providerAccounts: [
-        ...(persisted.providerAccounts ?? []).filter(
-          (candidate) => candidate.id !== account.id,
-        ),
-        account,
-      ],
-    };
-    await saveCredential(input.providerId, apiKey.trim(), account.id);
-    await persistState();
-    return persisted;
-  },
-);
-ipcMain.handle(
-  "truss:update-provider-account",
-  async (
-    _event,
-    id: string,
-    input: UpdateProviderAccountInput,
-  ): Promise<DesktopState> => {
-    const existing = providerAccountForReference(id);
-    if (!existing) throw new Error("Unknown provider account.");
-    if (input.label !== undefined && !input.label.trim())
-      throw new Error("A provider account requires a label.");
-    if (
-      input.status !== undefined &&
-      !["active", "reauth-required", "disabled"].includes(input.status)
-    )
-      throw new Error("A provider account has an unsupported status.");
-    const account: ProviderAccount = {
-      ...existing,
-      ...(input.label !== undefined ? { label: input.label.trim() } : {}),
-      ...(input.status !== undefined ? { status: input.status } : {}),
-      ...(input.scopes !== undefined
-        ? { scopes: [...new Set(input.scopes)] }
-        : {}),
-      updatedAt: new Date().toISOString(),
-    };
-    persisted = {
-      ...persisted,
-      providerAccounts: (persisted.providerAccounts ?? []).map((candidate) =>
-        candidate.id === id ? account : candidate,
-      ),
-    };
-    await persistState();
-    return persisted;
-  },
-);
-ipcMain.handle(
-  "truss:delete-provider-account",
-  async (_event, id: string): Promise<DesktopState> => {
-    const existing = providerAccountForReference(id);
-    if (!existing) throw new Error("Unknown provider account.");
-    if (isCloudProviderId(existing.providerId))
-      await removeCredential(existing.providerId, id);
-    const active = persisted.configuration?.credentialAccountId === id;
-    persisted = {
-      ...persisted,
-      providerAccounts: (persisted.providerAccounts ?? []).filter(
-        (account) => account.id !== id,
-      ),
-      ...(active && persisted.configuration
-        ? {
-            configuration: {
-              ...persisted.configuration,
-              credentialAccountId: undefined,
-            },
-          }
-        : {}),
-    };
-    if (active) await disposeRuntime();
-    await persistState();
-    return persisted;
-  },
-);
-ipcMain.handle("truss:send-chat", (_event, input) => runChat(input));
-ipcMain.handle("truss:stop-chat", (): void => activeAbort?.abort());
-ipcMain.handle(
-  "truss:list-agents",
-  (): Promise<DesktopAgentsSnapshot> => agentSnapshot(),
-);
-ipcMain.handle(
-  "truss:create-agent",
-  async (
-    _event,
-    input: CreateAgentProfileInput,
-  ): Promise<DesktopAgentsSnapshot> => {
-    if (!agentCoordinator || !agentHost)
-      throw new Error("The agent host is not ready.");
-    await agentHost.validateProfile({
-      id: "validation",
-      displayName: input.displayName,
-      provider: input.provider,
-      mode: input.mode ?? "chat",
-      approvalPolicy: input.approvalPolicy ?? "ask",
-      internetAccess: input.internetAccess ?? false,
-      createdAt: "",
-      updatedAt: "",
-    });
-    await agentCoordinator.createProfile(input);
-    return publishAgents();
-  },
-);
-ipcMain.handle(
-  "truss:update-agent",
-  async (
-    _event,
-    id: string,
-    input: UpdateAgentProfileInput,
-  ): Promise<DesktopAgentsSnapshot> => {
-    if (!agentCoordinator) throw new Error("The agent host is not ready.");
-    await agentCoordinator.updateProfile(id, input);
-    return publishAgents();
-  },
-);
-ipcMain.handle(
-  "truss:delete-agent",
-  async (_event, id: string): Promise<DesktopAgentsSnapshot> => {
-    if (!agentCoordinator) throw new Error("The agent host is not ready.");
-    await agentCoordinator.deleteProfile(id);
-    return publishAgents();
-  },
-);
-ipcMain.handle(
-  "truss:start-agent",
-  async (
-    _event,
-    id: string,
-    prompt: string,
-  ): Promise<DesktopAgentsSnapshot> => {
-    if (!agentCoordinator) throw new Error("The agent host is not ready.");
-    if (!prompt.trim())
-      throw new Error("Enter a focused task before starting an agent.");
-    await agentCoordinator.start({ agentId: id, prompt: prompt.trim() });
-    return publishAgents();
-  },
-);
-ipcMain.handle(
-  "truss:stop-agent",
-  async (_event, runId: string): Promise<DesktopAgentsSnapshot> => {
-    if (!agentCoordinator) throw new Error("The agent host is not ready.");
-    await agentCoordinator.stop(runId);
-    return publishAgents();
-  },
-);
-ipcMain.handle(
-  "truss:stop-all-agents",
-  async (): Promise<DesktopAgentsSnapshot> => {
-    if (!agentCoordinator) throw new Error("The agent host is not ready.");
-    await agentCoordinator.stopAll();
-    return publishAgents();
-  },
-);
-ipcMain.handle(
-  "truss:resolve-agent-approval",
-  async (
-    _event,
-    runId: string,
-    callId: string,
-    approved: boolean,
-  ): Promise<DesktopAgentsSnapshot> => {
-    if (!agentCoordinator) throw new Error("The agent host is not ready.");
-    await agentCoordinator.resolveApproval(runId, callId, approved);
-    return publishAgents();
-  },
-);
-ipcMain.handle(
-  "truss:resolve-approval",
-  (
-    _event,
-    callId: string,
-    approved: boolean,
-    allowAllForSession = false,
-  ): void => {
-    if (approved && allowAllForSession) sessionAllowsAllTools = true;
-    approvalResolvers.get(callId)?.(approved);
-    approvalResolvers.delete(callId);
-  },
-);
-ipcMain.handle("truss:list-files", () => collectFiles());
-ipcMain.handle("truss:list-directory", (_event, path: string) =>
-  listDirectory(path),
-);
-ipcMain.handle(
-  "truss:read-file",
-  async (_event, path: string): Promise<string> =>
-    readFile(ensurePathInsideWorkspace(path), "utf8"),
-);
-ipcMain.handle(
-  "truss:write-file",
-  async (_event, path: string, content: string): Promise<void> => {
-    if (typeof content !== "string")
-      throw new Error("File content must be text.");
-    if (content.length > 5_000_000)
-      throw new Error("Files larger than 5 MB cannot be edited in Truss.");
-    await writeFile(ensurePathInsideWorkspace(path), content, "utf8");
-  },
-);
-ipcMain.handle(
-  "truss:create-workspace-file",
-  async (_event, path: string): Promise<void> => {
-    const target = ensurePathInsideWorkspace(path);
-    await mkdir(dirname(target), { recursive: true });
-    await writeFile(target, "", { encoding: "utf8", flag: "wx" });
-  },
-);
-ipcMain.handle(
-  "truss:create-workspace-folder",
-  async (_event, path: string): Promise<void> => {
-    await mkdir(ensurePathInsideWorkspace(path));
-  },
-);
-ipcMain.handle(
-  "truss:rename-workspace-entry",
-  async (_event, path: string, nextPath: string): Promise<void> => {
-    await rename(
-      ensurePathInsideWorkspace(path),
-      ensurePathInsideWorkspace(nextPath),
-    );
-  },
-);
-ipcMain.handle(
-  "truss:copy-workspace-entry",
-  async (_event, path: string, destinationPath: string): Promise<void> => {
-    const source = ensurePathInsideWorkspace(path);
-    const destination = ensurePathInsideWorkspace(destinationPath);
-    if ((await stat(source)).isDirectory())
-      throw new Error(
-        "Copying folders is not supported yet. Create a folder and copy its files instead.",
-      );
-    await mkdir(dirname(destination), { recursive: true });
-    await copyFile(source, destination, 1);
-  },
-);
-ipcMain.handle(
-  "truss:delete-workspace-entry",
-  async (_event, path: string): Promise<void> => {
-    const target = ensurePathInsideWorkspace(path);
-    if (resolve(target) === resolve(persisted.workspaceRoot))
-      throw new Error("The workspace root cannot be deleted.");
-    await rm(target, { recursive: true, force: false });
-  },
-);
-ipcMain.handle("truss:reveal-workspace-entry", (_event, path: string): void => {
-  shell.showItemInFolder(ensurePathInsideWorkspace(path));
-});
-ipcMain.handle(
-  "truss:diff-file",
-  async (_event, path: string): Promise<string> => {
-    const target = ensurePathInsideWorkspace(path);
-    const relativePath = relative(persisted.workspaceRoot, target);
-    const againstHead = await gitOutput([
-      "diff",
-      "--no-ext-diff",
-      "HEAD",
-      "--",
-      relativePath,
-    ]);
-    if (againstHead) return againstHead;
-    const staged = await gitOutput([
-      "diff",
-      "--cached",
-      "--no-ext-diff",
-      "--",
-      relativePath,
-    ]);
-    const workingTree = await gitOutput([
-      "diff",
-      "--no-ext-diff",
-      "--",
-      relativePath,
-    ]);
-    if (staged || workingTree)
-      return [staged, workingTree].filter(Boolean).join("\n");
-    const tracked = await gitOutput([
-      "ls-files",
-      "--error-unmatch",
-      "--",
-      relativePath,
-    ]);
-    if (!tracked) {
-      const untracked = await gitOutput([
-        "diff",
-        "--no-index",
-        "--",
-        "/dev/null",
-        relativePath,
-      ]);
-      if (untracked) return untracked;
-    }
-    return "No Git diff for this file.";
-  },
-);
-ipcMain.handle("truss:get-plan", () =>
-  new FileWorkspacePlanStore(persisted.workspaceRoot).load(),
-);
-ipcMain.handle("truss:git-status", () => getGitStatus());
-ipcMain.handle("truss:git-graph", () => getGitGraph());
-ipcMain.handle(
-  "truss:git-stage",
-  async (_event, paths: readonly string[]): Promise<string> =>
-    gitCommand(["add", "--", ...gitPaths(paths)]),
-);
-ipcMain.handle(
-  "truss:git-unstage",
-  async (_event, paths: readonly string[]): Promise<string> => {
-    const selected = gitPaths(paths);
-    try {
-      return await gitCommand(["restore", "--staged", "--", ...selected]);
-    } catch {
-      return gitCommand(["rm", "--cached", "--", ...selected]);
-    }
-  },
-);
-ipcMain.handle(
-  "truss:git-discard",
-  async (_event, paths: readonly string[]): Promise<string> => {
-    const selected = gitPaths(paths);
-    const tracked: string[] = [];
-    const stagedNew: string[] = [];
-    const untracked: string[] = [];
-    for (const path of selected) {
-      if (await gitPathExistsAtHead(path)) {
-        tracked.push(path);
-      } else if (
-        (
-          await gitOutput(["diff", "--cached", "--name-only", "--", path])
-        ).trim()
-      ) {
-        stagedNew.push(path);
-      } else {
-        untracked.push(path);
-      }
-    }
-    const output: string[] = [];
-    if (tracked.length)
-      output.push(
-        await gitCommand([
-          "restore",
-          "--source=HEAD",
-          "--staged",
-          "--worktree",
-          "--",
-          ...tracked,
-        ]),
-      );
-    if (stagedNew.length) {
-      try {
-        output.push(
-          await gitCommand(["restore", "--staged", "--", ...stagedNew]),
-        );
-      } catch {
-        output.push(await gitCommand(["rm", "--cached", "--", ...stagedNew]));
-      }
-    }
-    const removable = [...stagedNew, ...untracked];
-    if (removable.length)
-      output.push(await gitCommand(["clean", "-f", "-d", "--", ...removable]));
-    return output.filter(Boolean).join("\n") || "Discarded selected changes.";
-  },
-);
-ipcMain.handle("truss:git-generate-commit-message", () =>
-  generateCommitMessage(),
-);
-ipcMain.handle(
-  "truss:git-commit",
-  async (_event, message: string): Promise<string> => {
-    if (typeof message !== "string" || !message.trim())
-      throw new Error("Enter a commit message.");
-    await gitCommand(["add", "-A", "--"]);
-    return gitCommand(["commit", "-m", message.trim()]);
-  },
-);
-ipcMain.handle("truss:git-pull", (): Promise<string> => gitCommand(["pull"]));
-ipcMain.handle("truss:git-push", async (): Promise<string> => {
-  const remote = await gitPushRemoteName();
-  if (!remote)
-    throw new Error(
-      "No push remote is configured. Add one with: git remote add origin <repository-url>",
-    );
-  return gitCommand(["push"]);
-});
-ipcMain.handle(
-  "truss:run-terminal",
-  async (_event, command: string): Promise<string> => {
-    const commandId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const normalized = typeof command === "string" ? command.trim() : "";
-    if (!normalized) throw new Error("Enter a terminal command.");
-    if (normalized.length > 20_000)
-      throw new Error("The terminal command is too long.");
-    if (normalized.startsWith("/")) {
-      try {
-        const result = await executeWorkspaceCommand({
-          workspaceRoot: persisted.workspaceRoot,
-          input: normalized,
-        });
-        send({
-          type: "terminal-output",
-          commandId,
-          text: `${result.message}\n\n[workspace command ${result.ok ? "completed" : "failed"}]\n`,
-        });
-      } catch (error) {
-        send({
-          type: "terminal-output",
-          commandId,
-          text: `[workspace command failed] ${error instanceof Error ? error.message : String(error)}\n`,
-        });
-      }
-      return commandId;
-    }
-    const child = spawn(normalized, {
-      cwd: persisted.workspaceRoot,
-      shell: true,
-      windowsHide: true,
-      detached: process.platform !== "win32",
-    });
-    terminalProcesses.add(child);
-    child.stdout.on("data", (data: Buffer) =>
-      send({ type: "terminal-output", commandId, text: data.toString() }),
-    );
-    child.stderr.on("data", (data: Buffer) =>
-      send({ type: "terminal-output", commandId, text: data.toString() }),
-    );
-    child.on("error", (error) =>
-      send({
-        type: "terminal-output",
-        commandId,
-        text: `\n[terminal error] ${error.message}\n`,
-      }),
-    );
-    child.on("close", (code) => {
-      terminalProcesses.delete(child);
-      send({
-        type: "terminal-output",
-        commandId,
-        text: `\n[process exited: ${code ?? "unknown"}]\n`,
-      });
-    });
-    return commandId;
-  },
-);
-ipcMain.handle("truss:stop-terminal", (): number => stopManagedTerminalProcesses());
-ipcMain.handle(
-  "truss:open-external",
-  async (_event, value: string): Promise<void> => {
-    await shell.openExternal(validatedPreviewUrl(value));
-  },
-);
-ipcMain.handle("truss:connect-truss-go", () => connectTrussGo());
-ipcMain.handle("truss:disconnect-truss-go", () => stopTrussGo());
-ipcMain.handle(
-  "truss:complete",
-  async (
-    _event,
-    input: { prefix?: unknown; suffix?: unknown; path?: unknown },
-  ): Promise<string> => {
-    const configuration = persisted.configuration;
-    if (!configuration?.autocomplete?.enabled) return "";
-    const prefix =
-      typeof input.prefix === "string" ? input.prefix.slice(-6_000) : "";
-    const suffix =
-      typeof input.suffix === "string" ? input.suffix.slice(0, 1_500) : "";
-    if (!prefix.trim()) return "";
-    const model = configuration.autocomplete.model || configuration.model;
-    const prompt = `Complete the code at the cursor. Return ONLY the text to insert, with no Markdown, explanation, or repeated context.\n\nFile: ${typeof input.path === "string" ? input.path : "unknown"}\n\nBefore cursor:\n${prefix}\n\nAfter cursor:\n${suffix}`;
-    const completion = isLocalConfiguration(configuration)
-      ? await generateLocalText(
-          { kind: configuration.provider, baseUrl: configuration.baseUrl, model },
+        return generateCloudText(
+          {
+            provider: configuration.provider,
+            model,
+            credential: new ApiKeyCredential(
+              `desktop:autocomplete:${configuration.provider}`,
+              credential,
+            ),
+          },
           prompt,
-        )
-      : await (async () => {
-          if (!isCloudProviderId(configuration.provider)) return "";
-          const credential = await storedCredential(
-            configuration.credentialAccountId ?? configuration.provider,
-          );
-          if (!credential)
-            throw new Error(
-              "Enter an API key for " +
-                cloudProviderDefinition(configuration.provider).label +
-                ".",
-            );
-          return generateCloudText(
-            {
-              provider: configuration.provider,
-              model,
-              credential: new ApiKeyCredential(
-                "desktop:autocomplete:" + configuration.provider,
-                credential,
-              ),
-            },
-            prompt,
-          );
-        })();
-    return completion
-      .replace(/^```[\w-]*\s*/i, "")
-      .replace(/\s*```$/, "")
-      .replace(/\r\n/g, "\n")
-      .slice(0, 4_000);
-  },
-);
-ipcMain.handle(
-  "truss:format-file",
-  async (_event, path: string, content: string): Promise<string> => {
-    ensurePathInsideWorkspace(path);
-    if (typeof content !== "string" || content.length > 5_000_000)
-      throw new Error("File content is invalid or too large to format.");
-    try {
-      const prettier = await import("prettier");
-      return prettier.format(content, { filepath: path });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(message.replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, ""));
-    }
-  },
-);
-ipcMain.handle(
-  "truss:check-syntax",
-  async (
-    _event,
-    path: string,
-    content: string,
-  ): Promise<
-    readonly { readonly line: number; readonly message: string }[]
-  > => {
-    ensurePathInsideWorkspace(path);
-    if (typeof content !== "string") return [];
-    try {
-      const prettier = await import("prettier");
-      await prettier.format(content, { filepath: path });
-      return [];
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (/no parser could be inferred/i.test(message)) return [];
-      const line = Number(message.match(/\((\d+):(\d+)\)/)?.[1] ?? "1");
-      return [
-        { line, message: message.replace(/\s*\(\d+:\d+\).*$/s, "").trim() },
-      ];
-    }
-  },
-);
+        );
+      })();
+  return completion
+    .replace(/^```[\w-]*\s*/i, "")
+    .replace(/\s*```$/, "")
+    .replace(/\r\n/g, "\n")
+    .slice(0, 4_000);
+}
+
+async function formatFile(path: string, content: string): Promise<string> {
+  workspaceService.resolvePath(path);
+  if (typeof content !== "string" || content.length > 5_000_000)
+    throw new Error("File content is invalid or too large to format.");
+  try {
+    const prettier = await import("prettier");
+    return prettier.format(content, { filepath: path });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const escapeCharacter = String.fromCharCode(27);
+    throw new Error(
+      message.replace(
+        new RegExp(`${escapeCharacter}\\[[0-?]*[ -/]*[@-~]`, "g"),
+        "",
+      ),
+    );
+  }
+}
+
+async function checkSyntax(
+  path: string,
+  content: string,
+): Promise<readonly { readonly line: number; readonly message: string }[]> {
+  workspaceService.resolvePath(path);
+  if (typeof content !== "string") return [];
+  try {
+    const prettier = await import("prettier");
+    await prettier.format(content, { filepath: path });
+    return [];
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/no parser could be inferred/i.test(message)) return [];
+    const line = Number(message.match(/\((\d+):(\d+)\)/)?.[1] ?? "1");
+    return [
+      { line, message: message.replace(/\s*\(\d+:\d+\).*$/s, "").trim() },
+    ];
+  }
+}
+
+registerOperationalIpc({
+  ipc: ipcMain,
+  runtime: runtimeService,
+  agents: managedAgents,
+  workspace: workspaceService,
+  git: gitService,
+  terminal: terminalService,
+  gateway: trussGo,
+  revealPath: (path) => shell.showItemInFolder(path),
+  openExternal: (value) => shell.openExternal(validatedPreviewUrl(value)),
+  loadPlan: () => new FileWorkspacePlanStore(persisted.workspaceRoot).load(),
+  complete,
+  formatFile,
+  checkSyntax,
+});
