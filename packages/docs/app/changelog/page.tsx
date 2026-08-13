@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.44",
+    label: "Focused terminal controller",
+    changes: [
+      "Moved terminal command submission, process interruption, bounded output, prompt context, and development-server preview detection into a dedicated Desktop controller.",
+      "Moved the terminal form, Ctrl+C handling, output scrolling, and repository/time prompt rendering out of the renderer composition file while preserving the existing terminal experience.",
+      "Added focused coverage for command execution, idle and active interruption, preview deduplication, output bounds, and workspace/Git prompt projection.",
+    ],
+  },
+  {
     version: "Desktop 0.1.43",
     label: "Focused Git controller",
     changes: [
