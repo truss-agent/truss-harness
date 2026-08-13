@@ -1,6 +1,6 @@
 # Maintainability Refactor Plan
 
-**Status:** In progress — Runtime complete; shared composition underway
+**Status:** In progress — Runtime and provider/composition phases complete
 
 **Created:** 2026-08-12
 
@@ -67,6 +67,34 @@ Next checkpoint: characterize the OpenAI-compatible stream parser and safe
 provider-error mapping with direct tests, then split provider contracts,
 serialization, transport parsing, discovery, and factories behind a stable
 package-root barrel.
+
+### 2026-08-12 — Provider checkpoint
+
+Completed locally on `refactor/provider-openai-compatible` for issue #201;
+nothing from this phase has been pushed.
+
+- Replaced the 884-line provider entrypoint with a five-line stable public
+  barrel while preserving every package-root export.
+- Extracted provider contracts and the cloud-provider catalog, local endpoint
+  and context discovery, credential-safe error mapping, OpenAI/Ollama wire
+  serialization and tool-call assembly, provider factories and generation
+  helpers, and separate OpenAI-compatible and Ollama transport adapters.
+- Added direct characterization tests for provider-error secrecy and retry
+  metadata, usage normalization, and fragmented tool-call assembly while
+  retaining all 24 existing provider integration tests.
+- Kept the OpenAI-compatible stream loop with its adapter because its state is
+  specific to that transport; the extracted pure wire helpers now contain the
+  independently testable parsing and assembly behavior.
+
+Validation at this checkpoint:
+
+- Provider and agent-host focused suites: 4 files and 35 tests passing.
+- Provider package build and targeted Biome checks passing.
+- Full repository suite: 41 test files and 172 tests passing.
+- Root build, roadmap formatting, and `git diff --check` passing.
+
+Next checkpoint: Phase 3 protocol and command boundaries, beginning with the
+CLI runtime service only after this provider phase is merged.
 
 ## 1. Why this refactor is needed
 
