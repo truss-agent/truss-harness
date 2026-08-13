@@ -5,7 +5,6 @@ import type {
   WorkspacePlan,
 } from "@truss-harness/runtime";
 import { scheduleConversationNavigation } from "./conversation-navigation.js";
-import { previewServerUrlFromOutput } from "./preview-url.js";
 import { markChangedAgentRuns } from "./renderer/agents/snapshot.js";
 import {
   addTokenUsage,
@@ -57,6 +56,11 @@ import {
   initialDesktopState,
   RendererStateStore,
 } from "./renderer/state/renderer-state.js";
+import { DesktopTerminalController } from "./renderer/terminal/terminal-controller.js";
+import {
+  desktopTerminalElements,
+  DesktopTerminalDomView,
+} from "./renderer/terminal/terminal-view.js";
 import {
   applyTheme as applyDesktopTheme,
   parseCustomTheme as parseCustomThemePalette,
@@ -121,9 +125,7 @@ const historySection = document.querySelector<HTMLElement>(
   ".history-section",
 ) as HTMLElement;
 const centerSurface = element<HTMLElement>("centerSurface");
-const terminal = document.querySelector<HTMLElement>(
-  ".terminal",
-) as HTMLElement;
+const terminalElements = desktopTerminalElements(document);
 const gitElements = desktopGitElements(document);
 const editor = element<HTMLElement>("editor");
 const formatFileButton = element<HTMLButtonElement>("formatFileButton");
@@ -138,8 +140,6 @@ const browserBack = element<HTMLButtonElement>("browserBack");
 const browserForward = element<HTMLButtonElement>("browserForward");
 const browserReload = element<HTMLButtonElement>("browserReload");
 const browserExternal = element<HTMLButtonElement>("browserExternal");
-const terminalOutput = element<HTMLPreElement>("terminalOutput");
-const terminalPrompt = element<HTMLDivElement>("terminalPrompt");
 const chatMessages = element<HTMLDivElement>("chatMessages");
 const chatArea = document.querySelector<HTMLElement>(
   ".chat-area",
@@ -260,13 +260,12 @@ const chatController = new DesktopChatController();
 let persistTimer: number | undefined;
 let workspaceUiPersistTimer: number | undefined;
 let gitController: DesktopGitController;
+let terminalController: DesktopTerminalController;
 let activePlan: WorkspacePlan | undefined;
 let layoutController: DesktopLayoutController;
 let agentsSnapshot: DesktopAgentsSnapshot = { profiles: [], runs: [] };
 const reflectedManagedAgentRunIds = new Set<string>();
 let selectedAgentRunId: string | undefined;
-const terminalOutputByCommand = new Map<string, string>();
-const previewUrlByTerminalCommand = new Map<string, string>();
 type SettingsTab = "local" | "byok" | "other";
 const maxAttachmentCount = 5;
 const maxAttachmentBytes = 4 * 1024 * 1024;
@@ -1160,44 +1159,6 @@ function renderRuntime(): void {
           ? `Working · ${chatController.agentActivity}`
           : "Output -- tok/s";
   }
-}
-
-function renderTerminalPrompt(): void {
-  const workspaceParts = rendererState.desktop.workspaceRoot
-    .replaceAll("\\", "/")
-    .split("/")
-    .filter(Boolean);
-  const path =
-    workspaceParts.length > 3
-      ? `…/${workspaceParts.slice(-3).join("/")}`
-      : workspaceParts.join("/") || "No workspace";
-  const gitStatus = gitController.status;
-  const branch = gitStatus.available
-    ? gitStatus.branch || "detached"
-    : "no git";
-  const changed = gitStatus.files.length;
-  const time = new Intl.DateTimeFormat(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date());
-  const segments: ReadonlyArray<readonly [string, string]> = [
-    ["terminal-prompt-app", "Truss"],
-    ["terminal-prompt-path", path],
-    [
-      "terminal-prompt-git",
-      `${branch}${changed ? ` • ${changed} changed` : ""}`,
-    ],
-    ["terminal-prompt-time", time],
-  ];
-  terminalPrompt.replaceChildren(
-    ...segments.map(([className, text]) => {
-      const segment = document.createElement("span");
-      segment.className = `terminal-prompt-segment ${className}`;
-      segment.textContent = text;
-      return segment;
-    }),
-  );
 }
 
 function renderFiles(): void {
@@ -3421,25 +3382,6 @@ async function sendChat(): Promise<void> {
   }
 }
 
-function appendTerminal(text: string): void {
-  terminalOutput.textContent = `${terminalOutput.textContent}${text}`.slice(
-    -50_000,
-  );
-  terminalOutput.scrollTop = terminalOutput.scrollHeight;
-}
-
-function openAnnouncedServerPreview(commandId: string, text: string): void {
-  const output = `${terminalOutputByCommand.get(commandId) ?? ""}${text}`.slice(
-    -12_000,
-  );
-  terminalOutputByCommand.set(commandId, output);
-  const url = previewServerUrlFromOutput(output);
-  if (!url || previewUrlByTerminalCommand.get(commandId) === url) return;
-  previewUrlByTerminalCommand.set(commandId, url);
-  navigatePreview(url);
-  notify(`Opened server preview: ${url}`);
-}
-
 function handleEvent(message: DesktopEvent): void {
   if (message.type === "agents") {
     applyAgentsSnapshot(message.snapshot);
@@ -3521,8 +3463,7 @@ function handleEvent(message: DesktopEvent): void {
     return;
   }
   if (message.type === "terminal-output") {
-    appendTerminal(message.text);
-    openAnnouncedServerPreview(message.commandId, message.text);
+    terminalController.acceptOutput(message.commandId, message.text);
     return;
   }
   if (message.type === "approval") {
@@ -3733,6 +3674,15 @@ function handleEvent(message: DesktopEvent): void {
   }
 }
 
+const terminalView = new DesktopTerminalDomView(terminalElements);
+terminalController = new DesktopTerminalController(desktop, terminalView, {
+  workspaceRoot: () => rendererState.desktop.workspaceRoot,
+  gitStatus: () => gitController.status,
+  navigatePreview,
+  notify,
+});
+terminalController.bind();
+
 const gitView = new DesktopGitDomView(gitElements, {
   syntaxErrorTitle,
   openFile: (path) => void openFile(path, false),
@@ -3744,10 +3694,10 @@ gitController = new DesktopGitController(desktop, gitView, {
   hasConfiguredModel: () => Boolean(configuration().model),
   openSettings,
   requestConfirmation,
-  appendTerminal,
+  appendTerminal: (text) => terminalController.append(text),
   notify,
   refreshFiles: loadFiles,
-  renderTerminalPrompt,
+  renderTerminalPrompt: () => terminalController.renderPrompt(),
 });
 gitController.bind();
 
@@ -3770,7 +3720,7 @@ layoutController = new DesktopLayoutController(
     gitBody: gitElements.body,
     filesSection,
     historySection,
-    terminal,
+    terminal: terminalElements.panel,
     sidebarSplitter: element<HTMLDivElement>("sidebarSplitter"),
     gitSplitter: element<HTMLDivElement>("gitSplitter"),
     historySplitter: element<HTMLDivElement>("historySplitter"),
@@ -4387,45 +4337,6 @@ chatInput.onkeydown = (event) => {
   }
 };
 cancelChatButton.onclick = () => void desktop.stopChat();
-const terminalInput = element<HTMLInputElement>("terminalInput");
-
-function interruptTerminal(): void {
-  void desktop
-    .stopTerminal()
-    .then((stopped) => {
-      if (!stopped) {
-        notify("No Truss terminal process is running.");
-        return;
-      }
-      appendTerminal(
-        `^C\n[stopping ${stopped} terminal process${stopped === 1 ? "" : "es"}]\n`,
-      );
-    })
-    .catch((error: unknown) =>
-      notify(error instanceof Error ? error.message : String(error)),
-    );
-}
-
-terminalInput.onkeydown = (event) => {
-  if (
-    (event.ctrlKey || event.metaKey) &&
-    !event.altKey &&
-    event.key.toLowerCase() === "c" &&
-    terminalInput.selectionStart === terminalInput.selectionEnd
-  ) {
-    event.preventDefault();
-    interruptTerminal();
-  }
-};
-
-element<HTMLFormElement>("terminalForm").onsubmit = (event) => {
-  event.preventDefault();
-  const command = terminalInput.value.trim();
-  if (!command) return;
-  terminalInput.value = "";
-  appendTerminal(`\n> ${command}\n`);
-  void desktop.runTerminal(command);
-};
 connectTrussGo.onclick = () =>
   void desktop
     .connectTrussGo()
@@ -4543,7 +4454,7 @@ window.addEventListener("keydown", (event) => {
 });
 
 desktop.onEvent(handleEvent);
-window.setInterval(renderTerminalPrompt, 1_000);
+window.setInterval(() => terminalController.renderPrompt(), 1_000);
 void (async () => {
   [rendererState.desktop, rendererState.credentialStorage] = await Promise.all([
     desktop.initialState(),
