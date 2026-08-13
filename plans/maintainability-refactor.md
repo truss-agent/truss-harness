@@ -255,6 +255,8 @@ Completed locally on `refactor/desktop-renderer-foundation` for issue #211.
   selected stored BYOK account works alongside local models.
 - Exposed persistent tool permissions for each managed-agent profile and
   verified ask, read-only, and unrestricted approval behavior.
+- Made the managed-agent creation form, cards, and actions respond to the
+  editor surface width without overflowing into the Chat panel.
 - Isolated managed-agent plans from the primary chat plan and refreshes the
   file tree and Git automatically after a completed managed run changes files.
 - Added 21 focused tests across the new state, IPC, theme, Markdown, layout,
