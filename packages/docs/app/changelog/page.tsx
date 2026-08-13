@@ -4,6 +4,16 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.39",
+    label: "Focused settings and layout controllers",
+    changes: [
+      "Moved editor, preview, Agents, and Chat surface selection plus Chat docking and collapse behavior into a dedicated layout controller.",
+      "Centralized sidebar and terminal splitter behavior, keyboard resizing, Git collapse, and responsive sidebar track calculations behind one tested layout boundary.",
+      "Moved provider-account selection, settings configuration construction, MCP draft state transitions, and settings DOM lookup out of the renderer composition file.",
+      "Added focused controller coverage while preserving the existing Desktop settings, provider, MCP, pane-resizing, and Chat layout behavior.",
+    ],
+  },
+  {
     version: "Desktop 0.1.38",
     label: "Maintainable renderer foundation",
     changes: [

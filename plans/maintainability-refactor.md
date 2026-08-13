@@ -277,6 +277,41 @@ Next checkpoint after merge: migrate cohesive renderer vertical domains in a
 fresh branch, beginning with settings/provider and layout controllers before
 the higher-risk editor, files, chat, Git, and terminal domains.
 
+### 2026-08-13 — Desktop settings and layout controller checkpoint
+
+Completed locally on `refactor/desktop-settings-layout-controllers` for issue
+#213.
+
+- Moved center-surface selection, Chat docking/collapse, Git collapse, sidebar
+  track management, and every workbench splitter into one layout controller.
+- Preserved pointer and keyboard resizing, double-click reset, responsive
+  sidebar redistribution, Chat full-size/side-panel transitions, and Agents
+  rendering behind a narrow callback boundary.
+- Moved provider-account selection, local/BYOK configuration construction,
+  provider connection-test inputs, MCP draft mutations and test statuses into
+  a settings controller with pure configuration helpers.
+- Centralized settings-domain DOM lookup and removed the corresponding global
+  settings and layout state from the renderer composition file.
+- Reduced `packages/desktop/src/renderer.ts` to 5,177 lines and added focused
+  tests for layout state, provider configuration, account selection, MCP JSON
+  validation, and MCP draft transitions.
+- Bumped Desktop to 0.1.39 and updated the public changelog in the same feature
+  branch.
+
+Validation at this checkpoint:
+
+- Desktop build and focused settings/layout tests pass.
+- Full repository build and all 233 tests pass; the isolated documentation
+  build generates all 38 routes successfully.
+- Targeted formatting and `git diff --check` pass. The repository-wide format
+  gate retains its existing unrelated baseline failures.
+- Interactive Electron smoke passed for settings, provider accounts, model
+  discovery, MCP management, center-surface switching, Chat docking/collapse,
+  and pane resizing.
+
+Next checkpoint after merge: continue the renderer vertical-domain migration
+with the editor and workspace-files controllers before chat, Git, and terminal.
+
 ## 1. Why this refactor is needed
 
 Several modules have become application subsystems rather than files. Their
