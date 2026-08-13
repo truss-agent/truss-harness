@@ -7,164 +7,21 @@ import {
   selectTrussGoRelease,
   selectVscodeRelease,
 } from "./release-selection";
-
-type ReleaseAsset = {
-  browser_download_url: string;
-  name: string;
-  size: number;
-};
-
-type Release = {
-  assets: ReleaseAsset[];
-  draft: boolean;
-  prerelease: boolean;
-  published_at: string;
-  tag_name: string;
-};
-
-type Build = {
-  arch: "x64" | "arm64";
-  extension: string;
-  format: string;
-  note: string;
-  platform: "windows" | "linux";
-};
-
-const builds: Build[] = [
-  {
-    platform: "windows",
-    arch: "x64",
-    format: "Windows installer",
-    extension: ".exe",
-    note: "Intel and AMD PCs",
-  },
-  {
-    platform: "windows",
-    arch: "arm64",
-    format: "Windows installer",
-    extension: ".exe",
-    note: "Snapdragon and ARM PCs",
-  },
-  {
-    platform: "linux",
-    arch: "x64",
-    format: "Portable archive",
-    extension: ".tar.gz",
-    note: "All distributions",
-  },
-  {
-    platform: "linux",
-    arch: "arm64",
-    format: "Portable archive",
-    extension: ".tar.gz",
-    note: "ARM Linux",
-  },
-  {
-    platform: "linux",
-    arch: "x64",
-    format: "Debian package",
-    extension: ".deb",
-    note: "Debian, Ubuntu, and Mint",
-  },
-  {
-    platform: "linux",
-    arch: "arm64",
-    format: "Debian package",
-    extension: ".deb",
-    note: "Debian and Ubuntu on ARM",
-  },
-  {
-    platform: "linux",
-    arch: "x64",
-    format: "RPM package",
-    extension: ".rpm",
-    note: "Fedora, RHEL, and openSUSE",
-  },
-  {
-    platform: "linux",
-    arch: "arm64",
-    format: "RPM package",
-    extension: ".rpm",
-    note: "RPM-based ARM systems",
-  },
-  {
-    platform: "linux",
-    arch: "x64",
-    format: "Arch package",
-    extension: ".pacman",
-    note: "Arch Linux and Manjaro",
-  },
-  {
-    platform: "linux",
-    arch: "arm64",
-    format: "Arch package",
-    extension: ".pacman",
-    note: "Arch Linux ARM",
-  },
-];
-
-function formatSize(bytes: number): string {
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function assetMatches(asset: ReleaseAsset, build: Build): boolean {
-  const name = asset.name.toLowerCase();
-  const extension = build.extension.toLowerCase();
-  const platformMatches =
-    build.platform === "windows"
-      ? name.includes("win")
-      : name.includes("linux");
-  const archMatches =
-    build.arch === "x64"
-      ? /(?:^|[-_.])(x64|amd64|x86_64)(?:[-_.]|$)/.test(name)
-      : /(?:^|[-_.])(arm64|aarch64)(?:[-_.]|$)/.test(name);
-  const extensionMatches =
-    extension === ".pacman"
-      ? name.endsWith(".pacman") || name.endsWith(".pkg.tar.zst")
-      : extension === ".tar.gz"
-        ? name.endsWith(".tar.gz")
-        : name.endsWith(extension);
-
-  return platformMatches && archMatches && extensionMatches;
-}
-
-function detectBuild(): Pick<Build, "platform" | "arch"> | undefined {
-  const agent = navigator.userAgent.toLowerCase();
-  const platform = agent.includes("windows")
-    ? "windows"
-    : agent.includes("linux")
-      ? "linux"
-      : undefined;
-  if (!platform) return undefined;
-
-  return {
-    platform,
-    arch: /arm64|aarch64/.test(agent) ? "arm64" : "x64",
-  };
-}
-
-function releaseDate(release: Release | undefined): string | undefined {
-  return release?.published_at
-    ? new Date(release.published_at).toLocaleDateString(undefined, {
-        dateStyle: "medium",
-      })
-    : undefined;
-}
-
-function buildKey(build: Build): string {
-  return `${build.platform}:${build.arch}:${build.extension}`;
-}
-
-function buildLabel(build: Build): string {
-  const architecture = build.arch === "x64" ? "x64 / AMD64" : "ARM64";
-  return `${build.format} · ${architecture}`;
-}
-
-function platformLabel(build: Pick<Build, "platform" | "arch">): string {
-  const platform = build.platform === "windows" ? "Windows" : "Linux";
-  const architecture = build.arch === "x64" ? "x64" : "ARM64";
-  return `${platform} ${architecture}`;
-}
+import {
+  assetMatchesBuild,
+  desktopBuildKey,
+  desktopBuildLabel,
+  desktopBuilds,
+  detectDesktopBuild,
+  detectedBuildLabel,
+  formatAssetSize,
+  recommendedDesktopBuild,
+  releaseDate,
+  type DesktopBuild,
+  type DetectedBuild,
+  type Release,
+} from "./download-catalog";
+import { ReleaseCard } from "./release-card";
 
 function DesktopReleaseCard({
   release,
@@ -172,27 +29,24 @@ function DesktopReleaseCard({
   releasesUrl,
 }: {
   readonly release: Release | undefined;
-  readonly recommended: Pick<Build, "platform" | "arch"> | undefined;
+  readonly recommended: DetectedBuild | undefined;
   readonly releasesUrl: string;
 }) {
   const [selectedBuildKey, setSelectedBuildKey] = useState<string>();
-  const recommendedBuild = builds.find(
-    (build) =>
-      build.platform === recommended?.platform &&
-      build.arch === recommended.arch &&
-      (build.platform === "windows" || build.extension === ".tar.gz"),
-  );
+  const recommendedBuild = recommendedDesktopBuild(recommended);
   const selectedBuild =
-    builds.find((build) => buildKey(build) === selectedBuildKey) ??
+    desktopBuilds.find(
+      (build) => desktopBuildKey(build) === selectedBuildKey,
+    ) ??
     recommendedBuild ??
-    builds[0];
+    desktopBuilds[0];
   const selectedAsset = release?.assets.find((asset) =>
-    assetMatches(asset, selectedBuild),
+    assetMatchesBuild(asset, selectedBuild),
   );
   const published = releaseDate(release);
   const selectedIsRecommended =
     recommendedBuild !== undefined &&
-    buildKey(selectedBuild) === buildKey(recommendedBuild);
+    desktopBuildKey(selectedBuild) === desktopBuildKey(recommendedBuild);
 
   return (
     <article className="download-client-card">
@@ -238,10 +92,10 @@ function DesktopReleaseCard({
               <span className="download-client-package-label">
                 Desktop package
               </span>
-              <strong>{buildLabel(selectedBuild)}</strong>
+              <strong>{desktopBuildLabel(selectedBuild)}</strong>
               <small>
                 {selectedIsRecommended && recommended
-                  ? `Recommended for ${platformLabel(recommended)}`
+                  ? `Recommended for ${detectedBuildLabel(recommended)}`
                   : selectedBuild.note}
               </small>
             </span>
@@ -251,29 +105,30 @@ function DesktopReleaseCard({
             {(["windows", "linux"] as const).map((platform) => (
               <section key={platform}>
                 <h3>{platform === "windows" ? "Windows" : "Linux"}</h3>
-                {builds
+                {desktopBuilds
                   .filter((build) => build.platform === platform)
                   .map((build) => {
                     const selected =
-                      buildKey(build) === buildKey(selectedBuild);
+                      desktopBuildKey(build) === desktopBuildKey(selectedBuild);
                     const isRecommended =
                       recommendedBuild !== undefined &&
-                      buildKey(build) === buildKey(recommendedBuild);
+                      desktopBuildKey(build) ===
+                        desktopBuildKey(recommendedBuild);
                     return (
                       <button
                         type="button"
                         aria-pressed={selected}
                         className={selected ? "selected" : undefined}
-                        key={buildKey(build)}
+                        key={desktopBuildKey(build)}
                         onClick={(event) => {
-                          setSelectedBuildKey(buildKey(build));
+                          setSelectedBuildKey(desktopBuildKey(build));
                           event.currentTarget
                             .closest("details")
                             ?.removeAttribute("open");
                         }}
                       >
                         <span>
-                          <strong>{buildLabel(build)}</strong>
+                          <strong>{desktopBuildLabel(build)}</strong>
                           <small>{build.note}</small>
                         </span>
                         {isRecommended ? <em>Recommended</em> : null}
@@ -320,147 +175,6 @@ function DesktopReleaseCard({
   );
 }
 
-function ReleaseCard({
-  eyebrow,
-  title,
-  description,
-  release,
-  asset,
-  distribution,
-  sourceHref,
-  sourceLabel,
-  detailsHref,
-  detailsLabel,
-  downloadLabel,
-  primaryHref,
-  badge,
-  additionalAction,
-  manualInstall,
-}: {
-  readonly eyebrow: string;
-  readonly title: string;
-  readonly description: string;
-  readonly release: Release | undefined;
-  readonly asset: ReleaseAsset | undefined;
-  readonly distribution?: {
-    readonly label: string;
-    readonly description: string;
-  };
-  readonly sourceHref: string;
-  readonly sourceLabel: string;
-  readonly detailsHref: string;
-  readonly detailsLabel: string;
-  readonly downloadLabel: string;
-  readonly primaryHref?: string;
-  readonly badge?: string;
-  readonly additionalAction?: {
-    readonly href: string;
-    readonly label: string;
-    readonly badge?: string;
-  };
-  readonly manualInstall?: string;
-}) {
-  const published = releaseDate(release);
-  return (
-    <article className="download-client-card">
-      <header>
-        <p className="site-eyebrow">{eyebrow}</p>
-        <div className="download-client-title-row">
-          <h2>{title}</h2>
-          {badge ? (
-            <span className="download-client-badge">{badge}</span>
-          ) : null}
-        </div>
-        <p>{description}</p>
-      </header>
-      <div className="download-client-release">
-        {release ? (
-          <>
-            <span
-              className="download-status download-status-ready"
-              aria-hidden="true"
-            />
-            <div>
-              <strong>{release.tag_name}</strong>
-              <span>
-                Latest stable release{published ? ` · ${published}` : ""}
-              </span>
-            </div>
-          </>
-        ) : (
-          <>
-            <span
-              className={`download-status download-status-${
-                distribution ? "ready" : "unavailable"
-              }`}
-              aria-hidden="true"
-            />
-            <div>
-              <strong>{distribution?.label ?? "Release unavailable"}</strong>
-              <span>
-                {distribution?.description ??
-                  "Check the distribution source for current builds."}
-              </span>
-            </div>
-          </>
-        )}
-      </div>
-      <div className="download-client-actions">
-        {asset || primaryHref ? (
-          <a
-            className="site-button site-button-primary"
-            href={asset?.browser_download_url ?? primaryHref}
-          >
-            {downloadLabel}
-          </a>
-        ) : (
-          <a
-            className="site-button site-button-secondary"
-            href={sourceHref}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {sourceLabel}
-          </a>
-        )}
-        {additionalAction ? (
-          <a
-            className={`site-button site-button-secondary${
-              additionalAction.badge ? " download-client-action-with-badge" : ""
-            }`}
-            href={additionalAction.href}
-            target="_blank"
-            rel="noreferrer"
-          >
-            {additionalAction.label}
-            {additionalAction.badge ? (
-              <span className="download-client-action-badge">
-                {additionalAction.badge}
-              </span>
-            ) : null}
-          </a>
-        ) : null}
-        <a className="site-button site-button-secondary" href={detailsHref}>
-          {detailsLabel}
-        </a>
-      </div>
-      {manualInstall ? (
-        <div className="download-client-manual-install">
-          <p>{manualInstall}</p>
-        </div>
-      ) : null}
-      <a
-        className="site-text-link download-client-all-releases"
-        href={sourceHref}
-        target="_blank"
-        rel="noreferrer"
-      >
-        {sourceLabel}
-      </a>
-    </article>
-  );
-}
-
 export function DownloadClient({
   apiUrl,
   releasesUrl,
@@ -470,14 +184,13 @@ export function DownloadClient({
 }) {
   const [release, setRelease] = useState<Release>();
   const [releases, setReleases] = useState<readonly Release[]>([]);
-  const [recommended, setRecommended] =
-    useState<Pick<Build, "platform" | "arch">>();
+  const [recommended, setRecommended] = useState<DetectedBuild>();
   const [status, setStatus] = useState<"loading" | "ready" | "unavailable">(
     "loading",
   );
 
   useEffect(() => {
-    setRecommended(detectBuild());
+    setRecommended(detectDesktopBuild(navigator.userAgent));
 
     const controller = new AbortController();
     fetch(apiUrl, {
@@ -705,11 +418,11 @@ export function DownloadClient({
               </div>
             </header>
             <div className="download-build-list">
-              {builds
+              {desktopBuilds
                 .filter((build) => build.platform === platform)
                 .map((build) => {
                   const asset = release?.assets.find((candidate) =>
-                    assetMatches(candidate, build),
+                    assetMatchesBuild(candidate, build),
                   );
                   const isRecommended =
                     recommended?.platform === build.platform &&
@@ -738,7 +451,9 @@ export function DownloadClient({
                           {build.arch === "x64" ? "x64 / AMD64" : "ARM64"}
                         </span>
                         <span>
-                          {asset ? formatSize(asset.size) : build.extension}
+                          {asset
+                            ? formatAssetSize(asset.size)
+                            : build.extension}
                         </span>
                       </div>
                       {asset ? (
