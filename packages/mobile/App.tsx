@@ -16,20 +16,9 @@ import {
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as SecureStore from "expo-secure-store";
-
-type ChatItem = { readonly id: string; readonly role: "user" | "assistant" | "system"; readonly content: string };
-type AgentMode = "chat" | "plan" | "edit";
-type ApprovalMode = "ask" | "auto-read" | "auto-all";
-type Screen = "home" | "settings" | "session" | "scanner" | "agents";
-type SavedGateway = { readonly id: string; readonly name: string; readonly url: string; readonly token: string };
-type McpServerStatus = { readonly name: string; readonly state: "idle" | "disabled" | "connecting" | "connected" | "failed"; readonly toolCount: number; readonly error?: string; readonly tools?: readonly { readonly name: string; readonly description?: string; readonly readOnly: boolean }[] };
-type Workspace = { readonly id: string; readonly displayName: string; readonly capabilities: { readonly protocolVersions?: readonly number[]; readonly modes: readonly AgentMode[]; readonly toolApprovalModes?: readonly ApprovalMode[]; readonly supportsAgents?: boolean; readonly agentActions?: readonly ("start" | "stop" | "approve")[]; readonly supportsMcpStatus?: boolean }; readonly mcpServers?: readonly McpServerStatus[] };
-type AgentProfile = { readonly id: string; readonly displayName: string; readonly providerId: string; readonly modelId: string; readonly mode: AgentMode; readonly approvalPolicy: ApprovalMode; readonly internetAccess: boolean };
-type AgentRun = { readonly id: string; readonly agentId: string; readonly state: "idle" | "queued" | "running" | "waiting_for_approval" | "completed" | "failed" | "cancelled"; readonly latestProgress?: string; readonly output?: string; readonly activeTool?: { readonly callId: string; readonly name: string }; readonly changedFiles: readonly string[]; readonly errorCode?: string };
-type RemoteEvent = { readonly type: string; readonly workspaceId?: string; readonly sessionId?: string; readonly text?: string; readonly message?: string; readonly callId?: string; readonly tool?: string; readonly input?: Record<string, unknown>; readonly result?: { readonly content: string; readonly isError?: boolean }; readonly modifiedFiles?: readonly string[]; readonly run?: AgentRun; readonly agentId?: string; readonly runId?: string; readonly event?: RemoteEvent };
-type ToolApproval = { readonly callId: string; readonly tool: string; readonly input: Record<string, unknown> };
-type AgentToolApproval = ToolApproval & { readonly runId: string };
-type GatewayCommandResult = { readonly type: string; readonly sessionId?: string; readonly message?: string; readonly profiles?: readonly AgentProfile[]; readonly runs?: readonly AgentRun[]; readonly run?: AgentRun };
+import type { AgentMode, AgentProfile, AgentRun, AgentToolApproval, ApprovalMode, ChatItem, RemoteEvent, SavedGateway, Screen, ToolApproval, Workspace } from "./src/contracts";
+import { gatewayCommand, gatewayEventUrl, gatewayWorkspaces } from "./src/gateway-transport";
+import { allApprovalModes, parsePairing, parsePreferences, savedGatewaysKey, savedPreferencesKey, upsertGateway } from "./src/pairing";
 
 const approvalCopy: Record<ApprovalMode, { readonly title: string; readonly detail: string; readonly badge: string }> = {
   ask: { title: "Ask every time", detail: "Review every workspace tool before it runs.", badge: "Recommended" },
@@ -42,21 +31,8 @@ const modeCopy: Record<AgentMode, { readonly title: string; readonly detail: str
   edit: { title: "Agent", detail: "Work in the workspace" }
 };
 const readOnlyTools = new Set(["read_file", "list_directory", "search_files", "grep"]);
-const allApprovalModes = ["ask", "auto-read", "auto-all"] as const;
-const savedGatewaysKey = "truss.remote.saved-gateways.v1";
-const savedPreferencesKey = "truss.remote.preferences.v1";
 
 function nextId(): string { return `${Date.now()}-${Math.random().toString(36).slice(2)}`; }
-function gatewayPath(url: string, path: string): string { return `${url.replace(/\/$/, "")}${path}`; }
-function eventUrl(url: string): string { return gatewayPath(url.replace(/^http/i, "ws"), "/v1/events"); }
-function parsePairing(value: string): SavedGateway {
-  const uri = new URL(value);
-  if (uri.protocol !== "truss:" || uri.hostname !== "pair") throw new Error("This is not a Truss pairing QR code.");
-  const url = uri.searchParams.get("gateway");
-  const token = uri.searchParams.get("token");
-  if (!url || !token || token.length < 24 || !/^https?:\/\//.test(url)) throw new Error("The pairing QR code is incomplete.");
-  return { id: url, name: uri.searchParams.get("name") ?? new URL(url).host, url, token };
-}
 
 function Pill({ children, tone = "neutral" }: { readonly children: string; readonly tone?: "neutral" | "success" | "warning" }) {
   return <View style={[styles.pill, tone === "success" && styles.pillSuccess, tone === "warning" && styles.pillWarning]}><Text style={[styles.pillText, tone === "success" && styles.pillTextSuccess, tone === "warning" && styles.pillTextWarning]}>{children}</Text></View>;
@@ -103,15 +79,15 @@ export default function App() {
     void SecureStore.getItemAsync(savedPreferencesKey)
       .then((value) => {
         if (!value) return;
-        const preferences = JSON.parse(value) as { readonly mode?: AgentMode; readonly approvalMode?: ApprovalMode };
-        if (preferences.mode && ["chat", "plan", "edit"].includes(preferences.mode)) setMode(preferences.mode);
-        if (preferences.approvalMode && allApprovalModes.includes(preferences.approvalMode)) setApprovalMode(preferences.approvalMode);
+        const preferences = parsePreferences(value);
+        if (preferences.mode) setMode(preferences.mode);
+        if (preferences.approvalMode) setApprovalMode(preferences.approvalMode);
       })
       .catch(() => undefined);
   }, []);
 
   const saveGateway = useCallback(async (gateway: SavedGateway) => {
-    const next = [gateway, ...savedGateways.filter((item) => item.id !== gateway.id)];
+    const next = upsertGateway(savedGateways, gateway);
     setSavedGateways(next);
     await SecureStore.setItemAsync(savedGatewaysKey, JSON.stringify(next));
   }, [savedGateways]);
@@ -127,24 +103,7 @@ export default function App() {
   }, [saveGateway]);
 
   const command = useCallback(async (body: Record<string, unknown>, version = 1) => {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30_000);
-    try {
-      const response = await fetch(gatewayPath(gatewayUrl, "/v1/commands"), {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ version, requestId: nextId(), ...body }),
-        signal: controller.signal
-      });
-      const result = await response.json() as GatewayCommandResult;
-      if (!response.ok || result.type === "rejected") throw new Error(result.message ?? "Gateway rejected the request.");
-      return result;
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") throw new Error("The gateway did not respond within 30 seconds.");
-      throw error;
-    } finally {
-      clearTimeout(timeout);
-    }
+    return gatewayCommand({ gatewayUrl, token }, body, version);
   }, [gatewayUrl, token]);
 
   const appendAssistant = useCallback((text: string) => {
@@ -208,7 +167,7 @@ export default function App() {
     eventSocket.current?.close();
     eventConnectedRef.current = false;
     setEventConnected(false);
-    const socket = new WebSocket(eventUrl(gatewayUrl));
+    const socket = new WebSocket(gatewayEventUrl(gatewayUrl));
     eventSocket.current = socket;
     let connected = false;
     let settled = false;
@@ -263,35 +222,15 @@ export default function App() {
   const connectGateway = useCallback(async () => {
     if (!token.trim()) throw new Error("A gateway token is required.");
     setStatus("Connecting securely to your gateway...");
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 20_000);
-    let response: Response;
-    try {
-      response = await fetch(gatewayPath(gatewayUrl, "/v1/workspaces"), { headers: { authorization: `Bearer ${token}` }, signal: controller.signal });
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") throw new Error("The Truss gateway did not respond within 20 seconds. Keep the Truss Desktop or VS Code pairing window open while connecting.");
-      throw new Error("Could not reach a Truss gateway at this address. LM Studio is the model server and cannot be entered here directly.");
-    } finally {
-      clearTimeout(timeout);
-    }
-    let result: { workspaces?: Workspace[]; error?: string };
-    try {
-      result = await response.json() as { workspaces?: Workspace[]; error?: string };
-    } catch {
-      throw new Error("This address is not a Truss gateway. Scan the QR code from Truss Desktop or VS Code instead of entering the LM Studio URL.");
-    }
-    if (!response.ok || !result.workspaces?.length) {
-      if (response.status === 401) throw new Error("The gateway rejected this pairing token. Create and scan a new QR code.");
-      throw new Error(result.error ?? "This address is not an active Truss gateway.");
-    }
+    const workspaces = await gatewayWorkspaces({ gatewayUrl, token });
     try {
       await ensureEventConnection();
     } catch {
       throw new Error("The gateway responded, but its live event stream could not connect. Keep the pairing window open and allow Truss through Windows Firewall on private networks.");
     }
-    const first = result.workspaces[0];
+    const first = workspaces[0];
     const supportedApprovals = first.capabilities.toolApprovalModes?.length ? first.capabilities.toolApprovalModes : ["ask"] as const;
-    setWorkspaces(result.workspaces);
+    setWorkspaces(workspaces);
     setWorkspaceId(first.id);
     setMode(first.capabilities.modes.includes(mode) ? mode : first.capabilities.modes[0] ?? "chat");
     setApprovalMode(supportedApprovals.includes(approvalMode) ? approvalMode : supportedApprovals[0]);
