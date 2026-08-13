@@ -1,0 +1,636 @@
+# Maintainability Refactor Plan
+
+**Status:** In progress — Runtime complete; shared composition underway
+
+**Created:** 2026-08-12
+
+**Tracking issue:** #199
+
+**Starting point:** `packages/runtime`, followed by its composition, transport,
+and client layers
+
+**Primary outcome:** Make Truss easier to change and test without changing its
+behavior, public package contracts, or provider/client boundaries.
+
+## Progress log
+
+### 2026-08-12 — Runtime checkpoint
+
+Completed locally on `plan/maintainability-refactor`; nothing has been pushed.
+
+- Created tracking issue #199 and committed this measured roadmap.
+- Added Runtime architecture and public-API guardrails so later extractions
+  cannot silently introduce client/provider dependencies or remove contracts
+  consumed by other packages.
+- Decomposed `agents.ts` from an 817-line mixed-responsibility module into a
+  one-line compatibility barrel plus focused contracts, coordinator,
+  validation, profile storage, bounded run history, and write-lease modules.
+- Decomposed `agent.ts` from a 305-line mixed execution loop into a one-line
+  compatibility barrel plus runtime orchestration, contracts, edit/recovery
+  policy, streaming-progress parsing, and tool-execution modules.
+- Added direct unit coverage for profile storage, bounded history, write
+  leases, edit/recovery policy, progress parsing, and tool execution while
+  retaining the existing end-to-end Runtime suites.
+
+Validation at this checkpoint:
+
+- Runtime suite: 18 test files and 70 tests passing.
+- Full repository suite: 39 test files and 168 tests passing after both Runtime
+  extractions.
+- Root build and Runtime package build passing.
+- Targeted Biome checks and `git diff --check` passing for changed Runtime
+  files.
+- Root `npm run quality` remains blocked by 84 pre-existing formatting errors
+  outside this refactor's scope; do not mix those unrelated rewrites into this
+  branch.
+
+Next checkpoint: begin Phase 2 at the provider/host composition boundary.
+`tools.ts` remains intact because its 263 lines are currently cohesive enough
+that splitting it would add files without an independently useful ownership
+boundary.
+
+### 2026-08-12 — Shared composition checkpoint
+
+- Decomposed the 604-line agent-host entrypoint into a four-line public barrel,
+  provider registry/connection handling, hosted runtime composition, and the
+  compatibility constructor used by existing single-agent clients.
+- Preserved all package-root exports and the existing CLI, Desktop, TUI, and
+  multi-agent construction paths.
+- Verified all 7 agent-host tests, all 39 repository test files and 168 tests,
+  and the complete root build after the extraction.
+- Verified Biome on all changed agent-host source modules. The pre-existing
+  `index.test.ts` import-order and generator-yield diagnostics remain outside
+  this structural commit and should be handled with its eventual test-suite
+  reorganization rather than hidden in an unrelated source move.
+
+Next checkpoint: characterize the OpenAI-compatible stream parser and safe
+provider-error mapping with direct tests, then split provider contracts,
+serialization, transport parsing, discovery, and factories behind a stable
+package-root barrel.
+
+## 1. Why this refactor is needed
+
+Several modules have become application subsystems rather than files. Their
+size is not the only problem: they combine unrelated responsibilities, make
+state ownership difficult to see, and force small changes through large review
+surfaces. The highest-risk examples also sit on frequently changed paths.
+
+The refactor must begin at the shared runtime boundary. Extracting client code
+before the runtime and host contracts are stable would encourage every client
+to invent its own lifecycle, provider, session, and cancellation abstractions.
+
+This plan is deliberately behavior-preserving. Feature work, visual redesigns,
+protocol changes, provider additions, and framework migrations should not be
+mixed into the structural changes described here.
+
+## 2. Measured baseline
+
+The inventory excludes generated output, `node_modules`, `.next`, and `dist`.
+The repository currently contains approximately 32,000 lines of TypeScript,
+JavaScript, TSX, and Lua beneath `packages/`.
+
+### Highest-priority production modules
+
+| File | Lines | Current responsibility concentration | Priority |
+| --- | ---: | --- | --- |
+| `packages/desktop/src/renderer.ts` | 5,580 | UI state, themes, agents, Git, files, editor, settings, chat, terminal, events, resizing | Critical |
+| `packages/desktop/src/main.ts` | 2,927 | Electron lifecycle, updates, credentials, runtime, agents, mobile gateway, files, Git, chat, IPC | Critical |
+| `packages/tui/src/bin.tsx` | 1,931 | process setup, commands, state, runtime events, all Ink components, all interaction | Critical |
+| `packages/vscode/src/extension.ts` | 1,888 | activation, runtime transport, configuration, credentials, commands, agents, gateway, webviews | Critical |
+| `packages/cli/src/bin.ts` | 925 | argument parsing, setup wizard, interactive chat, gateway, every command | High |
+| `packages/provider-openai-compatible/src/index.ts` | 884 | provider metadata, serialization, streaming, errors, local discovery, generation helpers | High |
+| `packages/mobile/App.tsx` | 858 | gateway transport, pairing, remote state, screens, components, styles | High |
+| `packages/runtime/src/agents.ts` | 817 | contracts, validation, profile store, write lease, run state, scheduling, history, events, cleanup | First |
+| `packages/cli/src/protocol.ts` | 771 | protocol capabilities, requests, sessions, runs, approvals, agent control, lifecycle | High |
+| `packages/docs/app/download/download-client.tsx` | 768 | release data, platform detection, asset matching, cards, full download page | Medium |
+| `packages/agent-host/src/index.ts` | 604 | provider registry, connection errors, factories, prompts, approval, runtime composition | High |
+| `packages/gateway/src/index.ts` | 490 | remote mapping, authorization, HTTP/WebSocket transport, gateway lifecycle | High |
+
+### Runtime-specific baseline
+
+| File | Lines | Finding |
+| --- | ---: | --- |
+| `agents.ts` | 817 | The first extraction target. `AgentCoordinator` alone is about 413 lines and the file exposes many distinct public contracts. |
+| `agents.test.ts` | 570 | Good behavioral coverage, but concurrency, history, lifecycle, cancellation, and profile behavior share one fixture-heavy suite. |
+| `agent.ts` | 305 | Not oversized by itself, but the core run loop owns streaming parsing, retries, edit recovery, tool execution, memory, plans, and completion. |
+| `agent.test.ts` | 526 | Tests `AgentRuntime`, providers, sessions, context, and tools in one file; it obscures ownership. |
+| `tools.ts` | 263 | Registry, filesystem tools, search, grep, terminal execution, and bundle registration are coupled. |
+| `web.ts` | 233 | Cohesive enough for now; network policy and web tools should remain together until tests show a useful seam. |
+| `commands.ts` | 211 | Cohesive workspace-command subsystem; not an early split target. |
+| `context.ts` | 129 | Small and interface-led; retain unless later changes reveal pressure. |
+| `contracts.ts` | 127 | Small public contract leaf; protect it rather than split it. |
+| `credentials.ts` | 55 | Already focused; no refactor required. |
+
+### Dependency direction today
+
+```text
+runtime
+  ├─ provider-openai-compatible
+  ├─ mcp
+  ├─ gateway
+  └─ agent-host
+       └─ provider + mcp + runtime
+
+cli
+  └─ agent-host + gateway + provider + mcp + runtime
+
+desktop / vscode
+  └─ cli + agent-host + gateway + provider + mcp + runtime
+
+tui
+  └─ cli + provider + runtime
+
+neovim ── local CLI protocol ──> cli/runtime
+mobile ── remote gateway protocol ──> gateway/runtime
+```
+
+The desired direction stays the same: runtime must remain client-neutral and
+provider-neutral. No extraction may introduce a dependency from runtime back
+to a host, provider, protocol, or UI package.
+
+## 3. Refactor rules
+
+1. **Preserve behavior before improving behavior.** Initial extraction commits
+   move existing logic and tests. Cleanup follows only after the moved code is
+   green and reviewable.
+2. **Preserve the public package surface.** Existing imports from
+   `@truss-harness/runtime` continue to compile. Compatibility barrels remain
+   until every consumer is migrated intentionally.
+3. **Split by ownership, not arbitrary line count.** A module should own one
+   domain concept or one orchestration boundary. Small helper files with no
+   independent concept are not a goal.
+4. **Keep orchestration visible.** Entrypoints may coordinate services, but
+   should not implement those services. Dependency construction should remain
+   readable in one place.
+5. **Make dependencies explicit.** Extracted services receive stores, clocks,
+   ID factories, transports, and event emitters through constructors or typed
+   options; do not introduce process-wide singletons.
+6. **Keep state near its owner.** UI components should not mutate unrelated
+   global state. Runtime run state, transport state, and persisted state must
+   have separate owners.
+7. **Do not combine refactors with releases or features.** Version affected
+   packages as required by repository policy, but do not use a refactor PR to
+   add product behavior.
+8. **Use few, substantial PRs.** Each phase should normally use one to three
+   PRs containing focused commits. Avoid one PR per extracted file and avoid a
+   repository-wide rewrite.
+
+### Advisory module limits
+
+These are review triggers, not mechanical quality scores:
+
+- Entry/bootstrap modules should normally stay below 400 lines.
+- Domain modules should normally stay below 500 lines.
+- A module over 500 lines needs a documented reason and a single cohesive
+  responsibility.
+- A function or class over 200 lines should be reviewed for separable policy,
+  transport, state, or presentation responsibilities.
+- New code should not increase a listed monolith unless the same change also
+  creates the extraction seam it needs.
+
+## 4. Phase 0 — Baseline and safety rails
+
+### Goal
+
+Establish contract protection before moving shared code.
+
+### Work
+
+1. Record a baseline run of `npm run build`, `npm test`, `npm run lint`, and
+   `npm run format:check` before the first implementation PR.
+2. Add a compile-time public API contract fixture for
+   `@truss-harness/runtime`. It should import the symbols used by agent-host,
+   CLI, Desktop, gateway, MCP, provider, TUI, and VS Code so an accidental
+   export removal fails CI.
+3. Add an architecture check for forbidden dependency directions:
+   runtime may import branding and Node APIs, but not provider adapters,
+   agent-host, CLI, Electron, VS Code, React, Ink, React Native, or gateway.
+4. Capture the line inventory with a small deterministic repository script so
+   future plans can compare trends. The script reports; it should not fail CI
+   solely because a file crosses a numeric threshold.
+5. Document the extraction convention: domain folders expose a local
+   `index.ts`, while the package root controls the stable public surface.
+
+### Exit criteria
+
+- Existing public runtime imports are represented by a compile fixture.
+- Forbidden runtime dependencies fail a focused test or check.
+- Baseline build/test status is known before code movement starts.
+
+## 5. Phase 1 — Runtime first
+
+This phase stabilizes the shared concepts consumed by every primary client.
+It should be delivered in two coherent PRs, or one PR if the diff remains easy
+to review.
+
+### PR 1A — Decompose managed-agent coordination
+
+Keep `packages/runtime/src/agents.ts` as a compatibility barrel while moving
+implementations into an `agents/` domain:
+
+```text
+packages/runtime/src/agents/
+  contracts.ts          Agent IDs, profiles, run summaries, events, interfaces
+  errors.ts             AgentCoordinatorError and stable error codes
+  profile-validation.ts profile/provider validation
+  profile-store.ts      InMemoryAgentProfileStore
+  write-lease.ts        WorkspaceWriteLease and in-memory implementation
+  run-output.ts         bounded output accumulation
+  run-history.ts        validation, ordering, retention, persistence policy
+  coordinator.ts        scheduling and lifecycle orchestration
+  index.ts              domain exports
+packages/runtime/src/agents.ts  compatibility re-export
+```
+
+The exact final grouping should follow cohesion observed during extraction. In
+particular, do not create a file for a three-line helper unless it protects a
+real policy boundary.
+
+#### Coordinator target shape
+
+`AgentCoordinator` should retain the use-case API:
+
+- profile CRUD delegation;
+- start, stop, stop-all, approval resolution, and disposal;
+- run lookup and event publication.
+
+Move these policies behind focused collaborators:
+
+- profile validation and storage;
+- exclusive workspace write leasing;
+- terminal-run history retention/persistence;
+- active-run-to-summary projection and bounded output;
+- clock and ID generation where deterministic tests benefit.
+
+Scheduling and terminal-state transitions should remain in the coordinator
+until a state-machine extraction clearly makes them easier to understand. Do
+not hide core lifecycle ordering behind generic abstractions.
+
+#### Test reorganization
+
+Split `agents.test.ts` by behavior while reusing small explicit fixtures:
+
+```text
+agents/profile-store.test.ts
+agents/coordinator-concurrency.test.ts
+agents/coordinator-cancellation.test.ts
+agents/coordinator-history.test.ts
+agents/coordinator-lifecycle.test.ts
+```
+
+Replace timing-based polling where possible with deferred test runtimes,
+injected clocks/IDs, and observable lifecycle events. Preserve explicit tests
+for the existing cancellation-during-session-creation race, cleanup, write
+lease release, event correlation, bounded history, and concurrent slot reuse.
+
+### PR 1B — Decompose the single-agent execution loop
+
+Retain `AgentRuntime` as the public facade and session API. Extract policy from
+the loop into an `agent/` domain:
+
+```text
+packages/runtime/src/agent/
+  contracts.ts          AgentRuntimeOptions and ToolApproval
+  progress-stream.ts    <progress> streaming parser
+  edit-policy.ts        edit intent, write verification, recovery instructions
+  tool-executor.ts      approval, execution, result recording, recovery result
+  runtime.ts            provider-neutral turn loop and lifecycle
+  index.ts              domain exports
+packages/runtime/src/agent.ts  compatibility re-export
+```
+
+Keep model retry policy in the existing `retry.ts`; the agent layer consumes
+it rather than duplicating it. Keep workspace memory and plans behind their
+existing interfaces.
+
+Split `agent.test.ts` so tests live with the concept they protect:
+
+- streaming/progress parsing;
+- turn loop and completion;
+- edit/write recovery policy;
+- tool execution and approval;
+- memory and plan recording;
+- sessions, context, provider registry, and filesystem tools in their existing
+  module suites rather than a catch-all agent suite.
+
+### PR 1C — Tools only if justified by the first two PRs
+
+`tools.ts` is not urgent, but it owns three domains. If runtime work touches it,
+split it without changing tool names or schemas:
+
+```text
+tools/registry.ts
+tools/filesystem.ts
+tools/search.ts
+tools/terminal.ts
+tools/register.ts
+tools.ts  compatibility re-export
+```
+
+Do not split `context.ts`, `contracts.ts`, `credentials.ts`, `commands.ts`, or
+`web.ts` merely to make the files smaller. They are currently cohesive.
+
+### Runtime acceptance criteria
+
+- No consumer import from `@truss-harness/runtime` changes unless explicitly
+  documented.
+- Runtime has no new dependency on any provider, host, protocol, or client.
+- Managed-agent concurrency, cancellation, history, approvals, write leases,
+  and cleanup behave exactly as before.
+- Single-agent streaming, retries, recovery, tools, memory, and plans behave
+  exactly as before.
+- Focused runtime tests, full tests, build, lint, and format checks pass.
+- Runtime source maps and declarations still point to understandable modules.
+
+## 6. Phase 2 — Shared composition and providers
+
+Begin only after Phase 1 exports and lifecycle behavior are stable.
+
+### `packages/provider-openai-compatible`
+
+Split the 884-line index into:
+
+- `contracts.ts` for provider-specific wire types;
+- `openai/messages.ts` and `openai/tools.ts` for serialization;
+- `openai/stream.ts` for SSE/JSON accumulation and tool-call assembly;
+- `errors.ts` for safe status mapping and retry metadata;
+- `openai-compatible-provider.ts`;
+- `ollama-provider.ts`;
+- `discovery.ts` for endpoint/model/context detection;
+- `factories.ts` for public creation and generation helpers;
+- `index.ts` as the stable public barrel.
+
+The transport parser and safe error mapping need direct tests before moving
+the provider classes. Provider IDs, defaults, request shapes, error messages,
+and environment credential behavior must not change in this phase.
+
+### `packages/agent-host`
+
+Split the 604-line composition root into:
+
+- provider registry and metadata;
+- provider connection error mapping;
+- local/cloud provider factories;
+- prompt/mode policy;
+- approval-controller adapter;
+- `AgentHost` runtime composition;
+- compatibility `createHostedRuntime` facade.
+
+`AgentHost` remains the composition boundary that is allowed to know runtime,
+providers, tools, credentials, and MCP. Runtime must never absorb this work.
+
+### `packages/mcp`
+
+At 293 lines it is not an immediate size problem. Extract transport/process
+lifecycle only if Phase 2 changes make that ownership clearer. Preserve MCP's
+role as a tool adapter rather than a second agent runtime.
+
+### Phase 2 exit criteria
+
+- OpenAI-compatible and Ollama tests cover identical request, stream, error,
+  retry, discovery, and credential behavior before and after extraction.
+- Agent-host remains the only shared composition layer.
+- Consumers still use stable package-root exports.
+
+## 7. Phase 3 — Protocol and command layers
+
+### CLI service protocol
+
+Break the 590-line `RuntimeService` in `cli/src/protocol.ts` into typed request
+handlers with one session/run registry:
+
+```text
+protocol/contracts.ts       existing versioned wire contracts
+protocol/validation.ts      existing validation
+protocol/capabilities.ts
+protocol/request-router.ts
+protocol/session-handler.ts
+protocol/run-handler.ts
+protocol/agent-handler.ts
+protocol/approval-handler.ts
+protocol/service.ts          lifecycle and shared registries
+protocol/stdio.ts            JSON-RPC/JSON-lines transport
+```
+
+Protocol versions and serialized payloads are compatibility boundaries for
+VS Code and Neovim. Add fixture-based request/response tests before moving
+handlers. No wire field may change as an incidental refactor.
+
+### CLI entrypoint
+
+Split `cli/src/bin.ts` into argument parsing, setup, interactive chat, gateway
+command, agent command, MCP command, and a small `main`. Command help and exit
+codes are user-facing contracts and need snapshot or table-driven tests.
+
+### Gateway
+
+Split gateway authorization and mapping from HTTP/WebSocket transport:
+
+- remote profile/run mapping;
+- capability/action authorization;
+- connection registry and sequencing;
+- HTTP pairing endpoints;
+- WebSocket session transport;
+- gateway lifecycle/bootstrap.
+
+Mobile and Neovim do not import runtime directly, but their protocols depend
+on this phase. Preserve protocol versions and capability negotiation.
+
+## 8. Phase 4 — Client decomposition
+
+Client work follows shared-layer stabilization. Each client should keep one
+small composition entrypoint and divide stateful domains behind typed APIs.
+
+### VS Code
+
+Target `extension.ts` first among graphical clients because it is smaller than
+Desktop and exercises the same runtime/agent contracts.
+
+Proposed domains:
+
+- extension activation and registration;
+- runtime service transport;
+- model/provider configuration and secret storage;
+- conversation controller and persistence;
+- managed-agent control center;
+- Truss Go gateway controller;
+- Git commit-message command;
+- workspace commands/context;
+- chat webview protocol;
+- webview markup, styles, and script assets.
+
+The `activate()` function should compose controllers and register disposables;
+it should not implement their behavior. Webview messages must use shared typed
+contracts rather than untyped strings duplicated across extension and script.
+
+### TUI
+
+Split the 1,500-line `App` by state ownership rather than visual fragments:
+
+- runtime/session hook;
+- conversation state hook;
+- provider/settings controller;
+- terminal/process controller;
+- file browser and Git state;
+- layout/focus reducer;
+- Chat, Files, Git, Terminal, Settings, and status components.
+
+Use a reducer for related layout/focus transitions instead of adding more
+independent booleans. Keep Ink rendering separate from process and runtime
+side effects.
+
+### Desktop main process
+
+Turn `main.ts` into a composition root with services for:
+
+- application lifecycle and window creation;
+- updates;
+- secure credentials and provider accounts;
+- persisted application/workspace state;
+- runtime and managed-agent lifecycle;
+- Truss Go gateway;
+- workspace files/media;
+- Git operations;
+- chat execution/context;
+- IPC registration by domain.
+
+IPC handlers should be thin adapters that validate input, call one service,
+and serialize a result. Domain services should be testable without launching
+Electron.
+
+### Desktop renderer
+
+This is the largest and riskiest refactor. Do it incrementally without a UI
+framework rewrite. Establish a typed renderer store and domain controllers,
+then move one vertical domain at a time:
+
+```text
+renderer/
+  state/              normalized application state and selectors
+  ipc/                typed bridge event/command adapters
+  theme/
+  agents/
+  git/
+  files/
+  editor/
+  settings/
+  chat/
+  terminal/
+  layout/
+  markdown/
+  bootstrap.ts
+```
+
+Each domain owns its DOM lookup, rendering, event binding, and state actions.
+Cross-domain behavior goes through typed actions or narrow controller methods,
+not direct mutation of another domain's elements. Preserve focus, resizing,
+settings-tab, file-menu, terminal interruption, chat docking, and syntax-error
+behavior with focused tests before moving those sections.
+
+### Mobile
+
+Split gateway transport/pairing from remote workspace state and presentation:
+
+- gateway client and event sequencing;
+- pairing persistence;
+- remote workspace reducer;
+- connection/workspace screens;
+- agent/chat/approval components;
+- styles and theme tokens.
+
+### Documentation downloads
+
+Separate release/API data normalization, platform/package selection, Desktop
+card, generic client card, and page composition. Keep the existing
+release-selection tests and add component-level cases only where behavior is
+currently embedded in the 768-line component.
+
+## 9. Delivery order and PR budget
+
+| Order | Phase | Expected PRs | Why |
+| ---: | --- | ---: | --- |
+| 1 | Baseline + runtime managed agents | 1 | Protect exports, then remove the most concentrated shared-runtime module. |
+| 2 | Runtime execution loop and optional tools split | 1 | Stabilize run/tool policy before consumers move. |
+| 3 | Provider + agent-host composition | 1–2 | Establish clean provider/host seams. |
+| 4 | CLI protocol + CLI entry + gateway | 1–2 | Protect wire compatibility used by Neovim, VS Code, and mobile. |
+| 5 | VS Code + TUI | 1–2 | Prove client-facing seams on smaller clients. |
+| 6 | Desktop main | 1 | Extract testable host services before renderer work. |
+| 7 | Desktop renderer | 2–3 | Move vertical domains in reviewable groups without a rewrite. |
+| 8 | Mobile + documentation downloads | 1–2 | Finish remaining monoliths using stable transport/data contracts. |
+
+This is an estimated 9–14 substantial PRs across the whole repository, not a
+PR per file. Every PR must leave the branch buildable and preserve the current
+user experience.
+
+## 10. Commit strategy inside each PR
+
+1. Add or relocate contract tests without changing production behavior.
+2. Move one cohesive responsibility with compatibility re-exports.
+3. Rewire the original composition root to the extracted module.
+4. Remove dead duplication only after all consumers use the new owner.
+5. Apply local naming/format cleanup in a final focused commit.
+
+Avoid commits that mix file movement with unrelated formatting; they hide the
+semantic diff and make regressions harder to review.
+
+## 11. Validation matrix
+
+Every phase runs root checks plus the affected package/client checks.
+
+| Layer | Required validation |
+| --- | --- |
+| Runtime | focused runtime tests, runtime build, root `npm test`, root `npm run build`, lint, format check |
+| Provider/host | provider and agent-host tests, provider preflight/model discovery smoke checks, package builds |
+| CLI/protocol/gateway | protocol fixtures, CLI command tests, gateway authorization/pairing tests, CLI/TUI local smoke |
+| VS Code | extension build, VSIX packaging, Extension Host smoke for chat, cancellation, concurrent conversations, settings, and agents |
+| TUI | build plus interactive terminal smoke for chat, files, Git, terminal interruption, focus, and resize |
+| Desktop main | Electron build plus IPC/service tests and startup/shutdown smoke |
+| Desktop renderer | build plus focused DOM/state tests and manual Linux smoke of every moved domain |
+| Mobile | TypeScript/Expo checks and real-device pairing/reconnect/chat/approval smoke |
+| Docs | isolated docs build and responsive download-page verification |
+
+For package/client changes, update versions and required changelog entries on
+the same working branch before its PR, following repository release policy.
+
+## 12. Risk controls
+
+| Risk | Control |
+| --- | --- |
+| Accidental public API break | Compile fixture, compatibility barrels, declaration build, consumer builds. |
+| Runtime lifecycle regression | Preserve event-order tests; use deferred fake runtimes for cancellation and cleanup races. |
+| Protocol incompatibility | Fixture serialized messages and capability versions before handler extraction. |
+| UI state/focus regression | Move one domain at a time; add state/controller tests; run manual focus and concurrency smoke checks. |
+| Hidden circular dependency | Enforce package direction and domain import rules; keep root barrels out of internal imports. |
+| Too many tiny abstractions | Require each extracted module to own a named domain concept, policy, service, or adapter. |
+| Refactor stalls feature delivery | Keep phases independently mergeable and pause only at stable boundaries. |
+| Review becomes unreadable | Separate test, move, rewire, and cleanup commits; avoid global formatting churn. |
+
+## 13. Definition of done
+
+The maintainability program is complete when:
+
+- runtime coordination and execution policies have focused owners and tests;
+- shared package exports and remote protocols remain compatible;
+- client entrypoints are composition roots rather than application
+  implementations;
+- the listed critical monoliths have been decomposed into cohesive domains;
+- no new cross-layer dependency violates provider/client neutrality;
+- all automated checks and client smoke tests pass after each phase;
+- contributors can locate the owner of runtime, provider, protocol, state, and
+  UI behavior without reading a multi-thousand-line module.
+
+## 14. First implementation checkpoint
+
+The first implementation PR should stop after Phase 0 and PR 1A:
+
+1. protect the public runtime surface;
+2. split managed-agent contracts, profile storage, write lease, history, and
+   coordination behind the existing `agents.ts` export;
+3. reorganize the managed-agent tests and remove timing-sensitive waits where
+   practical;
+4. run the full validation gate;
+5. report before/after module sizes and confirm zero consumer import changes.
+
+That checkpoint produces immediate maintainability value while keeping the
+highest-risk `AgentRuntime` execution loop unchanged until the coordinator
+extraction is proven stable.
