@@ -217,9 +217,17 @@ Completed locally on `refactor/desktop-main-process-services` for issue #209.
 
 Validation at this checkpoint:
 
-- Desktop package build and all focused Desktop tests passing.
-- Full repository build, suite, isolated documentation build, Linux Desktop
-  package, and interactive Electron smoke remain required before push.
+- Desktop build and all focused Desktop tests passing.
+- Full repository build and suite passing: 53 test files and 201 tests.
+- Isolated documentation production build, targeted Biome and Prettier checks,
+  and `git diff --check` passing.
+- Linux x64 packaging produced the Debian and unpacked application artifacts;
+  the remaining RPM/Pacman targets were blocked by the local machine's disk
+  quota rather than a source or packaging error.
+- Interactive Electron smoke remains required before push; run
+  `npm run desktop:dev` and verify startup/shutdown, settings and credentials,
+  chat cancellation and approvals, managed agents, Truss Go, workspace files,
+  Git actions, and terminal interruption.
 
 Next checkpoint after merge: begin the Desktop renderer decomposition in a
 fresh branch; do not combine it with this Electron main-process review.
