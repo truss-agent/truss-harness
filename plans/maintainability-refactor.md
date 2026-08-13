@@ -259,8 +259,9 @@ Validation at this checkpoint:
 - Desktop build and all 36 focused Desktop tests passing.
 - Targeted Biome checks pass with four unchanged renderer style suggestions;
   Prettier and `git diff --check` pass.
-- Full repository build and suite, isolated documentation production build,
-  and interactive Electron smoke remain required before push.
+- Full repository build and suite passing: 59 test files and 215 tests.
+- Isolated documentation production build passes all 38 generated routes.
+- Interactive Electron smoke remains required before push.
 
 Next checkpoint after merge: migrate cohesive renderer vertical domains in a
 fresh branch, beginning with settings/provider and layout controllers before
