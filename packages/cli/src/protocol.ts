@@ -1,9 +1,9 @@
-import type { ChatAttachment, ContextBlock } from "@truss-harness/runtime";
 import type { ProtocolToolApproval } from "./protocol/approval.js";
 import {
   serializeEvent,
   serviceCapabilities,
 } from "./protocol/capabilities.js";
+import { RunRegistry } from "./protocol/run-registry.js";
 import { jsonRpcMessage } from "./protocol/wire.js";
 import {
   LOCAL_SERVICE_PROTOCOL_VERSIONS,
@@ -46,11 +46,7 @@ export interface RuntimeServiceOptions {
  * object per line; the class owns request routing and deterministic cleanup.
  */
 export class RuntimeService {
-  private readonly controllers = new Map<string, AbortController>();
-  private readonly requestSessions = new Map<string, string>();
-  private readonly activeRequestBySession = new Map<string, string>();
-  private readonly activeRequestIds = new Set<string>();
-  private readonly activeRuns = new Set<Promise<void>>();
+  private readonly runs: RunRegistry;
   private readonly unsubscribe: () => void;
   private readonly unsubscribeApproval?: () => void;
   private readonly capabilities: RuntimeServiceCapabilities;
@@ -60,8 +56,16 @@ export class RuntimeService {
 
   constructor(private readonly options: RuntimeServiceOptions) {
     this.capabilities = serviceCapabilities(options);
+    this.runs = new RunRegistry({
+      runtime: options.runtime,
+      send: (message) => this.send(message),
+      sendError: (code, message, requestId) =>
+        this.sendError(code, message, requestId),
+      denySession: (sessionId) => options.approval?.denySession(sessionId),
+      isClosed: () => this.closed,
+    });
     this.unsubscribe = options.events.subscribe((event) => {
-      const requestId = this.activeRequestBySession.get(event.sessionId);
+      const requestId = this.runs.requestForSession(event.sessionId);
       if (!requestId || this.closed) return;
       this.send({
         type: "event",
@@ -70,7 +74,7 @@ export class RuntimeService {
       });
     });
     this.unsubscribeApproval = options.approval?.subscribe((call, session) => {
-      const requestId = this.activeRequestBySession.get(session.id);
+      const requestId = this.runs.requestForSession(session.id);
       if (!requestId || this.closed) return;
       this.send({
         type: "approval_request",
@@ -265,18 +269,8 @@ export class RuntimeService {
     this.closed = true;
     this.unsubscribe();
     this.unsubscribeApproval?.();
-    for (const controller of this.controllers.values()) controller.abort();
+    await this.runs.close();
     this.options.approval?.denyAll();
-    if (this.activeRuns.size) {
-      await Promise.race([
-        Promise.allSettled([...this.activeRuns]),
-        new Promise((resolve) => setTimeout(resolve, 1_000)),
-      ]);
-    }
-    this.controllers.clear();
-    this.requestSessions.clear();
-    this.activeRequestBySession.clear();
-    this.activeRequestIds.clear();
   }
 
   private initialize(
@@ -395,13 +389,9 @@ export class RuntimeService {
       typeof request.sessionId !== "string"
     )
       throw new Error("A run sessionId must be a string.");
-    if (this.activeRequestIds.has(requestId))
-      throw new Error("That requestId already has an active run.");
-
     const context = sanitizeContext(request.context);
     const attachments = sanitizeAttachments(request.attachments);
-    this.activeRequestIds.add(requestId);
-    const run = this.run({
+    this.runs.start({
       requestId,
       prompt,
       sessionId:
@@ -409,124 +399,15 @@ export class RuntimeService {
       context,
       attachments,
     });
-    this.activeRuns.add(run);
-    void run.then(
-      () => this.activeRuns.delete(run),
-      () => this.activeRuns.delete(run),
-    );
-  }
-
-  private async run(input: {
-    readonly requestId: string;
-    readonly prompt: string;
-    readonly sessionId?: string;
-    readonly context: readonly ContextBlock[];
-    readonly attachments: readonly ChatAttachment[];
-  }): Promise<void> {
-    let sessionId: string | undefined;
-    try {
-      const session = input.sessionId
-        ? await this.options.runtime.getSession(input.sessionId)
-        : await this.options.runtime.createSession();
-      if (this.closed) return;
-      if (!session) {
-        this.sendError(
-          "unknown_request",
-          `Unknown session: ${input.sessionId}`,
-          input.requestId,
-        );
-        return;
-      }
-      sessionId = session.id;
-      if (this.activeRequestBySession.has(sessionId)) {
-        this.sendError(
-          "request_conflict",
-          "That session already has an active run.",
-          input.requestId,
-        );
-        return;
-      }
-      const controller = new AbortController();
-      this.controllers.set(input.requestId, controller);
-      this.requestSessions.set(input.requestId, sessionId);
-      this.activeRequestBySession.set(sessionId, input.requestId);
-      this.send({
-        type: "lifecycle",
-        requestId: input.requestId,
-        state: "started",
-        sessionId,
-      });
-      await this.options.runtime.run(
-        sessionId,
-        input.prompt,
-        controller.signal,
-        input.context,
-        input.attachments,
-      );
-      if (this.closed) return;
-      this.send({
-        type: "lifecycle",
-        requestId: input.requestId,
-        state: controller.signal.aborted ? "cancelled" : "completed",
-        sessionId,
-      });
-      this.send({
-        type: "response",
-        requestId: input.requestId,
-        result: {
-          sessionId,
-          ...(controller.signal.aborted ? { aborted: true } : {}),
-        },
-      });
-    } catch (error) {
-      if (this.closed) return;
-      const controller = this.controllers.get(input.requestId);
-      if (controller?.signal.aborted) {
-        this.send({
-          type: "lifecycle",
-          requestId: input.requestId,
-          state: "cancelled",
-          ...(sessionId ? { sessionId } : {}),
-        });
-        this.send({
-          type: "response",
-          requestId: input.requestId,
-          result: {
-            ...(sessionId ? { sessionId } : {}),
-            aborted: true,
-          },
-        });
-      } else {
-        this.send({
-          type: "lifecycle",
-          requestId: input.requestId,
-          state: "failed",
-          ...(sessionId ? { sessionId } : {}),
-        });
-        this.sendError("internal_error", requestError(error), input.requestId);
-      }
-    } finally {
-      this.controllers.delete(input.requestId);
-      this.requestSessions.delete(input.requestId);
-      this.activeRequestIds.delete(input.requestId);
-      if (
-        sessionId &&
-        this.activeRequestBySession.get(sessionId) === input.requestId
-      )
-        this.activeRequestBySession.delete(sessionId);
-    }
   }
 
   private cancel(requestId: string, reportUnknown: boolean): boolean {
-    const controller = this.controllers.get(requestId);
-    if (!controller) {
+    const cancelled = this.runs.cancel(requestId);
+    if (!cancelled) {
       if (reportUnknown)
         this.sendError("unknown_request", "Unknown active request.", requestId);
       return false;
     }
-    controller.abort();
-    const sessionId = this.requestSessions.get(requestId);
-    if (sessionId) this.options.approval?.denySession(sessionId);
     return true;
   }
 
