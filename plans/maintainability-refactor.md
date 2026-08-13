@@ -261,7 +261,8 @@ Completed locally on `refactor/desktop-renderer-foundation` for issue #211.
   file tree and Git automatically after a completed managed run changes files.
 - Added 21 focused tests across the new state, IPC, theme, Markdown, layout,
   cloud commit-generation, agent-permission, plan-isolation, and workspace
-  refresh boundaries and bumped Desktop to 0.1.38 on the feature branch.
+  refresh boundaries; bumped Desktop to 0.1.38 and Agent Host to 0.1.9 on the
+  feature branch.
 
 Validation at this checkpoint:
 
