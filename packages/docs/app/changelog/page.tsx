@@ -4,6 +4,16 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.37",
+    label: "Maintainable main-process architecture",
+    changes: [
+      "Reorganized the Electron main process around focused services for window lifecycle, updates, secure credentials, persisted state, provider settings, runtime sessions, managed agents, Truss Go, workspace files and media, Git, terminal processes, and typed IPC registration.",
+      "Preserved existing Desktop behavior while reducing the main-process composition entrypoint from 2,927 lines to under 350 and isolating Electron adapters from testable application services.",
+      "Added focused coverage for configuration and model metadata, state persistence bounds, encrypted and session-only credentials, workspace path and media safety, and Git status and commit-message helpers.",
+      "Aligned Desktop Truss Go pairing with the stable port used by the other hosts and Android client, with tested gateway cleanup and a clear conflict message when another host already owns the port.",
+    ],
+  },
+  {
     version: "TUI 0.1.17",
     label: "Maintainable terminal client architecture",
     changes: [

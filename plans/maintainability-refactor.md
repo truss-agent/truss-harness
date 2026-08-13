@@ -193,6 +193,48 @@ Validation at this checkpoint:
 Next checkpoint after merge: begin the Desktop main-process decomposition in
 a fresh branch; do not combine Electron main and renderer risk in one review.
 
+### 2026-08-13 — Desktop main-process checkpoint
+
+Completed locally on `refactor/desktop-main-process-services` for issue #209.
+
+- Reduced `packages/desktop/src/main.ts` from 2,927 lines to under 350 while
+  retaining it as the Electron bootstrap and service-composition boundary.
+- Extracted application-window lifecycle, updates, secure credentials,
+  persisted state and configuration normalization, provider settings and
+  accounts, runtime/chat sessions, managed agents, Truss Go, workspace
+  files/media, Git operations, managed terminal processes, and domain IPC
+  registration.
+- Kept renderer-facing channel names and payloads stable, and preserved
+  startup recovery, update delivery, provider discovery, credential fallback,
+  chat cancellation and approvals, managed-agent history, mobile pairing,
+  file safety, Git actions, terminal interruption, formatting, and syntax
+  checks.
+- Added focused coverage for configuration/model metadata, bounded persisted
+  state, secure and session-only credentials, workspace path/media behavior,
+  and Git status and commit-message helpers.
+- Bumped Desktop to 0.1.37 and updated the public changelog on the feature
+  branch so a release will not need a separate version-only PR.
+
+Validation at this checkpoint:
+
+- Desktop build and all focused Desktop tests passing.
+- Full repository build and suite passing: 53 test files and 201 tests.
+- Isolated documentation production build, targeted Biome and Prettier checks,
+  and `git diff --check` passing.
+- Linux x64 packaging produced the Debian and unpacked application artifacts;
+  the remaining RPM/Pacman targets were blocked by the local machine's disk
+  quota rather than a source or packaging error.
+- Interactive Electron smoke verified startup/shutdown, settings and
+  credentials, chat cancellation and approvals, managed agents, workspace
+  files, Git actions, and terminal interruption. The initial phone test exposed
+  Desktop's random Truss Go port timing out through the LAN path; Desktop now
+  uses the shared stable port 4787 with focused startup, conflict, and cleanup
+  coverage. Repeat real-device pairing confirmed the Android client connects
+  and opens the Desktop-hosted workspace successfully.
+
+Next checkpoint after merge: begin the Desktop renderer decomposition in a
+fresh branch; do not combine it with this Electron main-process review.
+
 ## 1. Why this refactor is needed
 
 Several modules have become application subsystems rather than files. Their
