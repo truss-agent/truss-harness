@@ -30,6 +30,11 @@ import {
   fuzzyPathScore,
   WorkspaceFilesController,
 } from "./renderer/files/workspace-files-controller.js";
+import { DesktopGitController } from "./renderer/git/git-controller.js";
+import {
+  DesktopGitDomView,
+  desktopGitElements,
+} from "./renderer/git/git-view.js";
 import { desktopClient } from "./renderer/ipc/desktop-client.js";
 import {
   type CenterView,
@@ -64,8 +69,6 @@ import {
   type DesktopEndpoint,
   type DesktopEvent,
   type DesktopFile,
-  type DesktopGitGraph,
-  type DesktopGitStatus,
   type DesktopMessage,
   type DesktopModelInfo,
   type DesktopProvider,
@@ -121,19 +124,7 @@ const centerSurface = element<HTMLElement>("centerSurface");
 const terminal = document.querySelector<HTMLElement>(
   ".terminal",
 ) as HTMLElement;
-const gitPanel = element<HTMLElement>("gitPanel");
-const gitBody = element<HTMLDivElement>("gitBody");
-const gitBranch = element<HTMLSpanElement>("gitBranch");
-const gitCounts = element<HTMLSpanElement>("gitCounts");
-const gitGraph = element<HTMLDivElement>("gitGraph");
-const gitFiles = element<HTMLDivElement>("gitFiles");
-const pullGit = element<HTMLButtonElement>("pullGit");
-const pushGit = element<HTMLButtonElement>("pushGit");
-const commitMessage = element<HTMLInputElement>("commitMessage");
-const commitButton = element<HTMLButtonElement>("commitButton");
-const generateCommitMessage = element<HTMLButtonElement>(
-  "generateCommitMessage",
-);
+const gitElements = desktopGitElements(document);
 const editor = element<HTMLElement>("editor");
 const formatFileButton = element<HTMLButtonElement>("formatFileButton");
 const editorTabsElement = element<HTMLDivElement>("editorTabs");
@@ -268,13 +259,7 @@ const openEditorTabs = editorController.tabs;
 const chatController = new DesktopChatController();
 let persistTimer: number | undefined;
 let workspaceUiPersistTimer: number | undefined;
-let gitStatus: DesktopGitStatus = {
-  available: false,
-  ahead: 0,
-  behind: 0,
-  files: [],
-};
-let gitGraphData: DesktopGitGraph = { available: false, commits: [] };
+let gitController: DesktopGitController;
 let activePlan: WorkspacePlan | undefined;
 let layoutController: DesktopLayoutController;
 let agentsSnapshot: DesktopAgentsSnapshot = { profiles: [], runs: [] };
@@ -566,7 +551,7 @@ function applyAgentsSnapshot(snapshot: DesktopAgentsSnapshot): void {
   agentsSnapshot = snapshot;
   if (layoutController.view === "agents") renderAgents();
   if (workspaceChanged)
-    void Promise.all([loadFiles(), refreshGit()]).catch((error) =>
+    void Promise.all([loadFiles(), gitController.refresh()]).catch((error) =>
       notify(error instanceof Error ? error.message : String(error)),
     );
 }
@@ -1081,7 +1066,7 @@ function setSyntaxDiagnostics(
   if (editorController.setDiagnostics(path, diagnostics)) {
     renderEditorTabs();
     renderFiles();
-    renderGit();
+    gitController.render();
   }
 }
 
@@ -1177,292 +1162,6 @@ function renderRuntime(): void {
   }
 }
 
-function statusLabel(file: DesktopGitStatus["files"][number]): string {
-  const status = `${file.indexStatus}${file.workTreeStatus}`;
-  if (status === "??") return "NEW";
-  if (status.includes("A")) return "ADD";
-  if (status.includes("D")) return "DEL";
-  if (status.includes("R")) return "REN";
-  if (status.includes("M")) return "MOD";
-  return status.trim() || "CHG";
-}
-
-const gitGraphColors = [
-  "#f28b30",
-  "#4f9cf9",
-  "#e03b8b",
-  "#f1bd22",
-  "#9b6ade",
-  "#54d7b0",
-];
-
-function graphRefLabel(ref: string): string {
-  return ref
-    .replace(/^HEAD -> /, "")
-    .replace(/^refs\/heads\//, "")
-    .replace(/^refs\/remotes\//, "");
-}
-
-function graphDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.valueOf())) return "";
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function appendSvgLine(
-  svg: SVGSVGElement,
-  attributes: Record<string, string>,
-): void {
-  const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  for (const [name, value] of Object.entries(attributes))
-    line.setAttribute(name, value);
-  svg.append(line);
-}
-
-function appendSvgPath(
-  svg: SVGSVGElement,
-  attributes: Record<string, string>,
-): void {
-  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  for (const [name, value] of Object.entries(attributes))
-    path.setAttribute(name, value);
-  svg.append(path);
-}
-
-function renderGitGraph(): void {
-  gitGraph.replaceChildren();
-  if (!gitGraphData.available) {
-    gitGraph.textContent = "Git history unavailable.";
-    return;
-  }
-  if (!gitGraphData.commits.length) {
-    gitGraph.textContent = "No commits yet.";
-    return;
-  }
-
-  const lanes: string[] = [];
-  const rows = gitGraphData.commits.map((commit) => {
-    let laneIndex = lanes.indexOf(commit.hash);
-    if (laneIndex < 0) {
-      laneIndex = 0;
-      lanes.unshift(commit.hash);
-    }
-    const before = [...lanes];
-    lanes.splice(laneIndex, 1, ...commit.parents);
-    const nextLanes = lanes.filter(
-      (hash, index) => lanes.indexOf(hash) === index,
-    );
-    lanes.splice(0, lanes.length, ...nextLanes);
-    return { commit, laneIndex, before, after: [...lanes] };
-  });
-  const laneCount = Math.max(
-    1,
-    ...rows.flatMap((row) => [row.before.length, row.after.length]),
-  );
-  const graphWidth = Math.max(42, laneCount * 16 + 18);
-
-  gitGraph.replaceChildren(
-    ...rows.map(({ commit, laneIndex, before, after }) => {
-      const row = document.createElement("div");
-      row.className = "git-graph-row";
-      const visual = document.createElement("div");
-      visual.className = "git-graph-visual";
-      visual.style.width = `${graphWidth}px`;
-      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      svg.setAttribute("viewBox", `0 0 ${graphWidth} 36`);
-      svg.setAttribute("aria-hidden", "true");
-      const xFor = (index: number) => 9 + index * 16;
-      before.forEach((_hash, index) => {
-        const color = gitGraphColors[index % gitGraphColors.length];
-        appendSvgLine(svg, {
-          x1: String(xFor(index)),
-          y1: "0",
-          x2: String(xFor(index)),
-          y2: "36",
-          stroke: color,
-          "stroke-width": "2",
-        });
-      });
-      const currentX = xFor(laneIndex);
-      commit.parents.forEach((parent) => {
-        const parentIndex = after.indexOf(parent);
-        if (parentIndex < 0) return;
-        const parentX = xFor(parentIndex);
-        if (parentX === currentX) return;
-        appendSvgPath(svg, {
-          d: `M ${currentX} 18 C ${currentX} 27, ${parentX} 27, ${parentX} 36`,
-          fill: "none",
-          stroke: gitGraphColors[parentIndex % gitGraphColors.length],
-          "stroke-width": "2",
-        });
-      });
-      const node = document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "circle",
-      );
-      node.setAttribute("cx", String(currentX));
-      node.setAttribute("cy", "18");
-      node.setAttribute("r", "5");
-      node.setAttribute(
-        "fill",
-        gitGraphColors[laneIndex % gitGraphColors.length],
-      );
-      node.setAttribute("stroke", "#11161a");
-      node.setAttribute("stroke-width", "2");
-      svg.append(node);
-      visual.append(svg);
-
-      const details = document.createElement("div");
-      details.className = "git-graph-commit";
-      const heading = document.createElement("div");
-      heading.className = "git-graph-commit-heading";
-      const subject = document.createElement("span");
-      subject.className = "git-graph-subject";
-      subject.textContent = commit.subject;
-      subject.title = `${commit.subject}\n${commit.hash}`;
-      heading.append(subject);
-      for (const ref of commit.refs) {
-        const badge = document.createElement("span");
-        badge.className = `git-ref-badge ${ref.includes("remotes/") ? "remote" : ""}`;
-        badge.textContent = graphRefLabel(ref);
-        badge.title = ref;
-        heading.append(badge);
-      }
-      const metadata = document.createElement("span");
-      metadata.className = "git-graph-meta";
-      metadata.textContent = `${commit.author} · ${graphDate(commit.authoredAt)} · ${commit.shortHash}`;
-      details.append(heading, metadata);
-      row.append(visual, details);
-      return row;
-    }),
-  );
-}
-
-function setGitCollapsed(collapsed: boolean): void {
-  layoutController.setGitCollapsed(collapsed);
-}
-
-function renderGit(): void {
-  const gitCollapsed = layoutController.gitCollapsed;
-  gitPanel.classList.toggle("collapsed", gitCollapsed);
-  gitBody.hidden = gitCollapsed;
-  const toggle = element<HTMLButtonElement>("toggleGit");
-  toggle.textContent = gitCollapsed ? "Show" : "Hide";
-  toggle.title = gitCollapsed ? "Expand Git panel" : "Collapse Git panel";
-  toggle.setAttribute("aria-expanded", String(!gitCollapsed));
-  if (!gitStatus.available) {
-    gitBranch.textContent = "Git unavailable";
-    gitCounts.textContent = "";
-    renderGitGraph();
-    gitFiles.replaceChildren();
-    commitButton.disabled = true;
-    commitButton.title = "Git is unavailable in this workspace";
-    pullGit.disabled = true;
-    pushGit.disabled = true;
-    return;
-  }
-  gitBranch.textContent = gitStatus.branch || "No branch yet";
-  const staged = gitStatus.files.filter(
-    (file) => file.indexStatus !== " " && file.indexStatus !== "?",
-  );
-  gitCounts.textContent = [
-    gitStatus.ahead ? `up ${gitStatus.ahead}` : "",
-    gitStatus.behind ? `down ${gitStatus.behind}` : "",
-    `${gitStatus.files.length} changed`,
-    staged.length ? `${staged.length} staged` : "commit will stage changes",
-    gitStatus.pushRemote ? `remote ${gitStatus.pushRemote}` : "no push remote",
-  ]
-    .filter(Boolean)
-    .join(" | ");
-  renderGitGraph();
-  commitButton.disabled = gitStatus.files.length === 0;
-  commitButton.title = staged.length
-    ? "Commit staged changes"
-    : "Commit all changed files; staging happens automatically";
-  pushGit.disabled = !gitStatus.pushRemote;
-  pushGit.title = gitStatus.pushRemote
-    ? `Push to ${gitStatus.pushRemote}`
-    : "No push remote configured. Add one with: git remote add origin <url>";
-  const stageAll = element<HTMLButtonElement>("stageAll");
-  stageAll.textContent = staged.length ? "Unstage all" : "Stage all";
-  stageAll.title = staged.length
-    ? "Unstage every staged file"
-    : "Stage all changed files";
-  stageAll.disabled = gitStatus.files.length === 0;
-  element<HTMLButtonElement>("discardAll").disabled =
-    gitStatus.files.length === 0;
-  gitFiles.replaceChildren(
-    ...gitStatus.files.map((file) => {
-      const row = document.createElement("div");
-      row.className = "git-file-row";
-      const status = document.createElement("span");
-      status.className = "git-file-status";
-      status.textContent = statusLabel(file);
-      const open = document.createElement("button");
-      open.className = "git-file-name";
-      open.textContent = file.path;
-      const syntaxError = syntaxErrorTitle(file.path);
-      row.classList.toggle("has-syntax-error", Boolean(syntaxError));
-      open.title = syntaxError ? `${file.path}\n${syntaxError}` : file.path;
-      open.onclick = () => void openFile(file.path, false);
-      const actions = document.createElement("div");
-      actions.className = "git-row-actions";
-      row.append(status, open, actions);
-      if (file.indexStatus !== " " && file.indexStatus !== "?") {
-        const unstage = document.createElement("button");
-        unstage.className = "git-row-action";
-        unstage.textContent = "-";
-        unstage.title = `Unstage ${file.path}`;
-        unstage.setAttribute("aria-label", `Unstage ${file.path}`);
-        unstage.onclick = () =>
-          void runGitAction("unstage", () => desktop.gitUnstage([file.path]));
-        actions.append(unstage);
-      }
-      if (file.workTreeStatus !== " " || file.indexStatus === "?") {
-        const stage = document.createElement("button");
-        stage.className = "git-row-action";
-        stage.textContent = "+";
-        stage.title = `Stage ${file.path}`;
-        stage.setAttribute("aria-label", `Stage ${file.path}`);
-        stage.onclick = () =>
-          void runGitAction("stage", () => desktop.gitStage([file.path]));
-        actions.append(stage);
-      }
-      const discard = document.createElement("button");
-      discard.className = "git-row-action danger";
-      discard.textContent = "x";
-      discard.title = `Discard all uncommitted changes in ${file.path}`;
-      discard.setAttribute("aria-label", `Discard ${file.path}`);
-      discard.onclick = () =>
-        void requestConfirmation({
-          title: "Discard file changes",
-          message: `Discard all uncommitted changes in ${file.path}? This cannot be undone.`,
-          confirmLabel: "Discard",
-          danger: true,
-        }).then((confirmed) => {
-          if (confirmed)
-            void runGitAction("discard", () => desktop.gitDiscard([file.path]));
-        });
-      actions.append(discard);
-      return row;
-    }),
-  );
-}
-
-async function refreshGit(): Promise<void> {
-  [gitStatus, gitGraphData] = await Promise.all([
-    desktop.gitStatus(),
-    desktop.gitGraph(),
-  ]);
-  renderGit();
-  renderTerminalPrompt();
-}
-
 function renderTerminalPrompt(): void {
   const workspaceParts = rendererState.desktop.workspaceRoot
     .replaceAll("\\", "/")
@@ -1472,6 +1171,7 @@ function renderTerminalPrompt(): void {
     workspaceParts.length > 3
       ? `…/${workspaceParts.slice(-3).join("/")}`
       : workspaceParts.join("/") || "No workspace";
+  const gitStatus = gitController.status;
   const branch = gitStatus.available
     ? gitStatus.branch || "detached"
     : "no git";
@@ -1498,22 +1198,6 @@ function renderTerminalPrompt(): void {
       return segment;
     }),
   );
-}
-
-async function runGitAction(
-  action: string,
-  run: () => Promise<string>,
-): Promise<void> {
-  try {
-    const result = await run();
-    appendTerminal(`\n[git ${action}]\n${result}\n`);
-    notify(`Git ${action} complete.`);
-    await Promise.all([refreshGit(), loadFiles()]);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    appendTerminal(`\n[git ${action} failed]\n${message}\n`);
-    notify(`Git ${action} failed: ${message}`);
-  }
 }
 
 function renderFiles(): void {
@@ -2707,7 +2391,7 @@ async function saveActiveFile(): Promise<void> {
     } catch {
       // Syntax feedback is best-effort for formats without a local parser.
     }
-    await Promise.all([loadFiles(), refreshGit()]);
+    await Promise.all([loadFiles(), gitController.refresh()]);
     notify(
       formatError
         ? `Saved ${tab.path}; formatting was skipped because it has syntax errors.`
@@ -2780,7 +2464,7 @@ async function formatActiveFile(): Promise<void> {
     tab.dirty = false;
     renderEditorTabs();
     renderEditorContent(tab);
-    await Promise.all([loadFiles(), refreshGit()]);
+    await Promise.all([loadFiles(), gitController.refresh()]);
     notify(`Formatted and saved ${tab.path}`);
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error));
@@ -3357,7 +3041,7 @@ function removeOpenEditorEntries(path: string, includeChildren: boolean): void {
 }
 
 async function refreshWorkspaceAfterFileOperation(): Promise<void> {
-  await Promise.all([loadFiles(), refreshGit()]);
+  await Promise.all([loadFiles(), gitController.refresh()]);
   saveWorkspaceUiState();
 }
 
@@ -4049,6 +3733,24 @@ function handleEvent(message: DesktopEvent): void {
   }
 }
 
+const gitView = new DesktopGitDomView(gitElements, {
+  syntaxErrorTitle,
+  openFile: (path) => void openFile(path, false),
+});
+gitController = new DesktopGitController(desktop, gitView, {
+  collapsed: () => layoutController.gitCollapsed,
+  toggleCollapsed: () =>
+    layoutController.setGitCollapsed(!layoutController.gitCollapsed),
+  hasConfiguredModel: () => Boolean(configuration().model),
+  openSettings,
+  requestConfirmation,
+  appendTerminal,
+  notify,
+  refreshFiles: loadFiles,
+  renderTerminalPrompt,
+});
+gitController.bind();
+
 layoutController = new DesktopLayoutController(
   {
     document,
@@ -4064,8 +3766,8 @@ layoutController = new DesktopLayoutController(
     toggleChat,
     showChatPanel,
     toggleChatDock,
-    gitPanel,
-    gitBody,
+    gitPanel: gitElements.panel,
+    gitBody: gitElements.body,
     filesSection,
     historySection,
     terminal,
@@ -4074,7 +3776,7 @@ layoutController = new DesktopLayoutController(
     historySplitter: element<HTMLDivElement>("historySplitter"),
     terminalSplitter: element<HTMLDivElement>("terminalSplitter"),
   },
-  { renderAgents, renderGit },
+  { renderAgents, renderGit: () => gitController.render() },
 );
 layoutController.bind();
 
@@ -4091,7 +3793,7 @@ element<HTMLButtonElement>("chooseWorkspace").onclick = async () => {
   renderEditorContent(undefined);
   await Promise.all([
     loadFiles(),
-    refreshGit(),
+    gitController.refresh(),
     desktop.getPlan().then((plan) => {
       activePlan = plan;
       renderPlan();
@@ -4162,93 +3864,6 @@ clearFileSearch.onclick = () => {
   workspaceFilesController.query = "";
   renderFiles();
   fileSearch.focus();
-};
-element<HTMLButtonElement>("refreshGit").onclick = () => void refreshGit();
-element<HTMLButtonElement>("toggleGit").onclick = () =>
-  setGitCollapsed(!layoutController.gitCollapsed);
-element<HTMLButtonElement>("stageAll").onclick = () => {
-  const staged = gitStatus.files.filter(
-    (file) => file.indexStatus !== " " && file.indexStatus !== "?",
-  );
-  if (staged.length) {
-    void runGitAction("unstage", () =>
-      desktop.gitUnstage(staged.map((file) => file.path)),
-    );
-    return;
-  }
-  if (!gitStatus.files.length) {
-    notify("No changed files to stage.");
-    return;
-  }
-  void runGitAction("stage", () =>
-    desktop.gitStage(gitStatus.files.map((file) => file.path)),
-  );
-};
-element<HTMLButtonElement>("discardAll").onclick = () => {
-  if (!gitStatus.files.length) {
-    notify("No uncommitted changes to discard.");
-    return;
-  }
-  void requestConfirmation({
-    title: "Discard workspace changes",
-    message:
-      "Discard every uncommitted change in this workspace? This also removes untracked files and cannot be undone.",
-    confirmLabel: "Discard all",
-    danger: true,
-  }).then((confirmed) => {
-    if (confirmed)
-      void runGitAction("discard all", () =>
-        desktop.gitDiscard(gitStatus.files.map((file) => file.path)),
-      );
-  });
-};
-pullGit.onclick = () => void runGitAction("pull", () => desktop.gitPull());
-pushGit.onclick = () => {
-  if (!gitStatus.pushRemote) {
-    notify(
-      "No push remote configured. Add one with: git remote add origin <url>",
-    );
-    return;
-  }
-  void runGitAction("push", () => desktop.gitPush());
-};
-generateCommitMessage.onclick = () => {
-  if (!configuration().model) {
-    openSettings();
-    notify("Choose a local model first.");
-    return;
-  }
-  generateCommitMessage.disabled = true;
-  generateCommitMessage.textContent = "Generating...";
-  void desktop
-    .gitGenerateCommitMessage()
-    .then((message) => {
-      commitMessage.value = message;
-      commitMessage.focus();
-      notify("Commit message generated. Review it, then commit.");
-    })
-    .catch((error) => {
-      const detail = error instanceof Error ? error.message : String(error);
-      appendTerminal(`\n[commit message generation failed] ${detail}\n`);
-      notify(detail);
-    })
-    .finally(() => {
-      generateCommitMessage.disabled = false;
-      generateCommitMessage.textContent = "Generate";
-    });
-};
-element<HTMLFormElement>("commitForm").onsubmit = (event) => {
-  event.preventDefault();
-  const message = commitMessage.value.trim();
-  if (!message) {
-    notify("Enter a commit message.");
-    return;
-  }
-  void runGitAction("commit", async () => {
-    const output = await desktop.gitCommit(message);
-    commitMessage.value = "";
-    return output;
-  });
 };
 element<HTMLButtonElement>("newChat").onclick = () => {
   cancelActiveRunForNavigation();
@@ -4946,7 +4561,7 @@ void (async () => {
   await discover(rendererState.desktop.configuration);
   await Promise.all([
     loadFiles(),
-    refreshGit(),
+    gitController.refresh(),
     desktop.getPlan().then((plan) => {
       activePlan = plan;
       renderPlan();
