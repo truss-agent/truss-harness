@@ -1,6 +1,6 @@
 # Maintainability Refactor Plan
 
-**Status:** Proposed — planning only
+**Status:** In progress — Runtime decomposition checkpoint complete
 
 **Created:** 2026-08-12
 
@@ -11,6 +11,43 @@ and client layers
 
 **Primary outcome:** Make Truss easier to change and test without changing its
 behavior, public package contracts, or provider/client boundaries.
+
+## Progress log
+
+### 2026-08-12 — Runtime checkpoint
+
+Completed locally on `plan/maintainability-refactor`; nothing has been pushed.
+
+- Created tracking issue #199 and committed this measured roadmap.
+- Added Runtime architecture and public-API guardrails so later extractions
+  cannot silently introduce client/provider dependencies or remove contracts
+  consumed by other packages.
+- Decomposed `agents.ts` from an 817-line mixed-responsibility module into a
+  one-line compatibility barrel plus focused contracts, coordinator,
+  validation, profile storage, bounded run history, and write-lease modules.
+- Decomposed `agent.ts` from a 305-line mixed execution loop into a one-line
+  compatibility barrel plus runtime orchestration, contracts, edit/recovery
+  policy, streaming-progress parsing, and tool-execution modules.
+- Added direct unit coverage for profile storage, bounded history, write
+  leases, edit/recovery policy, progress parsing, and tool execution while
+  retaining the existing end-to-end Runtime suites.
+
+Validation at this checkpoint:
+
+- Runtime suite: 18 test files and 70 tests passing.
+- Full repository suite: 39 test files and 168 tests passing after both Runtime
+  extractions.
+- Root build and Runtime package build passing.
+- Targeted Biome checks and `git diff --check` passing for changed Runtime
+  files.
+- Root `npm run quality` remains blocked by 84 pre-existing formatting errors
+  outside this refactor's scope; do not mix those unrelated rewrites into this
+  branch.
+
+Next checkpoint: begin Phase 2 at the provider/host composition boundary.
+`tools.ts` remains intact because its 263 lines are currently cohesive enough
+that splitting it would add files without an independently useful ownership
+boundary.
 
 ## 1. Why this refactor is needed
 
