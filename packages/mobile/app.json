@@ -3,7 +3,7 @@
     "name": "Truss Go",
     "slug": "truss-go",
     "scheme": "truss",
-    "version": "0.1.4",
+    "version": "0.1.6",
     "owner": "jrh89s-team",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
