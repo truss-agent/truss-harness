@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/desktop",
-  "version": "0.1.37",
+  "version": "0.1.38",
   "description": "Standalone desktop client for the Truss runtime.",
   "author": "Truss Contributors",
   "desktopName": "truss-harness.desktop",
@@ -114,7 +114,7 @@
     "url": "git+https://github.com/truss-agent/truss-harness.git"
   },
   "dependencies": {
-    "@truss-harness/agent-host": "0.1.8",
+    "@truss-harness/agent-host": "0.1.9",
     "@truss-harness/gateway": "0.1.10",
     "@types/qrcode": "^1.5.6",
     "electron-updater": "^6.3.9",

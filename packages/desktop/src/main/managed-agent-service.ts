@@ -1,7 +1,10 @@
+import { createHash, randomUUID } from "node:crypto";
+import { join } from "node:path";
 import {
   AgentHost,
   type ProviderConnectionResult,
 } from "@truss-harness/agent-host";
+import { brand } from "@truss-harness/branding";
 import { FileAgentRunHistoryStore } from "@truss-harness/cli/agents";
 import { isCloudProviderId } from "@truss-harness/provider-openai-compatible";
 import {
@@ -10,6 +13,7 @@ import {
   type AgentProfileStore,
   ApiKeyCredential,
   type CreateAgentProfileInput,
+  FileWorkspacePlanStore,
   type ToolApproval,
   type ToolCall,
   type UpdateAgentProfileInput,
@@ -61,7 +65,12 @@ export class ManagedAgentService {
             : undefined;
         },
       },
-      approvalFactory: agentApproval,
+      approvalFactory: createAgentApproval,
+      planStoreFactory: (profile) =>
+        new FileWorkspacePlanStore(
+          state.workspaceRoot,
+          managedAgentPlanPath(state.workspaceRoot, profile.id),
+        ),
     });
     this.coordinatorValue = new AgentCoordinator({
       profiles: new DesktopAgentProfileStore(
@@ -287,7 +296,7 @@ class DesktopAgentProfileStore implements AgentProfileStore {
   }
 }
 
-function agentApproval(profile: AgentProfile): ToolApproval & {
+export function createAgentApproval(profile: AgentProfile): ToolApproval & {
   resolve(callId: string, approved: boolean): boolean;
   denyAll(): void;
 } {
@@ -323,4 +332,20 @@ function agentApproval(profile: AgentProfile): ToolApproval & {
   };
 }
 
-import { randomUUID } from "node:crypto";
+export function managedAgentPlanPath(
+  workspaceRoot: string,
+  agentId: string,
+): string {
+  const profileKey = createHash("sha256")
+    .update(agentId)
+    .digest("hex")
+    .slice(0, 24);
+  return join(
+    workspaceRoot,
+    brand.workspaceDirectory,
+    "agents",
+    profileKey,
+    "plans",
+    "active.json",
+  );
+}

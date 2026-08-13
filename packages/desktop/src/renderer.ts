@@ -1,19 +1,41 @@
 import type {
+  McpServerStatus,
+  McpStdioServerConfiguration,
+} from "@truss-harness/mcp";
+import type {
+  AgentApprovalPolicy,
   ChatAttachment,
   ProviderAccount,
   WorkspacePlan,
 } from "@truss-harness/runtime";
-import type {
-  McpServerStatus,
-  McpStdioServerConfiguration,
-} from "@truss-harness/mcp";
-import hljs from "highlight.js/lib/common";
+import { scheduleConversationNavigation } from "./conversation-navigation.js";
+import { previewServerUrlFromOutput } from "./preview-url.js";
+import { desktopClient } from "./renderer/ipc/desktop-client.js";
+import { markChangedAgentRuns } from "./renderer/agents/snapshot.js";
 import {
-  desktopThemeNames,
+  balancedSidebarTracks,
+  clamp,
+  collapsedSidebarTracks,
+  expandedSidebarTracks,
+  resizeSidebarTracks,
+} from "./renderer/layout/panes.js";
+import {
+  appendHighlightedCode,
+  createMarkdownRenderer,
+} from "./renderer/markdown/markdown.js";
+import {
+  initialDesktopState,
+  RendererStateStore,
+} from "./renderer/state/renderer-state.js";
+import {
+  applyTheme as applyDesktopTheme,
+  parseCustomTheme as parseCustomThemePalette,
+  themeDisplayName,
+} from "./renderer/theme/theme.js";
+import {
   type DesktopAgentsSnapshot,
   type DesktopConfiguration,
   type DesktopConversation,
-  type DesktopCredentialStorage,
   type DesktopEndpoint,
   type DesktopEvent,
   type DesktopFile,
@@ -22,15 +44,12 @@ import {
   type DesktopMessage,
   type DesktopModelInfo,
   type DesktopProvider,
-  type DesktopState,
-  type DesktopThemePalette,
   type DesktopThemePreference,
   type DesktopTokenUsage,
   type DesktopToolActivity,
   type DesktopWorkspaceUiState,
+  desktopThemeNames,
 } from "./shared.js";
-import { previewServerUrlFromOutput } from "./preview-url.js";
-import { scheduleConversationNavigation } from "./conversation-navigation.js";
 
 declare global {
   interface Window {
@@ -50,18 +69,8 @@ interface EmbeddedBrowserView extends HTMLElement {
   openDevTools(): void;
 }
 
-const defaultConfiguration: DesktopConfiguration = {
-  provider: "ollama",
-  baseUrl: "http://127.0.0.1:11434",
-  model: "",
-  mode: "chat",
-  permission: "ask",
-  contextWindow: 8_192,
-  internetAccess: false,
-  autocomplete: { enabled: false },
-  formatOnSave: false,
-  mcpServers: {},
-};
+const desktop = desktopClient(window);
+const rendererState = new RendererStateStore(initialDesktopState);
 
 const element = <T extends HTMLElement>(id: string): T =>
   document.getElementById(id) as T;
@@ -85,9 +94,6 @@ const historySection = document.querySelector<HTMLElement>(
   ".history-section",
 ) as HTMLElement;
 const centerSurface = element<HTMLElement>("centerSurface");
-const editorContent = document.querySelector<HTMLElement>(
-  ".editor-content",
-) as HTMLElement;
 const terminal = document.querySelector<HTMLElement>(
   ".terminal",
 ) as HTMLElement;
@@ -120,7 +126,9 @@ const browserExternal = element<HTMLButtonElement>("browserExternal");
 const terminalOutput = element<HTMLPreElement>("terminalOutput");
 const terminalPrompt = element<HTMLDivElement>("terminalPrompt");
 const chatMessages = element<HTMLDivElement>("chatMessages");
-const chatArea = document.querySelector<HTMLElement>(".chat-area") as HTMLElement;
+const chatArea = document.querySelector<HTMLElement>(
+  ".chat-area",
+) as HTMLElement;
 const toggleChat = element<HTMLButtonElement>("toggleChat");
 const showChatPanel = element<HTMLButtonElement>("showChatPanel");
 const chatSplitter = element<HTMLDivElement>("chatSplitter");
@@ -222,32 +230,23 @@ const updateStatus = element<HTMLSpanElement>("updateStatus");
 const checkUpdates = element<HTMLButtonElement>("checkUpdates");
 const downloadUpdate = element<HTMLButtonElement>("downloadUpdate");
 const installUpdate = element<HTMLButtonElement>("installUpdate");
-const updateAvailableDialog = element<HTMLDialogElement>("updateAvailableDialog");
+const updateAvailableDialog = element<HTMLDialogElement>(
+  "updateAvailableDialog",
+);
 const updateAvailableMessage = element<HTMLElement>("updateAvailableMessage");
 const openUpdateSettings = element<HTMLButtonElement>("openUpdateSettings");
 const toast = element<HTMLDivElement>("toast");
 
-let desktopState: DesktopState = {
-  workspaceRoot: "",
-  zoomFactor: 1,
-  updates: { checkOnLaunch: true, autoDownload: false },
-  theme: { name: "default" },
-  conversations: [],
-};
-let credentialStorage: DesktopCredentialStorage = "secure";
 let mcpDraft: Record<string, McpStdioServerConfiguration> = {};
 let editingMcpName: string | undefined;
 const testedMcpStatuses = new Map<string, McpServerStatus>();
 let endpoints: readonly DesktopEndpoint[] = [];
-let models: readonly DesktopModelInfo[] = [];
-let byokModels: readonly DesktopModelInfo[] = [];
 let files: readonly DesktopFile[] = [];
 let fileSearchQuery = "";
 type FileContextTarget = {
   readonly kind: "root" | "directory" | "file";
   readonly path: string;
 };
-let fileContextTarget: FileContextTarget | undefined;
 let copiedWorkspaceFile: string | undefined;
 let resolveFileEntry: ((value: string | undefined) => void) | undefined;
 let resolveConfirmation: ((value: boolean) => void) | undefined;
@@ -304,12 +303,12 @@ let chatCollapsed = false;
 let chatDocked = false;
 let centerView: "editor" | "preview" | "agents" | "chat" = "editor";
 let agentsSnapshot: DesktopAgentsSnapshot = { profiles: [], runs: [] };
+const reflectedManagedAgentRunIds = new Set<string>();
 let selectedAgentRunId: string | undefined;
 let pendingAttachments: ChatAttachment[] = [];
 const terminalOutputByCommand = new Map<string, string>();
 const previewUrlByTerminalCommand = new Map<string, string>();
 type SettingsTab = "local" | "byok" | "other";
-let activeSettingsTab: SettingsTab = "local";
 let modelSettingsTab: "local" | "byok" = "local";
 let selectedProviderAccountId: string | undefined;
 let creatingProviderAccount = false;
@@ -321,12 +320,19 @@ const maxFileTextCharacters = 120_000;
 const longPasteAttachmentThreshold = 12_000;
 
 function configuration(): DesktopConfiguration {
-  return desktopState.configuration ?? defaultConfiguration;
+  return rendererState.configuration();
 }
 
-function knownModel(modelId = configuration().model): DesktopModelInfo | undefined {
-  return [...models, ...byokModels].find((model) => model.id === modelId);
+function knownModel(
+  modelId = configuration().model,
+): DesktopModelInfo | undefined {
+  return rendererState.knownModel(modelId);
 }
+
+const localModels = (): readonly DesktopModelInfo[] =>
+  rendererState.models("local");
+const cloudModels = (): readonly DesktopModelInfo[] =>
+  rendererState.models("cloud");
 
 function selectedModelContextWindow(modelId: string): number | undefined {
   return knownModel(modelId)?.contextWindow;
@@ -351,7 +357,9 @@ function modelLabel(model: DesktopModelInfo): string {
   return `${model.id}${prices}${context}`;
 }
 
-function usageCost(usage: Pick<DesktopTokenUsage, "inputTokens" | "outputTokens">): number | undefined {
+function usageCost(
+  usage: Pick<DesktopTokenUsage, "inputTokens" | "outputTokens">,
+): number | undefined {
   const model = knownModel();
   if (!model) return undefined;
   const inputCost = model.inputCostPerMillion;
@@ -380,70 +388,20 @@ function estimatedConversationUsage(
 ): DesktopTokenUsage {
   const inputTokens = conversation.messages
     .slice(0, -1)
-    .reduce((total, message) => total + Math.ceil(message.content.length / 4), 0);
-  const outputTokens = conversation.messages.at(-1)?.role === "assistant"
-    ? Math.ceil((conversation.messages.at(-1)?.content.length ?? 0) / 4)
-    : 0;
+    .reduce(
+      (total, message) => total + Math.ceil(message.content.length / 4),
+      0,
+    );
+  const outputTokens =
+    conversation.messages.at(-1)?.role === "assistant"
+      ? Math.ceil((conversation.messages.at(-1)?.content.length ?? 0) / 4)
+      : 0;
   const usage = {
     inputTokens: Math.max(1, inputTokens),
     outputTokens,
     totalTokens: Math.max(1, inputTokens) + outputTokens,
   };
   return { ...usage, estimated: true, estimatedCostUsd: usageCost(usage) };
-}
-
-const customThemeProperties: Readonly<
-  Record<keyof DesktopThemePalette, string>
-> = {
-  background: "--desktop-background",
-  surface: "--desktop-surface",
-  panel: "--desktop-panel",
-  border: "--desktop-border",
-  text: "--desktop-text",
-  muted: "--desktop-muted",
-  accent: "--desktop-accent",
-  accentText: "--desktop-accent-text",
-  warning: "--desktop-warning",
-  error: "--desktop-error",
-};
-
-function isThemeColor(value: unknown): value is string {
-  return typeof value === "string" && /^#[0-9a-f]{6}$/i.test(value);
-}
-
-function parseCustomTheme(): DesktopThemePalette {
-  const source = customThemeInput.value.trim();
-  if (!source) return {};
-  const parsed = JSON.parse(source) as unknown;
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-    throw new Error("Custom theme must be a JSON object.");
-  const palette: Record<string, string> = {};
-  for (const [name, value] of Object.entries(parsed)) {
-    if (!(name in customThemeProperties))
-      throw new Error(`Unknown custom theme token: ${name}.`);
-    if (!isThemeColor(value))
-      throw new Error(`${name} must be a #RRGGBB color.`);
-    palette[name] = value;
-  }
-  return palette as DesktopThemePalette;
-}
-
-function applyTheme(theme: DesktopThemePreference): void {
-  const root = document.documentElement;
-  for (const property of Object.values(customThemeProperties))
-    root.style.removeProperty(property);
-  if (theme.name === "default") {
-    delete root.dataset.desktopTheme;
-    return;
-  }
-  root.dataset.desktopTheme = theme.name;
-  if (theme.name === "custom") {
-    for (const [name, value] of Object.entries(theme.custom ?? {})) {
-      const property = customThemeProperties[name as keyof DesktopThemePalette];
-      if (property && isThemeColor(value))
-        root.style.setProperty(property, value);
-    }
-  }
 }
 
 function renderCustomThemeControls(): void {
@@ -454,11 +412,9 @@ function renderCustomThemeControls(): void {
 }
 
 async function saveTheme(theme: DesktopThemePreference): Promise<void> {
-  applyTheme(theme);
-  desktopState = await window.trussDesktop.configureTheme(theme);
-  notify(
-    `${theme.name === "custom" ? "Custom" : theme.name[0].toUpperCase() + theme.name.slice(1)} theme saved.`,
-  );
+  applyDesktopTheme(document.documentElement, theme);
+  rendererState.desktop = await desktop.configureTheme(theme);
+  notify(`${themeDisplayName(theme)} theme saved.`);
 }
 
 function isLocalProvider(
@@ -474,7 +430,7 @@ function byokBaseUrlForSelectedProvider(): string {
 function providerAccountsFor(
   provider: DesktopProvider,
 ): readonly ProviderAccount[] {
-  return (desktopState.providerAccounts ?? []).filter(
+  return (rendererState.desktop.providerAccounts ?? []).filter(
     (account) => account.providerId === provider,
   );
 }
@@ -521,8 +477,8 @@ function renderProviderAccounts(preferredId?: string): void {
 function renderByokModels(preferredModel?: string): void {
   const current = preferredModel ?? byokModelInput.value.trim();
   byokModelSelect.replaceChildren(
-    ...(byokModels.length
-      ? byokModels.map((model) => {
+    ...(cloudModels().length
+      ? cloudModels().map((model) => {
           const option = document.createElement("option");
           option.value = model.id;
           option.textContent = modelLabel(model);
@@ -537,7 +493,7 @@ function renderByokModels(preferredModel?: string): void {
           })(),
         ]),
   );
-  byokModelSelect.value = byokModels.some((model) => model.id === current)
+  byokModelSelect.value = cloudModels().some((model) => model.id === current)
     ? current
     : "";
 }
@@ -546,7 +502,7 @@ async function discoverByokModelList(): Promise<void> {
   const provider = byokProviderSelect.value as DesktopProvider;
   discoverByokModels.disabled = true;
   try {
-    const result = await window.trussDesktop.discoverModels(
+    const result = await desktop.discoverModels(
       {
         provider,
         baseUrl: byokBaseUrlForSelectedProvider(),
@@ -554,12 +510,15 @@ async function discoverByokModelList(): Promise<void> {
       },
       apiKeyInput.value.trim() || undefined,
     );
-    byokModels = result.models;
+    rendererState.setModels("cloud", result.models);
     renderByokModels();
-    if (!byokModels.length) throw new Error("The provider returned no models.");
-    notify(`Loaded ${byokModels.length} ${provider} model${byokModels.length === 1 ? "" : "s"}.`);
+    if (!cloudModels().length)
+      throw new Error("The provider returned no models.");
+    notify(
+      `Loaded ${cloudModels().length} ${provider} model${cloudModels().length === 1 ? "" : "s"}.`,
+    );
   } catch (error) {
-    byokModels = [];
+    rendererState.setModels("cloud", []);
     renderByokModels();
     notify(error instanceof Error ? error.message : String(error));
   } finally {
@@ -574,7 +533,6 @@ function selectedSettingsProvider(): DesktopProvider {
 }
 
 function setSettingsTab(tab: SettingsTab): void {
-  activeSettingsTab = tab;
   if (tab !== "other") modelSettingsTab = tab;
   if (tab === "byok") {
     byokBaseUrl.value = byokBaseUrlForSelectedProvider();
@@ -597,17 +555,13 @@ function setSettingsTab(tab: SettingsTab): void {
 }
 
 function activeConversation(): DesktopConversation | undefined {
-  return desktopState.conversations.find(
-    (conversation) => conversation.id === desktopState.activeConversationId,
-  );
+  return rendererState.activeConversation();
 }
 
 function conversationById(
   id: string | undefined,
 ): DesktopConversation | undefined {
-  return id
-    ? desktopState.conversations.find((conversation) => conversation.id === id)
-    : undefined;
+  return rendererState.conversation(id);
 }
 
 function createId(): string {
@@ -669,9 +623,9 @@ function setCenterView(next: "editor" | "preview" | "agents" | "chat"): void {
   chatArea.hidden = chatDocked && next !== "chat";
   document
     .querySelectorAll<HTMLButtonElement>("[data-center-view]")
-    .forEach((button) =>
-      button.classList.toggle("active", button.dataset.centerView === next),
-    );
+    .forEach((button) => {
+      button.classList.toggle("active", button.dataset.centerView === next);
+    });
   if (next === "agents") renderAgents();
 }
 
@@ -681,7 +635,11 @@ const agentCloudProviders = [
   ["openrouter", "OpenRouter", "https://openrouter.ai/api/v1"],
   ["groq", "Groq", "https://api.groq.com/openai/v1"],
   ["together", "Together AI", "https://api.together.ai/v1"],
-  ["gemini", "Google Gemini", "https://generativelanguage.googleapis.com/v1beta/openai"],
+  [
+    "gemini",
+    "Google Gemini",
+    "https://generativelanguage.googleapis.com/v1beta/openai",
+  ],
   ["xai", "xAI", "https://api.x.ai/v1"],
   ["mistral", "Mistral AI", "https://api.mistral.ai/v1"],
   ["deepseek", "DeepSeek", "https://api.deepseek.com"],
@@ -719,8 +677,16 @@ function agentProviderDefaultEndpoint(provider: string): string | undefined {
 }
 
 function applyAgentsSnapshot(snapshot: DesktopAgentsSnapshot): void {
+  const workspaceChanged = markChangedAgentRuns(
+    snapshot,
+    reflectedManagedAgentRunIds,
+  );
   agentsSnapshot = snapshot;
   if (centerView === "agents") renderAgents();
+  if (workspaceChanged)
+    void Promise.all([loadFiles(), refreshGit()]).catch((error) =>
+      notify(error instanceof Error ? error.message : String(error)),
+    );
 }
 
 function renderAgents(): void {
@@ -737,7 +703,7 @@ function renderAgents(): void {
     ["queued", "running", "waiting_for_approval"].includes(run.state),
   );
   stopAll.onclick = () =>
-    void window.trussDesktop
+    void desktop
       .stopAllAgents()
       .then(applyAgentsSnapshot)
       .catch((error) =>
@@ -752,12 +718,14 @@ function renderAgents(): void {
   name.value = "New agent";
   const provider = document.createElement("select");
   provider.append(
-    ...agentProviderOptions(desktopState.configuration?.provider ?? "ollama"),
+    ...agentProviderOptions(
+      rendererState.desktop.configuration?.provider ?? "ollama",
+    ),
   );
   const endpoint = document.createElement("input");
   endpoint.placeholder = "Endpoint URL";
   endpoint.value =
-    desktopState.configuration?.baseUrl ??
+    rendererState.desktop.configuration?.baseUrl ??
     agentProviderDefaultEndpoint(provider.value) ??
     "";
   const model = document.createElement("select");
@@ -790,7 +758,8 @@ function renderAgents(): void {
     account.hidden = local;
   };
   const renderAgentModels = (available: readonly DesktopModelInfo[]): void => {
-    const selected = model.value || desktopState.configuration?.model || "";
+    const selected =
+      model.value || rendererState.desktop.configuration?.model || "";
     const values = [
       ...(selected && !available.some((candidate) => candidate.id === selected)
         ? [{ id: selected }]
@@ -821,7 +790,7 @@ function renderAgents(): void {
     const discoveryProvider =
       providerId === "llama-cpp" ? "openai-compatible" : providerId;
     try {
-      const result = await window.trussDesktop.discoverModels({
+      const result = await desktop.discoverModels({
         provider: discoveryProvider as DesktopProvider,
         baseUrl: endpoint.value,
         ...(["ollama", "openai-compatible", "llama-cpp"].includes(providerId)
@@ -858,14 +827,26 @@ function renderAgents(): void {
     option.selected = value === "plan";
     mode.append(option);
   }
+  const approvalPolicy = agentApprovalPolicySelect(
+    rendererState.desktop.configuration?.permission ?? "ask",
+  );
   const add = document.createElement("button");
   add.className = "primary";
   add.textContent = "Create agent";
-  create.append(name, provider, endpoint, model, account, mode, add);
+  create.append(
+    name,
+    provider,
+    endpoint,
+    model,
+    account,
+    mode,
+    approvalPolicy,
+    add,
+  );
   create.onsubmit = (event) => {
     event.preventDefault();
     const providerId = provider.value;
-    void window.trussDesktop
+    void desktop
       .createAgent({
         displayName: name.value,
         provider: {
@@ -877,7 +858,7 @@ function renderAgents(): void {
             : { credentialRef: account.value || providerId }),
         },
         mode: mode.value as "chat" | "plan" | "edit",
-        approvalPolicy: "ask",
+        approvalPolicy: approvalPolicy.value as AgentApprovalPolicy,
         internetAccess: false,
       })
       .then(applyAgentsSnapshot)
@@ -907,11 +888,34 @@ function renderAgents(): void {
     details.append(label, status);
     const binding = document.createElement("p");
     const accountLabel = profile.provider.credentialRef
-      ? desktopState.providerAccounts?.find(
+      ? rendererState.desktop.providerAccounts?.find(
           (candidate) => candidate.id === profile.provider.credentialRef,
         )?.label
       : undefined;
     binding.textContent = `${profile.provider.providerId} · ${profile.provider.modelId} · ${profile.mode}${accountLabel ? ` · ${accountLabel}` : ""}${profile.provider.endpointUrl ? ` · ${profile.provider.endpointUrl}` : ""}`;
+    const profileSettings = document.createElement("div");
+    profileSettings.className = "agent-card-settings";
+    const policyLabel = document.createElement("label");
+    const policyLabelText = document.createElement("span");
+    policyLabelText.textContent = "Tool permissions";
+    const policy = agentApprovalPolicySelect(profile.approvalPolicy);
+    policy.disabled = Boolean(activeRun);
+    if (activeRun)
+      policy.title = "Stop this agent before changing its tool permissions.";
+    policy.onchange = () => {
+      const nextPolicy = policy.value as AgentApprovalPolicy;
+      policy.disabled = true;
+      void desktop
+        .updateAgent(profile.id, { approvalPolicy: nextPolicy })
+        .then(applyAgentsSnapshot)
+        .catch((error) => {
+          policy.value = profile.approvalPolicy;
+          policy.disabled = Boolean(activeRun);
+          notify(error instanceof Error ? error.message : String(error));
+        });
+    };
+    policyLabel.append(policyLabelText, policy);
+    profileSettings.append(policyLabel);
     const prompt = document.createElement("textarea");
     prompt.rows = 2;
     prompt.placeholder = "Give this agent a focused task";
@@ -933,7 +937,7 @@ function renderAgents(): void {
         prompt.focus();
         return;
       }
-      void window.trussDesktop
+      void desktop
         .startAgent(profile.id, task)
         .then(applyAgentsSnapshot)
         .catch((error) =>
@@ -945,7 +949,7 @@ function renderAgents(): void {
     stop.disabled = !activeRun;
     stop.onclick = () =>
       activeRun &&
-      void window.trussDesktop
+      void desktop
         .stopAgent(activeRun.id)
         .then(applyAgentsSnapshot)
         .catch((error) =>
@@ -955,7 +959,7 @@ function renderAgents(): void {
     remove.textContent = "Delete";
     remove.disabled = Boolean(activeRun);
     remove.onclick = () =>
-      void window.trussDesktop
+      void desktop
         .deleteAgent(profile.id)
         .then(applyAgentsSnapshot)
         .catch((error) =>
@@ -982,7 +986,7 @@ function renderAgents(): void {
         const button = document.createElement("button");
         button.textContent = labelText;
         button.onclick = () =>
-          void window.trussDesktop
+          void desktop
             .resolveAgentApproval(
               activeRun.id,
               activeRun.activeTool?.callId ?? "",
@@ -998,7 +1002,7 @@ function renderAgents(): void {
       latestRun?.latestProgress ??
       latestRun?.error?.message ??
       "Ready for a task.";
-    card.append(details, binding, prompt, actions, progress);
+    card.append(details, binding, profileSettings, prompt, actions, progress);
     cards.append(card);
   }
   if (!agentsSnapshot.profiles.length) {
@@ -1077,6 +1081,26 @@ function renderAgents(): void {
   agentsPanel.append(heading, create, cards, detailPanel);
 }
 
+function agentApprovalPolicySelect(
+  selected: AgentApprovalPolicy,
+): HTMLSelectElement {
+  const select = document.createElement("select");
+  select.title = "Tool permissions";
+  select.setAttribute("aria-label", "Tool permissions");
+  for (const [value, label] of [
+    ["ask", "Ask for every tool"],
+    ["auto-read", "Allow read-only tools"],
+    ["auto-all", "Allow all tools"],
+  ] as const) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    option.selected = value === selected;
+    select.append(option);
+  }
+  return select;
+}
+
 function updateBrowserNavigation(): void {
   try {
     browserBack.disabled = !browserView.canGoBack();
@@ -1107,9 +1131,9 @@ function navigatePreview(value: string): void {
 function saveConversations(): void {
   window.clearTimeout(persistTimer);
   persistTimer = window.setTimeout(() => {
-    void window.trussDesktop.saveConversations(
-      desktopState.conversations,
-      desktopState.activeConversationId,
+    void desktop.saveConversations(
+      rendererState.desktop.conversations,
+      rendererState.desktop.activeConversationId,
     );
   }, 220);
 }
@@ -1132,8 +1156,11 @@ function saveWorkspaceUiState(): void {
   window.clearTimeout(workspaceUiPersistTimer);
   workspaceUiPersistTimer = window.setTimeout(() => {
     const state = workspaceUiState();
-    desktopState = { ...desktopState, workspaceUiState: state };
-    void window.trussDesktop.saveWorkspaceUiState(state);
+    rendererState.desktop = {
+      ...rendererState.desktop,
+      workspaceUiState: state,
+    };
+    void desktop.saveWorkspaceUiState(state);
   }, 180);
 }
 
@@ -1150,7 +1177,7 @@ function setBusy(next: boolean): void {
   sendChatButton.hidden = next;
   cancelChatButton.hidden = !next;
   chatStatus.textContent = agentActivity;
-  statusDot.className = `status-dot ${next ? "busy" : desktopState.configuration?.model ? "ready" : ""}`;
+  statusDot.className = `status-dot ${next ? "busy" : rendererState.desktop.configuration?.model ? "ready" : ""}`;
   renderChat();
   renderRuntime();
 }
@@ -1216,9 +1243,10 @@ function setSyntaxDiagnostics(
 ): void {
   const normalizedPath = editorPath(path);
   const hadErrors = syntaxDiagnosticsByPath.has(normalizedPath);
-  if (diagnostics.length) syntaxDiagnosticsByPath.set(normalizedPath, diagnostics);
+  if (diagnostics.length)
+    syntaxDiagnosticsByPath.set(normalizedPath, diagnostics);
   else syntaxDiagnosticsByPath.delete(normalizedPath);
-  if (hadErrors !== (diagnostics.length > 0)) {
+  if (hadErrors !== diagnostics.length > 0) {
     renderEditorTabs();
     renderFiles();
     renderGit();
@@ -1240,26 +1268,26 @@ function cancelActiveRunForNavigation(): void {
   }
   runningConversationId = undefined;
   setBusy(false);
-  void window.trussDesktop.stopChat();
+  void desktop.stopChat();
 }
 
 function renderRuntime(): void {
-  const config = desktopState.configuration;
+  const config = rendererState.desktop.configuration;
   runtimeStatus.textContent = config?.model
     ? `${config.provider} / ${config.model}`
     : "No model selected";
   statusDot.className = `status-dot ${busy ? "busy" : config?.model ? "ready" : ""}`;
   document
     .querySelectorAll<HTMLButtonElement>("[data-mode]")
-    .forEach((button) =>
+    .forEach((button) => {
       button.classList.toggle(
         "active",
         button.dataset.mode === configuration().mode,
-      ),
-    );
+      );
+    });
   const values = [
     ...new Set(
-      [config?.model, ...models.map((model) => model.id)].filter(
+      [config?.model, ...localModels().map((model) => model.id)].filter(
         (value): value is string => Boolean(value),
       ),
     ),
@@ -1411,10 +1439,7 @@ function renderGitGraph(): void {
       const visual = document.createElement("div");
       visual.className = "git-graph-visual";
       visual.style.width = `${graphWidth}px`;
-      const svg = document.createElementNS(
-        "http://www.w3.org/2000/svg",
-        "svg",
-      );
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       svg.setAttribute("viewBox", `0 0 ${graphWidth} 36`);
       svg.setAttribute("aria-hidden", "true");
       const xFor = (index: number) => 9 + index * 16;
@@ -1449,7 +1474,10 @@ function renderGitGraph(): void {
       node.setAttribute("cx", String(currentX));
       node.setAttribute("cy", "18");
       node.setAttribute("r", "5");
-      node.setAttribute("fill", gitGraphColors[laneIndex % gitGraphColors.length]);
+      node.setAttribute(
+        "fill",
+        gitGraphColors[laneIndex % gitGraphColors.length],
+      );
       node.setAttribute("stroke", "#11161a");
       node.setAttribute("stroke-width", "2");
       svg.append(node);
@@ -1503,52 +1531,25 @@ function resetSidebarTracks(): void {
   const splitterHeight =
     element<HTMLDivElement>("gitSplitter").getBoundingClientRect().height +
     element<HTMLDivElement>("historySplitter").getBoundingClientRect().height;
-  const availableHeight =
-    sidebar.getBoundingClientRect().height - splitterHeight;
-  if (gitCollapsed) {
-    const sharedHeight = Math.max(110, Math.floor((availableHeight - 38) / 2));
-    applySidebarTracks(38, sharedHeight, sharedHeight);
-    return;
-  }
-  const sharedHeight = Math.max(110, Math.floor(availableHeight / 3));
-  gitPanelHeight = sharedHeight;
-  applySidebarTracks(sharedHeight, sharedHeight, sharedHeight);
+  const tracks = balancedSidebarTracks(
+    sidebar.getBoundingClientRect().height,
+    splitterHeight,
+    gitCollapsed,
+  );
+  if (!gitCollapsed) gitPanelHeight = tracks.git;
+  applySidebarTracks(tracks.git, tracks.files, tracks.history);
 }
 
 function setGitCollapsed(collapsed: boolean): void {
   if (gitCollapsed === collapsed) return;
   const tracks = sidebarTracks();
-  const releasedHeight = Math.max(0, tracks.git - 38);
   if (collapsed) gitPanelHeight = tracks.git;
   gitCollapsed = collapsed;
   renderGit();
-  if (collapsed) {
-    const filesGain = Math.floor(releasedHeight / 2);
-    applySidebarTracks(
-      38,
-      tracks.files + filesGain,
-      tracks.history + releasedHeight - filesGain,
-    );
-    return;
-  }
-  const restoredGit = Math.min(
-    gitPanelHeight,
-    Math.max(38, tracks.files + tracks.history - 220 + 38),
-  );
-  const neededHeight = Math.max(0, restoredGit - 38);
-  const availableFiles = Math.max(0, tracks.files - 110);
-  const availableHistory = Math.max(0, tracks.history - 110);
-  const availableTotal = availableFiles + availableHistory;
-  const fromFiles = Math.min(
-    availableFiles,
-    Math.round(neededHeight * (availableFiles / Math.max(1, availableTotal))),
-  );
-  const fromHistory = Math.min(availableHistory, neededHeight - fromFiles);
-  applySidebarTracks(
-    restoredGit,
-    tracks.files - fromFiles,
-    tracks.history - fromHistory,
-  );
+  const next = collapsed
+    ? collapsedSidebarTracks(tracks)
+    : expandedSidebarTracks(tracks, gitPanelHeight);
+  applySidebarTracks(next.git, next.files, next.history);
 }
 
 let observedSidebarHeight = 0;
@@ -1559,24 +1560,13 @@ new ResizeObserver(() => {
   const splitterHeight =
     element<HTMLDivElement>("gitSplitter").getBoundingClientRect().height +
     element<HTMLDivElement>("historySplitter").getBoundingClientRect().height;
-  const availableHeight = Math.max(220, sidebarHeight - splitterHeight);
-  const tracks = sidebarTracks();
-  if (gitCollapsed) {
-    const remainingHeight = Math.max(220, availableHeight - 38);
-    const proportion =
-      tracks.files / Math.max(1, tracks.files + tracks.history);
-    const filesHeight = Math.round(remainingHeight * proportion);
-    applySidebarTracks(38, filesHeight, remainingHeight - filesHeight);
-    return;
-  }
-  const proportion =
-    tracks.git / Math.max(1, tracks.git + tracks.files + tracks.history);
-  const gitHeight = Math.max(38, Math.round(availableHeight * proportion));
-  const remainingHeight = Math.max(220, availableHeight - gitHeight);
-  const filesProportion =
-    tracks.files / Math.max(1, tracks.files + tracks.history);
-  const filesHeight = Math.round(remainingHeight * filesProportion);
-  applySidebarTracks(gitHeight, filesHeight, remainingHeight - filesHeight);
+  const tracks = resizeSidebarTracks(
+    sidebarTracks(),
+    sidebarHeight,
+    splitterHeight,
+    gitCollapsed,
+  );
+  applySidebarTracks(tracks.git, tracks.files, tracks.history);
 }).observe(sidebar);
 
 function renderGit(): void {
@@ -1651,9 +1641,7 @@ function renderGit(): void {
         unstage.title = `Unstage ${file.path}`;
         unstage.setAttribute("aria-label", `Unstage ${file.path}`);
         unstage.onclick = () =>
-          void runGitAction("unstage", () =>
-            window.trussDesktop.gitUnstage([file.path]),
-          );
+          void runGitAction("unstage", () => desktop.gitUnstage([file.path]));
         actions.append(unstage);
       }
       if (file.workTreeStatus !== " " || file.indexStatus === "?") {
@@ -1663,9 +1651,7 @@ function renderGit(): void {
         stage.title = `Stage ${file.path}`;
         stage.setAttribute("aria-label", `Stage ${file.path}`);
         stage.onclick = () =>
-          void runGitAction("stage", () =>
-            window.trussDesktop.gitStage([file.path]),
-          );
+          void runGitAction("stage", () => desktop.gitStage([file.path]));
         actions.append(stage);
       }
       const discard = document.createElement("button");
@@ -1681,9 +1667,7 @@ function renderGit(): void {
           danger: true,
         }).then((confirmed) => {
           if (confirmed)
-            void runGitAction("discard", () =>
-              window.trussDesktop.gitDiscard([file.path]),
-            );
+            void runGitAction("discard", () => desktop.gitDiscard([file.path]));
         });
       actions.append(discard);
       return row;
@@ -1693,15 +1677,15 @@ function renderGit(): void {
 
 async function refreshGit(): Promise<void> {
   [gitStatus, gitGraphData] = await Promise.all([
-    window.trussDesktop.gitStatus(),
-    window.trussDesktop.gitGraph(),
+    desktop.gitStatus(),
+    desktop.gitGraph(),
   ]);
   renderGit();
   renderTerminalPrompt();
 }
 
 function renderTerminalPrompt(): void {
-  const workspaceParts = desktopState.workspaceRoot
+  const workspaceParts = rendererState.desktop.workspaceRoot
     .replaceAll("\\", "/")
     .split("/")
     .filter(Boolean);
@@ -1903,7 +1887,7 @@ function updateFileSelection(): void {
 
 function mergeFiles(entries: readonly DesktopFile[]): void {
   const merged = new Map(files.map((file) => [editorPath(file.path), file]));
-  entries.forEach((file) => merged.set(editorPath(file.path), file));
+  for (const file of entries) merged.set(editorPath(file.path), file);
   files = [...merged.values()].sort((left, right) =>
     left.path.localeCompare(right.path),
   );
@@ -1911,7 +1895,7 @@ function mergeFiles(entries: readonly DesktopFile[]): void {
 
 async function loadDirectoryContents(path: string): Promise<void> {
   if (loadedDirectoryContents.has(path)) return;
-  const entries = await window.trussDesktop.listDirectory(path);
+  const entries = await desktop.listDirectory(path);
   mergeFiles(entries);
   loadedDirectoryContents.add(path);
 }
@@ -1937,19 +1921,22 @@ function requestConfirmation(options: {
 
 function renderConversations(): void {
   conversations.replaceChildren();
-  desktopState.conversations.forEach((conversation) => {
+  rendererState.desktop.conversations.forEach((conversation) => {
     const row = document.createElement("div");
     row.className = "conversation-row";
     const select = document.createElement("button");
     select.type = "button";
     select.textContent = conversation.title;
     select.title = conversation.title;
-    if (conversation.id === desktopState.activeConversationId)
+    if (conversation.id === rendererState.desktop.activeConversationId)
       select.classList.add("active");
     select.onclick = () => {
-      if (conversation.id !== desktopState.activeConversationId)
+      if (conversation.id !== rendererState.desktop.activeConversationId)
         cancelActiveRunForNavigation();
-      desktopState = { ...desktopState, activeConversationId: conversation.id };
+      rendererState.desktop = {
+        ...rendererState.desktop,
+        activeConversationId: conversation.id,
+      };
       finishConversationNavigation();
     };
     const remove = document.createElement("button");
@@ -1958,24 +1945,27 @@ function renderConversations(): void {
     remove.textContent = "x";
     remove.title = "Delete conversation";
     remove.onclick = async () => {
-      if (!(await requestConfirmation({
-        title: "Delete conversation",
-        message: `Delete "${conversation.title}"?`,
-        confirmLabel: "Delete",
-        danger: true,
-      }))) return;
-      if (conversation.id === desktopState.activeConversationId)
+      if (
+        !(await requestConfirmation({
+          title: "Delete conversation",
+          message: `Delete "${conversation.title}"?`,
+          confirmLabel: "Delete",
+          danger: true,
+        }))
+      )
+        return;
+      if (conversation.id === rendererState.desktop.activeConversationId)
         cancelActiveRunForNavigation();
-      const remaining = desktopState.conversations.filter(
+      const remaining = rendererState.desktop.conversations.filter(
         (item) => item.id !== conversation.id,
       );
-      desktopState = {
-        ...desktopState,
+      rendererState.desktop = {
+        ...rendererState.desktop,
         conversations: remaining,
         activeConversationId:
-          desktopState.activeConversationId === conversation.id
+          rendererState.desktop.activeConversationId === conversation.id
             ? remaining[0]?.id
-            : desktopState.activeConversationId,
+            : rendererState.desktop.activeConversationId,
       };
       finishConversationNavigation();
     };
@@ -2036,191 +2026,11 @@ function openChatFile(path: string): void {
   );
 }
 
-function appendFileReference(
-  parent: HTMLElement,
-  path: string,
-  label = path,
-): void {
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "chat-file-link";
-  button.textContent = label;
-  button.title = `Open ${path}`;
-  button.onclick = () => openChatFile(path);
-  parent.append(button);
-}
-
-function appendTextWithFileReferences(parent: HTMLElement, text: string): void {
-  const filePath =
-    /(?:\.{1,2}\/)?(?:[A-Za-z0-9_@.-]+\/)*(?:[A-Za-z0-9_-]+\.[A-Za-z0-9][A-Za-z0-9_.-]*|\.[A-Za-z0-9_-]+)/g;
-  let cursor = 0;
-  for (const match of text.matchAll(filePath)) {
-    const index = match.index ?? 0;
-    const reference = workspaceFileReference(match[0]);
-    if (!reference) continue;
-    if (index > cursor)
-      parent.append(document.createTextNode(text.slice(cursor, index)));
-    appendFileReference(parent, reference, match[0]);
-    cursor = index + match[0].length;
-  }
-  if (cursor < text.length)
-    parent.append(document.createTextNode(text.slice(cursor)));
-}
-
-function appendInlineMarkdown(parent: HTMLElement, text: string): void {
-  const token =
-    /(`[^`]*`)|(\[([^\]]+)\]\(([^\s)]+)\))|(\*\*([^*]+)\*\*)|(\*([^*]+)\*)/g;
-  let cursor = 0;
-  for (const match of text.matchAll(token)) {
-    const index = match.index ?? 0;
-    if (index > cursor)
-      appendTextWithFileReferences(parent, text.slice(cursor, index));
-    if (match[1]) {
-      const codeText = match[1].slice(1, -1);
-      const reference = workspaceFileReference(codeText);
-      if (reference) appendFileReference(parent, reference, codeText);
-      else {
-        const code = document.createElement("code");
-        code.textContent = codeText;
-        parent.append(code);
-      }
-    } else if (match[2]) {
-      const href = match[4] ?? "";
-      const reference = workspaceFileReference(href);
-      if (reference) {
-        appendFileReference(parent, reference, match[3] ?? reference);
-      } else {
-        const link = document.createElement("a");
-        link.textContent = match[3] ?? href;
-        if (/^(https?:|mailto:)/i.test(href)) {
-          link.href = href;
-          link.target = "_blank";
-          link.rel = "noreferrer";
-        }
-        parent.append(link);
-      }
-    } else if (match[5]) {
-      const strong = document.createElement("strong");
-      strong.textContent = match[6] ?? "";
-      parent.append(strong);
-    } else if (match[7]) {
-      const emphasis = document.createElement("em");
-      emphasis.textContent = match[8] ?? "";
-      parent.append(emphasis);
-    }
-    cursor = index + match[0].length;
-  }
-  if (cursor < text.length)
-    appendTextWithFileReferences(parent, text.slice(cursor));
-}
-
-function appendHighlightedCode(
-  parent: HTMLElement,
-  code: string,
-  language = "",
-): void {
-  const aliases: Readonly<Record<string, string>> = {
-    html: "xml",
-    shell: "bash",
-    sh: "bash",
-    tsx: "typescript",
-    jsx: "javascript",
-    vue: "xml",
-    svelte: "xml",
-    svg: "xml",
-    yml: "yaml",
-  };
-  const resolvedLanguage =
-    aliases[language.toLowerCase()] ?? language.toLowerCase();
-  if (
-    !resolvedLanguage ||
-    resolvedLanguage === "text" ||
-    !hljs.getLanguage(resolvedLanguage)
-  ) {
-    parent.textContent = code;
-    return;
-  }
-  // highlight.js escapes source before producing its token spans.
-  const template = document.createElement("template");
-  template.innerHTML = hljs.highlight(code, {
-    language: resolvedLanguage,
-    ignoreIllegals: true,
-  }).value;
-  parent.replaceChildren(template.content);
-}
-
-function renderMarkdown(container: HTMLElement, content: string): void {
-  const lines = content.replace(/\r\n/g, "\n").split("\n");
-  for (let index = 0; index < lines.length; ) {
-    const line = lines[index];
-    const fence = line.match(/^```([^\s]*)\s*$/);
-    if (fence) {
-      const language = fence[1] || "text";
-      const code: string[] = [];
-      index += 1;
-      while (index < lines.length && !/^```\s*$/.test(lines[index]))
-        code.push(lines[index++]);
-      if (index < lines.length) index += 1;
-      const block = document.createElement("div");
-      block.className = "code-block";
-      const label = document.createElement("div");
-      label.className = "code-language";
-      label.textContent = language;
-      const pre = document.createElement("pre");
-      const codeElement = document.createElement("code");
-      appendHighlightedCode(codeElement, code.join("\n"), language);
-      pre.append(codeElement);
-      block.append(label, pre);
-      container.append(block);
-      continue;
-    }
-    const heading = line.match(/^(#{1,4})\s+(.+)$/);
-    if (heading) {
-      const element = document.createElement(
-        `h${heading[1].length}`,
-      ) as HTMLHeadingElement;
-      appendInlineMarkdown(element, heading[2]);
-      container.append(element);
-      index += 1;
-      continue;
-    }
-    const list = line.match(/^[-*+]\s+(.+)$/);
-    if (list) {
-      const listElement = document.createElement("ul");
-      do {
-        const item = document.createElement("li");
-        appendInlineMarkdown(item, lines[index].replace(/^[-*+]\s+/, ""));
-        listElement.append(item);
-        index += 1;
-      } while (index < lines.length && /^[-*+]\s+/.test(lines[index]));
-      container.append(listElement);
-      continue;
-    }
-    const quote = line.match(/^>\s?(.*)$/);
-    if (quote) {
-      const blockquote = document.createElement("blockquote");
-      appendInlineMarkdown(blockquote, quote[1]);
-      container.append(blockquote);
-      index += 1;
-      continue;
-    }
-    if (!line.trim()) {
-      index += 1;
-      continue;
-    }
-    const paragraph = document.createElement("p");
-    const paragraphLines = [line];
-    index += 1;
-    while (
-      index < lines.length &&
-      lines[index].trim() &&
-      !/^(#{1,4}\s|```|[-*+]\s+|>\s?)/.test(lines[index])
-    )
-      paragraphLines.push(lines[index++]);
-    appendInlineMarkdown(paragraph, paragraphLines.join("\n"));
-    container.append(paragraph);
-  }
-}
+const renderMarkdown = createMarkdownRenderer({
+  document,
+  resolveWorkspaceFile: workspaceFileReference,
+  openWorkspaceFile: openChatFile,
+});
 
 function messageView(
   message: DesktopMessage,
@@ -2317,11 +2127,13 @@ function renderChat(): void {
     }
     if (conversation.lastRun.usage) {
       const usage = conversation.lastRun.usage;
-      const cost = usage.estimatedCostUsd !== undefined
-        ? ` · ${formatUsd(usage.estimatedCostUsd)}`
-        : "";
+      const cost =
+        usage.estimatedCostUsd !== undefined
+          ? ` · ${formatUsd(usage.estimatedCostUsd)}`
+          : "";
       result.textContent += ` · ${formatTokens(usage.inputTokens)} in / ${formatTokens(usage.outputTokens)} out${cost}${usage.estimated ? " est." : ""}`;
-      result.title = "Provider usage when available; otherwise estimated from message text.";
+      result.title =
+        "Provider usage when available; otherwise estimated from message text.";
     }
     chatMessages.append(result);
   }
@@ -2344,14 +2156,6 @@ function renderPlan(): void {
   planPanel.replaceChildren(title, list);
 }
 
-function appendToolMessage(text: string): void {
-  const tool = document.createElement("div");
-  tool.className = "tool-message";
-  tool.textContent = text;
-  chatMessages.append(tool);
-  chatMessages.scrollTop = chatMessages.scrollHeight;
-}
-
 function createConversation(): DesktopConversation {
   const conversation: DesktopConversation = {
     id: createId(),
@@ -2359,9 +2163,9 @@ function createConversation(): DesktopConversation {
     messages: [],
     updatedAt: new Date().toISOString(),
   };
-  desktopState = {
-    ...desktopState,
-    conversations: [conversation, ...desktopState.conversations],
+  rendererState.desktop = {
+    ...rendererState.desktop,
+    conversations: [conversation, ...rendererState.desktop.conversations],
     activeConversationId: conversation.id,
   };
   return conversation;
@@ -2375,9 +2179,9 @@ function updateConversation(
   conversationId: string,
   update: (conversation: DesktopConversation) => DesktopConversation,
 ): void {
-  desktopState = {
-    ...desktopState,
-    conversations: desktopState.conversations.map((conversation) =>
+  rendererState.desktop = {
+    ...rendererState.desktop,
+    conversations: rendererState.desktop.conversations.map((conversation) =>
       conversation.id === conversationId ? update(conversation) : conversation,
     ),
   };
@@ -2592,7 +2396,7 @@ function renderEditorContent(tab: EditorTab | undefined): void {
     const refreshDiagnostics = (): void => {
       window.clearTimeout(syntaxTimer);
       syntaxTimer = window.setTimeout(() => {
-        void window.trussDesktop
+        void desktop
           .checkSyntax(tab.path, input.value)
           .then((items) => {
             if (input.value !== tab.content) return;
@@ -2619,7 +2423,7 @@ function renderEditorContent(tab: EditorTab | undefined): void {
       if (prefix.trim().length < 3) return;
       const request = ++completionRequest;
       completionTimer = window.setTimeout(() => {
-        void window.trussDesktop
+        void desktop
           .complete({
             prefix,
             suffix: input.value.slice(cursor),
@@ -3045,7 +2849,6 @@ function renderEditorTabs(): void {
     return container;
   });
   editorTabsElement.replaceChildren(editorTitle, ...tabs);
-  const active = activeEditorTab();
 }
 
 async function loadEditorTab(tab: EditorTab): Promise<void> {
@@ -3057,8 +2860,8 @@ async function loadEditorTab(tab: EditorTab): Promise<void> {
       tab.mode === "file" && mediaKindForPath(tab.path)
         ? ""
         : tab.mode === "diff"
-          ? await window.trussDesktop.diffFile(tab.path)
-          : await window.trussDesktop.readFile(tab.path);
+          ? await desktop.diffFile(tab.path)
+          : await desktop.readFile(tab.path);
     if (revision !== tab.revision) return;
     tab.content = content;
     tab.dirty = false;
@@ -3108,7 +2911,7 @@ async function openFile(
 
 async function loadFiles(): Promise<void> {
   try {
-    files = await window.trussDesktop.listFiles();
+    files = await desktop.listFiles();
     loadedDirectoryContents.clear();
     await Promise.all(
       [...expandedDirectories].map((path) =>
@@ -3128,21 +2931,21 @@ async function saveActiveFile(): Promise<void> {
   let formatError: unknown;
   if (configuration().formatOnSave) {
     try {
-      tab.content = await window.trussDesktop.formatFile(tab.path, tab.content);
+      tab.content = await desktop.formatFile(tab.path, tab.content);
     } catch (error) {
       // Formatting must not prevent a user from saving an unfinished file.
       formatError = error;
     }
   }
   try {
-    await window.trussDesktop.writeFile(tab.path, tab.content);
+    await desktop.writeFile(tab.path, tab.content);
     tab.dirty = false;
     renderEditorTabs();
     renderEditorContent(tab);
     try {
       setSyntaxDiagnostics(
         tab.path,
-        await window.trussDesktop.checkSyntax(tab.path, tab.content),
+        await desktop.checkSyntax(tab.path, tab.content),
       );
     } catch {
       // Syntax feedback is best-effort for formats without a local parser.
@@ -3215,8 +3018,8 @@ async function formatActiveFile(): Promise<void> {
   if (!tab || tab.mode !== "file" || mediaKindForPath(tab.path)) return;
   formatFileButton.disabled = true;
   try {
-    tab.content = await window.trussDesktop.formatFile(tab.path, tab.content);
-    await window.trussDesktop.writeFile(tab.path, tab.content);
+    tab.content = await desktop.formatFile(tab.path, tab.content);
+    await desktop.writeFile(tab.path, tab.content);
     tab.dirty = false;
     renderEditorTabs();
     renderEditorContent(tab);
@@ -3230,9 +3033,9 @@ async function formatActiveFile(): Promise<void> {
 }
 
 async function discover(input?: Partial<DesktopConfiguration>): Promise<void> {
-  const result = await window.trussDesktop.discoverModels(input);
+  const result = await desktop.discoverModels(input);
   endpoints = result.endpoints;
-  models = result.models;
+  rendererState.setModels("local", result.models);
   endpointSelect.replaceChildren(
     ...[
       { id: "", label: "Custom endpoint", kind: "", baseUrl: "" },
@@ -3246,7 +3049,7 @@ async function discover(input?: Partial<DesktopConfiguration>): Promise<void> {
     }),
   );
   modelOptions.replaceChildren(
-    ...models.map((model) => {
+    ...localModels().map((model) => {
       const option = document.createElement("option");
       option.value = model.id;
       return option;
@@ -3289,7 +3092,7 @@ function settingsConfiguration(): DesktopConfiguration {
         : "ask",
     contextWindow: isLocalProvider(provider)
       ? Math.max(512, Number.parseInt(contextInput.value, 10) || 8_192)
-      : modelContextWindow ?? 8_192,
+      : (modelContextWindow ?? 8_192),
     ...(isLocalProvider(provider) || modelContextWindow === undefined
       ? {}
       : { modelContextWindow }),
@@ -3345,7 +3148,10 @@ function closeMcpEditor(): void {
 
 function renderMcpManager(): void {
   const runtimeStatuses = new Map(
-    (desktopState.mcpStatuses ?? []).map((status) => [status.name, status]),
+    (rendererState.desktop.mcpStatuses ?? []).map((status) => [
+      status.name,
+      status,
+    ]),
   );
   const names = Object.keys(mcpDraft).sort((left, right) =>
     left.localeCompare(right),
@@ -3459,7 +3265,7 @@ function clearProviderConnectionResult(): void {
 }
 
 function renderCredentialStorageStatus(): void {
-  const sessionOnly = credentialStorage === "session-only";
+  const sessionOnly = rendererState.credentialStorage === "session-only";
   credentialStorageStatus.hidden = !sessionOnly;
   credentialStorageStatus.className = sessionOnly
     ? "provider-connection-result failed"
@@ -3519,7 +3325,7 @@ function populateSettings(): void {
     byokProviderSelect.value = current.provider;
     byokBaseUrl.value = current.baseUrl || byokBaseUrlForSelectedProvider();
     byokModelInput.value = current.model;
-    byokModels = [];
+    rendererState.setModels("cloud", []);
     renderByokModels(current.model);
     creatingProviderAccount = false;
     renderProviderAccounts(current.credentialAccountId);
@@ -3542,14 +3348,17 @@ function populateSettings(): void {
   mcpDraft = { ...current.mcpServers };
   testedMcpStatuses.clear();
   syncMcpAdvancedJson();
-  checkUpdatesOnLaunch.checked = desktopState.updates.checkOnLaunch;
-  autoDownloadUpdates.checked = desktopState.updates.autoDownload;
-  themeSelect.value = desktopThemeNames.includes(desktopState.theme.name)
-    ? desktopState.theme.name
+  checkUpdatesOnLaunch.checked = rendererState.desktop.updates.checkOnLaunch;
+  autoDownloadUpdates.checked = rendererState.desktop.updates.autoDownload;
+  themeSelect.value = desktopThemeNames.includes(
+    rendererState.desktop.theme.name,
+  )
+    ? rendererState.desktop.theme.name
     : "default";
   customThemeInput.value =
-    desktopState.theme.name === "custom" && desktopState.theme.custom
-      ? JSON.stringify(desktopState.theme.custom, null, 2)
+    rendererState.desktop.theme.name === "custom" &&
+    rendererState.desktop.theme.custom
+      ? JSON.stringify(rendererState.desktop.theme.custom, null, 2)
       : "";
   renderCustomThemeControls();
   renderMcpStatus();
@@ -3557,15 +3366,14 @@ function populateSettings(): void {
 }
 
 async function restoreWorkspaceUiState(): Promise<void> {
-  const state = desktopState.workspaceUiState;
+  const state = rendererState.desktop.workspaceUiState;
   expandedDirectories.clear();
   openEditorTabs.splice(0, openEditorTabs.length);
   activeFile = undefined;
   showingDiff = false;
   if (state) {
-    state.expandedDirectories.forEach((path) =>
-      expandedDirectories.add(editorPath(path)),
-    );
+    for (const path of state.expandedDirectories)
+      expandedDirectories.add(editorPath(path));
     for (const path of [...expandedDirectories].sort(
       (left, right) => left.split("/").length - right.split("/").length,
     )) {
@@ -3602,12 +3410,12 @@ async function restoreWorkspaceUiState(): Promise<void> {
 }
 
 async function applyConfiguration(next: DesktopConfiguration): Promise<void> {
-  const returned = await window.trussDesktop.configure(
+  const returned = await desktop.configure(
     next,
     apiKeyInput.value || undefined,
   );
   apiKeyInput.value = "";
-  desktopState = returned;
+  rendererState.desktop = returned;
   await discover(next);
   renderRuntime();
   notify(`Using ${next.model}`);
@@ -3828,7 +3636,6 @@ async function addFiles(filesToAdd: Iterable<File>): Promise<void> {
 
 function hideFileContextMenu(): void {
   fileContextMenu.hidden = true;
-  fileContextTarget = undefined;
 }
 
 function requestWorkspaceEntry(options: {
@@ -3978,8 +3785,8 @@ async function createWorkspaceEntry(
   const path = childEntryPath(parent, name);
   if (!path)
     throw new Error("Use a non-empty relative workspace path without '..'.");
-  if (kind === "file") await window.trussDesktop.createWorkspaceFile(path);
-  else await window.trussDesktop.createWorkspaceFolder(path);
+  if (kind === "file") await desktop.createWorkspaceFile(path);
+  else await desktop.createWorkspaceFolder(path);
   const parentPath = entryParent(path);
   if (parentPath) expandedDirectories.add(parentPath);
   await refreshWorkspaceAfterFileOperation();
@@ -3999,7 +3806,7 @@ async function renameWorkspaceEntry(target: FileContextTarget): Promise<void> {
   if (!nextPath)
     throw new Error("Use a non-empty name without path traversal.");
   if (nextPath === target.path) return;
-  await window.trussDesktop.renameWorkspaceEntry(target.path, nextPath);
+  await desktop.renameWorkspaceEntry(target.path, nextPath);
   removeOpenEditorEntries(target.path, target.kind === "directory");
   if (target.kind === "directory") {
     const wasExpanded = expandedDirectories.delete(target.path);
@@ -4036,10 +3843,7 @@ async function pasteWorkspaceFile(target: FileContextTarget): Promise<void> {
   const destination = childEntryPath(parent, name);
   if (!destination)
     throw new Error("Use a non-empty relative filename without '..'.");
-  await window.trussDesktop.copyWorkspaceEntry(
-    copiedWorkspaceFile,
-    destination,
-  );
+  await desktop.copyWorkspaceEntry(copiedWorkspaceFile, destination);
   await refreshWorkspaceAfterFileOperation();
   notify(`Copied to ${destination}`);
   await openFile(destination, false);
@@ -4048,13 +3852,16 @@ async function pasteWorkspaceFile(target: FileContextTarget): Promise<void> {
 async function deleteWorkspaceEntry(target: FileContextTarget): Promise<void> {
   const label =
     target.kind === "directory" ? "folder and all of its contents" : "file";
-  if (!(await requestConfirmation({
-    title: `Delete ${label}`,
-    message: `Delete ${label} "${target.path}"? This cannot be undone.`,
-    confirmLabel: "Delete",
-    danger: true,
-  }))) return;
-  await window.trussDesktop.deleteWorkspaceEntry(target.path);
+  if (
+    !(await requestConfirmation({
+      title: `Delete ${label}`,
+      message: `Delete ${label} "${target.path}"? This cannot be undone.`,
+      confirmLabel: "Delete",
+      danger: true,
+    }))
+  )
+    return;
+  await desktop.deleteWorkspaceEntry(target.path);
   removeOpenEditorEntries(target.path, target.kind === "directory");
   expandedDirectories.delete(target.path);
   loadedDirectoryContents.delete(target.path);
@@ -4073,7 +3880,6 @@ function showFileContextMenu(
   y: number,
   target: FileContextTarget,
 ): void {
-  fileContextTarget = target;
   fileContextMenu.replaceChildren();
   const parent =
     target.kind === "directory"
@@ -4109,7 +3915,7 @@ function showFileContextMenu(
       separatorBefore: !copiedWorkspaceFile && target.kind !== "file",
     });
     addFileContextAction("Reveal in File Manager", () =>
-      window.trussDesktop.revealWorkspaceEntry(target.path),
+      desktop.revealWorkspaceEntry(target.path),
     );
     addFileContextAction("Delete...", () => deleteWorkspaceEntry(target), {
       danger: true,
@@ -4143,8 +3949,8 @@ function toolActivityView(
   ).length;
   summary.textContent = running
     ? `Working: ${running.summary ?? running.tool}`
-    : pendingSummary ??
-      `Activity: ${toolCallCount} tool call${toolCallCount === 1 ? "" : "s"}`;
+    : (pendingSummary ??
+      `Activity: ${toolCallCount} tool call${toolCallCount === 1 ? "" : "s"}`);
   const list = document.createElement("div");
   list.className = "tool-activity-list";
   for (const activity of activities) {
@@ -4268,7 +4074,10 @@ async function sendChat(): Promise<void> {
     messages: [...current.messages, userMessage, assistantMessage],
     updatedAt: new Date().toISOString(),
   }));
-  desktopState = { ...desktopState, activeConversationId: conversation.id };
+  rendererState.desktop = {
+    ...rendererState.desktop,
+    activeConversationId: conversation.id,
+  };
   chatInput.value = "";
   pendingAttachments = [];
   attachmentInput.value = "";
@@ -4280,7 +4089,7 @@ async function sendChat(): Promise<void> {
   try {
     runningConversationId = conversation.id;
     setBusy(true);
-    await window.trussDesktop.sendChat({
+    await desktop.sendChat({
       prompt,
       conversationId: conversation.id,
       history,
@@ -4315,7 +4124,9 @@ function appendTerminal(text: string): void {
 }
 
 function openAnnouncedServerPreview(commandId: string, text: string): void {
-  const output = `${terminalOutputByCommand.get(commandId) ?? ""}${text}`.slice(-12_000);
+  const output = `${terminalOutputByCommand.get(commandId) ?? ""}${text}`.slice(
+    -12_000,
+  );
   terminalOutputByCommand.set(commandId, output);
   const url = previewServerUrlFromOutput(output);
   if (!url || previewUrlByTerminalCommand.get(commandId) === url) return;
@@ -4351,14 +4162,18 @@ function handleEvent(message: DesktopEvent): void {
   }
   if (message.type === "chat-end") {
     const conversation = conversationById(message.conversationId);
-    if (conversation && conversation.lastRun && !conversation.lastRun.usage) {
-      updateConversation(conversation.id, (current) => ({
-        ...current,
-        lastRun: {
-          ...current.lastRun!,
-          usage: estimatedConversationUsage(current),
-        },
-      }));
+    if (conversation?.lastRun && !conversation.lastRun.usage) {
+      updateConversation(conversation.id, (current) =>
+        current.lastRun
+          ? {
+              ...current,
+              lastRun: {
+                ...current.lastRun,
+                usage: estimatedConversationUsage(current),
+              },
+            }
+          : current,
+      );
       saveConversations();
     }
     if (message.conversationId === runningConversationId) {
@@ -4436,15 +4251,15 @@ function handleEvent(message: DesktopEvent): void {
     const deny = document.createElement("button");
     deny.textContent = "Deny";
     allow.onclick = () => {
-      void window.trussDesktop.resolveApproval(message.callId, true);
+      void desktop.resolveApproval(message.callId, true);
       approval.textContent = `Allowed ${message.tool}`;
     };
     allowAll.onclick = () => {
-      void window.trussDesktop.resolveApproval(message.callId, true, true);
+      void desktop.resolveApproval(message.callId, true, true);
       approval.textContent = "Allowed all tools for this session";
     };
     deny.onclick = () => {
-      void window.trussDesktop.resolveApproval(message.callId, false);
+      void desktop.resolveApproval(message.callId, false);
       approval.textContent = `Denied ${message.tool}`;
     };
     actions.append(allow, allowAll, deny);
@@ -4464,10 +4279,14 @@ function handleEvent(message: DesktopEvent): void {
     return;
   }
   if (event.type === "usage" && event.usage && conversation) {
+    const usage = event.usage;
     updateConversation(conversation.id, (current) => ({
       ...current,
       lastRun: current.lastRun
-        ? { ...current.lastRun, usage: addUsage(current.lastRun.usage, event.usage!) }
+        ? {
+            ...current.lastRun,
+            usage: addUsage(current.lastRun.usage, usage),
+          }
         : current.lastRun,
       updatedAt: new Date().toISOString(),
     }));
@@ -4522,7 +4341,8 @@ function handleEvent(message: DesktopEvent): void {
     if (!streamStartedAt) streamStartedAt = performance.now();
     streamedTextCharacters += (event.text ?? "").length;
     agentActivity = "Writing the response";
-    if (conversation.id === desktopState.activeConversationId) renderChat();
+    if (conversation.id === rendererState.desktop.activeConversationId)
+      renderChat();
     renderRuntime();
     saveConversations();
   }
@@ -4544,11 +4364,18 @@ function handleEvent(message: DesktopEvent): void {
           ]
         : [
             ...activities,
-            { callId: createId(), tool: note, summary: note, status: "progress" },
+            {
+              callId: createId(),
+              tool: note,
+              summary: note,
+              status: "progress",
+            },
           ];
     setToolActivity(conversation.id, nextActivities);
-    agentActivity = nextActivities.at(-1)?.summary?.trim() || "Thinking about the next step";
-    if (conversation.id === desktopState.activeConversationId) renderChat();
+    agentActivity =
+      nextActivities.at(-1)?.summary?.trim() || "Thinking about the next step";
+    if (conversation.id === rendererState.desktop.activeConversationId)
+      renderChat();
     renderRuntime();
     return;
   }
@@ -4567,7 +4394,8 @@ function handleEvent(message: DesktopEvent): void {
           status: "running",
         },
       ]);
-      if (conversation.id === desktopState.activeConversationId) renderChat();
+      if (conversation.id === rendererState.desktop.activeConversationId)
+        renderChat();
     }
   }
   if (event.type === "tool_completed") {
@@ -4575,7 +4403,6 @@ function handleEvent(message: DesktopEvent): void {
       ? "Recovering from a tool error"
       : "Thinking about the next step";
     renderRuntime();
-    const tool = event.tool ?? "tool";
     const result = event.result?.content ?? "";
     if (conversation) {
       const activities = toolActivityByConversation.get(conversation.id) ?? [];
@@ -4592,13 +4419,10 @@ function handleEvent(message: DesktopEvent): void {
             : activity,
         ),
       );
-      if (conversation.id === desktopState.activeConversationId) renderChat();
+      if (conversation.id === rendererState.desktop.activeConversationId)
+        renderChat();
     }
   }
-}
-
-function clamp(value: number, minimum: number, maximum: number): number {
-  return Math.max(minimum, Math.min(maximum, value));
 }
 
 function bindPaneResize(
@@ -4697,9 +4521,9 @@ bindPaneResize("terminalSplitter", "y", () => {
 });
 
 element<HTMLButtonElement>("chooseWorkspace").onclick = async () => {
-  const next = await window.trussDesktop.chooseWorkspace();
+  const next = await desktop.chooseWorkspace();
   if (!next) return;
-  desktopState = next;
+  rendererState.desktop = next;
   activeFile = undefined;
   showingDiff = false;
   openEditorTabs.splice(0, openEditorTabs.length);
@@ -4713,7 +4537,7 @@ element<HTMLButtonElement>("chooseWorkspace").onclick = async () => {
   await Promise.all([
     loadFiles(),
     refreshGit(),
-    window.trussDesktop.getPlan().then((plan) => {
+    desktop.getPlan().then((plan) => {
       activePlan = plan;
       renderPlan();
     }),
@@ -4793,7 +4617,7 @@ element<HTMLButtonElement>("stageAll").onclick = () => {
   );
   if (staged.length) {
     void runGitAction("unstage", () =>
-      window.trussDesktop.gitUnstage(staged.map((file) => file.path)),
+      desktop.gitUnstage(staged.map((file) => file.path)),
     );
     return;
   }
@@ -4802,7 +4626,7 @@ element<HTMLButtonElement>("stageAll").onclick = () => {
     return;
   }
   void runGitAction("stage", () =>
-    window.trussDesktop.gitStage(gitStatus.files.map((file) => file.path)),
+    desktop.gitStage(gitStatus.files.map((file) => file.path)),
   );
 };
 element<HTMLButtonElement>("discardAll").onclick = () => {
@@ -4819,18 +4643,19 @@ element<HTMLButtonElement>("discardAll").onclick = () => {
   }).then((confirmed) => {
     if (confirmed)
       void runGitAction("discard all", () =>
-        window.trussDesktop.gitDiscard(gitStatus.files.map((file) => file.path)),
+        desktop.gitDiscard(gitStatus.files.map((file) => file.path)),
       );
   });
 };
-pullGit.onclick = () =>
-  void runGitAction("pull", () => window.trussDesktop.gitPull());
+pullGit.onclick = () => void runGitAction("pull", () => desktop.gitPull());
 pushGit.onclick = () => {
   if (!gitStatus.pushRemote) {
-    notify("No push remote configured. Add one with: git remote add origin <url>");
+    notify(
+      "No push remote configured. Add one with: git remote add origin <url>",
+    );
     return;
   }
-  void runGitAction("push", () => window.trussDesktop.gitPush());
+  void runGitAction("push", () => desktop.gitPush());
 };
 generateCommitMessage.onclick = () => {
   if (!configuration().model) {
@@ -4840,7 +4665,7 @@ generateCommitMessage.onclick = () => {
   }
   generateCommitMessage.disabled = true;
   generateCommitMessage.textContent = "Generating...";
-  void window.trussDesktop
+  void desktop
     .gitGenerateCommitMessage()
     .then((message) => {
       commitMessage.value = message;
@@ -4865,7 +4690,7 @@ element<HTMLFormElement>("commitForm").onsubmit = (event) => {
     return;
   }
   void runGitAction("commit", async () => {
-    const output = await window.trussDesktop.gitCommit(message);
+    const output = await desktop.gitCommit(message);
     commitMessage.value = "";
     return output;
   });
@@ -4900,10 +4725,10 @@ window.addEventListener(
     if (now - lastZoomWheelAt < 140) return;
     lastZoomWheelAt = now;
     const direction: -1 | 1 = event.deltaY < 0 ? 1 : -1;
-    void window.trussDesktop
+    void desktop
       .adjustZoom(direction)
       .then((zoomFactor) => {
-        desktopState = { ...desktopState, zoomFactor };
+        rendererState.desktop = { ...rendererState.desktop, zoomFactor };
         notify(`Zoom: ${Math.round(zoomFactor * 100)}%`);
       })
       .catch((error: unknown) =>
@@ -4929,13 +4754,13 @@ element<HTMLButtonElement>("applySettings").onclick = (event) => {
     const next = settingsConfiguration();
     void applyConfiguration(next)
       .then(() =>
-        window.trussDesktop.configureUpdates({
+        desktop.configureUpdates({
           checkOnLaunch: checkUpdatesOnLaunch.checked,
           autoDownload: autoDownloadUpdates.checked,
         }),
       )
       .then((returned) => {
-        desktopState = returned;
+        rendererState.desktop = returned;
         notify("Settings applied.");
       })
       .catch((error) =>
@@ -4946,7 +4771,7 @@ element<HTMLButtonElement>("applySettings").onclick = (event) => {
   }
 };
 clearApiKey.onclick = () => {
-  void window.trussDesktop
+  void desktop
     .clearCredential(
       byokProviderSelect.value as DesktopProvider,
       selectedProviderAccountId,
@@ -4972,7 +4797,7 @@ testProviderConnection.onclick = () => {
   providerConnectionResult.hidden = false;
   providerConnectionResult.className = "provider-connection-result";
   providerConnectionResult.textContent = "Contacting the provider...";
-  void window.trussDesktop
+  void desktop
     .testProviderConnection(next, apiKeyInput.value || undefined)
     .then((result) => {
       providerConnectionResult.className = `provider-connection-result ${
@@ -5001,7 +4826,7 @@ providerAccountSelect.onchange = () => {
   creatingProviderAccount = false;
   selectedProviderAccountId = providerAccountSelect.value || undefined;
   apiKeyInput.value = "";
-  byokModels = [];
+  rendererState.setModels("cloud", []);
   renderByokModels();
   renderProviderAccounts(selectedProviderAccountId);
 };
@@ -5023,7 +4848,7 @@ saveProviderAccount.onclick = () => {
   const previousAccountIds = new Set(
     providerAccountsFor(provider).map((account) => account.id),
   );
-  void window.trussDesktop
+  void desktop
     .saveProviderAccount(
       {
         id: creatingProviderAccount ? undefined : selectedProviderAccountId,
@@ -5034,7 +4859,7 @@ saveProviderAccount.onclick = () => {
       apiKey,
     )
     .then((returned) => {
-      desktopState = returned;
+      rendererState.desktop = returned;
       creatingProviderAccount = false;
       const saved = providerAccountsFor(provider).find(
         (account) =>
@@ -5057,10 +4882,10 @@ deleteProviderAccount.onclick = () => {
   const accountId = selectedProviderAccountId;
   if (!accountId) return;
   deleteProviderAccount.disabled = true;
-  void window.trussDesktop
+  void desktop
     .deleteProviderAccount(accountId)
     .then((returned) => {
-      desktopState = returned;
+      rendererState.desktop = returned;
       selectedProviderAccountId = undefined;
       creatingProviderAccount = false;
       apiKeyInput.value = "";
@@ -5141,7 +4966,7 @@ mcpServerList.onclick = (event) => {
     button.disabled = true;
     testedMcpStatuses.set(name, { name, state: "connecting", toolCount: 0 });
     renderMcpManager();
-    void window.trussDesktop
+    void desktop
       .testMcpServer(name, mcpDraft[name])
       .then((status) => testedMcpStatuses.set(name, status))
       .catch(() =>
@@ -5181,10 +5006,12 @@ byokModelSelect.onchange = () => {
 themeSelect.onchange = () => {
   renderCustomThemeControls();
   if (themeSelect.value === "custom") {
-    applyTheme({
+    applyDesktopTheme(document.documentElement, {
       name: "custom",
       custom:
-        desktopState.theme.name === "custom" ? desktopState.theme.custom : {},
+        rendererState.desktop.theme.name === "custom"
+          ? rendererState.desktop.theme.custom
+          : {},
     });
     return;
   }
@@ -5199,16 +5026,21 @@ themeSelect.onchange = () => {
 };
 customThemeInput.oninput = () => {
   try {
-    applyTheme({ name: "custom", custom: parseCustomTheme() });
+    applyDesktopTheme(document.documentElement, {
+      name: "custom",
+      custom: parseCustomThemePalette(customThemeInput.value),
+    });
   } catch {
     /* Keep the previous preview until the JSON is valid. */
   }
 };
 saveCustomTheme.onclick = () => {
   try {
-    void saveTheme({ name: "custom", custom: parseCustomTheme() }).catch(
-      (error: unknown) =>
-        notify(error instanceof Error ? error.message : String(error)),
+    void saveTheme({
+      name: "custom",
+      custom: parseCustomThemePalette(customThemeInput.value),
+    }).catch((error: unknown) =>
+      notify(error instanceof Error ? error.message : String(error)),
     );
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error));
@@ -5225,7 +5057,7 @@ openUpdateSettings.onclick = () => {
   });
 };
 checkUpdates.onclick = () =>
-  void window.trussDesktop.checkForUpdates().catch((error) =>
+  void desktop.checkForUpdates().catch((error) =>
     renderUpdate({
       type: "update",
       status: "error",
@@ -5233,7 +5065,7 @@ checkUpdates.onclick = () =>
     }),
   );
 downloadUpdate.onclick = () =>
-  void window.trussDesktop.downloadUpdate().catch((error) =>
+  void desktop.downloadUpdate().catch((error) =>
     renderUpdate({
       type: "update",
       status: "error",
@@ -5241,7 +5073,7 @@ downloadUpdate.onclick = () =>
     }),
   );
 installUpdate.onclick = () => {
-  void window.trussDesktop.installUpdate().catch((error) =>
+  void desktop.installUpdate().catch((error) =>
     renderUpdate({
       type: "update",
       status: "error",
@@ -5268,7 +5100,7 @@ byokProviderSelect.onchange = () => {
   creatingProviderAccount = false;
   selectedProviderAccountId = undefined;
   apiKeyInput.value = "";
-  byokModels = [];
+  rendererState.setModels("cloud", []);
   renderByokModels();
   renderProviderAccounts();
 };
@@ -5294,7 +5126,7 @@ quickModel.onchange = () => {
     model: next,
     contextWindow: isLocalProvider(current.provider)
       ? current.contextWindow
-      : selectedModelContextWindow(next) ?? 8_192,
+      : (selectedModelContextWindow(next) ?? 8_192),
     modelContextWindow: isLocalProvider(current.provider)
       ? undefined
       : selectedModelContextWindow(next),
@@ -5302,16 +5134,17 @@ quickModel.onchange = () => {
     notify(error instanceof Error ? error.message : String(error)),
   );
 };
-document.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach(
-  (button) =>
-    (button.onclick = () =>
+document
+  .querySelectorAll<HTMLButtonElement>("[data-mode]")
+  .forEach((button) => {
+    button.onclick = () =>
       void applyConfiguration({
         ...configuration(),
         mode: button.dataset.mode as DesktopConfiguration["mode"],
       }).catch((error) =>
         notify(error instanceof Error ? error.message : String(error)),
-      )),
-);
+      );
+  });
 element<HTMLFormElement>("chatForm").onsubmit = (event) => {
   event.preventDefault();
   void sendChat();
@@ -5387,11 +5220,11 @@ chatInput.onkeydown = (event) => {
     slashMenu.hidden = true;
   }
 };
-cancelChatButton.onclick = () => void window.trussDesktop.stopChat();
+cancelChatButton.onclick = () => void desktop.stopChat();
 const terminalInput = element<HTMLInputElement>("terminalInput");
 
 function interruptTerminal(): void {
-  void window.trussDesktop
+  void desktop
     .stopTerminal()
     .then((stopped) => {
       if (!stopped) {
@@ -5425,10 +5258,10 @@ element<HTMLFormElement>("terminalForm").onsubmit = (event) => {
   if (!command) return;
   terminalInput.value = "";
   appendTerminal(`\n> ${command}\n`);
-  void window.trussDesktop.runTerminal(command);
+  void desktop.runTerminal(command);
 };
 connectTrussGo.onclick = () =>
-  void window.trussDesktop
+  void desktop
     .connectTrussGo()
     .then((pairing) => {
       trussGoQr.src = pairing.qrDataUrl;
@@ -5441,9 +5274,7 @@ connectTrussGo.onclick = () =>
 element<HTMLButtonElement>("closeTrussGo").onclick = () =>
   trussGoDialog.close();
 element<HTMLButtonElement>("disconnectTrussGo").onclick = () =>
-  void window.trussDesktop
-    .disconnectTrussGo()
-    .then(() => trussGoDialog.close());
+  void desktop.disconnectTrussGo().then(() => trussGoDialog.close());
 document
   .querySelectorAll<HTMLButtonElement>("[data-center-view]")
   .forEach((button) => {
@@ -5472,7 +5303,7 @@ browserReload.onclick = () => {
   if (browserView.getURL() !== "about:blank") browserView.reload();
 };
 browserExternal.onclick = () =>
-  void window.trussDesktop
+  void desktop
     .openExternal(browserUrl.value)
     .catch((error) =>
       notify(error instanceof Error ? error.message : String(error)),
@@ -5543,31 +5374,32 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
-window.trussDesktop.onEvent(handleEvent);
+desktop.onEvent(handleEvent);
 window.setInterval(renderTerminalPrompt, 1_000);
 void (async () => {
-  [desktopState, credentialStorage] = await Promise.all([
-    window.trussDesktop.initialState(),
-    window.trussDesktop.credentialStorage(),
+  [rendererState.desktop, rendererState.credentialStorage] = await Promise.all([
+    desktop.initialState(),
+    desktop.credentialStorage(),
   ]);
-  agentsSnapshot = await window.trussDesktop.listAgents();
-  for (const conversation of desktopState.conversations) {
+  agentsSnapshot = await desktop.listAgents();
+  markChangedAgentRuns(agentsSnapshot, reflectedManagedAgentRunIds);
+  for (const conversation of rendererState.desktop.conversations) {
     if (conversation.toolActivity?.length)
       toolActivityByConversation.set(conversation.id, [
         ...conversation.toolActivity,
       ]);
   }
-  applyTheme(desktopState.theme);
+  applyDesktopTheme(document.documentElement, rendererState.desktop.theme);
   populateSettings();
-  if (desktopState.runtimeError) {
+  if (rendererState.desktop.runtimeError) {
     openSettings();
-    notify(desktopState.runtimeError);
+    notify(rendererState.desktop.runtimeError);
   }
-  await discover(desktopState.configuration);
+  await discover(rendererState.desktop.configuration);
   await Promise.all([
     loadFiles(),
     refreshGit(),
-    window.trussDesktop.getPlan().then((plan) => {
+    desktop.getPlan().then((plan) => {
       activePlan = plan;
       renderPlan();
     }),

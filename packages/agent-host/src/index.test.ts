@@ -1,4 +1,3 @@
-import { describe, expect, it } from "vitest";
 import type {
   AgentProfile,
   CredentialProvider,
@@ -6,11 +5,12 @@ import type {
   ModelRequest,
   ModelStreamEvent,
 } from "@truss-harness/runtime";
+import { describe, expect, it } from "vitest";
 import {
   AgentHost,
+  type AgentProviderFactory,
   AgentProviderRegistry,
   createDefaultAgentProviderRegistry,
-  type AgentProviderFactory,
 } from "./index.js";
 
 function profile(overrides: Partial<AgentProfile> = {}): AgentProfile {
@@ -174,6 +174,86 @@ describe("AgentHost", () => {
       "list_directory",
       "search_files",
       "grep",
+    ]);
+  });
+
+  it("writes managed plans through the host-owned profile store", async () => {
+    const registry = new AgentProviderRegistry();
+    registry.register({
+      descriptor: {
+        id: "test-provider",
+        label: "Test provider",
+        requiresCredential: false,
+      },
+      async validate() {},
+      async create() {
+        return {
+          id: "test-provider",
+          async *stream(): AsyncIterable<ModelStreamEvent> {
+            yield {
+              type: "text_delta",
+              text: "# Plan: Update docs\n- [ ] Read the guide\n- [ ] Update examples\n- [ ] Verify links",
+            };
+            yield { type: "finish", reason: "stop" };
+          },
+        } satisfies ModelProvider;
+      },
+    });
+    const createdPlans: Array<{
+      readonly title: string;
+      readonly objective: string;
+      readonly steps: readonly string[];
+    }> = [];
+    const selectedProfiles: string[] = [];
+    const host = new AgentHost({
+      workspaceRoot: process.cwd(),
+      providerRegistry: registry,
+      planStoreFactory(agent) {
+        selectedProfiles.push(agent.id);
+        return {
+          async load() {
+            return undefined;
+          },
+          async create(input) {
+            createdPlans.push(input);
+            return {
+              version: 1,
+              id: "managed-plan",
+              title: input.title,
+              objective: input.objective,
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+              status: "active",
+              steps: input.steps.map((content, index) => ({
+                id: `step-${index + 1}`,
+                content,
+                status: "pending",
+              })),
+            };
+          },
+          async updateStep() {
+            throw new Error("Not used in this test.");
+          },
+        };
+      },
+    });
+    const managedProfile = profile({
+      mode: "plan",
+      provider: { providerId: "test-provider", modelId: "test-model" },
+    });
+    const hosted = await host.createRuntime(managedProfile);
+    const session = await hosted.runtime.createSession();
+
+    await hosted.runtime.run(session.id, "Plan the docs update.");
+    await hosted.dispose();
+
+    expect(selectedProfiles).toEqual([managedProfile.id]);
+    expect(createdPlans).toEqual([
+      {
+        title: "Update docs",
+        objective: "Plan the docs update.",
+        steps: ["Read the guide", "Update examples", "Verify links"],
+      },
     ]);
   });
 
