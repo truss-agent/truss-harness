@@ -312,6 +312,43 @@ Validation at this checkpoint:
 Next checkpoint after merge: continue the renderer vertical-domain migration
 with the editor and workspace-files controllers before chat, Git, and terminal.
 
+### 2026-08-13 — Desktop editor and workspace-files checkpoint
+
+Completed locally on `refactor/desktop-editor-files-controllers` for issue
+#215.
+
+- Moved editor tabs, active selection, file/diff state, persistence filtering,
+  workspace restoration, close and removal fallback, and syntax diagnostics
+  into a dedicated editor controller.
+- Kept the virtual Settings tab out of workspace-file persistence and active
+  file/chat context while retaining the existing editor rendering and IPC
+  behavior.
+- Moved file-tree entries, filtering state, expanded and loaded directories,
+  copied-file state, merge normalization, rename/delete directory transitions,
+  and traversal-safe file-action path helpers into a workspace-files
+  controller.
+- Preserved open, save, format, diff, media, file-tree, context-menu,
+  workspace-switch, automatic refresh, and keyboard flows while reducing
+  `packages/desktop/src/renderer.ts` to 5,067 lines.
+- Added eight focused tests for editor selection and persistence, syntax-state
+  transitions, file-list merging, directory expansion/loading, copy cleanup,
+  and path safety; bumped Desktop to 0.1.40 and updated the public changelog.
+
+Validation at this checkpoint:
+
+- Desktop build and focused editor/files tests pass.
+- Full repository build and all 241 tests pass; the isolated documentation
+  build generates all 38 routes successfully.
+- Targeted formatting and `git diff --check` pass. The repository-wide format
+  gate retains its existing unrelated baseline failures.
+- Interactive Electron smoke passed for open/edit/save/format/close, tab and
+  file/diff switching, syntax indicators, virtual Settings-tab handling, file
+  search, directory expansion, context-menu file operations, automatic
+  Files/Git refresh, and restored tabs/tree expansion.
+
+Next checkpoint after merge: extract the Desktop chat/conversation controller,
+then Git and terminal controllers, in separate reviewable slices.
+
 ## 1. Why this refactor is needed
 
 Several modules have become application subsystems rather than files. Their

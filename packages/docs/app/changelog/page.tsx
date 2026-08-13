@@ -4,6 +4,16 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.40",
+    label: "Focused editor and workspace-files controllers",
+    changes: [
+      "Moved editor-tab selection, dirty state, file/diff modes, persisted editor restoration, virtual Settings-tab exclusions, and syntax diagnostics into a dedicated editor controller.",
+      "Moved file-tree entries, search state, expanded and loaded directories, copied-file state, path validation, and directory-state transitions into a dedicated workspace-files controller.",
+      "Added focused coverage for tab fallback, Settings persistence safety, syntax-state changes, directory listings, expansion and loading, copied files, and traversal-safe file actions.",
+      "Preserved existing open, save, format, media, diff, file-tree, context-menu, workspace restore, automatic refresh, and keyboard behavior.",
+    ],
+  },
+  {
     version: "Desktop 0.1.39",
     label: "Focused settings and layout controllers",
     changes: [
