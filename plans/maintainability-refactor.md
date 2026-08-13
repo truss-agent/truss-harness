@@ -229,7 +229,8 @@ Validation at this checkpoint:
   files, Git actions, and terminal interruption. The initial phone test exposed
   Desktop's random Truss Go port timing out through the LAN path; Desktop now
   uses the shared stable port 4787 with focused startup, conflict, and cleanup
-  coverage. A repeat real-device pairing check remains required before push.
+  coverage. Repeat real-device pairing confirmed the Android client connects
+  and opens the Desktop-hosted workspace successfully.
 
 Next checkpoint after merge: begin the Desktop renderer decomposition in a
 fresh branch; do not combine it with this Electron main-process review.
