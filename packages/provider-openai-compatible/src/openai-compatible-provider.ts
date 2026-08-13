@@ -60,7 +60,15 @@ export class OpenAICompatibleProvider implements ModelProvider {
       stream_options: { include_usage: true },
       messages: request.messages.map(toOpenAIMessage),
       ...(request.tools.length
-        ? { tools: request.tools.map(toOpenAITool) }
+        ? {
+            tools: request.tools.map(toOpenAITool),
+            ...(this.id === "openrouter"
+              ? {
+                  tool_choice: "auto",
+                  provider: { require_parameters: true },
+                }
+              : {}),
+          }
         : {}),
     };
     const body = JSON.stringify(payload);

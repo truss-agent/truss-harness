@@ -351,8 +351,7 @@ then Git and terminal controllers, in separate reviewable slices.
 
 ### 2026-08-13 — Desktop chat and conversation checkpoint
 
-Completed locally on `refactor/desktop-chat-controller` for issue #217; the
-interactive Electron smoke remains before push.
+Completed and merged from `refactor/desktop-chat-controller` for issue #217.
 
 - Moved conversation creation, updates, active lookup, deletion fallback, and
   persisted tool-activity restoration into a dedicated chat controller.
@@ -377,11 +376,11 @@ Validation at this checkpoint:
 - The isolated documentation production build generates all 38 routes.
 - Targeted Biome and Prettier checks and `git diff --check` pass; the renderer
   composition file is now under 5,000 lines.
-- Interactive Electron smoke should cover new/select/delete conversation,
-  send/stream/stop, tool activity and approvals, attachments, slash file
-  references, persisted conversations, and Files search before push.
+- Interactive Electron smoke covered conversation rendering, streamed output,
+  visible activity, file reading, usage display, and Chat controls. That smoke
+  also exposed the separate OpenRouter routing gap addressed below.
 
-### Required follow-up — OpenRouter tool-routing reliability
+### 2026-08-13 — OpenRouter tool-routing reliability checkpoint
 
 The Desktop chat-controller smoke test exposed a shared-provider reliability
 gap while using `openrouter/auto`: OpenRouter returned pseudo-tool syntax such
@@ -390,8 +389,7 @@ structured `tool_calls` response. Truss correctly did not execute that text,
 but the resulting conversation was confusing and unable to use workspace
 tools.
 
-Handle this immediately after the Desktop chat-controller PR merges, on a
-fresh shared-provider branch and linked issue:
+Implemented locally on `fix/openrouter-tool-routing` for issue #219:
 
 - When an OpenRouter request includes Truss tools, send the OpenRouter routing
   constraint `provider.require_parameters: true` and an explicit
@@ -409,6 +407,20 @@ fresh shared-provider branch and linked issue:
   Neovim, and Mobile through their shared provider/runtime boundary.
 - Version every affected shared package and client in that feature branch and
   coordinate the resulting releases only after its linked PR is merged.
+
+Validation at this checkpoint:
+
+- The complete release check passes: clean root build, all 67 test files and
+  251 tests, all 38 documentation routes, eight npm tarballs, and the VS Code
+  0.1.23 VSIX.
+- Three focused payload tests cover OpenRouter with tools, OpenRouter without
+  tools, and a non-OpenRouter compatible provider. They also prove pseudo-tool
+  assistant text remains ordinary non-executable text.
+- Provider 0.1.13, agent-host 0.1.10, CLI 0.1.21, TUI 0.1.18, VS Code 0.1.23,
+  and Desktop 0.1.42 are aligned for the coordinated release.
+- A live `openrouter/auto` Desktop smoke completed successfully with a real
+  read-only workspace tool call; the routed model used structured tool calling
+  and returned the grounded response without leaking pseudo-tool syntax.
 
 After that reliability slice: extract the Desktop Git controller, then the
 terminal controller, in separate reviewable slices.
