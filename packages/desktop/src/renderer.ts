@@ -8,6 +8,15 @@ import { scheduleConversationNavigation } from "./conversation-navigation.js";
 import { previewServerUrlFromOutput } from "./preview-url.js";
 import { markChangedAgentRuns } from "./renderer/agents/snapshot.js";
 import {
+  addTokenUsage,
+  attachedWorkspacePaths,
+  DesktopChatController,
+  estimatedConversationUsage,
+  isDirectWorkspaceChangeRequest,
+  rankSlashFiles,
+  tokenEstimate,
+} from "./renderer/chat/chat-controller.js";
+import {
   DesktopEditorController,
   type EditorTab,
   editorPath,
@@ -18,6 +27,7 @@ import {
   entryName,
   entryParent,
   type FileContextTarget,
+  fuzzyPathScore,
   WorkspaceFilesController,
 } from "./renderer/files/workspace-files-controller.js";
 import { desktopClient } from "./renderer/ipc/desktop-client.js";
@@ -60,7 +70,6 @@ import {
   type DesktopModelInfo,
   type DesktopProvider,
   type DesktopThemePreference,
-  type DesktopTokenUsage,
   type DesktopToolActivity,
   type DesktopWorkspaceUiState,
   desktopThemeNames,
@@ -256,13 +265,9 @@ const settingsEditorPath = "__truss_settings__";
 const editorController = new DesktopEditorController(settingsEditorPath);
 const workspaceFilesController = new WorkspaceFilesController();
 const openEditorTabs = editorController.tabs;
-const toolActivityByConversation = new Map<string, ToolActivity[]>();
-const toolActivityExpandedByConversation = new Map<string, boolean>();
-let busy = false;
+const chatController = new DesktopChatController();
 let persistTimer: number | undefined;
 let workspaceUiPersistTimer: number | undefined;
-let slashResults: readonly DesktopFile[] = [];
-let slashIndex = 0;
 let gitStatus: DesktopGitStatus = {
   available: false,
   ahead: 0,
@@ -271,15 +276,10 @@ let gitStatus: DesktopGitStatus = {
 };
 let gitGraphData: DesktopGitGraph = { available: false, commits: [] };
 let activePlan: WorkspacePlan | undefined;
-let streamStartedAt = 0;
-let streamedTextCharacters = 0;
-let agentActivity = "Ready";
-let runningConversationId: string | undefined;
 let layoutController: DesktopLayoutController;
 let agentsSnapshot: DesktopAgentsSnapshot = { profiles: [], runs: [] };
 const reflectedManagedAgentRunIds = new Set<string>();
 let selectedAgentRunId: string | undefined;
-let pendingAttachments: ChatAttachment[] = [];
 const terminalOutputByCommand = new Map<string, string>();
 const previewUrlByTerminalCommand = new Map<string, string>();
 type SettingsTab = "local" | "byok" | "other";
@@ -325,53 +325,6 @@ function modelLabel(model: DesktopModelInfo): string {
     ? ` · ${formatTokens(model.contextWindow)} context`
     : "";
   return `${model.id}${prices}${context}`;
-}
-
-function usageCost(
-  usage: Pick<DesktopTokenUsage, "inputTokens" | "outputTokens">,
-): number | undefined {
-  const model = knownModel();
-  if (!model) return undefined;
-  const inputCost = model.inputCostPerMillion;
-  const outputCost = model.outputCostPerMillion;
-  if (inputCost === undefined && outputCost === undefined) return undefined;
-  return (
-    (usage.inputTokens / 1_000_000) * (inputCost ?? 0) +
-    (usage.outputTokens / 1_000_000) * (outputCost ?? 0)
-  );
-}
-
-function addUsage(
-  previous: DesktopTokenUsage | undefined,
-  next: Pick<DesktopTokenUsage, "inputTokens" | "outputTokens" | "totalTokens">,
-): DesktopTokenUsage {
-  const usage = {
-    inputTokens: (previous?.inputTokens ?? 0) + next.inputTokens,
-    outputTokens: (previous?.outputTokens ?? 0) + next.outputTokens,
-    totalTokens: (previous?.totalTokens ?? 0) + next.totalTokens,
-  };
-  return { ...usage, estimatedCostUsd: usageCost(usage) };
-}
-
-function estimatedConversationUsage(
-  conversation: DesktopConversation,
-): DesktopTokenUsage {
-  const inputTokens = conversation.messages
-    .slice(0, -1)
-    .reduce(
-      (total, message) => total + Math.ceil(message.content.length / 4),
-      0,
-    );
-  const outputTokens =
-    conversation.messages.at(-1)?.role === "assistant"
-      ? Math.ceil((conversation.messages.at(-1)?.content.length ?? 0) / 4)
-      : 0;
-  const usage = {
-    inputTokens: Math.max(1, inputTokens),
-    outputTokens,
-    totalTokens: Math.max(1, inputTokens) + outputTokens,
-  };
-  return { ...usage, estimated: true, estimatedCostUsd: usageCost(usage) };
 }
 
 function renderCustomThemeControls(): void {
@@ -514,36 +467,20 @@ function setSettingsTab(tab: SettingsTab): void {
 }
 
 function activeConversation(): DesktopConversation | undefined {
-  return rendererState.activeConversation();
+  return chatController.activeConversation(
+    rendererState.desktop.conversations,
+    rendererState.desktop.activeConversationId,
+  );
 }
 
 function conversationById(
   id: string | undefined,
 ): DesktopConversation | undefined {
-  return rendererState.conversation(id);
+  return chatController.conversation(rendererState.desktop.conversations, id);
 }
 
 function createId(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function tokenEstimate(messages: readonly DesktopMessage[]): number {
-  return messages.reduce(
-    (total, message) => total + Math.ceil(message.content.trim().length / 4),
-    400,
-  );
-}
-
-function isDirectWorkspaceChangeRequest(prompt: string): boolean {
-  const action =
-    "(?:add|change|create|delete|edit|fix|implement|modify|overhaul|refactor|remove|rename|replace|rewrite|rework|update|write)";
-  const directRequest = new RegExp(
-    `^\\s*(?:(?:please|can you|could you|would you)\\s+)?${action}\\b|^\\s*(?:i am going to|i'm going to|we need to|let's)\\s+${action}\\b`,
-    "i",
-  );
-  const errorReport =
-    /\b(?:error|exception|stack trace|uncaught|referenceerror|typeerror|syntaxerror|not working|doesn['’]t work|broken|failed)\b/i;
-  return directRequest.test(prompt) || errorReport.test(prompt);
 }
 
 function formatTokens(value: number): string {
@@ -1105,20 +1042,11 @@ function saveWorkspaceUiState(): void {
   }, 180);
 }
 
-function setBusy(next: boolean): void {
-  if (next && !busy) {
-    // Generation latency and tool time are not part of output throughput. Start
-    // the timer only on the first text chunk and estimate from all characters.
-    streamStartedAt = 0;
-    streamedTextCharacters = 0;
-    agentActivity = "Thinking about the next step";
-  }
-  if (!next) agentActivity = "Ready";
-  busy = next;
-  sendChatButton.hidden = next;
-  cancelChatButton.hidden = !next;
-  chatStatus.textContent = agentActivity;
-  statusDot.className = `status-dot ${next ? "busy" : rendererState.desktop.configuration?.model ? "ready" : ""}`;
+function renderChatRunState(): void {
+  sendChatButton.hidden = chatController.busy;
+  cancelChatButton.hidden = !chatController.busy;
+  chatStatus.textContent = chatController.agentActivity;
+  statusDot.className = `status-dot ${chatController.busy ? "busy" : rendererState.desktop.configuration?.model ? "ready" : ""}`;
   renderChat();
   renderRuntime();
 }
@@ -1158,8 +1086,8 @@ function setSyntaxDiagnostics(
 }
 
 function cancelActiveRunForNavigation(): void {
-  if (!busy) return;
-  const running = conversationById(runningConversationId);
+  if (!chatController.busy) return;
+  const running = conversationById(chatController.runningConversationId);
   if (running) {
     updateConversation(running.id, (current) => ({
       ...current,
@@ -1170,8 +1098,8 @@ function cancelActiveRunForNavigation(): void {
       },
     }));
   }
-  runningConversationId = undefined;
-  setBusy(false);
+  chatController.cancelRun();
+  renderChatRunState();
   void desktop.stopChat();
 }
 
@@ -1180,7 +1108,7 @@ function renderRuntime(): void {
   runtimeStatus.textContent = config?.model
     ? `${config.provider} / ${config.model}`
     : "No model selected";
-  statusDot.className = `status-dot ${busy ? "busy" : config?.model ? "ready" : ""}`;
+  statusDot.className = `status-dot ${chatController.busy ? "busy" : config?.model ? "ready" : ""}`;
   document
     .querySelectorAll<HTMLButtonElement>("[data-mode]")
     .forEach((button) => {
@@ -1229,20 +1157,22 @@ function renderRuntime(): void {
   const runUsage = activeConversation()?.lastRun?.usage;
   usageMeter.textContent = runUsage
     ? `Usage ${formatTokens(runUsage.inputTokens)} in / ${formatTokens(runUsage.outputTokens)} out${runUsage.estimated ? " est." : ""}${runUsage.estimatedCostUsd !== undefined ? ` · ${formatUsd(runUsage.estimatedCostUsd)}` : ""}`
-    : busy
+    : chatController.busy
       ? "Usage pending"
       : "Usage --";
-  chatStatus.textContent = busy ? agentActivity : "Ready";
-  const elapsed = streamStartedAt
-    ? (performance.now() - streamStartedAt) / 1_000
+  chatStatus.textContent = chatController.busy
+    ? chatController.agentActivity
+    : "Ready";
+  const elapsed = chatController.streamMetrics.startedAt
+    ? (performance.now() - chatController.streamMetrics.startedAt) / 1_000
     : 0;
-  const estimatedTokens = streamedTextCharacters / 4;
+  const estimatedTokens = chatController.streamMetrics.textCharacters / 4;
   if (rateMeter) {
     rateMeter.textContent =
       estimatedTokens && elapsed > 0
         ? `Output ${(estimatedTokens / elapsed).toFixed(1)} est. tok/s`
-        : busy
-          ? `Working · ${agentActivity}`
+        : chatController.busy
+          ? `Working · ${chatController.agentActivity}`
           : "Output -- tok/s";
   }
 }
@@ -1605,7 +1535,7 @@ function renderFiles(): void {
     const matches = workspaceFilesController.entries
       .filter((file) => file.type === "file")
       .flatMap((file) => {
-        const score = fuzzyScore(file.path, query);
+        const score = fuzzyPathScore(file.path, query);
         return score === undefined ? [] : [{ file, score }];
       })
       .sort(
@@ -1805,16 +1735,15 @@ function renderConversations(): void {
         return;
       if (conversation.id === rendererState.desktop.activeConversationId)
         cancelActiveRunForNavigation();
-      const remaining = rendererState.desktop.conversations.filter(
-        (item) => item.id !== conversation.id,
+      const removal = chatController.removeConversation(
+        rendererState.desktop.conversations,
+        rendererState.desktop.activeConversationId,
+        conversation.id,
       );
       rendererState.desktop = {
         ...rendererState.desktop,
-        conversations: remaining,
-        activeConversationId:
-          rendererState.desktop.activeConversationId === conversation.id
-            ? remaining[0]?.id
-            : rendererState.desktop.activeConversationId,
+        conversations: removal.conversations,
+        activeConversationId: removal.activeConversationId,
       };
       finishConversationNavigation();
     };
@@ -1933,10 +1862,11 @@ function renderChat(): void {
     toolActivityPanel.hidden = true;
     return;
   }
-  const activities = toolActivityByConversation.get(conversation.id) ?? [];
+  const activities = chatController.activities(conversation.id);
   const pendingSummary =
-    busy && conversation.id === runningConversationId
-      ? agentActivity
+    chatController.busy &&
+    conversation.id === chatController.runningConversationId
+      ? chatController.agentActivity
       : undefined;
   if (activities.length || pendingSummary) {
     toolActivityPanel.hidden = false;
@@ -1950,7 +1880,8 @@ function renderChat(): void {
     .map((message) => message.role)
     .lastIndexOf("assistant");
   const showActivePlaceholder =
-    busy && conversation.id === runningConversationId;
+    chatController.busy &&
+    conversation.id === chatController.runningConversationId;
   conversation.messages.forEach((message, index) => {
     chatMessages.append(
       messageView(
@@ -2006,18 +1937,17 @@ function renderPlan(): void {
 }
 
 function createConversation(): DesktopConversation {
-  const conversation: DesktopConversation = {
-    id: createId(),
-    title: "New conversation",
-    messages: [],
-    updatedAt: new Date().toISOString(),
-  };
+  const created = chatController.createConversation(
+    rendererState.desktop.conversations,
+    createId(),
+    new Date().toISOString(),
+  );
   rendererState.desktop = {
     ...rendererState.desktop,
-    conversations: [conversation, ...rendererState.desktop.conversations],
-    activeConversationId: conversation.id,
+    conversations: created.conversations,
+    activeConversationId: created.conversation.id,
   };
-  return conversation;
+  return created.conversation;
 }
 
 function ensureConversation(): DesktopConversation {
@@ -2030,8 +1960,10 @@ function updateConversation(
 ): void {
   rendererState.desktop = {
     ...rendererState.desktop,
-    conversations: rendererState.desktop.conversations.map((conversation) =>
-      conversation.id === conversationId ? update(conversation) : conversation,
+    conversations: chatController.updateConversation(
+      rendererState.desktop.conversations,
+      conversationId,
+      update,
     ),
   };
 }
@@ -2040,7 +1972,7 @@ function setToolActivity(
   conversationId: string,
   activities: readonly ToolActivity[],
 ): void {
-  toolActivityByConversation.set(conversationId, [...activities]);
+  chatController.setActivities(conversationId, activities);
   updateConversation(conversationId, (current) => ({
     ...current,
     toolActivity: [...activities],
@@ -3191,52 +3123,30 @@ function slashQuery():
   return { start: beforeCursor.length - match[1].length - 1, query: match[1] };
 }
 
-function fuzzyScore(path: string, query: string): number | undefined {
-  const target = path.toLocaleLowerCase();
-  const needle = query.toLocaleLowerCase();
-  let position = 0;
-  let score = 0;
-  for (const character of needle) {
-    const next = target.indexOf(character, position);
-    if (next === -1) return undefined;
-    score += next - position;
-    position = next + 1;
-  }
-  return score + (target.includes(needle) ? -30 : 0) + path.length / 1_000;
-}
-
 function renderSlashMenu(): void {
   const query = slashQuery();
   if (!query) {
     slashMenu.hidden = true;
-    slashResults = [];
+    chatController.setSlashResults([]);
     return;
   }
-  slashResults = workspaceFilesController.entries
-    .filter((file) => file.type === "file")
-    .flatMap((file) => {
-      const score = fuzzyScore(file.path, query.query);
-      return score === undefined ? [] : [{ file, score }];
-    })
-    .sort(
-      (left, right) =>
-        left.score - right.score ||
-        left.file.path.localeCompare(right.file.path),
-    )
-    .slice(0, 8)
-    .map(({ file }) => file);
-  if (!slashResults.length) {
+  chatController.setSlashResults(
+    rankSlashFiles(workspaceFilesController.entries, query.query),
+  );
+  if (!chatController.slashResults.length) {
     slashMenu.hidden = true;
     return;
   }
-  slashIndex = Math.min(slashIndex, slashResults.length - 1);
   slashMenu.replaceChildren(
-    ...slashResults.map((file, index) => {
+    ...chatController.slashResults.map((file, index) => {
       const option = document.createElement("button");
       option.type = "button";
-      option.className = `slash-option${index === slashIndex ? " active" : ""}`;
+      option.className = `slash-option${index === chatController.slashIndex ? " active" : ""}`;
       option.setAttribute("role", "option");
-      option.setAttribute("aria-selected", String(index === slashIndex));
+      option.setAttribute(
+        "aria-selected",
+        String(index === chatController.slashIndex),
+      );
       option.textContent = file.path;
       option.onmousedown = (event) => {
         event.preventDefault();
@@ -3257,21 +3167,6 @@ function insertSlashFile(path: string): void {
   chatInput.setSelectionRange(nextCursor, nextCursor);
   slashMenu.hidden = true;
   chatInput.focus();
-}
-
-function attachedPaths(prompt: string): readonly string[] {
-  const available = new Set(
-    workspaceFilesController.entries
-      .filter((file) => file.type === "file")
-      .map((file) => file.path),
-  );
-  return [
-    ...new Set(
-      [...prompt.matchAll(/(?:^|\s)\/([^\s]+)/g)]
-        .map((match) => match[1].replaceAll("\\", "/"))
-        .filter((path) => available.has(path)),
-    ),
-  ];
 }
 
 function attachmentId(): string {
@@ -3338,9 +3233,9 @@ async function toAttachment(file: File): Promise<ChatAttachment> {
 }
 
 function renderPendingAttachments(): void {
-  attachmentList.hidden = pendingAttachments.length === 0;
+  attachmentList.hidden = chatController.pendingAttachments.length === 0;
   attachmentList.replaceChildren(
-    ...pendingAttachments.map((attachment) => {
+    ...chatController.pendingAttachments.map((attachment) => {
       const item = document.createElement("div");
       item.className = "pending-attachment";
       if (attachment.kind === "image" && attachment.data) {
@@ -3356,9 +3251,7 @@ function renderPendingAttachments(): void {
       remove.textContent = "x";
       remove.title = `Remove ${attachment.name}`;
       remove.onclick = () => {
-        pendingAttachments = pendingAttachments.filter(
-          (candidate) => candidate.id !== attachment.id,
-        );
+        chatController.removePendingAttachment(attachment.id);
         renderPendingAttachments();
       };
       item.append(name, remove);
@@ -3370,15 +3263,15 @@ function renderPendingAttachments(): void {
 async function addFiles(filesToAdd: Iterable<File>): Promise<void> {
   const selected = [...filesToAdd];
   if (!selected.length) return;
-  if (pendingAttachments.length + selected.length > maxAttachmentCount) {
+  if (
+    chatController.pendingAttachments.length + selected.length >
+    maxAttachmentCount
+  ) {
     notify(`Attach up to ${maxAttachmentCount} files at once.`);
     return;
   }
   if (
-    pendingAttachments.reduce(
-      (total, attachment) => total + attachment.size,
-      0,
-    ) +
+    chatController.pendingAttachmentBytes() +
       selected.reduce((total, file) => total + file.size, 0) >
     maxAttachmentTotalBytes
   ) {
@@ -3387,7 +3280,7 @@ async function addFiles(filesToAdd: Iterable<File>): Promise<void> {
   }
   try {
     const attachments = await Promise.all(selected.map(toAttachment));
-    pendingAttachments = [...pendingAttachments, ...attachments];
+    chatController.addPendingAttachments(attachments);
     renderPendingAttachments();
   } catch (error) {
     notify(error instanceof Error ? error.message : String(error));
@@ -3660,9 +3553,9 @@ function toolActivityView(
 ): HTMLElement {
   const trace = document.createElement("details");
   trace.className = "tool-activity";
-  trace.open = toolActivityExpandedByConversation.get(conversationId) ?? true;
+  trace.open = chatController.activityExpanded(conversationId);
   trace.addEventListener("toggle", () =>
-    toolActivityExpandedByConversation.set(conversationId, trace.open),
+    chatController.setActivityExpanded(conversationId, trace.open),
   );
   const summary = document.createElement("summary");
   const running = activities.find((activity) => activity.status === "running");
@@ -3758,8 +3651,10 @@ function pastedFileName(mimeType: string): string {
 async function sendChat(): Promise<void> {
   const prompt =
     chatInput.value.trim() ||
-    (pendingAttachments.length ? "Review the attached files." : "");
-  if (!prompt || busy) return;
+    (chatController.pendingAttachments.length
+      ? "Review the attached files."
+      : "");
+  if (!prompt || chatController.busy) return;
   if (
     configuration().mode === "chat" &&
     isDirectWorkspaceChangeRequest(prompt)
@@ -3779,7 +3674,7 @@ async function sendChat(): Promise<void> {
   }
   const conversation = ensureConversation();
   const history = conversation.messages;
-  const attachments = pendingAttachments;
+  const attachments = chatController.pendingAttachments;
   const userMessage: DesktopMessage = {
     role: "user",
     content: prompt,
@@ -3801,7 +3696,7 @@ async function sendChat(): Promise<void> {
     activeConversationId: conversation.id,
   };
   chatInput.value = "";
-  pendingAttachments = [];
+  chatController.clearPendingAttachments();
   attachmentInput.value = "";
   renderPendingAttachments();
   renderConversations();
@@ -3809,15 +3704,18 @@ async function sendChat(): Promise<void> {
   renderRuntime();
   saveConversations();
   try {
-    runningConversationId = conversation.id;
-    setBusy(true);
+    chatController.beginRun(conversation.id);
+    renderChatRunState();
     await desktop.sendChat({
       prompt,
       conversationId: conversation.id,
       history,
       attachments,
       activeFilePath: activeWorkspaceFilePath(),
-      attachedPaths: attachedPaths(prompt),
+      attachedPaths: attachedWorkspacePaths(
+        prompt,
+        workspaceFilesController.entries,
+      ),
       openFilePaths: openEditorTabs
         .filter((tab) => tab.mode !== "settings")
         .map((tab) => tab.path),
@@ -3833,7 +3731,8 @@ async function sendChat(): Promise<void> {
         },
       ],
     }));
-    setBusy(false);
+    chatController.cancelRun();
+    renderChatRunState();
     renderChat();
   }
 }
@@ -3871,14 +3770,14 @@ function handleEvent(message: DesktopEvent): void {
     return;
   }
   if (message.type === "chat-start") {
-    runningConversationId = message.conversationId;
+    chatController.beginRun(message.conversationId);
     setToolActivity(message.conversationId, []);
-    toolActivityExpandedByConversation.set(message.conversationId, true);
+    chatController.setActivityExpanded(message.conversationId, true);
     updateConversation(message.conversationId, (current) => ({
       ...current,
       lastRun: { status: "running", modifiedFiles: [] },
     }));
-    setBusy(true);
+    renderChatRunState();
     renderChat();
     return;
   }
@@ -3891,16 +3790,15 @@ function handleEvent(message: DesktopEvent): void {
               ...current,
               lastRun: {
                 ...current.lastRun,
-                usage: estimatedConversationUsage(current),
+                usage: estimatedConversationUsage(current, knownModel()),
               },
             }
           : current,
       );
       saveConversations();
     }
-    if (message.conversationId === runningConversationId) {
-      runningConversationId = undefined;
-      setBusy(false);
+    if (chatController.endRun(message.conversationId)) {
+      renderChatRunState();
     }
     renderChat();
     return;
@@ -3931,9 +3829,8 @@ function handleEvent(message: DesktopEvent): void {
           updatedAt: new Date().toISOString(),
         };
       });
-    if (message.conversationId === runningConversationId) {
-      runningConversationId = undefined;
-      setBusy(false);
+    if (chatController.endRun(message.conversationId)) {
+      renderChatRunState();
     }
     renderChat();
     saveConversations();
@@ -3950,14 +3847,15 @@ function handleEvent(message: DesktopEvent): void {
       const waitingSummary = `Waiting for approval: ${safeActivitySummary(message.tool, message.input)}`;
       setToolActivity(
         approvalConversation.id,
-        (toolActivityByConversation.get(approvalConversation.id) ?? []).map(
-          (activity) =>
+        chatController
+          .activities(approvalConversation.id)
+          .map((activity) =>
             activity.callId === message.callId
               ? { ...activity, summary: waitingSummary }
               : activity,
-        ),
+          ),
       );
-      agentActivity = "Waiting for approval";
+      chatController.setAgentActivity("Waiting for approval");
       renderChat();
       renderRuntime();
     }
@@ -3994,7 +3892,7 @@ function handleEvent(message: DesktopEvent): void {
   const event = message.event;
   const conversation =
     conversationById(message.conversationId) ??
-    conversationById(runningConversationId);
+    conversationById(chatController.runningConversationId);
   if (event.type === "plan_updated" && event.plan) {
     activePlan = event.plan;
     renderPlan();
@@ -4007,7 +3905,7 @@ function handleEvent(message: DesktopEvent): void {
       lastRun: current.lastRun
         ? {
             ...current.lastRun,
-            usage: addUsage(current.lastRun.usage, usage),
+            usage: addTokenUsage(current.lastRun.usage, usage, knownModel()),
           }
         : current.lastRun,
       updatedAt: new Date().toISOString(),
@@ -4063,9 +3961,7 @@ function handleEvent(message: DesktopEvent): void {
         updatedAt: new Date().toISOString(),
       };
     });
-    if (!streamStartedAt) streamStartedAt = performance.now();
-    streamedTextCharacters += (event.text ?? "").length;
-    agentActivity = "Writing the response";
+    chatController.recordTextDelta(event.text ?? "", performance.now());
     if (conversation.id === rendererState.desktop.activeConversationId)
       renderChat();
     renderRuntime();
@@ -4075,7 +3971,7 @@ function handleEvent(message: DesktopEvent): void {
     if (!conversation) return;
     const note = event.text ?? "";
     if (!note) return;
-    const activities = toolActivityByConversation.get(conversation.id) ?? [];
+    const activities = chatController.activities(conversation.id);
     const previous = activities.at(-1);
     const nextActivities: ToolActivity[] =
       previous?.status === "progress"
@@ -4097,8 +3993,9 @@ function handleEvent(message: DesktopEvent): void {
             },
           ];
     setToolActivity(conversation.id, nextActivities);
-    agentActivity =
-      nextActivities.at(-1)?.summary?.trim() || "Thinking about the next step";
+    chatController.setAgentActivity(
+      nextActivities.at(-1)?.summary?.trim() || "Thinking about the next step",
+    );
     if (conversation.id === rendererState.desktop.activeConversationId)
       renderChat();
     renderRuntime();
@@ -4106,10 +4003,10 @@ function handleEvent(message: DesktopEvent): void {
   }
   if (event.type === "tool_call_requested") {
     const summary = safeActivitySummary(event.tool ?? "tool", event.input);
-    agentActivity = summary;
+    chatController.setAgentActivity(summary);
     renderRuntime();
     if (conversation) {
-      const activities = toolActivityByConversation.get(conversation.id) ?? [];
+      const activities = chatController.activities(conversation.id);
       setToolActivity(conversation.id, [
         ...activities,
         {
@@ -4124,13 +4021,15 @@ function handleEvent(message: DesktopEvent): void {
     }
   }
   if (event.type === "tool_completed") {
-    agentActivity = event.result?.isError
-      ? "Recovering from a tool error"
-      : "Thinking about the next step";
+    chatController.setAgentActivity(
+      event.result?.isError
+        ? "Recovering from a tool error"
+        : "Thinking about the next step",
+    );
     renderRuntime();
     const result = event.result?.content ?? "";
     if (conversation) {
-      const activities = toolActivityByConversation.get(conversation.id) ?? [];
+      const activities = chatController.activities(conversation.id);
       const detail = result.replace(/\s+/g, " ").trim().slice(0, 320);
       setToolActivity(
         conversation.id,
@@ -4819,7 +4718,7 @@ chatInput
     void addFiles(Array.from(event.dataTransfer?.files ?? []));
   });
 chatInput.oninput = () => {
-  slashIndex = 0;
+  chatController.resetSlashSelection();
   renderSlashMenu();
 };
 chatInput.addEventListener("paste", (event) => {
@@ -4852,23 +4751,21 @@ chatInput.onkeydown = (event) => {
     void sendChat();
     return;
   }
-  if (slashMenu.hidden || !slashResults.length) return;
+  if (slashMenu.hidden || !chatController.slashResults.length) return;
   if (event.key === "ArrowDown") {
     event.preventDefault();
-    slashIndex = (slashIndex + 1) % slashResults.length;
+    chatController.moveSlashSelection(1);
     renderSlashMenu();
   }
   if (event.key === "ArrowUp") {
     event.preventDefault();
-    slashIndex = (slashIndex - 1 + slashResults.length) % slashResults.length;
+    chatController.moveSlashSelection(-1);
     renderSlashMenu();
   }
-  if (
-    (event.key === "Enter" || event.key === "Tab") &&
-    slashResults[slashIndex]
-  ) {
+  const selectedSlashFile = chatController.selectedSlashFile();
+  if ((event.key === "Enter" || event.key === "Tab") && selectedSlashFile) {
     event.preventDefault();
-    insertSlashFile(slashResults[slashIndex].path);
+    insertSlashFile(selectedSlashFile.path);
   }
   if (event.key === "Escape") {
     slashMenu.hidden = true;
@@ -5039,12 +4936,7 @@ void (async () => {
   ]);
   agentsSnapshot = await desktop.listAgents();
   markChangedAgentRuns(agentsSnapshot, reflectedManagedAgentRunIds);
-  for (const conversation of rendererState.desktop.conversations) {
-    if (conversation.toolActivity?.length)
-      toolActivityByConversation.set(conversation.id, [
-        ...conversation.toolActivity,
-      ]);
-  }
+  chatController.restoreActivities(rendererState.desktop.conversations);
   applyDesktopTheme(document.documentElement, rendererState.desktop.theme);
   populateSettings();
   if (rendererState.desktop.runtimeError) {

@@ -9,6 +9,23 @@ function normalizedPath(path: string): string {
   return path.replaceAll("\\", "/");
 }
 
+export function fuzzyPathScore(
+  path: string,
+  query: string,
+): number | undefined {
+  const target = path.toLocaleLowerCase();
+  const needle = query.toLocaleLowerCase();
+  let position = 0;
+  let score = 0;
+  for (const character of needle) {
+    const next = target.indexOf(character, position);
+    if (next === -1) return undefined;
+    score += next - position;
+    position = next + 1;
+  }
+  return score + (target.includes(needle) ? -30 : 0) + path.length / 1_000;
+}
+
 export function normalizedWorkspaceEntry(value: string): string | undefined {
   const normalized = value.trim().replaceAll("\\", "/");
   if (!normalized || normalized.startsWith("/") || /^[a-z]:/i.test(normalized))
