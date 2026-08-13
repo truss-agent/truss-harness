@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Truss Go 0.1.6",
+    label: "Focused remote-session controller",
+    changes: [
+      "Moved authenticated gateway event-stream lifecycle, reconnection state, and event parsing out of the Mobile presentation module.",
+      "Moved session creation and mode replacement validation plus streamed assistant-message, tool-approval, and tool-failure projections into a typed Mobile controller boundary.",
+      "Added direct coverage for event authentication, event forwarding, message streaming, approval policy behavior, and versioned session transitions.",
+    ],
+  },
+  {
     version: "Truss Go 0.1.5",
     label: "Focused mobile gateway transport",
     changes: [

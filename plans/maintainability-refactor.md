@@ -1,6 +1,6 @@
 # Maintainability Refactor Plan
 
-**Status:** In progress — shared layers, Desktop terminal, and Mobile transport checkpoint implemented
+**Status:** In progress — shared layers, Desktop terminal, Mobile transport, and Mobile remote-session checkpoints implemented
 
 **Created:** 2026-08-12
 
@@ -514,6 +514,35 @@ Validation at this checkpoint:
 Next checkpoint after merge: move WebSocket event lifecycle and remote session
 state into a focused Mobile controller, then separately decompose the
 documentation download client.
+
+### 2026-08-13 — Mobile remote-session controller checkpoint
+
+Implemented locally on `refactor/mobile-session-controller` for issue #227:
+
+- Moved authenticated WebSocket lifecycle, event authentication, reconnect
+  state, malformed-event handling, and cleanup into a focused Mobile gateway
+  event controller.
+- Moved remote session creation and replacement validation, streamed assistant
+  messages, approval-policy projections, and tool-failure summaries into typed
+  controller helpers.
+- Preserved protocol versions, authentication, event-stream failure guidance,
+  automatic reconnect-before-request behavior, session-mode replacement, and
+  Mobile UI behavior.
+- Added direct tests for event authentication/forwarding, streamed response
+  composition, tool approval policy, and versioned session transitions; bumped
+  Truss Go to 0.1.6 and updated the public changelog in the same branch.
+
+Validation at this checkpoint:
+
+- Mobile TypeScript validation and nine focused Mobile controller tests pass.
+- Full repository build (including the VS Code bundle), all 277 tests, and
+  the isolated documentation production build pass. Gateway and MCP fixtures
+  require normal local process access because they bind localhost and start a
+  fixture process.
+- A real-device smoke remains required before push.
+
+Next checkpoint after merge: decompose the documentation download client or
+continue the next highest-risk client boundary from Phase 4.
 
 ## 1. Why this refactor is needed
 
