@@ -463,12 +463,15 @@ button:focus-visible {
 .agents-heading strong { display: block; font-size: 20px; }
 .agents-heading span, .agent-card p, .agent-card small { color: var(--desktop-muted); }
 .agents-heading span { display: block; margin-top: 4px; }
-.agent-create { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(130px, 1fr) minmax(180px, 1.5fr) minmax(120px, 1fr) 100px auto; gap: 8px; padding: 12px; border: 1px solid var(--desktop-border); border-radius: 7px; background: var(--desktop-surface); }
+.agent-create { display: grid; grid-template-columns: repeat(2, minmax(120px, 1fr)) minmax(180px, 1.5fr) repeat(2, minmax(120px, 1fr)) minmax(140px, 1fr) minmax(160px, 1fr) auto; gap: 8px; padding: 12px; border: 1px solid var(--desktop-border); border-radius: 7px; background: var(--desktop-surface); }
 .agent-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-top: 14px; }
 .agent-card { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--desktop-border); border-radius: 7px; background: var(--desktop-surface); }
 .agent-card-title { display: flex; justify-content: space-between; gap: 12px; text-transform: capitalize; }
 .agent-card-title span { color: var(--desktop-accent); font-size: 12px; }
 .agent-card p { margin: 0; overflow-wrap: anywhere; font-family: Consolas, "Cascadia Code", monospace; font-size: 12px; }
+.agent-card-settings { display: flex; flex-wrap: wrap; gap: 8px; }
+.agent-card-settings label { display: grid; min-width: min(100%, 220px); gap: 5px; color: var(--desktop-muted); font-size: 11px; font-weight: 700; letter-spacing: .3px; text-transform: uppercase; }
+.agent-card-settings select { width: 100%; color: var(--desktop-text); font-size: 12px; font-weight: 400; letter-spacing: normal; text-transform: none; }
 .agent-card textarea { min-height: 58px; resize: vertical; }
 .agent-card-actions { display: flex; gap: 7px; }
 .agent-approval { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding: 8px; border-left: 3px solid var(--desktop-warning); background: var(--desktop-panel); }

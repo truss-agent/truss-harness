@@ -31,6 +31,7 @@ import {
   ToolRegistry,
   WorkspaceMemoryContextProvider,
   WorkspacePlanContextProvider,
+  type WorkspacePlanStore,
 } from "@truss-harness/runtime";
 import {
   type AgentProviderDescriptor,
@@ -57,6 +58,8 @@ export interface AgentHostOptions {
   readonly approvalFactory?: (
     profile: AgentProfile,
   ) => ToolApproval | undefined;
+  /** Optional host-owned plan storage, used to isolate managed-agent plans from the primary client plan. */
+  readonly planStoreFactory?: (profile: AgentProfile) => WorkspacePlanStore;
   readonly providerRegistry?: AgentProviderRegistry;
 }
 
@@ -186,7 +189,9 @@ export class AgentHost {
     const events = new EventBus<RuntimeEvent>();
     const tools = new ToolRegistry();
     const memory = new FileWorkspaceMemoryStore(this.options.workspaceRoot);
-    const plans = new FileWorkspacePlanStore(this.options.workspaceRoot);
+    const plans =
+      this.options.planStoreFactory?.(profile) ??
+      new FileWorkspacePlanStore(this.options.workspaceRoot);
     const usesReadOnlyWorkspaceTools =
       profile.mode === "chat" || profile.mode === "plan";
     if (profile.mode === "edit") {

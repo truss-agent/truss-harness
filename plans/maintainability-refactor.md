@@ -253,16 +253,20 @@ Completed locally on `refactor/desktop-renderer-foundation` for issue #211.
   renderer-to-main payloads.
 - Replaced the remaining placeholder in Git commit-message generation so the
   selected stored BYOK account works alongside local models.
-- Added 13 focused tests across the new state, IPC, theme, Markdown, layout,
-  and cloud commit-generation boundaries and bumped Desktop to 0.1.38 on the
-  feature branch.
+- Exposed persistent tool permissions for each managed-agent profile and
+  verified ask, read-only, and unrestricted approval behavior.
+- Isolated managed-agent plans from the primary chat plan and refreshes the
+  file tree and Git automatically after a completed managed run changes files.
+- Added 21 focused tests across the new state, IPC, theme, Markdown, layout,
+  cloud commit-generation, agent-permission, plan-isolation, and workspace
+  refresh boundaries and bumped Desktop to 0.1.38 on the feature branch.
 
 Validation at this checkpoint:
 
-- Desktop build and all 37 focused Desktop tests passing.
+- Desktop build and all 44 focused Desktop tests passing.
 - Targeted Biome checks pass with four unchanged renderer style suggestions;
   Prettier and `git diff --check` pass.
-- Full repository build and suite passing: 59 test files and 215 tests.
+- Full repository build and suite passing: 61 test files and 224 tests.
 - Isolated documentation production build passes all 38 generated routes.
 - Interactive Electron smoke remains required before push.
 

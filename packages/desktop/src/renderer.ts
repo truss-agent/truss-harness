@@ -3,6 +3,7 @@ import type {
   McpStdioServerConfiguration,
 } from "@truss-harness/mcp";
 import type {
+  AgentApprovalPolicy,
   ChatAttachment,
   ProviderAccount,
   WorkspacePlan,
@@ -10,6 +11,7 @@ import type {
 import { scheduleConversationNavigation } from "./conversation-navigation.js";
 import { previewServerUrlFromOutput } from "./preview-url.js";
 import { desktopClient } from "./renderer/ipc/desktop-client.js";
+import { markChangedAgentRuns } from "./renderer/agents/snapshot.js";
 import {
   balancedSidebarTracks,
   clamp,
@@ -301,6 +303,7 @@ let chatCollapsed = false;
 let chatDocked = false;
 let centerView: "editor" | "preview" | "agents" | "chat" = "editor";
 let agentsSnapshot: DesktopAgentsSnapshot = { profiles: [], runs: [] };
+const reflectedManagedAgentRunIds = new Set<string>();
 let selectedAgentRunId: string | undefined;
 let pendingAttachments: ChatAttachment[] = [];
 const terminalOutputByCommand = new Map<string, string>();
@@ -674,8 +677,16 @@ function agentProviderDefaultEndpoint(provider: string): string | undefined {
 }
 
 function applyAgentsSnapshot(snapshot: DesktopAgentsSnapshot): void {
+  const workspaceChanged = markChangedAgentRuns(
+    snapshot,
+    reflectedManagedAgentRunIds,
+  );
   agentsSnapshot = snapshot;
   if (centerView === "agents") renderAgents();
+  if (workspaceChanged)
+    void Promise.all([loadFiles(), refreshGit()]).catch((error) =>
+      notify(error instanceof Error ? error.message : String(error)),
+    );
 }
 
 function renderAgents(): void {
@@ -816,10 +827,22 @@ function renderAgents(): void {
     option.selected = value === "plan";
     mode.append(option);
   }
+  const approvalPolicy = agentApprovalPolicySelect(
+    rendererState.desktop.configuration?.permission ?? "ask",
+  );
   const add = document.createElement("button");
   add.className = "primary";
   add.textContent = "Create agent";
-  create.append(name, provider, endpoint, model, account, mode, add);
+  create.append(
+    name,
+    provider,
+    endpoint,
+    model,
+    account,
+    mode,
+    approvalPolicy,
+    add,
+  );
   create.onsubmit = (event) => {
     event.preventDefault();
     const providerId = provider.value;
@@ -835,7 +858,7 @@ function renderAgents(): void {
             : { credentialRef: account.value || providerId }),
         },
         mode: mode.value as "chat" | "plan" | "edit",
-        approvalPolicy: "ask",
+        approvalPolicy: approvalPolicy.value as AgentApprovalPolicy,
         internetAccess: false,
       })
       .then(applyAgentsSnapshot)
@@ -870,6 +893,29 @@ function renderAgents(): void {
         )?.label
       : undefined;
     binding.textContent = `${profile.provider.providerId} · ${profile.provider.modelId} · ${profile.mode}${accountLabel ? ` · ${accountLabel}` : ""}${profile.provider.endpointUrl ? ` · ${profile.provider.endpointUrl}` : ""}`;
+    const profileSettings = document.createElement("div");
+    profileSettings.className = "agent-card-settings";
+    const policyLabel = document.createElement("label");
+    const policyLabelText = document.createElement("span");
+    policyLabelText.textContent = "Tool permissions";
+    const policy = agentApprovalPolicySelect(profile.approvalPolicy);
+    policy.disabled = Boolean(activeRun);
+    if (activeRun)
+      policy.title = "Stop this agent before changing its tool permissions.";
+    policy.onchange = () => {
+      const nextPolicy = policy.value as AgentApprovalPolicy;
+      policy.disabled = true;
+      void desktop
+        .updateAgent(profile.id, { approvalPolicy: nextPolicy })
+        .then(applyAgentsSnapshot)
+        .catch((error) => {
+          policy.value = profile.approvalPolicy;
+          policy.disabled = Boolean(activeRun);
+          notify(error instanceof Error ? error.message : String(error));
+        });
+    };
+    policyLabel.append(policyLabelText, policy);
+    profileSettings.append(policyLabel);
     const prompt = document.createElement("textarea");
     prompt.rows = 2;
     prompt.placeholder = "Give this agent a focused task";
@@ -956,7 +1002,7 @@ function renderAgents(): void {
       latestRun?.latestProgress ??
       latestRun?.error?.message ??
       "Ready for a task.";
-    card.append(details, binding, prompt, actions, progress);
+    card.append(details, binding, profileSettings, prompt, actions, progress);
     cards.append(card);
   }
   if (!agentsSnapshot.profiles.length) {
@@ -1033,6 +1079,26 @@ function renderAgents(): void {
     }
   }
   agentsPanel.append(heading, create, cards, detailPanel);
+}
+
+function agentApprovalPolicySelect(
+  selected: AgentApprovalPolicy,
+): HTMLSelectElement {
+  const select = document.createElement("select");
+  select.title = "Tool permissions";
+  select.setAttribute("aria-label", "Tool permissions");
+  for (const [value, label] of [
+    ["ask", "Ask for every tool"],
+    ["auto-read", "Allow read-only tools"],
+    ["auto-all", "Allow all tools"],
+  ] as const) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    option.selected = value === selected;
+    select.append(option);
+  }
+  return select;
 }
 
 function updateBrowserNavigation(): void {
@@ -5316,6 +5382,7 @@ void (async () => {
     desktop.credentialStorage(),
   ]);
   agentsSnapshot = await desktop.listAgents();
+  markChangedAgentRuns(agentsSnapshot, reflectedManagedAgentRunIds);
   for (const conversation of rendererState.desktop.conversations) {
     if (conversation.toolActivity?.length)
       toolActivityByConversation.set(conversation.id, [
