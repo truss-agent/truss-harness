@@ -1,6 +1,6 @@
 # Maintainability Refactor Plan
 
-**Status:** In progress — Runtime decomposition checkpoint complete
+**Status:** In progress — Runtime complete; shared composition underway
 
 **Created:** 2026-08-12
 
@@ -48,6 +48,25 @@ Next checkpoint: begin Phase 2 at the provider/host composition boundary.
 `tools.ts` remains intact because its 263 lines are currently cohesive enough
 that splitting it would add files without an independently useful ownership
 boundary.
+
+### 2026-08-12 — Shared composition checkpoint
+
+- Decomposed the 604-line agent-host entrypoint into a four-line public barrel,
+  provider registry/connection handling, hosted runtime composition, and the
+  compatibility constructor used by existing single-agent clients.
+- Preserved all package-root exports and the existing CLI, Desktop, TUI, and
+  multi-agent construction paths.
+- Verified all 7 agent-host tests, all 39 repository test files and 168 tests,
+  and the complete root build after the extraction.
+- Verified Biome on all changed agent-host source modules. The pre-existing
+  `index.test.ts` import-order and generator-yield diagnostics remain outside
+  this structural commit and should be handled with its eventual test-suite
+  reorganization rather than hidden in an unrelated source move.
+
+Next checkpoint: characterize the OpenAI-compatible stream parser and safe
+provider-error mapping with direct tests, then split provider contracts,
+serialization, transport parsing, discovery, and factories behind a stable
+package-root barrel.
 
 ## 1. Why this refactor is needed
 
