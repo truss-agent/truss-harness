@@ -1,16 +1,13 @@
 import { stdin, stdout } from "node:process";
 import { createInterface } from "node:readline";
-import type {
-  ChatAttachment,
-  ContextBlock,
-  RuntimeEvent,
-  Session,
-  ToolApproval,
-  ToolCall,
-} from "@truss-harness/runtime";
+import type { ChatAttachment, ContextBlock } from "@truss-harness/runtime";
+import type { ProtocolToolApproval } from "./protocol/approval.js";
+import {
+  serializeEvent,
+  serviceCapabilities,
+} from "./protocol/capabilities.js";
 import {
   LOCAL_SERVICE_PROTOCOL_VERSIONS,
-  type PermissionMode,
   type RuntimeServiceCapabilities,
   type RuntimeServiceErrorCode,
   type RuntimeServiceEventSource,
@@ -20,7 +17,6 @@ import {
   type RuntimeServiceResult,
   type RuntimeServiceRuntime,
   type RuntimeServiceWireMessage,
-  type SerializableRuntimeEvent,
 } from "./protocol-contracts.js";
 import {
   protocolObject,
@@ -32,6 +28,7 @@ import {
   validRequestId,
 } from "./protocol-validation.js";
 
+export { ProtocolToolApproval } from "./protocol/approval.js";
 export * from "./protocol-contracts.js";
 
 export interface RuntimeServiceOptions {
@@ -44,94 +41,6 @@ export interface RuntimeServiceOptions {
   readonly capabilities?: Partial<RuntimeServiceCapabilities>;
   /** Kept during migration so released VS Code clients can still connect. */
   readonly allowLegacyRequests?: boolean;
-}
-
-const readOnlyTools = new Set([
-  "read_file",
-  "list_directory",
-  "search_files",
-  "grep",
-]);
-interface PendingApproval {
-  readonly sessionId: string;
-  readonly resolve: (approved: boolean) => void;
-}
-
-type ApprovalListener = (call: ToolCall, session: Session) => void;
-
-/** Bridges runtime approval requests to a client using the JSONL service protocol. */
-export class ProtocolToolApproval implements ToolApproval {
-  private readonly pending = new Map<string, PendingApproval>();
-  private readonly listeners = new Set<ApprovalListener>();
-
-  constructor(private readonly mode: PermissionMode = "ask") {}
-
-  approve(call: ToolCall, session: Session): Promise<boolean> {
-    if (this.mode === "auto-all") return Promise.resolve(true);
-    if (this.mode === "auto-read" && readOnlyTools.has(call.name))
-      return Promise.resolve(true);
-    const result = new Promise<boolean>((resolve) =>
-      this.pending.set(call.id, { sessionId: session.id, resolve }),
-    );
-    for (const listener of this.listeners) listener(call, session);
-    return result;
-  }
-
-  subscribe(listener: ApprovalListener): () => void {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  resolve(callId: string, approved: boolean): boolean {
-    const pending = this.pending.get(callId);
-    if (!pending) return false;
-    this.pending.delete(callId);
-    pending.resolve(approved);
-    return true;
-  }
-
-  denySession(sessionId: string): void {
-    for (const [callId, pending] of this.pending) {
-      if (pending.sessionId !== sessionId) continue;
-      this.pending.delete(callId);
-      pending.resolve(false);
-    }
-  }
-
-  denyAll(): void {
-    for (const pending of this.pending.values()) pending.resolve(false);
-    this.pending.clear();
-  }
-}
-
-function serviceCapabilities(
-  options: RuntimeServiceOptions,
-): RuntimeServiceCapabilities {
-  return {
-    streaming: true,
-    sessions: true,
-    cancellation: true,
-    approvals: Boolean(options.approval),
-    context: true,
-    attachments: ["file", "image"],
-    changedFiles: true,
-    providerDiscovery: false,
-    providerPreflight: Boolean(options.host?.testProviderConnection),
-    configurationProfiles: Boolean(options.host?.listProfiles),
-    agentProfiles: false,
-    mcpStatus: Boolean(options.host?.listMcpServers),
-    ...options.capabilities,
-  };
-}
-
-function serializeEvent(event: RuntimeEvent): SerializableRuntimeEvent {
-  return event.type === "run_failed"
-    ? {
-        type: "run_failed",
-        sessionId: event.sessionId,
-        error: event.error.message,
-      }
-    : event;
 }
 
 /**
