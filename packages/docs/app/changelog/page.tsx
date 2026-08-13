@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "TUI 0.1.17",
+    label: "Maintainable terminal client architecture",
+    changes: [
+      "Reorganized the terminal client around dedicated runtime-session, terminal-process, workspace-file and editor, keyboard-control, layout, and Ink presentation modules.",
+      "Preserved chat, approvals, settings, local-model discovery, MCP status, agent profiles, file search and Git diff, terminal interruption, preview detection, focus cycling, and responsive terminal layouts while reducing the TUI entrypoint from 1,931 lines to under 500.",
+      "Added focused coverage for transcript rendering, responsive layout and focus transitions, preview URL safety, and generated-directory filtering during workspace discovery.",
+    ],
+  },
+  {
     version: "VS Code 0.1.22",
     label: "Maintainable client architecture",
     changes: [

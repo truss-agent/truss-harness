@@ -1,6 +1,6 @@
 # Maintainability Refactor Plan
 
-**Status:** In progress — shared layers and the VS Code client checkpoint complete
+**Status:** In progress — shared layers and the first two client checkpoints complete
 
 **Created:** 2026-08-12
 
@@ -158,6 +158,40 @@ Validation at this checkpoint:
 
 Next checkpoint: decompose the TUI state/process/rendering boundary in a fresh
 Phase 4 continuation after this VS Code checkpoint is reviewed and merged.
+
+### 2026-08-12 — TUI client checkpoint
+
+Completed locally on `refactor/tui-client-decomposition` for issue #207.
+
+- Reduced `packages/tui/src/bin.tsx` from 1,931 lines to under 500 while
+  retaining it as the process bootstrap and controller-composition boundary.
+- Extracted the runtime/session and conversation controller, terminal/process
+  controller, workspace file/editor/Git state, keyboard controller,
+  layout/focus reducer, display helpers, reusable panels and overlays, and the
+  stateless Ink workspace view.
+- Preserved existing startup configuration, streaming chat, approvals,
+  cancellation, local-model discovery, MCP inspection, agent profiles, file
+  search and Git diff, preview URLs, terminal interruption, keyboard focus,
+  and compact/wide resize behavior.
+- Added focused coverage for transcript formatting, context-window bounds,
+  layout and focus transitions, preview URL safety, and filtered workspace
+  collection.
+- Bumped the TUI package to 0.1.17 and updated the public changelog in this
+  feature branch so a release will not require a separate version PR.
+
+Validation at this checkpoint:
+
+- TUI 0.1.17 package build and all 13 focused TUI tests passing.
+- Full repository build and suite passing: 48 test files and 190 tests.
+- Isolated documentation production build, targeted Biome checks, changelog
+  and roadmap formatting, and `git diff --check` passing.
+- Interactive local smoke confirmed startup configuration, responsive Ink
+  rendering, keyboard focus movement, and clean idle Ctrl+C exit. The
+  maintainer should complete the remaining chat, files, Git diff, settings,
+  resize, and active terminal-interruption checks before push.
+
+Next checkpoint after merge: begin the Desktop main-process decomposition in
+a fresh branch; do not combine Electron main and renderer risk in one review.
 
 ## 1. Why this refactor is needed
 
