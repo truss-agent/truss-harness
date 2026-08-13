@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.43",
+    label: "Focused Git controller",
+    changes: [
+      "Moved repository status, history, staged-file selection, and Git action orchestration into a dedicated Desktop controller.",
+      "Moved Git panel rendering and event wiring out of the renderer composition file while preserving staging, discarding, pulling, pushing, committing, generated messages, syntax indicators, and automatic Files refresh.",
+      "Added focused coverage for repository projections, graph lanes, destructive confirmations, commit-message generation, remote safety, and post-action refresh behavior.",
+    ],
+  },
+  {
     version: "Desktop 0.1.42 · VS Code 0.1.23 · CLI 0.1.21 · TUI 0.1.18",
     label: "Reliable OpenRouter tool routing",
     changes: [

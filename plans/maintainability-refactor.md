@@ -1,6 +1,6 @@
 # Maintainability Refactor Plan
 
-**Status:** In progress — shared layers and the first two client checkpoints complete
+**Status:** In progress — shared layers and Desktop Git checkpoint implemented
 
 **Created:** 2026-08-12
 
@@ -422,8 +422,40 @@ Validation at this checkpoint:
   read-only workspace tool call; the routed model used structured tool calling
   and returned the grounded response without leaking pseudo-tool syntax.
 
-After that reliability slice: extract the Desktop Git controller, then the
-terminal controller, in separate reviewable slices.
+### 2026-08-13 — Desktop Git controller checkpoint
+
+Implemented locally on `refactor/desktop-git-controller` for issue #221:
+
+- Moved repository status and graph state, staged-file projection, refresh
+  ordering, destructive confirmations, and every Git action into a dedicated
+  controller.
+- Moved Git panel DOM lookup, repository/history rendering, file-row actions,
+  commit form handling, and static event binding into a focused Git view.
+- Preserved staging and unstaging, per-file and workspace discard, pull, push,
+  commit, generated commit messages, syntax-error indicators, terminal
+  feedback, collapse behavior, and automatic Files/Git refresh.
+- Reduced `packages/desktop/src/renderer.ts` from 4,960 to 4,575 lines and
+  added ten focused tests for state projection, action sequencing, remote and
+  confirmation safety, generated messages, status labels, refs, and graph
+  lanes.
+- Bumped Desktop to 0.1.43 and updated the public changelog in the same feature
+  branch.
+
+Validation at this checkpoint:
+
+- Desktop build and all 25 Desktop test files and 78 tests pass.
+- Root build and all 69 repository test files and 261 tests pass. The first
+  sandboxed run could not bind the gateway test port or start MCP fixtures;
+  the identical suite passed with the permissions those tests require.
+- The isolated documentation production build generates all 38 routes.
+- Targeted Biome and Prettier checks and `git diff --check` pass; the existing
+  unrelated renderer style suggestions remain unchanged.
+- Interactive Electron smoke passed for status/history rendering, collapse,
+  open-file actions, stage/unstage/discard, generated commit messages, commit,
+  pull/push safety, and automatic Files/Git refresh.
+
+Next checkpoint after merge: extract the Desktop terminal controller in a
+fresh branch, keeping it separate from remaining renderer domains.
 
 ## 1. Why this refactor is needed
 
