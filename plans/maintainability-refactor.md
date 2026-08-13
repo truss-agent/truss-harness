@@ -235,6 +235,37 @@ Validation at this checkpoint:
 Next checkpoint after merge: begin the Desktop renderer decomposition in a
 fresh branch; do not combine it with this Electron main-process review.
 
+### 2026-08-13 — Desktop renderer foundation checkpoint
+
+Completed locally on `refactor/desktop-renderer-foundation` for issue #211.
+
+- Routed every renderer IPC operation and event subscription through one typed
+  preload-client boundary instead of reaching through the global bridge across
+  unrelated UI domains.
+- Added an owned renderer state store for persisted Desktop state,
+  configuration, credential-storage status, provider model catalogs, and
+  conversation/model selectors.
+- Extracted custom-theme parsing and application, Markdown block parsing and
+  DOM rendering, safe file and external links, code-language aliases and
+  highlighting, and pure sidebar pane calculations.
+- Rewired the existing renderer without a framework change and preserved all
+  channel names, DOM structure, CSS classes, keyboard behavior, and
+  renderer-to-main payloads.
+- Added 12 focused tests across the new state, IPC, theme, Markdown, and layout
+  foundations and bumped Desktop to 0.1.38 on the feature branch.
+
+Validation at this checkpoint:
+
+- Desktop build and all 36 focused Desktop tests passing.
+- Targeted Biome checks pass with four unchanged renderer style suggestions;
+  Prettier and `git diff --check` pass.
+- Full repository build and suite, isolated documentation production build,
+  and interactive Electron smoke remain required before push.
+
+Next checkpoint after merge: migrate cohesive renderer vertical domains in a
+fresh branch, beginning with settings/provider and layout controllers before
+the higher-risk editor, files, chat, Git, and terminal domains.
+
 ## 1. Why this refactor is needed
 
 Several modules have become application subsystems rather than files. Their

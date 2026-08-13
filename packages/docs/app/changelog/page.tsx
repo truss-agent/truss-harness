@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.38",
+    label: "Maintainable renderer foundation",
+    changes: [
+      "Established a single typed preload boundary and centralized shared renderer state, configuration, provider-model metadata, credential-storage status, and conversation selectors.",
+      "Moved custom-theme validation and application, Markdown parsing and rendering, syntax highlighting, and responsive sidebar calculations into focused renderer modules without introducing a framework or changing the Desktop UI.",
+      "Added DOM-independent coverage for renderer state, bridge availability, theme safety, Markdown structure and link handling, code-language aliases, and pane resizing and collapse behavior.",
+    ],
+  },
+  {
     version: "Desktop 0.1.37",
     label: "Maintainable main-process architecture",
     changes: [
