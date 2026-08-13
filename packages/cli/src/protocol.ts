@@ -1,18 +1,16 @@
-import { stdin, stdout } from "node:process";
-import { createInterface } from "node:readline";
 import type { ChatAttachment, ContextBlock } from "@truss-harness/runtime";
 import type { ProtocolToolApproval } from "./protocol/approval.js";
 import {
   serializeEvent,
   serviceCapabilities,
 } from "./protocol/capabilities.js";
+import { jsonRpcMessage } from "./protocol/wire.js";
 import {
   LOCAL_SERVICE_PROTOCOL_VERSIONS,
   type RuntimeServiceCapabilities,
   type RuntimeServiceErrorCode,
   type RuntimeServiceEventSource,
   type RuntimeServiceHost,
-  type RuntimeServiceJsonRpcMessage,
   type RuntimeServiceMessage,
   type RuntimeServiceResult,
   type RuntimeServiceRuntime,
@@ -535,66 +533,8 @@ export class RuntimeService {
   private send(message: RuntimeServiceMessage): void {
     if (this.closed) return;
     this.options.write(
-      this.wireMode === "jsonrpc" ? this.jsonRpcMessage(message) : message,
+      this.wireMode === "jsonrpc" ? jsonRpcMessage(message) : message,
     );
-  }
-
-  private jsonRpcMessage(
-    message: RuntimeServiceMessage,
-  ): RuntimeServiceJsonRpcMessage {
-    if (message.type === "response")
-      return {
-        jsonrpc: "2.0",
-        id: message.requestId,
-        result: message.result,
-      };
-    if (message.type === "error")
-      return {
-        jsonrpc: "2.0",
-        id: message.requestId ?? null,
-        error: {
-          code: jsonRpcErrorCode(message.code),
-          message: message.message,
-          data: {
-            code: message.code,
-            ...(message.supportedProtocolVersions
-              ? {
-                  supportedProtocolVersions: message.supportedProtocolVersions,
-                }
-              : {}),
-          },
-        },
-      };
-    if (message.type === "event")
-      return {
-        jsonrpc: "2.0",
-        method: "runtime/event",
-        params: {
-          requestId: message.requestId,
-          event: message.event,
-        },
-      };
-    if (message.type === "approval_request")
-      return {
-        jsonrpc: "2.0",
-        method: "approval/requested",
-        params: {
-          requestId: message.requestId,
-          sessionId: message.sessionId,
-          callId: message.callId,
-          tool: message.tool,
-          input: message.input,
-        },
-      };
-    return {
-      jsonrpc: "2.0",
-      method: "run/lifecycle",
-      params: {
-        requestId: message.requestId,
-        state: message.state,
-        ...(message.sessionId ? { sessionId: message.sessionId } : {}),
-      },
-    };
   }
 
   private sendError(
@@ -638,43 +578,4 @@ export class RuntimeService {
   }
 }
 
-function jsonRpcErrorCode(code: RuntimeServiceErrorCode): number {
-  if (code === "invalid_json") return -32700;
-  if (code === "invalid_request") return -32600;
-  if (code === "method_not_found") return -32601;
-  if (code === "internal_error") return -32603;
-  if (code === "unsupported_protocol") return -32010;
-  if (code === "request_conflict") return -32009;
-  return -32004;
-}
-
-/** Starts the versioned newline-delimited JSON service over process stdio. */
-export async function runService(
-  runtime: RuntimeServiceRuntime,
-  events: RuntimeServiceEventSource,
-  approval?: ProtocolToolApproval,
-  options: {
-    readonly serverVersion?: string;
-    readonly capabilities?: Partial<RuntimeServiceCapabilities>;
-    readonly host?: RuntimeServiceHost;
-  } = {},
-): Promise<void> {
-  const service = new RuntimeService({
-    runtime,
-    events,
-    approval,
-    write: (message) => stdout.write(`${JSON.stringify(message)}\n`),
-    serverVersion: options.serverVersion,
-    capabilities: options.capabilities,
-    host: options.host,
-  });
-  const lines = createInterface({ input: stdin, crlfDelay: Infinity });
-  try {
-    for await (const line of lines) {
-      if ((await service.handleLine(line)) === "shutdown") break;
-    }
-  } finally {
-    lines.close();
-    await service.close();
-  }
-}
+export { runService } from "./protocol/stdio.js";
