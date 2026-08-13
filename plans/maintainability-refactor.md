@@ -224,10 +224,12 @@ Validation at this checkpoint:
 - Linux x64 packaging produced the Debian and unpacked application artifacts;
   the remaining RPM/Pacman targets were blocked by the local machine's disk
   quota rather than a source or packaging error.
-- Interactive Electron smoke remains required before push; run
-  `npm run desktop:dev` and verify startup/shutdown, settings and credentials,
-  chat cancellation and approvals, managed agents, Truss Go, workspace files,
-  Git actions, and terminal interruption.
+- Interactive Electron smoke verified startup/shutdown, settings and
+  credentials, chat cancellation and approvals, managed agents, workspace
+  files, Git actions, and terminal interruption. The initial phone test exposed
+  Desktop's random Truss Go port timing out through the LAN path; Desktop now
+  uses the shared stable port 4787 with focused startup, conflict, and cleanup
+  coverage. A repeat real-device pairing check remains required before push.
 
 Next checkpoint after merge: begin the Desktop renderer decomposition in a
 fresh branch; do not combine it with this Electron main-process review.
