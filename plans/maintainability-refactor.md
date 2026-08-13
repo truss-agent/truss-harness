@@ -1,6 +1,6 @@
 # Maintainability Refactor Plan
 
-**Status:** In progress — shared layers, Desktop terminal, Mobile transport, and Mobile remote-session checkpoints implemented
+**Status:** In progress — shared layers, Desktop terminal, Mobile transport, Mobile remote-session, and documentation-download checkpoints implemented
 
 **Created:** 2026-08-12
 
@@ -543,6 +543,33 @@ Validation at this checkpoint:
 
 Next checkpoint after merge: decompose the documentation download client or
 continue the next highest-risk client boundary from Phase 4.
+
+### 2026-08-13 — Documentation download client checkpoint
+
+Implemented locally on `refactor/docs-download-client` for issue #229:
+
+- Moved Desktop package catalog data, browser platform/architecture detection,
+  asset matching, release dates, default-package selection, and labels into a
+  typed, directly tested download catalog.
+- Moved the reusable non-Desktop client release card into its own presentational
+  component, leaving the download page responsible for fetching releases and
+  composing client sections.
+- Preserved current GitHub release selection, platform recommendations,
+  package links, fallback states, cards, and responsive markup without adding
+  release or deployment behavior.
+- Added direct coverage for platform detection, recommended package defaults,
+  and platform/architecture/package asset matching.
+
+Validation at this checkpoint:
+
+- Full repository build (including the VS Code bundle), all 280 tests, and
+  the isolated documentation production build pass. Gateway and MCP fixtures
+  require normal local process access because they bind localhost and start a
+  fixture process.
+- A responsive browser smoke remains required before push.
+
+Next checkpoint after merge: evaluate the next highest-risk Phase 4 client
+boundary; this download-page decomposition is complete for the current scope.
 
 ## 1. Why this refactor is needed
 
