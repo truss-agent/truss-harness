@@ -1,6 +1,6 @@
 # Maintainability Refactor Plan
 
-**Status:** In progress — shared layers and Desktop terminal checkpoint implemented
+**Status:** In progress — shared layers, Desktop terminal, and Mobile transport checkpoint implemented
 
 **Created:** 2026-08-12
 
@@ -486,6 +486,34 @@ Validation at this checkpoint:
 Next checkpoint after merge: evaluate the remaining Desktop renderer domains
 and then begin the Mobile and documentation-download decompositions defined in
 Phase 4.
+
+### 2026-08-13 — Mobile transport foundation checkpoint
+
+Implemented locally on `refactor/mobile-gateway-session` for issue #225:
+
+- Moved Mobile contracts for remote workspaces, sessions, gateway events,
+  approvals, managed agents, and persisted gateways out of the React Native
+  presentation module.
+- Moved QR pairing validation, saved-gateway replacement, preference parsing,
+  gateway endpoint construction, command transport, and workspace discovery
+  into focused typed modules.
+- Preserved gateway authentication, request protocol versioning, timeouts,
+  pairing-token guidance, and the existing automatic workspace-opening flow.
+- Added six direct tests for pairing/persistence and HTTP transport behavior;
+  bumped Truss Go to 0.1.5 and updated the public changelog in the same branch.
+
+Validation at this checkpoint:
+
+- Mobile TypeScript validation and six focused Mobile transport tests pass.
+- Full repository build (including the VS Code bundle), all 274 tests, and
+  the isolated documentation production build pass. The gateway and MCP
+  integration fixtures require normal local process access because they bind
+  localhost and start a fixture process.
+- A real-device smoke remains required before push.
+
+Next checkpoint after merge: move WebSocket event lifecycle and remote session
+state into a focused Mobile controller, then separately decompose the
+documentation download client.
 
 ## 1. Why this refactor is needed
 
