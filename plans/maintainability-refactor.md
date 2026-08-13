@@ -1,6 +1,6 @@
 # Maintainability Refactor Plan
 
-**Status:** In progress — Runtime, provider/composition, and CLI protocol checkpoints complete
+**Status:** In progress — shared layers and the VS Code client checkpoint complete
 
 **Created:** 2026-08-12
 
@@ -123,6 +123,41 @@ Validation at this checkpoint:
 Next checkpoint: continue the remaining Phase 3 work at the separately risky
 CLI entrypoint and gateway boundaries rather than combining them with this
 protocol-service review.
+
+### 2026-08-12 — VS Code client checkpoint
+
+Completed locally on `refactor/vscode-client-decomposition` for issue #205.
+
+- Reduced `packages/vscode/src/extension.ts` from 1,888 lines to 435 lines and
+  retained it as the activation, registration, and cross-controller
+  composition boundary.
+- Extracted typed webview/service contracts, JSON-lines runtime transport,
+  bounded conversation restoration, model/MCP normalization, workspace
+  context, and streamed inline-response ownership.
+- Extracted controllers for provider accounts and connection behavior,
+  provider commands, managed agents, Truss Go, updates, Git commit-message
+  generation, inline completions, workspace commands, and chat runtime/session
+  lifecycle.
+- Moved the Chat and Agent Control Center documents into a dedicated webview
+  presentation module without changing their message protocol or rendered
+  behavior, and removed the unused legacy webview implementation.
+- Added focused tests for configuration normalization and model pricing,
+  conversation bounds and attachment validation, and concurrent inline
+  response buffering.
+- Bumped the VS Code client to 0.1.22 and updated the public changelog in this
+  feature branch so the eventual release does not require a separate version
+  PR.
+
+Validation at this checkpoint:
+
+- Full repository suite passing: 44 test files and 180 tests.
+- Root build and isolated documentation production build passing.
+- VS Code 0.1.22 packaged successfully as a 1.73 MB VSIX containing 66 files.
+- Targeted Biome, roadmap/changelog Prettier checks, and `git diff --check`
+  passing.
+
+Next checkpoint: decompose the TUI state/process/rendering boundary in a fresh
+Phase 4 continuation after this VS Code checkpoint is reviewed and merged.
 
 ## 1. Why this refactor is needed
 

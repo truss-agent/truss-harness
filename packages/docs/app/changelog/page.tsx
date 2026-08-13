@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "VS Code 0.1.22",
+    label: "Maintainable client architecture",
+    changes: [
+      "Reorganized the VS Code extension into focused controllers for runtime transport, conversations, providers and secure accounts, managed agents, Truss Go, updates, Git assistance, workspace commands, inline completions, and webview presentation.",
+      "Kept the existing commands, settings, provider behavior, conversation concurrency, cancellation, approvals, and serialized service messages compatible while reducing the activation entrypoint from 1,888 lines to under 450.",
+      "Added focused coverage for model configuration, cloud discovery metadata, conversation restoration limits, attachment validation, and concurrent inline-response buffering.",
+    ],
+  },
+  {
     version: "VS Code 0.1.21",
     label: "Concurrent conversations and manual updates",
     changes: [
@@ -25,7 +34,8 @@ const entries = [
     ],
   },
   {
-    version: "Desktop 0.1.35 · VS Code 0.1.19 · CLI 0.1.19 · TUI 0.1.15 · Truss Go 0.1.4",
+    version:
+      "Desktop 0.1.35 · VS Code 0.1.19 · CLI 0.1.19 · TUI 0.1.15 · Truss Go 0.1.4",
     label: "Grounded chat and trusted mobile pairing",
     changes: [
       "Let Chat inspect and search the workspace with read, list, search, and grep tools, so codebase questions can be answered from the actual project.",
