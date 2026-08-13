@@ -1,6 +1,6 @@
 # Maintainability Refactor Plan
 
-**Status:** In progress — Runtime and provider/composition phases complete
+**Status:** In progress — Runtime, provider/composition, and CLI protocol checkpoints complete
 
 **Created:** 2026-08-12
 
@@ -95,6 +95,34 @@ Validation at this checkpoint:
 
 Next checkpoint: Phase 3 protocol and command boundaries, beginning with the
 CLI runtime service only after this provider phase is merged.
+
+### 2026-08-12 — CLI protocol checkpoint
+
+Completed locally on `refactor/cli-runtime-protocol` for issue #203; this
+checkpoint is ready for its linked pull request.
+
+- Decomposed the 771-line CLI protocol service while preserving its public
+  `protocol.ts` exports and every serialized request, response, and event
+  payload.
+- Extracted tool-approval ownership, protocol capabilities and runtime-event
+  serialization, JSON-RPC wire framing, and the stdio adapter into focused
+  modules.
+- Isolated active-run/session lifecycle, cancellation, request-ID ownership,
+  event forwarding, and shutdown cleanup in `RunRegistry`, leaving
+  `RuntimeService` as the readable protocol orchestrator.
+- Reduced `protocol.ts` to 462 lines without altering the existing CLI,
+  Neovim, Desktop, VS Code, TUI, or Mobile protocol boundary.
+
+Validation at this checkpoint:
+
+- CLI package build and all 16 protocol tests passing during extraction.
+- Final root build and full repository suite passing: 41 test files and 172
+  tests.
+- Targeted Biome checks, roadmap formatting, and `git diff --check` passing.
+
+Next checkpoint: continue the remaining Phase 3 work at the separately risky
+CLI entrypoint and gateway boundaries rather than combining them with this
+protocol-service review.
 
 ## 1. Why this refactor is needed
 
