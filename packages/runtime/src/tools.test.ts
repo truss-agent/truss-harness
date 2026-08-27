@@ -62,6 +62,48 @@ describe("filesystem edit tools", () => {
 
     await expect(writeFileTool.execute({ path: "README.md", content: "short" }, { workspaceRoot: root })).rejects.toThrow("substantially less content");
   });
+
+  it("allows empty content when clearing a file", async () => {
+    const root = await workspace();
+    await writeFile(join(root, "README.md"), "existing content", "utf8");
+
+    await expect(
+      writeFileTool.execute({ path: "README.md", content: "" }, { workspaceRoot: root }),
+    ).resolves.toEqual({ content: "File written." });
+
+    await expect(readFile(join(root, "README.md"), "utf8")).resolves.toBe("");
+  });
+
+  it("allows an empty oldText when initializing a blank file", async () => {
+    const root = await workspace();
+    await writeFile(join(root, "index.html"), "", "utf8");
+
+    await expect(
+      replaceInFileTool.execute(
+        { path: "index.html", oldText: "", newText: "<main>new</main>" },
+        { workspaceRoot: root },
+      ),
+    ).resolves.toEqual({ content: "File was blank; wrote replacement content." });
+  });
+
+  it("keeps workspace paths non-empty", async () => {
+    const root = await workspace();
+
+    await expect(
+      writeFileTool.execute({ path: "", content: "text" }, { workspaceRoot: root }),
+    ).rejects.toThrow("'path' must be a non-empty string");
+  });
+
+  it("keeps search queries and terminal commands non-empty", async () => {
+    const root = await workspace();
+
+    await expect(grepTool.execute({ query: "" }, { workspaceRoot: root })).rejects.toThrow(
+      "'query' must be a non-empty string",
+    );
+    await expect(createTerminalTool().execute({ command: "" }, { workspaceRoot: root })).rejects.toThrow(
+      "'command' must be a non-empty string",
+    );
+  });
 });
 
 describe("agent terminal tool", () => {

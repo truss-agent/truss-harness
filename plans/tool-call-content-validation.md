@@ -1,6 +1,6 @@
 # Tool-call content validation
 
-**Status:** Planned
+**Status:** Complete — implementation and regression coverage validated
 
 **Tracking issue:** #233
 
@@ -60,3 +60,13 @@ whose schema allows an empty string:
 - `replace_in_file` can initialize a blank file with `oldText: ""`.
 - Empty paths and other identifier-like inputs still fail with precise errors.
 - Existing tool safety tests and consumer builds remain green.
+
+## Implementation record
+
+- Split strict non-empty identifiers from text payloads in the core tool
+  validators.
+- `write_file` now accepts `content: ""`, and `replace_in_file` accepts an
+  empty `oldText` when initializing a blank file.
+- Paths, search queries, terminal commands, and plan IDs remain strict.
+- Validated with focused runtime/agent tests, the complete test suite, root
+  build, isolated docs build, and `git diff --check`.

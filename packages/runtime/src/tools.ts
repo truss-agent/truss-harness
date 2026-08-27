@@ -17,17 +17,22 @@ export class ToolRegistry {
   definitions() { return [...this.tools.values()].map(({ name, description, inputSchema }) => ({ name, description, inputSchema })); }
 }
 
-function stringInput(input: JsonObject, key: string): string {
+function nonEmptyStringInput(input: JsonObject, key: string): string {
   const value = input[key];
   if (typeof value !== "string" || !value) throw new Error(`'${key}' must be a non-empty string`);
+  return value;
+}
+
+function stringInput(input: JsonObject, key: string): string {
+  const value = input[key];
+  if (typeof value !== "string") throw new Error(`'${key}' must be a string`);
   return value;
 }
 
 function optionalStringInput(input: JsonObject, key: string, fallback: string): string {
   const value = input[key];
   if (value === undefined) return fallback;
-  if (typeof value !== "string" || !value) throw new Error(`'${key}' must be a non-empty string`);
-  return value;
+  return nonEmptyStringInput(input, key);
 }
 
 function optionalNumberInput(input: JsonObject, key: string, fallback: number): number {
@@ -49,7 +54,7 @@ const ignoredDirectories = new Set([".git", "node_modules", "dist", "coverage"])
 
 export const readFileTool: AgentTool = {
   name: "read_file", description: "Read a UTF-8 file using a workspace-relative path such as README.md. Absolute paths are not allowed.", inputSchema: pathSchema,
-  async execute(input, context) { return { content: await readFile(resolveWorkspacePath(context.workspaceRoot, stringInput(input, "path")), "utf8") }; }
+  async execute(input, context) { return { content: await readFile(resolveWorkspacePath(context.workspaceRoot, nonEmptyStringInput(input, "path")), "utf8") }; }
 };
 
 export const writeFileTool: AgentTool = {
@@ -57,7 +62,7 @@ export const writeFileTool: AgentTool = {
   inputSchema: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] },
   async execute(input, context) {
     const content = stringInput(input, "content");
-    const fullPath = resolveWorkspacePath(context.workspaceRoot, stringInput(input, "path"));
+    const fullPath = resolveWorkspacePath(context.workspaceRoot, nonEmptyStringInput(input, "path"));
     let existing: string | undefined;
     try { existing = await readFile(fullPath, "utf8"); } catch (error) {
       if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
@@ -76,9 +81,8 @@ export const replaceInFileTool: AgentTool = {
   inputSchema: { type: "object", properties: { path: { type: "string" }, oldText: { type: "string" }, newText: { type: "string" } }, required: ["path", "oldText", "newText"] },
   async execute(input, context) {
     const oldText = stringInput(input, "oldText");
-    const newText = typeof input.newText === "string" ? input.newText : undefined;
-    if (newText === undefined) throw new Error("'newText' must be a string");
-    const fullPath = resolveWorkspacePath(context.workspaceRoot, stringInput(input, "path"));
+    const newText = stringInput(input, "newText");
+    const fullPath = resolveWorkspacePath(context.workspaceRoot, nonEmptyStringInput(input, "path"));
     const existing = await readFile(fullPath, "utf8");
     // A model can reasonably use a focused replacement while scaffolding a
     // file. There is no exact excerpt to match in a blank file, so initialize
@@ -127,7 +131,7 @@ export function createUpdatePlanTool(plans: WorkspacePlanStore): AgentTool {
     description: "Update the status of one active plan step. Use in Agent mode before work starts, after a step is completed, and when moving to the next step.",
     inputSchema: { type: "object", properties: { stepId: { type: "string" }, status: { type: "string", description: "pending, in_progress, or completed" } }, required: ["stepId", "status"] },
     async execute(input): Promise<ToolResult> {
-      const stepId = stringInput(input, "stepId");
+      const stepId = nonEmptyStringInput(input, "stepId");
       const status = input.status;
       if (status !== "pending" && status !== "in_progress" && status !== "completed") throw new Error("status must be pending, in_progress, or completed");
       if (!await plans.load()) return { content: "No active plan exists. Continue the requested task without updating plan progress." };
@@ -167,7 +171,7 @@ export const searchFilesTool: AgentTool = {
     required: ["query"]
   },
   async execute(input, context) {
-    const query = stringInput(input, "query").toLowerCase();
+    const query = nonEmptyStringInput(input, "query").toLowerCase();
     const basePath = resolveWorkspacePath(context.workspaceRoot, optionalStringInput(input, "path", "."));
     const maxResults = Math.floor(optionalNumberInput(input, "maxResults", 50));
     const files: string[] = [];
@@ -191,7 +195,7 @@ export const grepTool: AgentTool = {
     required: ["query"]
   },
   async execute(input, context) {
-    const query = stringInput(input, "query");
+    const query = nonEmptyStringInput(input, "query");
     const basePath = resolveWorkspacePath(context.workspaceRoot, optionalStringInput(input, "path", "."));
     const maxResults = Math.floor(optionalNumberInput(input, "maxResults", 100));
     const files: string[] = [];
@@ -227,7 +231,7 @@ export function createTerminalTool(timeoutMs = 30_000): AgentTool {
     name: "run_terminal", description: "Run a build, test, Git, or inspection command from the workspace root. Do not use shell redirection or content-writing commands to edit workspace files; use write_file or replace_in_file instead.",
     inputSchema: { type: "object", properties: { command: { type: "string" } }, required: ["command"] },
     async execute(input, context): Promise<ToolResult> {
-      const command = stringInput(input, "command");
+      const command = nonEmptyStringInput(input, "command");
       if (/[>]|\b(?:add-content|set-content|out-file|tee|sed\s+-i)\b/i.test(command)) {
         return { content: "Terminal file-writing commands and shell redirection are disabled for agents. Use write_file or replace_in_file to modify workspace files.", isError: true };
       }
