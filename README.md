@@ -39,7 +39,7 @@ the repository root, so no monorepo runtime-path workaround is required:
 To pin a specific plugin release, replace `branch` with a release tag:
 
 ```lua
-tag = "nvim-v0.2.2"
+tag = "nvim-v0.2.3"
 ```
 
 Run `:checkhealth truss` once after installation. Then use
