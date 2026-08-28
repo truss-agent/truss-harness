@@ -82,6 +82,7 @@ const runtimeService = new DesktopRuntimeService(
   (reference) => credentialService.get(reference),
   workspaceService,
   send,
+  () => join(app.getPath("userData"), "runtime-host"),
 );
 const managedAgents = new ManagedAgentService(
   () => persisted,

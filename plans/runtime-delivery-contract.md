@@ -119,6 +119,12 @@ then activates it atomically. This gives the first bootstrap clients a real
 runtime-only update path while keeping network retrieval and publisher-signature
 verification as a separate, auditable next step.
 
+Desktop now resolves the same verified active host from its application data
+directory before falling back to its embedded runtime. Its child host receives
+only the current runtime configuration, runs the existing JSONL protocol, and
+returns tool approvals/events through the Desktop process; encrypted credential
+storage remains owned by Desktop.
+
 ## Implementation checkpoint 2
 
 The shared host layer now has a deliberately narrow release-manifest parser,

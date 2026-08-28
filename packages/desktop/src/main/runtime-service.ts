@@ -3,6 +3,11 @@ import {
   createClientRuntime,
 } from "@truss-harness/cli/runtime";
 import {
+  readRuntimeHostActivation,
+  verifyRuntimeHostArtifact,
+} from "@truss-harness/cli/protocol";
+import { resolve } from "node:path";
+import {
   cloudProviderDefinition,
   isCloudProviderId,
 } from "@truss-harness/provider-openai-compatible";
@@ -20,6 +25,7 @@ import type {
   DesktopState,
 } from "../shared.js";
 import { contextBudgetForConfiguration } from "./desktop-configuration.js";
+import { DesktopRuntimeHostClient } from "./runtime-host-client.js";
 import type { WorkspaceService } from "./workspace-service.js";
 
 export interface DesktopChatInput {
@@ -36,6 +42,7 @@ type ClientRuntime = Awaited<ReturnType<typeof createClientRuntime>>;
 
 export class DesktopRuntimeService {
   private client: ClientRuntime | undefined;
+  private hostClient: DesktopRuntimeHostClient | undefined;
   private unsubscribeEvents: (() => void) | undefined;
   private activeSessionId: string | undefined;
   private activeConversationId: string | undefined;
@@ -57,6 +64,7 @@ export class DesktopRuntimeService {
     ) => Promise<string | undefined>,
     private readonly workspace: WorkspaceService,
     private readonly send: (event: DesktopEvent) => void,
+    private readonly runtimeHostStore: () => string = () => "",
   ) {}
 
   get mcpServers(): ClientRuntime["mcpServers"] {
@@ -64,11 +72,22 @@ export class DesktopRuntimeService {
   }
 
   get running(): boolean {
-    return Boolean(this.client);
+    return Boolean(this.client || this.hostClient);
   }
 
   async configure(configuration: DesktopConfiguration): Promise<void> {
     await this.dispose();
+    const managedHost = await this.managedHost(configuration);
+    if (managedHost) {
+      this.hostClient = managedHost;
+      await managedHost.start();
+      this.setState({
+        ...this.state(),
+        mcpStatuses: [],
+        runtimeError: undefined,
+      });
+      return;
+    }
     this.client = await createClientRuntime(
       await this.clientConfiguration(configuration),
     );
@@ -98,7 +117,10 @@ export class DesktopRuntimeService {
     this.unsubscribeEvents = undefined;
     const previousClient = this.client;
     this.client = undefined;
+    const previousHostClient = this.hostClient;
+    this.hostClient = undefined;
     await previousClient?.dispose();
+    previousHostClient?.dispose();
     for (const resolveApproval of this.approvalResolvers.values())
       resolveApproval(false);
     this.approvalResolvers.clear();
@@ -277,7 +299,8 @@ export class DesktopRuntimeService {
     const configuration = this.state().configuration;
     if (!configuration?.model)
       throw new Error("Choose a local model before starting the agent.");
-    if (!this.client) await this.configure(configuration);
+    if (!this.client && !this.hostClient) await this.configure(configuration);
+    if (this.hostClient) return this.executeHostedChat(this.hostClient, input);
     const client = this.client;
     if (!client) throw new Error("The model runtime is not ready.");
     if (
@@ -327,6 +350,141 @@ export class DesktopRuntimeService {
     } finally {
       if (this.activeAbort === controller) this.activeAbort = undefined;
     }
+  }
+
+  private async executeHostedChat(
+    client: DesktopRuntimeHostClient,
+    input: DesktopChatInput,
+  ): Promise<void> {
+    if (
+      !this.activeSessionId ||
+      this.activeConversationId !== input.conversationId
+    ) {
+      this.sessionAllowsAllTools = false;
+      this.activeSessionId = await client.createSession(input.history);
+      this.activeConversationId = input.conversationId;
+      this.sessionConversationIds.set(
+        this.activeSessionId,
+        input.conversationId,
+      );
+    }
+    const controller = new AbortController();
+    this.activeAbort = controller;
+    this.send({ type: "chat-start", conversationId: input.conversationId });
+    try {
+      await client.run({
+        sessionId: this.activeSessionId,
+        prompt: input.prompt,
+        signal: controller.signal,
+        context: await this.fileContext(
+          input.activeFilePath,
+          input.attachedPaths,
+          input.openFilePaths,
+        ),
+        attachments: input.attachments,
+      });
+      this.send({
+        type: "chat-end",
+        conversationId: input.conversationId,
+        aborted: controller.signal.aborted,
+      });
+    } catch (error) {
+      this.send(
+        controller.signal.aborted
+          ? {
+              type: "chat-end",
+              conversationId: input.conversationId,
+              aborted: true,
+            }
+          : {
+              type: "chat-error",
+              conversationId: input.conversationId,
+              message: error instanceof Error ? error.message : String(error),
+            },
+      );
+    } finally {
+      if (this.activeAbort === controller) this.activeAbort = undefined;
+    }
+  }
+
+  private async managedHost(
+    configuration: DesktopConfiguration,
+  ): Promise<DesktopRuntimeHostClient | undefined> {
+    const store = this.runtimeHostStore();
+    if (!store) return undefined;
+    const activation = await readRuntimeHostActivation(store);
+    if (!activation) return undefined;
+    try {
+      await verifyRuntimeHostArtifact(
+        store,
+        activation.artifactPath,
+        activation.manifest,
+      );
+    } catch {
+      return undefined;
+    }
+    const environment: NodeJS.ProcessEnv = {
+      ...process.env,
+      TRUSS_HARNESS_PROVIDER: configuration.provider,
+      TRUSS_HARNESS_BASE_URL: configuration.baseUrl,
+      TRUSS_HARNESS_MODEL: configuration.model,
+      TRUSS_HARNESS_AGENT_MODE: configuration.mode,
+      TRUSS_HARNESS_PERMISSION_MODE: configuration.permission,
+      TRUSS_HARNESS_INTERNET_ACCESS: configuration.internetAccess
+        ? "true"
+        : "false",
+      TRUSS_HARNESS_MCP_SERVERS: JSON.stringify(configuration.mcpServers),
+    };
+    const apiKey = await this.credential(
+      configuration.credentialAccountId ?? configuration.provider,
+    );
+    if (apiKey) environment.TRUSS_HARNESS_API_KEY = apiKey;
+    let client: DesktopRuntimeHostClient;
+    client = new DesktopRuntimeHostClient({
+      artifactPath: resolve(store, activation.artifactPath),
+      cwd: this.state().workspaceRoot,
+      environment,
+      onDiagnostic: () => undefined,
+      onEvent: (event) =>
+        this.send({
+          type: "agent",
+          conversationId: this.sessionConversationIds.get(event.sessionId),
+          event: {
+            type: event.type,
+            sessionId: event.sessionId,
+            ...(event.text ? { text: event.text } : {}),
+            ...(event.tool ? { tool: event.tool } : {}),
+            ...(event.callId ? { callId: event.callId } : {}),
+            ...(event.input ? { input: event.input } : {}),
+            ...(event.result ? { result: event.result } : {}),
+            ...(event.modifiedFiles
+              ? { modifiedFiles: event.modifiedFiles }
+              : {}),
+            ...(event.error ? { error: { message: event.error } } : {}),
+          },
+        }),
+      onApproval: (request) => {
+        const readOnly = isReadOnlyTool(request.tool);
+        if (
+          this.sessionAllowsAllTools ||
+          configuration.permission === "auto-all" ||
+          (configuration.permission === "auto-read" && readOnly)
+        ) {
+          client.approve(request.callId, true);
+          return;
+        }
+        this.approvalResolvers.set(request.callId, (approved) =>
+          client.approve(request.callId, approved),
+        );
+        this.send({
+          type: "approval",
+          callId: request.callId,
+          tool: request.tool,
+          input: request.input,
+        });
+      },
+    });
+    return client;
   }
 }
 
