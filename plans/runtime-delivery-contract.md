@@ -112,6 +112,13 @@ bundled service. A corrupt or stale activation is diagnosed and cannot replace
 the bundled fallback. The managed-host installer remains the next checkpoint;
 this resolver deliberately accepts only already-verified local files.
 
+The CLI supplies the local delivery operations: `runtime status`, `runtime
+install <artifact> <manifest>`, and `runtime rollback`. Install copies a
+user-selected release asset into Truss-controlled storage, verifies it there,
+then activates it atomically. This gives the first bootstrap clients a real
+runtime-only update path while keeping network retrieval and publisher-signature
+verification as a separate, auditable next step.
+
 ## Implementation checkpoint 2
 
 The shared host layer now has a deliberately narrow release-manifest parser,

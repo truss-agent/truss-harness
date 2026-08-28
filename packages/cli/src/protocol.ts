@@ -35,10 +35,12 @@ export * from "./protocol-contracts.js";
 export { validateRuntimeServiceHandshake } from "./protocol/compatibility.js";
 export {
   activateRuntimeHost,
+  installRuntimeHostArtifact,
   parseRuntimeHostManifest,
   readRuntimeHostActivation,
   rollbackRuntimeHost,
   verifyRuntimeHostArtifact,
+  runtimeHostStorePath,
 } from "./runtime-delivery.js";
 export type {
   RuntimeHostActivation,

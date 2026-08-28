@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import { homedir } from "node:os";
 import { basename, relative, resolve } from "node:path";
 
 export interface RuntimeHostManifest {
@@ -25,6 +34,10 @@ export interface RuntimeHostActivation {
 
 const activationFileName = "active.json";
 const previousActivationFileName = "previous.json";
+
+export function runtimeHostStorePath(homeDirectory = homedir()): string {
+  return resolve(homeDirectory, ".truss-harness", "runtime-host");
+}
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -181,6 +194,37 @@ export async function activateRuntimeHost(
   };
   await writeActivation(directory, activationFileName, activation);
   return activation;
+}
+
+/**
+ * Copies a user-selected release asset into the controlled store, verifies it
+ * there, and only then records it as active. Downloading remains outside this
+ * API so network trust can be added separately from local activation.
+ */
+export async function installRuntimeHostArtifact(
+  directory: string,
+  sourcePath: string,
+  manifest: RuntimeHostManifest,
+): Promise<RuntimeHostActivation> {
+  await mkdir(directory, { recursive: true });
+  const targetPath = controlledArtifactPath(
+    directory,
+    manifest.artifact.fileName,
+  );
+  const stagingPath = `${targetPath}.${process.pid}.staging`;
+  try {
+    await copyFile(sourcePath, stagingPath);
+    await verifyRuntimeHostArtifact(directory, basename(stagingPath), manifest);
+    await rename(stagingPath, targetPath);
+    return await activateRuntimeHost(
+      directory,
+      manifest.artifact.fileName,
+      manifest,
+    );
+  } catch (error) {
+    await rm(stagingPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
 }
 
 export async function rollbackRuntimeHost(

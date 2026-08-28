@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   activateRuntimeHost,
+  installRuntimeHostArtifact,
   parseRuntimeHostManifest,
   readRuntimeHostActivation,
   rollbackRuntimeHost,
@@ -125,5 +126,17 @@ describe("runtime-host delivery", () => {
         manifest,
       ),
     ).rejects.toThrow("size");
+  });
+
+  it("installs a user-selected artifact only after verification", async () => {
+    const { directory, manifest } = await fixture("known-good");
+    const source = join(directory, "downloaded-host.cjs");
+    await writeFile(source, "known-good", "utf8");
+    const activation = await installRuntimeHostArtifact(
+      directory,
+      source,
+      manifest,
+    );
+    expect(activation.artifactPath).toBe(manifest.artifact.fileName);
   });
 });

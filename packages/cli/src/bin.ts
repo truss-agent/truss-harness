@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { cwd } from "node:process";
+import { readFile } from "node:fs/promises";
 import { basename, resolve as resolvePath } from "node:path";
 import { createInterface } from "node:readline/promises";
 import {
@@ -31,7 +32,12 @@ import {
 } from "./config.js";
 import {
   ProtocolToolApproval,
+  installRuntimeHostArtifact,
+  parseRuntimeHostManifest,
+  readRuntimeHostActivation,
+  rollbackRuntimeHost,
   runService,
+  runtimeHostStorePath,
   type PermissionMode,
 } from "./protocol.js";
 import {
@@ -82,6 +88,10 @@ Commands:
   commands              Print slash commands shared by interactive clients
   serve                 Start the JSONL runtime service for editor clients
   gateway               Start a loopback HTTP/SSE gateway for the mobile client
+  runtime status         Show the active verified runtime host, if any
+  runtime install <artifact> <manifest>
+                        Verify and activate a downloaded runtime-host asset
+  runtime rollback       Restore the prior verified runtime-host asset
   agents list           List workspace-local multi-agent profiles
   agents add <name>     Add a profile using the selected configuration
   agents remove <id>    Remove an idle profile
@@ -762,6 +772,52 @@ async function main(): Promise<void> {
     }
     throw new Error(
       `Use ${brand.cliCommand} agents list, add, remove, or run.`,
+    );
+  }
+
+  if (command === "runtime") {
+    const [action = "status", artifactPath, manifestPath] = rawArgs;
+    const store = runtimeHostStorePath();
+    if (action === "status") {
+      const activation = await readRuntimeHostActivation(store);
+      if (!activation) {
+        process.stdout.write("No verified runtime host is active.\n");
+        return;
+      }
+      process.stdout.write(
+        `${activation.manifest.runtime.packageName}@${activation.manifest.runtime.version}\n${activation.artifactPath}\n`,
+      );
+      return;
+    }
+    if (action === "install") {
+      if (!artifactPath || !manifestPath)
+        throw new Error(
+          `Use ${brand.cliCommand} runtime install <artifact> <manifest>.`,
+        );
+      const manifest = parseRuntimeHostManifest(
+        JSON.parse(await readFile(manifestPath, "utf8")) as unknown,
+      );
+      const activation = await installRuntimeHostArtifact(
+        store,
+        artifactPath,
+        manifest,
+      );
+      process.stdout.write(
+        `Activated ${activation.manifest.runtime.packageName}@${activation.manifest.runtime.version}.\n`,
+      );
+      return;
+    }
+    if (action === "rollback") {
+      const activation = await rollbackRuntimeHost(store);
+      process.stdout.write(
+        activation
+          ? `Restored ${activation.manifest.runtime.packageName}@${activation.manifest.runtime.version}.\n`
+          : "No previous verified runtime host is available.\n",
+      );
+      return;
+    }
+    throw new Error(
+      `Use ${brand.cliCommand} runtime status, install, or rollback.`,
     );
   }
 
