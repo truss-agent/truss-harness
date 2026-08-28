@@ -106,6 +106,12 @@ This gives both editor clients a safe manual update route now, while the later
 managed-artifact resolver remains responsible for checksum verification,
 activation, and rollback.
 
+VS Code now consumes that activation state: it resolves an explicit configured
+CLI first, then a checksum-verified active host in extension storage, then its
+bundled service. A corrupt or stale activation is diagnosed and cannot replace
+the bundled fallback. The managed-host installer remains the next checkpoint;
+this resolver deliberately accepts only already-verified local files.
+
 ## Implementation checkpoint 2
 
 The shared host layer now has a deliberately narrow release-manifest parser,

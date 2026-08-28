@@ -40,6 +40,10 @@ export {
   rollbackRuntimeHost,
   verifyRuntimeHostArtifact,
 } from "./runtime-delivery.js";
+export type {
+  RuntimeHostActivation,
+  RuntimeHostManifest,
+} from "./runtime-delivery.js";
 
 export interface RuntimeServiceOptions {
   readonly runtime: RuntimeServiceRuntime;
