@@ -152,6 +152,28 @@ MCP responses never contain credentials or executable configuration.
 Released VS Code clients using the original JSON-lines message shape remain
 compatible during the protocol migration.
 
+## Runtime-host updates
+
+Compatible runtime fixes can be installed separately from an already-installed
+editor client. Download both `truss-runtime-host.cjs` and
+`truss-runtime-host.manifest.json` from the matching Truss Runtime GitHub
+release, then activate the verified pair:
+
+```sh
+truss-cli runtime install ./truss-runtime-host.cjs ./truss-runtime-host.manifest.json
+truss-cli runtime status
+```
+
+The installer copies the artifact into Truss-controlled storage, validates its
+size and SHA-256 checksum, and retains the previous verified host for rollback:
+
+```sh
+truss-cli runtime rollback
+```
+
+An incompatible, changed, or missing artifact is never selected. Bootstrap
+clients continue using their embedded runtime instead.
+
 Run `truss-cli help` for every command, flag, environment variable, mode, permission policy, and example.
 
 ## License and contributions
