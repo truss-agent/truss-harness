@@ -1,6 +1,6 @@
 # Master prompt templates
 
-**Status:** Planned
+**Status:** Implementation in progress
 
 **Tracking issue:** #235
 
@@ -67,18 +67,30 @@ file contents, full chat history, shell output, or device-pairing data.
 
 ## Work items
 
-1. Add the provider-neutral template contracts, tokenizer/parser, bounded
-   renderer, and unit tests to `@truss-harness/runtime`.
-2. Add master-prompt composition in `@truss-harness/agent-host` before a
-   runtime creates its system message; regression-test mode safety and profile
-   instruction ordering.
-3. Add configuration adapters for Desktop, VS Code, CLI/TUI, Neovim, and the
-   gateway-host configuration used by Mobile. The Mobile app can view/update
-   host-provided settings only through its authenticated host protocol.
-4. Build the UI surfaces incrementally, but retain the shared contract and
-   validation behavior in every client.
-5. Document XML examples, supported variables, escaping behavior, privacy
-   limits, and recovery from invalid templates.
+1. [x] Add the provider-neutral template contracts, bounded renderer, explicit
+   token validation, XML escaping, and unit coverage to `@truss-harness/runtime`.
+2. [x] Compose the rendered layer after authoritative mode safety and before
+   profile instructions in `@truss-harness/agent-host`.
+3. [x] Add configuration adapters for Desktop, VS Code, CLI/TUI, Neovim, and
+   the gateway-host configuration used by Mobile. Credentials remain outside
+   prompt configuration.
+4. [x] Add multiline Desktop and VS Code editors with an on/off control, token
+   reference, and synchronous Apply-time validation. A non-secret live preview
+   and reset affordance remain a follow-up UX improvement, not a safety gap.
+5. [x] Document XML examples, supported variables, escaping behavior, privacy
+   limits, environment compatibility, and invalid-template recovery.
+
+## Implementation notes
+
+- `TRUSS_HARNESS_MASTER_PROMPT` is the explicit one-launch template input.
+  `TRUSS_HARNESS_SYSTEM_PROMPT` remains a compatibility alias when no explicit
+  template is configured.
+- The gateway/mobile host receives the resolved template through the trusted
+  Desktop or VS Code host configuration. Mobile does not receive credentials
+  or arbitrary template context.
+- Full build/test verification and coordinated version updates are complete on
+  this feature branch; local client validation is next before the linked PR is
+  finalized.
 
 ## Acceptance criteria
 

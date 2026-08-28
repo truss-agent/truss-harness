@@ -4,7 +4,17 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
-    version: "Runtime 0.1.11 · Desktop 0.1.45 · VS Code 0.1.24 · CLI 0.1.22 · TUI 0.1.19 · truss.nvim 0.2.3",
+    version: "Runtime 0.1.12 · Desktop 0.1.46 · VS Code 0.1.25 · CLI 0.1.23 · TUI 0.1.20",
+    label: "Persistent master prompt templates",
+    changes: [
+      "Added a safe, provider-neutral master prompt template layer for Desktop, VS Code, CLI, TUI, and runtime-hosted clients.",
+      "Supports literal XML alongside a small documented set of XML-escaped workspace, repository, mode, session, and timestamp variables.",
+      "Rejects empty, malformed, unknown-variable, and oversized templates before a model request while keeping Truss mode safety, permissions, and credentials outside user templates.",
+    ],
+  },
+  {
+    version:
+      "Runtime 0.1.11 · Desktop 0.1.45 · VS Code 0.1.24 · CLI 0.1.22 · TUI 0.1.19 · truss.nvim 0.2.3",
     label: "Verified runtime-host updates",
     changes: [
       "Added a versioned runtime-host handshake so Desktop, VS Code, Neovim, and the gateway reject incompatible external runtimes before a session starts.",
