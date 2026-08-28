@@ -13,7 +13,7 @@ end
 
 local truss = require("truss")
 assert(vim.g.loaded_truss_nvim == 1)
-assert(truss.version.plugin == "0.2.2")
+assert(truss.version.plugin == "0.2.3")
 assert(truss._state.client == nil, "startup must not launch truss-cli")
 assert(type(require("truss.health").check) == "function")
 

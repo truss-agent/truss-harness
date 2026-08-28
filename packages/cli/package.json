@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/cli",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "description": "Command-line client and runtime service for Truss.",
   "type": "module",
   "exports": {
@@ -64,13 +64,13 @@
     "local-first"
   ],
   "dependencies": {
-    "@truss-harness/agent-host": "^0.1.10",
-    "@truss-harness/gateway": "^0.1.10",
+    "@truss-harness/agent-host": "^0.1.11",
+    "@truss-harness/gateway": "^0.1.11",
     "@types/qrcode-terminal": "^0.12.2",
     "qrcode-terminal": "^0.11.0",
     "@truss-harness/branding": "0.1.1",
-    "@truss-harness/mcp": "^0.1.10",
-    "@truss-harness/provider-openai-compatible": "^0.1.13",
-    "@truss-harness/runtime": "^0.1.10"
+    "@truss-harness/mcp": "^0.1.11",
+    "@truss-harness/provider-openai-compatible": "^0.1.14",
+    "@truss-harness/runtime": "^0.1.11"
   }
 }

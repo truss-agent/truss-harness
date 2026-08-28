@@ -142,7 +142,7 @@ test("protocol negotiates, runs, and cancels through the process transport", fun
         identity = {
           runtime = {
             packageName = "@truss-harness/runtime",
-            version = "0.1.10",
+            version = "0.1.11",
           },
           protocolVersions = { Protocol.protocol_version },
         },
@@ -406,7 +406,7 @@ test("Plan mode launches the shared CLI service with the requested mode", functi
         identity = {
           runtime = {
             packageName = "@truss-harness/runtime",
-            version = "0.1.10",
+            version = "0.1.11",
           },
           protocolVersions = { 1 },
         },

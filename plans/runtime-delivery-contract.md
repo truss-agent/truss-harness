@@ -1,6 +1,6 @@
 # Runtime delivery and client compatibility
 
-**Status:** In progress — host identity and compatibility handshake
+**Status:** Implementation complete — ready for linked-PR review and coordinated release validation
 
 **Tracking issue:** #234
 

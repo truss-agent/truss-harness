@@ -13,7 +13,7 @@ describe("validateRuntimeServiceHandshake", () => {
             identity: {
               runtime: {
                 packageName: "@truss-harness/runtime",
-                version: "0.1.10",
+            version: "0.1.11",
               },
               protocolVersions: [1],
             },
@@ -26,7 +26,7 @@ describe("validateRuntimeServiceHandshake", () => {
       protocolVersion: 1,
       runtime: {
         packageName: "@truss-harness/runtime",
-        version: "0.1.10",
+        version: "0.1.11",
       },
     });
   });
