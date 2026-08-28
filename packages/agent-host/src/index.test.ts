@@ -59,6 +59,66 @@ function testProviderFactory(
 }
 
 describe("AgentHost", () => {
+  it("renders a safe master prompt after mode safety and before profile instructions", async () => {
+    let request: ModelRequest | undefined;
+    const registry = new AgentProviderRegistry();
+    registry.register({
+      descriptor: {
+        id: "capture",
+        label: "Capture",
+        requiresCredential: false,
+      },
+      async validate() {},
+      async create() {
+        return {
+          id: "capture",
+          async *stream(next: ModelRequest): AsyncIterable<ModelStreamEvent> {
+            request = next;
+            yield { type: "text_delta", text: "done" };
+            yield { type: "finish", reason: "stop" };
+          },
+        };
+      },
+    });
+    const host = new AgentHost({
+      workspaceRoot: process.cwd(),
+      masterPrompt: {
+        enabled: true,
+        template: "<rules>{{workspace.name}} {{session.id}}</rules>",
+      },
+      providerRegistry: registry,
+    });
+    const runtime = await host.createRuntime(
+      profile({
+        provider: {
+          providerId: "capture",
+          endpointUrl: "http://127.0.0.1:8080/v1",
+          modelId: "test-model",
+        },
+        mode: "plan",
+        instructions: "Profile instructions.",
+      }),
+    );
+    const session = await runtime.runtime.createSession();
+    await runtime.runtime.run(session.id, "Inspect this workspace.");
+    await runtime.dispose();
+
+    const prompt = request?.messages.find(
+      (message) => message.role === "system",
+    )?.content;
+    expect(prompt).toContain("You are in Plan mode.");
+    expect(prompt).toContain(
+      `<rules>${process.cwd().split("/").at(-1)} ${session.id}</rules>`,
+    );
+    expect(prompt).toContain("Profile instructions.");
+    expect(prompt?.indexOf("You are in Plan mode.")).toBeLessThan(
+      prompt?.indexOf("<rules") ?? -1,
+    );
+    expect(prompt?.indexOf("<rules")).toBeLessThan(
+      prompt?.indexOf("Profile instructions.") ?? -1,
+    );
+  });
+
   it("resolves opaque credential references and routes each profile to its bound provider", async () => {
     const created: AgentProfile["provider"][] = [];
     const registry = new AgentProviderRegistry();
