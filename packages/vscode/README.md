@@ -32,19 +32,19 @@ Changing the bottom model dropdown restarts the Truss runtime with the selected 
 
 Modes govern the agent's available tools:
 
-| Mode | Access |
-| --- | --- |
-| Chat | Read, list, search, and grep. Optional internet tools remain available when enabled. |
-| Plan | Read, list, search, and grep. |
-| Agent | Full registered tools, including writes and terminal commands. |
+| Mode  | Access                                                                               |
+| ----- | ------------------------------------------------------------------------------------ |
+| Chat  | Read, list, search, and grep. Optional internet tools remain available when enabled. |
+| Plan  | Read, list, search, and grep.                                                        |
+| Agent | Full registered tools, including writes and terminal commands.                       |
 
 Permissions apply after the selected mode:
 
-| Permission | Behavior |
-| --- | --- |
-| Ask every time | Require Allow/Deny for every tool call. |
+| Permission           | Behavior                                                                     |
+| -------------------- | ---------------------------------------------------------------------------- |
+| Ask every time       | Require Allow/Deny for every tool call.                                      |
 | Auto-allow read-only | Allow read, list, search, and grep; prompt for writes and terminal commands. |
-| Auto-allow all | Allow every registered tool. Use only in a trusted workspace. |
+| Auto-allow all       | Allow every registered tool. Use only in a trusted workspace.                |
 
 Internet research adds bounded `web_search` and `web_fetch` tools. It is disabled by default and still prompts under Ask and Auto-allow read-only.
 
@@ -52,13 +52,13 @@ Internet research adds bounded `web_search` and `web_fetch` tools. It is disable
 
 Type these directly in the chat composer. They are executed locally, not sent to the model, so they also work without a selected model.
 
-| Command | Result |
-| --- | --- |
-| `/init` | Scans the repository and creates or refreshes Truss's managed workspace-context block in `AGENTS.md`, preserving any existing instructions. |
-| `/update [note]` | Stores current Git state and an optional progress note in `.truss-harness/agent-state.json`. |
-| `/status` | Shows the current Git state and recent durable task records. |
-| `/clear-memory` | Deletes the workspace-local durable memory file. |
-| `/help` | Displays the slash-command list. |
+| Command          | Result                                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/init`          | Scans the repository and creates or refreshes Truss's managed workspace-context block in `AGENTS.md`, preserving any existing instructions. |
+| `/update [note]` | Stores current Git state and an optional progress note in `.truss-harness/agent-state.json`.                                                |
+| `/status`        | Shows the current Git state and recent durable task records.                                                                                |
+| `/clear-memory`  | Deletes the workspace-local durable memory file.                                                                                            |
+| `/help`          | Displays the slash-command list.                                                                                                            |
 
 The Command Palette exposes the same maintenance actions as **Truss: Initialize Workspace Instructions**, **Update Workspace Memory**, **Show Workspace Status**, and **Clear Workspace Memory**.
 
@@ -68,11 +68,11 @@ Truss registers VS Code inline completions for editor documents. When a completi
 
 ## Settings
 
-| Setting | Purpose |
-| --- | --- |
-| `trussHarness.command` | Optional path to an external `truss-cli`. Leave empty to use the bundled service. |
-| `trussHarness.model` | Optional model identifier fallback. The panel's workspace state takes precedence. |
-| `trussHarness.baseUrl` | Optional local endpoint fallback. The panel's workspace state takes precedence. |
+| Setting                | Purpose                                                                                                                                                                                                                |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `trussHarness.command` | Optional path to an external `truss-cli`. Leave empty to prefer a verified activated runtime host, then the bundled service. Truss verifies the selected service's runtime handshake before it can access a workspace. |
+| `trussHarness.model`   | Optional model identifier fallback. The panel's workspace state takes precedence.                                                                                                                                      |
+| `trussHarness.baseUrl` | Optional local endpoint fallback. The panel's workspace state takes precedence.                                                                                                                                        |
 
 ## Package a VSIX
 

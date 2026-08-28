@@ -1,4 +1,3 @@
-import { resolve } from "node:path";
 import {
   type ChatAttachment,
   executeWorkspaceCommand,
@@ -14,6 +13,7 @@ import { ConversationRunRegistry } from "./conversation-runs.js";
 import { normalizeHistory } from "./conversation-state.js";
 import type { InlineResponseBuffer } from "./inline-responses.js";
 import { RuntimeService } from "./runtime-service.js";
+import { resolveRuntimeHostLaunch } from "./runtime-host-resolution.js";
 import { workspaceFileContext } from "./workspace-context.js";
 
 export interface ChatRuntimeControllerOptions {
@@ -172,33 +172,39 @@ export class ChatRuntimeController implements vscode.Disposable {
       .getConfiguration("trussHarness")
       .get<string>("command", "")
       .trim();
-    const developmentCli = resolve(context.extensionPath, "../cli/dist/bin.js");
-    const bundledCli = resolve(context.extensionPath, "dist/truss-service.cjs");
-    const useWorkspaceCli =
-      context.extensionMode === vscode.ExtensionMode.Development &&
-      !configuredCommand;
-    const useBundledCli =
-      context.extensionMode !== vscode.ExtensionMode.Development &&
-      !configuredCommand;
-    const command = configuredCommand || process.execPath;
-    const commandArguments = useWorkspaceCli
-      ? [developmentCli]
-      : useBundledCli
-        ? [bundledCli]
-        : [];
-    this.serviceValue = new RuntimeService(
-      command,
-      commandArguments,
+    const launch = await resolveRuntimeHostLaunch({
+      configuredCommand,
+      extensionMode:
+        context.extensionMode === vscode.ExtensionMode.Development
+          ? "development"
+          : "production",
+      extensionPath: context.extensionPath,
+      globalStoragePath: context.globalStorageUri.fsPath,
+      onDiagnostic: (message) => this.options.output.appendLine(message),
+    });
+    const service = new RuntimeService(
+      launch.command,
+      launch.arguments,
       this.options.workspaceRoot(),
       {
         ...(await this.options.runtimeEnvironment()),
-        ...(configuredCommand ? {} : { ELECTRON_RUN_AS_NODE: "1" }),
+        ...(launch.requiresNodeEnvironment
+          ? { ELECTRON_RUN_AS_NODE: "1" }
+          : {}),
       },
       (message) => this.handleEvent(message),
       (text) => this.options.output.append(text),
     );
-    context.subscriptions.push(this.serviceValue);
-    return this.serviceValue;
+    this.serviceValue = service;
+    context.subscriptions.push(service);
+    try {
+      await service.waitUntilReady();
+    } catch (error) {
+      if (this.serviceValue === service) this.serviceValue = undefined;
+      service.dispose();
+      throw error;
+    }
+    return service;
   }
 
   disposeService(): void {

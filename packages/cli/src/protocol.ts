@@ -6,6 +6,10 @@ import {
 import { RunRegistry } from "./protocol/run-registry.js";
 import { jsonRpcMessage } from "./protocol/wire.js";
 import {
+  RUNTIME_PACKAGE_NAME,
+  RUNTIME_VERSION,
+} from "@truss-harness/runtime";
+import {
   LOCAL_SERVICE_PROTOCOL_VERSIONS,
   type RuntimeServiceCapabilities,
   type RuntimeServiceErrorCode,
@@ -28,6 +32,20 @@ import {
 
 export { ProtocolToolApproval } from "./protocol/approval.js";
 export * from "./protocol-contracts.js";
+export { validateRuntimeServiceHandshake } from "./protocol/compatibility.js";
+export {
+  activateRuntimeHost,
+  installRuntimeHostArtifact,
+  parseRuntimeHostManifest,
+  readRuntimeHostActivation,
+  rollbackRuntimeHost,
+  verifyRuntimeHostArtifact,
+  runtimeHostStorePath,
+} from "./runtime-delivery.js";
+export type {
+  RuntimeHostActivation,
+  RuntimeHostManifest,
+} from "./runtime-delivery.js";
 
 export interface RuntimeServiceOptions {
   readonly runtime: RuntimeServiceRuntime;
@@ -317,6 +335,13 @@ export class RuntimeService {
         server: {
           name: "truss-cli",
           version: this.options.serverVersion ?? "development",
+          identity: {
+            runtime: {
+              packageName: RUNTIME_PACKAGE_NAME,
+              version: RUNTIME_VERSION,
+            },
+            protocolVersions: LOCAL_SERVICE_PROTOCOL_VERSIONS,
+          },
         },
         capabilities: this.capabilities,
       },

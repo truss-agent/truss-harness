@@ -15,3 +15,4 @@ export * from "./workspace.js";
 export * from "./commands.js";
 export * from "./web.js";
 export * from "./remote.js";
+export * from "./version.js";

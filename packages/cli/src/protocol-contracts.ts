@@ -29,6 +29,24 @@ export interface RuntimeServiceCapabilities {
   readonly mcpStatus: boolean;
 }
 
+/** Additive runtime-host identity returned during protocol initialization. */
+export interface RuntimeServiceHostIdentity {
+  readonly runtime: {
+    readonly packageName: string;
+    readonly version: string;
+  };
+  /** Every local-service protocol version this host can negotiate. */
+  readonly protocolVersions: readonly number[];
+}
+
+export type RuntimeServiceHandshakeValidation =
+  | {
+      readonly compatible: true;
+      readonly protocolVersion: number;
+      readonly runtime: RuntimeServiceHostIdentity["runtime"];
+    }
+  | { readonly compatible: false; readonly reason: string };
+
 export interface RuntimeServiceClient {
   readonly name: string;
   readonly version?: string;
@@ -117,6 +135,7 @@ export interface RuntimeServiceResult {
   readonly server?: {
     readonly name: "truss-cli";
     readonly version: string;
+    readonly identity?: RuntimeServiceHostIdentity;
   };
   readonly capabilities?: RuntimeServiceCapabilities;
   readonly sessionId?: string;

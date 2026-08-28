@@ -136,6 +136,17 @@ test("protocol negotiates, runs, and cancels through the process transport", fun
     id = writes[1].id,
     result = {
       protocolVersion = Protocol.protocol_version,
+      server = {
+        name = "truss-cli",
+        version = "test",
+        identity = {
+          runtime = {
+            packageName = "@truss-harness/runtime",
+            version = "0.1.11",
+          },
+          protocolVersions = { Protocol.protocol_version },
+        },
+      },
       capabilities = { streaming = true, cancellation = true },
     },
   }) .. "\n")
@@ -389,6 +400,17 @@ test("Plan mode launches the shared CLI service with the requested mode", functi
     id = writes[1].id,
     result = {
       protocolVersion = 1,
+      server = {
+        name = "truss-cli",
+        version = "test",
+        identity = {
+          runtime = {
+            packageName = "@truss-harness/runtime",
+            version = "0.1.11",
+          },
+          protocolVersions = { 1 },
+        },
+      },
       capabilities = {
         streaming = true,
         cancellation = true,
