@@ -38,6 +38,6 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@truss-harness/runtime": "0.1.10"
+    "@truss-harness/runtime": "^0.1.10"
   }
 }

@@ -42,6 +42,6 @@
     "access": "public"
   },
   "dependencies": {
-    "@truss-harness/runtime": "0.1.10"
+    "@truss-harness/runtime": "^0.1.10"
   }
 }

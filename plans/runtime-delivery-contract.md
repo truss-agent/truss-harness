@@ -66,8 +66,10 @@ Agent host / shared runtime
   rather than infer support from package versions.
 - Breaking protocol changes require a new client bootstrap release and must
   never be auto-selected.
-- Runtime package versions remain exact in source release builds. The delivery
-  resolver, not npm's dependency solver, controls installed runtime selection.
+- Native clients use the delivery resolver, not npm's dependency solver, to
+  select installed runtime code. Publishable Node packages use compatible
+  semver ranges for internal dependencies; protocol negotiation remains the
+  gate that prevents an incompatible runtime from being selected.
 - Existing clients keep their current behavior until their one-time bootstrap
   release is installed.
 
@@ -125,14 +127,24 @@ only the current runtime configuration, runs the existing JSONL protocol, and
 returns tool approvals/events through the Desktop process; encrypted credential
 storage remains owned by Desktop.
 
+CLI and TUI now rely on the compatible internal-package range policy. A future
+compatible Runtime/agent-host/CLI publish can therefore be installed through
+the normal package manager without cutting another TUI release; an incompatible
+protocol still requires a bootstrap release.
+
 ## Implementation checkpoint 2
 
-The shared host layer now has a deliberately narrow release-manifest parser,
+The shared host layer has a deliberately narrow release-manifest parser,
 SHA-256 artifact verification, atomic activation state, and explicit rollback
-to the last known-good host. Nothing fetches or starts a managed artifact yet:
-clients will first use these guards to verify a user-visible downloaded update,
-then the next checkpoint can add authenticated manifest retrieval without
-turning a network response into executable code.
+to the last known-good host. `package:runtime-host` produces a self-contained
+Node host plus its manifest, and the `runtime-v*` GitHub workflow publishes
+both files and release checksums. The CLI installs a user-selected release pair
+into controlled storage; VS Code and Desktop select only that verified active
+host before falling back to their embedded runtime.
+
+There is deliberately no silent downloader yet. Authenticated update discovery
+and publisher-signature verification remain a later, separately auditable
+checkpoint so a network response cannot become executable code by default.
 
 ## Release sequence
 
