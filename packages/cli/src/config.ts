@@ -13,6 +13,7 @@ import {
   isLocalEndpointKind,
   type ModelProviderKind,
 } from "@truss-harness/provider-openai-compatible";
+import type { MasterPromptConfiguration } from "@truss-harness/runtime";
 import type { AgentMode, ClientConfiguration } from "./runtime.js";
 import type { PermissionMode } from "./protocol.js";
 
@@ -28,6 +29,8 @@ export interface ProfileConfiguration {
   readonly permission?: PermissionMode;
   readonly internetAccess?: boolean;
   readonly systemPrompt?: string;
+  /** Persistent, safe template applied to every agent run. */
+  readonly masterPrompt?: MasterPromptConfiguration;
   /** Name of an environment variable containing a local endpoint token. */
   readonly apiKeyEnv?: string;
   readonly mcpServers?: McpServerConfigurations;
@@ -92,6 +95,17 @@ function validTuiTheme(value: unknown): TuiThemeName | undefined {
     : undefined;
 }
 
+function masterPromptConfiguration(
+  value: unknown,
+): MasterPromptConfiguration | undefined {
+  const source = object(value);
+  if (!source || typeof source.template !== "string") return undefined;
+  return {
+    enabled: source.enabled !== false,
+    template: source.template,
+  };
+}
+
 /**
  * Converts an account reference into the optional environment variable used
  * for that account's secret. Generic provider variables remain the fallback.
@@ -127,6 +141,7 @@ function parseProfile(value: unknown): ProfileConfiguration {
         : undefined,
     systemPrompt:
       typeof source.systemPrompt === "string" ? source.systemPrompt : undefined,
+    masterPrompt: masterPromptConfiguration(source.masterPrompt),
     apiKeyEnv:
       typeof source.apiKeyEnv === "string" ? source.apiKeyEnv : undefined,
     mcpServers:
@@ -204,6 +219,9 @@ function environmentConfiguration(
         : environment.TRUSS_HARNESS_INTERNET_ACCESS === "true" ||
           environment.TRUSS_HARNESS_INTERNET_ACCESS === "1",
     systemPrompt: environment.TRUSS_HARNESS_SYSTEM_PROMPT,
+    masterPrompt: environment.TRUSS_HARNESS_MASTER_PROMPT
+      ? { enabled: true, template: environment.TRUSS_HARNESS_MASTER_PROMPT }
+      : undefined,
     apiKeyEnv: environment.TRUSS_HARNESS_API_KEY
       ? "TRUSS_HARNESS_API_KEY"
       : undefined,
@@ -221,6 +239,7 @@ const profileKeys = [
   "permission",
   "internetAccess",
   "systemPrompt",
+  "masterPrompt",
   "apiKeyEnv",
   "mcpServers",
   "tuiTheme",
@@ -339,10 +358,12 @@ export async function resolveConfiguration(options: {
     : undefined;
   const apiKey = merged.apiKeyEnv
     ? environment[merged.apiKeyEnv]
-    : accountApiKey ??
+    : (accountApiKey ??
       (isCloudProviderId(provider)
-        ? environment[cloudProviderDefinition(provider).apiKeyEnvironmentVariable]
-        : undefined);
+        ? environment[
+            cloudProviderDefinition(provider).apiKeyEnvironmentVariable
+          ]
+        : undefined));
   return {
     workspaceRoot: options.workspaceRoot,
     provider,
@@ -359,7 +380,11 @@ export async function resolveConfiguration(options: {
     permission: merged.permission ?? "ask",
     internetAccess: merged.internetAccess ?? false,
     apiKey,
-    systemPrompt: merged.systemPrompt,
+    masterPrompt:
+      merged.masterPrompt ??
+      (merged.systemPrompt
+        ? { enabled: true, template: merged.systemPrompt }
+        : undefined),
     mcpServers,
     profile,
     tuiTheme: merged.tuiTheme,
@@ -530,8 +555,7 @@ export function parseConfigurationOverrides(arguments_: readonly string[]): {
       if (!reference)
         throw new Error("--provider-account must be a non-empty reference.");
       overrides.credentialRef = reference;
-    }
-    else if (argument === "--mode") {
+    } else if (argument === "--mode") {
       const mode = validMode(value());
       if (!mode) throw new Error("--mode must be chat, plan, or edit");
       overrides.mode = mode;

@@ -92,6 +92,38 @@ describe("resolveConfiguration", () => {
     }
   });
 
+  it("uses explicit master prompts before the legacy system prompt alias", async () => {
+    const root = join(process.cwd(), ".test-workspaces", randomUUID());
+    const paths = {
+      user: join(root, "user.json"),
+      workspace: join(root, "workspace.json"),
+    };
+    await mkdir(root, { recursive: true });
+    try {
+      await writeFile(
+        paths.user,
+        JSON.stringify({
+          model: "test-model",
+          systemPrompt: "legacy",
+          masterPrompt: {
+            enabled: true,
+            template: "<rules>{{workspace.name}}</rules>",
+          },
+        }),
+      );
+      const resolved = await resolveConfiguration({
+        workspaceRoot: root,
+        paths,
+      });
+      expect(resolved.masterPrompt).toEqual({
+        enabled: true,
+        template: "<rules>{{workspace.name}}</rules>",
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not let a persisted local profile override a client-injected cloud runtime", async () => {
     const root = join(process.cwd(), ".test-workspaces", randomUUID());
     const paths = {
@@ -174,7 +206,10 @@ describe("resolveConfiguration", () => {
           profiles: {
             mimo: { provider: "xiaomi-mimo", model: "mimo-v2.5" },
             sakana: { provider: "sakana-fugu", model: "fugu-ultra" },
-            ollamaCloud: { provider: "ollama-cloud", model: "qwen3-coder:480b" },
+            ollamaCloud: {
+              provider: "ollama-cloud",
+              model: "qwen3-coder:480b",
+            },
           },
         }),
       );

@@ -62,6 +62,9 @@ export class ProviderController {
       TRUSS_HARNESS_INTERNET_ACCESS: configuration.internetAccess
         ? "true"
         : "false",
+      ...(configuration.masterPrompt?.enabled
+        ? { TRUSS_HARNESS_MASTER_PROMPT: configuration.masterPrompt.template }
+        : {}),
       TRUSS_HARNESS_MCP_SERVERS: JSON.stringify(configuration.mcpServers),
     };
     if (isCloudProviderId(configuration.provider)) {

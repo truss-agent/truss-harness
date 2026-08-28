@@ -57,6 +57,8 @@ export interface SettingsConfigurationInput {
   readonly contextWindow: string;
   readonly selectedModel?: DesktopModelInfo;
   readonly internetAccess: boolean;
+  readonly masterPromptEnabled?: boolean;
+  readonly masterPromptTemplate?: string;
   readonly autocompleteEnabled: boolean;
   readonly autocompleteModel: string;
   readonly formatOnSave: boolean;
@@ -99,6 +101,13 @@ export function buildSettingsConfiguration(
       ? {}
       : { modelContextWindow }),
     internetAccess: input.internetAccess,
+    masterPrompt:
+      input.masterPromptTemplate === undefined
+        ? input.current.masterPrompt
+        : {
+            enabled: input.masterPromptEnabled === true,
+            template: input.masterPromptTemplate,
+          },
     autocomplete: {
       enabled: input.autocompleteEnabled,
       model: input.autocompleteModel.trim() || undefined,

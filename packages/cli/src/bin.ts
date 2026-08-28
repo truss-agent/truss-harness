@@ -145,7 +145,8 @@ Environment:
   DEEPSEEK_API_KEY, PERPLEXITY_API_KEY, FIREWORKS_API_KEY, NVIDIA_API_KEY,
   MIMO_API_KEY, OLLAMA_API_KEY
                                   Provider-specific BYOK credentials
-  TRUSS_HARNESS_SYSTEM_PROMPT Optional system prompt
+  TRUSS_HARNESS_SYSTEM_PROMPT Legacy plain master prompt
+  TRUSS_HARNESS_MASTER_PROMPT  Master prompt template with safe {{variables}}
   TRUSS_HARNESS_MCP_SERVERS JSON object containing local stdio MCP servers
 
 Examples:

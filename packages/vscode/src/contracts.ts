@@ -6,6 +6,7 @@ import type {
 import type {
   AgentRunSummary,
   ChatAttachment,
+  MasterPromptConfiguration,
   ProviderAccount,
   WorkspacePlan,
 } from "@truss-harness/runtime";
@@ -22,6 +23,7 @@ export interface ModelConfiguration {
   readonly permission: PermissionMode;
   readonly contextWindow: number;
   readonly internetAccess: boolean;
+  readonly masterPrompt?: MasterPromptConfiguration;
   readonly mcpServers: McpServerConfigurations;
 }
 

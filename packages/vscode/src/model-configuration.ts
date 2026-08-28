@@ -1,4 +1,5 @@
 import type { McpServerConfigurations } from "@truss-harness/mcp";
+import type { MasterPromptConfiguration } from "@truss-harness/runtime";
 import {
   cloudProviderDefinition,
   isCloudProviderId,
@@ -19,6 +20,16 @@ export const defaultConfiguration: ModelConfiguration = {
   internetAccess: false,
   mcpServers: {},
 };
+
+function masterPromptConfiguration(
+  value: unknown,
+): MasterPromptConfiguration | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined;
+  const candidate = value as Partial<MasterPromptConfiguration>;
+  if (typeof candidate.template !== "string") return undefined;
+  return { enabled: candidate.enabled !== false, template: candidate.template };
+}
 
 function finiteNonNegativeNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
@@ -142,6 +153,7 @@ export function normalizeConfiguration(value: unknown): ModelConfiguration {
         ? Math.max(512, Math.min(1_000_000, Math.floor(value.contextWindow)))
         : defaultConfiguration.contextWindow,
     internetAccess: value.internetAccess === true,
+    masterPrompt: masterPromptConfiguration(value.masterPrompt),
     mcpServers: normalizeMcpServers(value.mcpServers),
   };
 }

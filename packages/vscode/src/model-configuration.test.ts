@@ -40,6 +40,23 @@ describe("VS Code model configuration", () => {
     expect(configuration.credentialAccountId).toBe("account-1");
   });
 
+  it("preserves the enabled master prompt template", () => {
+    expect(
+      normalizeConfiguration({
+        provider: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        model: "openai/gpt-4.1-mini",
+        masterPrompt: {
+          enabled: true,
+          template: "<workspace>{{workspace.root}}</workspace>",
+        },
+      }).masterPrompt,
+    ).toEqual({
+      enabled: true,
+      template: "<workspace>{{workspace.root}}</workspace>",
+    });
+  });
+
   it("normalizes discovered model metadata and OpenRouter pricing", () => {
     expect(
       discoveredModel(
