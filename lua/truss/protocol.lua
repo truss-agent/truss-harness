@@ -235,6 +235,23 @@ function Client:start(callback)
       finish({ message = "Truss service negotiated an unsupported protocol version." })
       return
     end
+    local identity = result.server and result.server.identity or nil
+    local runtime = identity and identity.runtime or nil
+    local supports_protocol = false
+    for _, protocol_version in ipairs(identity and identity.protocolVersions or {}) do
+      if protocol_version == M.protocol_version then
+        supports_protocol = true
+        break
+      end
+    end
+    if not runtime or runtime.packageName ~= "@truss-harness/runtime"
+      or type(runtime.version) ~= "string" or runtime.version == ""
+      or not supports_protocol then
+      finish({
+        message = "Truss CLI does not provide a compatible runtime handshake. Update truss-cli and try again.",
+      })
+      return
+    end
     self.initialized = true
     self.capabilities = result.capabilities or {}
     finish(nil)
