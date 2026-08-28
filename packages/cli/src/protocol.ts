@@ -33,6 +33,13 @@ import {
 export { ProtocolToolApproval } from "./protocol/approval.js";
 export * from "./protocol-contracts.js";
 export { validateRuntimeServiceHandshake } from "./protocol/compatibility.js";
+export {
+  activateRuntimeHost,
+  parseRuntimeHostManifest,
+  readRuntimeHostActivation,
+  rollbackRuntimeHost,
+  verifyRuntimeHostArtifact,
+} from "./runtime-delivery.js";
 
 export interface RuntimeServiceOptions {
   readonly runtime: RuntimeServiceRuntime;

@@ -106,6 +106,15 @@ This gives both editor clients a safe manual update route now, while the later
 managed-artifact resolver remains responsible for checksum verification,
 activation, and rollback.
 
+## Implementation checkpoint 2
+
+The shared host layer now has a deliberately narrow release-manifest parser,
+SHA-256 artifact verification, atomic activation state, and explicit rollback
+to the last known-good host. Nothing fetches or starts a managed artifact yet:
+clients will first use these guards to verify a user-visible downloaded update,
+then the next checkpoint can add authenticated manifest retrieval without
+turning a network response into executable code.
+
 ## Release sequence
 
 1. Release the host protocol and an embedded-fallback bootstrap for each
