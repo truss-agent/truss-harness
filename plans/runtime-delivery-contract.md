@@ -1,6 +1,6 @@
 # Runtime delivery and client compatibility
 
-**Status:** Planned
+**Status:** In progress — host identity and compatibility handshake
 
 **Tracking issue:** #234
 
@@ -85,6 +85,26 @@ Agent host / shared runtime
 5. Add offline, corrupt artifact, incompatible protocol, downgrade, and
    rollback tests. Document what is updated, what is never downloaded, and how
    a user disables managed updates.
+
+## Implementation checkpoint 1
+
+The existing `truss-cli serve` JSONL service is the first runtime-host target.
+This checkpoint makes its runtime identity and supported client protocol range
+explicit in the initialize response. Existing clients ignore the additive data;
+new bootstraps must require a compatible handshake before selecting an external
+runtime. No client will download or execute a new artifact in this checkpoint.
+
+The VS Code adapter now performs that handshake before creating a user session.
+An explicitly configured external `truss-cli` must identify a compatible
+runtime; otherwise VS Code reports an actionable error instead of silently
+running an unknown executable. Clearing `trussHarness.command` retains the
+bundled runtime path. This is the first manual runtime-update path: update the
+trusted local CLI, then point the already-installed extension at it.
+
+Neovim performs the same gate for its normal global `truss-cli serve` process.
+This gives both editor clients a safe manual update route now, while the later
+managed-artifact resolver remains responsible for checksum verification,
+activation, and rollback.
 
 ## Release sequence
 

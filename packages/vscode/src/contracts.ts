@@ -49,7 +49,22 @@ export interface ServiceLifecycle {
 export interface ServiceResponse {
   readonly type: "response";
   readonly requestId: string;
-  readonly result: { readonly sessionId?: string; readonly aborted?: boolean };
+  readonly result: {
+    readonly protocolVersion?: number;
+    readonly server?: {
+      readonly name: "truss-cli";
+      readonly version: string;
+      readonly identity?: {
+        readonly runtime: {
+          readonly packageName: string;
+          readonly version: string;
+        };
+        readonly protocolVersions: readonly number[];
+      };
+    };
+    readonly sessionId?: string;
+    readonly aborted?: boolean;
+  };
 }
 
 export interface ServiceError {

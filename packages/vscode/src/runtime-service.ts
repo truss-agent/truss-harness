@@ -1,5 +1,9 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import {
+  LOCAL_SERVICE_PROTOCOL_VERSIONS,
+  validateRuntimeServiceHandshake,
+} from "@truss-harness/cli/protocol";
 import type { ChatAttachment, ContextBlock } from "@truss-harness/runtime";
 import type { Disposable } from "vscode";
 import type {
@@ -18,6 +22,7 @@ export class RuntimeService implements Disposable {
   >();
   private readonly reader;
   private requestSequence = 0;
+  private readonly ready: Promise<void>;
 
   constructor(
     command: string,
@@ -46,6 +51,7 @@ export class RuntimeService implements Disposable {
         new Error(`Truss service exited with code ${code ?? "unknown"}.`),
       ),
     );
+    this.ready = this.initialize();
   }
 
   run(
@@ -63,9 +69,14 @@ export class RuntimeService implements Disposable {
     });
   }
 
+  async waitUntilReady(): Promise<void> {
+    await this.ready;
+  }
+
   async createSession(
     messages: readonly ConversationMessage[],
   ): Promise<string> {
+    await this.ready;
     const response = await this.request({ type: "create_session", messages })
       .result;
     if (!response.result.sessionId) {
@@ -75,11 +86,17 @@ export class RuntimeService implements Disposable {
   }
 
   abort(requestId: string): void {
-    this.write({ type: "abort", requestId });
+    void this.ready.then(
+      () => this.write({ type: "abort", requestId }),
+      () => undefined,
+    );
   }
 
   approve(requestId: string, callId: string, approved: boolean): void {
-    this.write({ type: "tool_approval", requestId, callId, approved });
+    void this.ready.then(
+      () => this.write({ type: "tool_approval", requestId, callId, approved }),
+      () => undefined,
+    );
   }
 
   dispose(): void {
@@ -88,12 +105,49 @@ export class RuntimeService implements Disposable {
     this.process.kill();
   }
 
-  private request(payload: Record<string, unknown>): RunHandle {
-    const requestId = `vscode-${++this.requestSequence}`;
-    const result = new Promise<ServiceResponse>((resolve, reject) =>
-      this.requests.set(requestId, { resolve, reject }),
+  private async initialize(): Promise<void> {
+    const response = await this.request(
+      {
+        type: "initialize",
+        protocolVersions: LOCAL_SERVICE_PROTOCOL_VERSIONS,
+        client: { name: "truss-vscode" },
+      },
+      false,
+    ).result;
+    const handshake = validateRuntimeServiceHandshake(
+      response.result,
+      LOCAL_SERVICE_PROTOCOL_VERSIONS,
     );
-    this.write({ ...payload, requestId });
+    if (!handshake.compatible)
+      throw new Error(
+        `${handshake.reason} Update truss-cli or clear trussHarness.command to use the bundled service.`,
+      );
+  }
+
+  private request(
+    payload: Record<string, unknown>,
+    waitForReady = true,
+  ): RunHandle {
+    const requestId = `vscode-${++this.requestSequence}`;
+    let resolveRequest: (message: ServiceResponse) => void;
+    let rejectRequest: (error: Error) => void;
+    const result = new Promise<ServiceResponse>((resolve, reject) => {
+      resolveRequest = resolve;
+      rejectRequest = reject;
+    });
+    this.requests.set(requestId, {
+      resolve: resolveRequest!,
+      reject: rejectRequest!,
+    });
+    const send = () => this.write({ ...payload, requestId });
+    if (waitForReady) {
+      void this.ready.then(send, (error: unknown) => {
+        this.requests.delete(requestId);
+        rejectRequest!(
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      });
+    } else send();
     return { requestId, result };
   }
 

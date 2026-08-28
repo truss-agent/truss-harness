@@ -173,6 +173,15 @@ describe("RuntimeService", () => {
         id: "init",
         result: expect.objectContaining({
           protocolVersion: LOCAL_SERVICE_PROTOCOL_VERSION,
+          server: expect.objectContaining({
+            identity: {
+              runtime: {
+                packageName: "@truss-harness/runtime",
+                version: "0.1.10",
+              },
+              protocolVersions: [LOCAL_SERVICE_PROTOCOL_VERSION],
+            },
+          }),
           capabilities: expect.objectContaining({
             streaming: true,
             cancellation: true,
@@ -234,7 +243,17 @@ describe("RuntimeService", () => {
         requestId: "init",
         result: {
           protocolVersion: LOCAL_SERVICE_PROTOCOL_VERSION,
-          server: { name: "truss-cli", version: "test" },
+          server: expect.objectContaining({
+            name: "truss-cli",
+            version: "test",
+            identity: {
+              runtime: {
+                packageName: "@truss-harness/runtime",
+                version: "0.1.10",
+              },
+              protocolVersions: [LOCAL_SERVICE_PROTOCOL_VERSION],
+            },
+          }),
           capabilities: expect.objectContaining({
             streaming: true,
             cancellation: true,

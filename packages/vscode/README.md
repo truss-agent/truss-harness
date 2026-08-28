@@ -70,7 +70,7 @@ Truss registers VS Code inline completions for editor documents. When a completi
 
 | Setting | Purpose |
 | --- | --- |
-| `trussHarness.command` | Optional path to an external `truss-cli`. Leave empty to use the bundled service. |
+| `trussHarness.command` | Optional path to an external `truss-cli`. Leave empty to use the bundled service. Truss verifies the local service's runtime handshake before it can access a workspace. |
 | `trussHarness.model` | Optional model identifier fallback. The panel's workspace state takes precedence. |
 | `trussHarness.baseUrl` | Optional local endpoint fallback. The panel's workspace state takes precedence. |
 

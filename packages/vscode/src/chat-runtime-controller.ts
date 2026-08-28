@@ -186,7 +186,7 @@ export class ChatRuntimeController implements vscode.Disposable {
       : useBundledCli
         ? [bundledCli]
         : [];
-    this.serviceValue = new RuntimeService(
+    const service = new RuntimeService(
       command,
       commandArguments,
       this.options.workspaceRoot(),
@@ -197,8 +197,16 @@ export class ChatRuntimeController implements vscode.Disposable {
       (message) => this.handleEvent(message),
       (text) => this.options.output.append(text),
     );
-    context.subscriptions.push(this.serviceValue);
-    return this.serviceValue;
+    this.serviceValue = service;
+    context.subscriptions.push(service);
+    try {
+      await service.waitUntilReady();
+    } catch (error) {
+      if (this.serviceValue === service) this.serviceValue = undefined;
+      service.dispose();
+      throw error;
+    }
+    return service;
   }
 
   disposeService(): void {
