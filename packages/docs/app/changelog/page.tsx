@@ -4,7 +4,17 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
-    version: "Runtime 0.1.12 · Desktop 0.1.46 · VS Code 0.1.25 · CLI 0.1.23 · TUI 0.1.20",
+    version: "Runtime 0.1.13",
+    label: "Resilient tool-call recovery",
+    changes: [
+      "Normalize JSON-string tool arguments from compatible providers before execution, while returning malformed arguments to the model as actionable recovery feedback.",
+      "Guarantee non-empty string tool results before they are returned to a provider, preventing malformed tool adapters from ending a run with strict content-validation errors.",
+      "Keep existing tool approvals, permission policies, and structured-tool-call safety boundaries unchanged.",
+    ],
+  },
+  {
+    version:
+      "Runtime 0.1.12 · Desktop 0.1.46 · VS Code 0.1.25 · CLI 0.1.23 · TUI 0.1.20",
     label: "Persistent master prompt templates",
     changes: [
       "Added a safe, provider-neutral master prompt template layer for Desktop, VS Code, CLI, TUI, and runtime-hosted clients.",

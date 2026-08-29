@@ -22,6 +22,7 @@ import {
   workspacePath,
 } from "./edit-policy.js";
 import { ProgressStreamParser, retryProgress } from "./progress-stream.js";
+import { normalizeToolCall } from "./tool-call-normalization.js";
 import { AgentToolExecutor } from "./tool-executor.js";
 
 /** Provider-neutral iterative agent loop. UI clients interact only via sessions, events, and approval. */
@@ -151,7 +152,7 @@ export class AgentRuntime {
               });
             }
           } else if (event.type === "tool_call") {
-            calls.push(event);
+            calls.push(normalizeToolCall(event));
           } else if (event.type === "finish") {
             usage = event.usage;
           } else if (event.type === "error") {
