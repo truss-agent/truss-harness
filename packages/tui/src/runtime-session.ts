@@ -169,7 +169,12 @@ export function useRuntimeSessionController({
                     .apiKeyEnvironmentVariable
                 ]
               : undefined)),
-      systemPrompt: process.env.TRUSS_HARNESS_SYSTEM_PROMPT,
+      systemPrompt: process.env.TRUSS_HARNESS_MASTER_PROMPT
+        ? undefined
+        : process.env.TRUSS_HARNESS_SYSTEM_PROMPT,
+      masterPrompt: process.env.TRUSS_HARNESS_MASTER_PROMPT
+        ? { enabled: true, template: process.env.TRUSS_HARNESS_MASTER_PROMPT }
+        : undefined,
       mode: agentMode,
       internetAccess,
       mcpServers: initialConfiguration?.mcpServers,

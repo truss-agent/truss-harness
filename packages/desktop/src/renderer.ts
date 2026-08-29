@@ -211,6 +211,8 @@ const {
   autocompleteEnabled,
   autocompleteModel,
   formatOnSave,
+  masterPromptEnabled,
+  masterPromptTemplate,
   mcpServersInput,
   mcpStatus,
   mcpServerList,
@@ -2466,7 +2468,7 @@ function settingsConfiguration(): DesktopConfiguration {
       ? byokModelInput.value
       : modelInput.value
   ).trim();
-  return buildSettingsConfiguration({
+  const next = buildSettingsConfiguration({
     current: configuration(),
     modelTab: settingsController.modelTab,
     localProvider: providerSelect.value as DesktopProvider,
@@ -2480,11 +2482,14 @@ function settingsConfiguration(): DesktopConfiguration {
     contextWindow: contextInput.value,
     selectedModel: knownModel(model),
     internetAccess: internetAccessInput.checked,
+    masterPromptEnabled: masterPromptEnabled.checked,
+    masterPromptTemplate: masterPromptTemplate.value,
     autocompleteEnabled: autocompleteEnabled.checked,
     autocompleteModel: autocompleteModel.value,
     formatOnSave: formatOnSave.checked,
     mcpServers: parseMcpConfigurations(mcpServersInput.value),
   });
+  return next;
 }
 
 function syncMcpAdvancedJson(): void {
@@ -2702,6 +2707,8 @@ function populateSettings(): void {
   autocompleteEnabled.checked = current.autocomplete?.enabled ?? false;
   autocompleteModel.value = current.autocomplete?.model ?? "";
   formatOnSave.checked = current.formatOnSave ?? false;
+  masterPromptEnabled.checked = current.masterPrompt?.enabled ?? false;
+  masterPromptTemplate.value = current.masterPrompt?.template ?? "";
   settingsController.loadMcpDraft(current.mcpServers);
   syncMcpAdvancedJson();
   checkUpdatesOnLaunch.checked = rendererState.desktop.updates.checkOnLaunch;

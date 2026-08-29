@@ -25,6 +25,8 @@ export interface AgentRuntimeOptions {
   readonly workspaceRoot: string;
   readonly approval?: ToolApproval;
   readonly systemPrompt?: string;
+  /** Computes user-configured instructions once per session without weakening mode safety. */
+  readonly systemPromptFactory?: (session: Session) => string | undefined;
   readonly maxTurns?: number;
   readonly memory?: WorkspaceMemoryStore;
   readonly plans?: WorkspacePlanStore;

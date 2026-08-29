@@ -222,6 +222,7 @@ export class DesktopRuntimeService {
       ),
       mode: configuration.mode,
       internetAccess: configuration.internetAccess,
+      masterPrompt: configuration.masterPrompt,
       mcpServers: configuration.mcpServers,
       approval,
     };
@@ -433,6 +434,9 @@ export class DesktopRuntimeService {
       TRUSS_HARNESS_INTERNET_ACCESS: configuration.internetAccess
         ? "true"
         : "false",
+      ...(configuration.masterPrompt?.enabled
+        ? { TRUSS_HARNESS_MASTER_PROMPT: configuration.masterPrompt.template }
+        : {}),
       TRUSS_HARNESS_MCP_SERVERS: JSON.stringify(configuration.mcpServers),
     };
     const apiKey = await this.credential(

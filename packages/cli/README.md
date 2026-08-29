@@ -78,7 +78,7 @@ truss-cli commands             Show slash commands used by interactive clients
 
 ## Configuration
 
-`truss-cli config init` creates `.truss-harness/config.json`. Profiles support `provider`, `baseUrl`, `model`, `mode`, `permission`, `internetAccess`, `systemPrompt`, `apiKeyEnv`, and `mcpServers`.
+`truss-cli config init` creates `.truss-harness/config.json`. Profiles support `provider`, `baseUrl`, `model`, `mode`, `permission`, `internetAccess`, `masterPrompt`, `apiKeyEnv`, and `mcpServers`.
 
 ```json
 {
@@ -97,6 +97,28 @@ truss-cli commands             Show slash commands used by interactive clients
 ```
 
 Keep endpoint tokens out of JSON. Set the token in an environment variable and place that variable's name in `apiKeyEnv`.
+
+## Master prompts
+
+Set a persistent instruction template on a profile with `masterPrompt`. Literal
+XML is preserved, while only the documented dynamic variables are escaped when
+inserted. Unknown variables fail before a model request; credentials,
+environment variables, file contents, and chat history cannot be interpolated.
+
+```json
+{
+  "masterPrompt": {
+    "enabled": true,
+    "template": "<project name=\"{{workspace.name}}\">\nWork in {{agent.mode}} mode on {{repository.branch}}.\n</project>"
+  }
+}
+```
+
+Available variables are `{{workspace.name}}`, `{{workspace.root}}`,
+`{{repository.branch}}`, `{{repository.changedFiles}}`, `{{agent.mode}}`,
+`{{session.id}}`, and `{{date.iso}}`. `TRUSS_HARNESS_MASTER_PROMPT` supplies a
+template for one process; the existing `TRUSS_HARNESS_SYSTEM_PROMPT` remains a
+compatible plain-template alias.
 
 ## Bring your own key
 

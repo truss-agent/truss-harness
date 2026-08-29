@@ -1,4 +1,5 @@
 import { parseMcpServerConfigurations } from "@truss-harness/mcp";
+import { validateMasterPrompt } from "@truss-harness/runtime";
 import {
   type CloudProviderId,
   cloudProviderDefinition,
@@ -47,6 +48,12 @@ export function isConfiguration(value: unknown): value is DesktopConfiguration {
       typeof candidate.modelContextWindow === "number") &&
     (candidate.internetAccess === undefined ||
       typeof candidate.internetAccess === "boolean") &&
+    (candidate.masterPrompt === undefined ||
+      (typeof candidate.masterPrompt === "object" &&
+        candidate.masterPrompt !== null &&
+        typeof candidate.masterPrompt.template === "string" &&
+        (candidate.masterPrompt.enabled === undefined ||
+          typeof candidate.masterPrompt.enabled === "boolean"))) &&
     (candidate.credentialAccountId === undefined ||
       typeof candidate.credentialAccountId === "string")
   );
@@ -59,7 +66,7 @@ export function normalizeConfiguration(
     ? (value.modelContextWindow ??
       publishedContextWindow(value.provider, value.model))
     : undefined;
-  return {
+  const normalized = {
     ...value,
     baseUrl: isCloudProviderId(value.provider)
       ? cloudProviderDefinition(value.provider).baseUrl
@@ -77,6 +84,13 @@ export function normalizeConfiguration(
         ? undefined
         : Math.max(512, Math.min(2_000_000, Math.floor(modelContextWindow))),
     internetAccess: value.internetAccess ?? false,
+    masterPrompt:
+      value.masterPrompt && typeof value.masterPrompt.template === "string"
+        ? {
+            enabled: value.masterPrompt.enabled !== false,
+            template: value.masterPrompt.template,
+          }
+        : undefined,
     autocomplete: {
       enabled: value.autocomplete?.enabled ?? false,
       model: value.autocomplete?.model?.trim() || undefined,
@@ -84,6 +98,11 @@ export function normalizeConfiguration(
     formatOnSave: value.formatOnSave === true,
     mcpServers: parseMcpServerConfigurations(value.mcpServers),
   };
+  const masterPromptValidation = validateMasterPrompt(normalized.masterPrompt);
+  if (!masterPromptValidation.valid) {
+    throw new Error(masterPromptValidation.errors.join(" "));
+  }
+  return normalized;
 }
 
 export function isLocalConfiguration(

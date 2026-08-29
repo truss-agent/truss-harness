@@ -102,6 +102,8 @@
         <label>Context window<input id="contextInput" type="number" min="512" max="2000000" step="512"></label>
         <label>Tool permissions<select id="permissionSelect"><option value="ask">Ask every time</option><option value="auto-read">Auto-allow read-only</option><option value="auto-all">Auto-allow all tools</option></select></label>
         <label class="checkbox-setting settings-wide"><input id="internetAccessInput" type="checkbox"><span>Allow public internet research</span></label>
+        <label class="checkbox-setting settings-wide"><input id="masterPromptEnabled" type="checkbox"><span>Apply a master prompt to every agent run</span></label>
+        <label class="mcp-setting settings-wide">Master prompt template<textarea id="masterPromptTemplate" rows="6" spellcheck="false" placeholder="&lt;project&gt;&#10;Work in {{agent.mode}} mode on {{workspace.name}}.&#10;&lt;/project&gt;"></textarea><span>XML stays literal. Available: {{workspace.name}}, {{workspace.root}}, {{repository.branch}}, {{repository.changedFiles}}, {{agent.mode}}, {{session.id}}, {{date.iso}}.</span></label>
         <label class="checkbox-setting settings-wide"><input id="autocompleteEnabled" type="checkbox"><span>Enable inline Tab autocomplete</span></label>
         <label class="settings-wide">Autocomplete model <input id="autocompleteModel" list="modelOptions" placeholder="Use chat model"></label>
         <label class="checkbox-setting settings-wide"><input id="formatOnSave" type="checkbox"><span>Format supported files when saving</span></label>

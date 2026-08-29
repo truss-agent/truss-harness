@@ -4,6 +4,7 @@ import {
   type AgentProfile,
   ApiKeyCredential,
   type CredentialProvider,
+  type MasterPromptConfiguration,
   type ToolApproval,
 } from "@truss-harness/runtime";
 import { AgentHost, type AgentMode, type HostedRuntime } from "./host.js";
@@ -20,6 +21,7 @@ export interface HostedRuntimeOptions {
   readonly apiKey?: string;
   readonly credential?: CredentialProvider;
   readonly systemPrompt?: string;
+  readonly masterPrompt?: MasterPromptConfiguration;
   readonly approval?: ToolApproval;
   readonly mode?: AgentMode;
   readonly internetAccess?: boolean;
@@ -60,6 +62,7 @@ export async function createHostedRuntime(
   const host = new AgentHost({
     workspaceRoot: options.workspaceRoot,
     systemPrompt: options.systemPrompt,
+    masterPrompt: options.masterPrompt,
     mcpServers: options.mcpServers,
     approvalFactory: () => options.approval,
     providerRegistry: options.providerRegistry,

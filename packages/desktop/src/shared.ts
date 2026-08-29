@@ -7,6 +7,7 @@ import type {
   ProviderAccount,
   UpdateProviderAccountInput,
   UpdateAgentProfileInput,
+  MasterPromptConfiguration,
 } from "@truss-harness/runtime";
 
 export type DesktopProvider = ModelProviderKind;
@@ -54,6 +55,7 @@ export interface DesktopConfiguration {
   /** Provider-reported context window for the selected model, when known. */
   readonly modelContextWindow?: number;
   readonly internetAccess: boolean;
+  readonly masterPrompt?: MasterPromptConfiguration;
   readonly mcpServers: McpServerConfigurations;
   readonly autocomplete?: {
     readonly enabled: boolean;
@@ -70,7 +72,13 @@ export interface DesktopModelInfo {
   /** USD per one million output tokens, when published by the provider. */
   readonly outputCostPerMillion?: number;
   readonly supportsTools?: boolean;
-  readonly kind?: "chat" | "embedding" | "image" | "audio" | "moderation" | "other";
+  readonly kind?:
+    | "chat"
+    | "embedding"
+    | "image"
+    | "audio"
+    | "moderation"
+    | "other";
 }
 
 export interface DesktopTokenUsage {
@@ -208,7 +216,10 @@ export type DesktopEvent =
         readonly error?: { readonly message?: string };
         readonly plan?: WorkspacePlan;
         readonly modifiedFiles?: readonly string[];
-        readonly usage?: Omit<DesktopTokenUsage, "estimated" | "estimatedCostUsd">;
+        readonly usage?: Omit<
+          DesktopTokenUsage,
+          "estimated" | "estimatedCostUsd"
+        >;
       };
     }
   | {

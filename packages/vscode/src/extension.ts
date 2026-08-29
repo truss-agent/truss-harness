@@ -3,7 +3,10 @@ import {
   detectLocalContextWindow,
   type ModelProviderKind,
 } from "@truss-harness/provider-openai-compatible";
-import type { ProviderAccount } from "@truss-harness/runtime";
+import {
+  type ProviderAccount,
+  validateMasterPrompt,
+} from "@truss-harness/runtime";
 import * as vscode from "vscode";
 import { ChatRuntimeController } from "./chat-runtime-controller.js";
 import type {
@@ -193,7 +196,20 @@ export function activate(context: vscode.ExtensionContext): void {
               break;
             }
             const previousConfiguration = configuration;
-            configuration = normalizeConfiguration(message.configuration);
+            const nextConfiguration = normalizeConfiguration(
+              message.configuration,
+            );
+            const masterPromptValidation = validateMasterPrompt(
+              nextConfiguration.masterPrompt,
+            );
+            if (!masterPromptValidation.valid) {
+              post({
+                type: "error",
+                message: masterPromptValidation.errors.join(" "),
+              });
+              break;
+            }
+            configuration = nextConfiguration;
             const detectedContextWindow = isLocalConfiguration(configuration)
               ? await detectLocalContextWindow(
                   localEndpoint(configuration),

@@ -115,7 +115,8 @@ export class AgentRuntime {
         let usage: ModelTokenUsage | undefined;
         const progressParser = new ProgressStreamParser();
         const systemPrompt = [
-          this.options.systemPrompt,
+          this.options.systemPromptFactory?.(session) ??
+            this.options.systemPrompt,
           recoveryInstruction(recoveryReason, pendingWriteRecoveryPaths),
           turnBudgetInstruction(this.maxTurns - turn),
         ]

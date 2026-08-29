@@ -26,6 +26,28 @@ describe("desktop configuration", () => {
     expect(contextBudgetForConfiguration(configuration)).toBe(1_050_000);
   });
 
+  it("preserves a master prompt template without rewriting XML", () => {
+    const configuration = normalizeConfiguration({
+      provider: "ollama",
+      baseUrl: "http://127.0.0.1:11434",
+      model: "qwen3-coder",
+      mode: "chat",
+      permission: "ask",
+      contextWindow: 8_192,
+      internetAccess: false,
+      mcpServers: {},
+      masterPrompt: {
+        enabled: true,
+        template: "<workspace>{{workspace.name}}</workspace>",
+      },
+    });
+
+    expect(configuration.masterPrompt).toEqual({
+      enabled: true,
+      template: "<workspace>{{workspace.name}}</workspace>",
+    });
+  });
+
   it("normalizes persisted editor state without retaining invalid entries", () => {
     expect(
       normalizeWorkspaceUiState({

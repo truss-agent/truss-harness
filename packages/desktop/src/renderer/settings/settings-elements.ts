@@ -45,6 +45,8 @@ export function desktopSettingsElements(document: Document) {
     autocompleteEnabled: element<HTMLInputElement>("autocompleteEnabled"),
     autocompleteModel: element<HTMLInputElement>("autocompleteModel"),
     formatOnSave: element<HTMLInputElement>("formatOnSave"),
+    masterPromptEnabled: element<HTMLInputElement>("masterPromptEnabled"),
+    masterPromptTemplate: element<HTMLTextAreaElement>("masterPromptTemplate"),
     mcpServersInput: element<HTMLTextAreaElement>("mcpServersInput"),
     mcpStatus: element<HTMLDivElement>("mcpStatus"),
     mcpServerList: element<HTMLDivElement>("mcpServerList"),

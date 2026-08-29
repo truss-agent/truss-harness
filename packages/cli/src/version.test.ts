@@ -11,6 +11,6 @@ describe("CLI_VERSION", () => {
   });
 
   it("formats the side-effect-free CLI health probe", () => {
-    expect(formatCliVersion("truss-cli")).toBe("truss-cli 0.1.22");
+    expect(formatCliVersion("truss-cli")).toBe("truss-cli 0.1.23");
   });
 });

@@ -177,7 +177,7 @@ describe("RuntimeService", () => {
             identity: {
               runtime: {
                 packageName: "@truss-harness/runtime",
-                version: "0.1.11",
+                version: "0.1.12",
               },
               protocolVersions: [LOCAL_SERVICE_PROTOCOL_VERSION],
             },
@@ -249,7 +249,7 @@ describe("RuntimeService", () => {
             identity: {
               runtime: {
                 packageName: "@truss-harness/runtime",
-                version: "0.1.11",
+                version: "0.1.12",
               },
               protocolVersions: [LOCAL_SERVICE_PROTOCOL_VERSION],
             },

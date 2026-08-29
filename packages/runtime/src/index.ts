@@ -16,3 +16,4 @@ export * from "./commands.js";
 export * from "./web.js";
 export * from "./remote.js";
 export * from "./version.js";
+export * from "./master-prompt.js";

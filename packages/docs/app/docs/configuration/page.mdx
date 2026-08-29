@@ -49,21 +49,65 @@ This guided user-level setup can discover a local endpoint or create a cloud BYO
 
 ## Fields
 
-| Field | Purpose |
-| --- | --- |
-| `provider` | `ollama`, `openai-compatible`, `openai`, `anthropic`, `openrouter`, `groq`, `together`, `gemini`, `xai`, `mistral`, `deepseek`, `perplexity`, `fireworks`, `nvidia-nim`, `xiaomi-mimo`, or `ollama-cloud` |
-| `baseUrl` | Local server base URL; optional for the supported cloud providers |
-| `model` | Server model ID |
-| `mode` | `chat`, `plan`, or `edit` |
-| `permission` | `ask`, `auto-read`, or `auto-all` |
-| `internetAccess` | Enables optional public web search and page fetching; defaults to `false` |
-| `systemPrompt` | Optional system instruction |
-| `apiKeyEnv` | Name of an environment variable that contains a token |
-| `mcpServers` | Named local stdio MCP server definitions |
-| `tuiTheme` | Terminal UI palette: `forest` (default), `sage`, or `dusk` |
-| `allowWorkspaceMcpServers` | User-level opt-in for MCP commands defined by a workspace |
+| Field                      | Purpose                                                                                                                                                                                                   |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `provider`                 | `ollama`, `openai-compatible`, `openai`, `anthropic`, `openrouter`, `groq`, `together`, `gemini`, `xai`, `mistral`, `deepseek`, `perplexity`, `fireworks`, `nvidia-nim`, `xiaomi-mimo`, or `ollama-cloud` |
+| `baseUrl`                  | Local server base URL; optional for the supported cloud providers                                                                                                                                         |
+| `model`                    | Server model ID                                                                                                                                                                                           |
+| `mode`                     | `chat`, `plan`, or `edit`                                                                                                                                                                                 |
+| `permission`               | `ask`, `auto-read`, or `auto-all`                                                                                                                                                                         |
+| `internetAccess`           | Enables optional public web search and page fetching; defaults to `false`                                                                                                                                 |
+| `masterPrompt`             | Optional persistent prompt template applied safely to every agent run                                                                                                                                     |
+| `systemPrompt`             | Legacy plain master prompt; prefer `masterPrompt` for reusable templates                                                                                                                                  |
+| `apiKeyEnv`                | Name of an environment variable that contains a token                                                                                                                                                     |
+| `mcpServers`               | Named local stdio MCP server definitions                                                                                                                                                                  |
+| `tuiTheme`                 | Terminal UI palette: `forest` (default), `sage`, or `dusk`                                                                                                                                                |
+| `allowWorkspaceMcpServers` | User-level opt-in for MCP commands defined by a workspace                                                                                                                                                 |
 
 Keep tokens out of JSON files. Use `apiKeyEnv` to reference an environment variable instead.
+
+## Master prompt templates
+
+Use `masterPrompt` when every run in a profile should begin with the same
+project rules. The template is plain text, so XML tags remain exactly as you
+wrote them. Only the documented `{{variable}}` tokens are substituted.
+
+```json
+{
+  "profiles": {
+    "project-agent": {
+      "provider": "openrouter",
+      "model": "openai/gpt-4.1-mini",
+      "mode": "edit",
+      "masterPrompt": {
+        "enabled": true,
+        "template": "<project_rules>\nWork in {{agent.mode}} mode inside {{workspace.name}}.\nBranch: {{repository.branch}}\nChanged files:\n{{repository.changedFiles}}\n</project_rules>"
+      }
+    }
+  }
+}
+```
+
+| Token                         | Value                                   |
+| ----------------------------- | --------------------------------------- |
+| `{{workspace.name}}`          | Workspace directory name                |
+| `{{workspace.root}}`          | Local workspace path                    |
+| `{{repository.branch}}`       | Current Git branch, when available      |
+| `{{repository.changedFiles}}` | A bounded newline list of changed files |
+| `{{agent.mode}}`              | `chat`, `plan`, or `edit`               |
+| `{{session.id}}`              | Opaque runtime session ID               |
+| `{{date.iso}}`                | Current UTC ISO-8601 timestamp          |
+
+Dynamic values are XML-escaped before insertion. Unknown or incomplete tokens,
+an empty enabled template, and oversized templates produce a visible validation
+error before Truss sends a model request. Templates cannot read API keys,
+environment variables, file contents, chat history, terminal output, or pairing
+data, and cannot override Truss tool permissions or mode safety.
+
+Desktop and VS Code expose this editor in Settings. CLI profiles use the JSON
+setting above; for one launch, set `TRUSS_HARNESS_MASTER_PROMPT`. The older
+`TRUSS_HARNESS_SYSTEM_PROMPT` environment variable remains supported as a plain
+template for compatibility.
 
 ## Bring your own key (BYOK)
 

@@ -21,7 +21,10 @@ import {
   InMemorySessionStore,
   listDirectoryTool,
   type ManagedAgentMode,
+  type MasterPromptConfiguration,
+  type MasterPromptContext,
   type ModelProvider,
+  renderMasterPrompt,
   type RuntimeEvent,
   readFileTool,
   registerCoreTools,
@@ -29,6 +32,7 @@ import {
   searchFilesTool,
   type ToolApproval,
   ToolRegistry,
+  validateMasterPrompt,
   WorkspaceMemoryContextProvider,
   WorkspacePlanContextProvider,
   type WorkspacePlanStore,
@@ -52,7 +56,9 @@ export interface AgentCredentialResolver {
 
 export interface AgentHostOptions {
   readonly workspaceRoot: string;
+  /** Legacy plain prompt retained for existing callers. Prefer masterPrompt for dynamic templates. */
   readonly systemPrompt?: string;
+  readonly masterPrompt?: MasterPromptConfiguration;
   readonly mcpServers?: McpServerConfigurations;
   readonly credentialResolver?: AgentCredentialResolver;
   readonly approvalFactory?: (
@@ -76,11 +82,11 @@ export interface HostedRuntime {
 }
 
 export function systemPrompt(options: {
-  readonly systemPrompt?: string;
+  readonly masterPrompt?: string;
+  readonly profileInstructions?: string;
   readonly mode: AgentMode;
 }): string {
   return [
-    options.systemPrompt,
     options.mode === "chat"
       ? "You are in Chat mode. Use the available read-only workspace tools when they would make an answer more accurate. You can inspect files and search the workspace, but you cannot make changes, run commands, or create or update plans. Answer conversationally and do not present a plan unless the user asks for one."
       : undefined,
@@ -90,9 +96,39 @@ export function systemPrompt(options: {
     options.mode === "edit"
       ? "You are an execution agent, not a planning assistant. Treat the user's message as a request to change the workspace even when it is phrased as a declaration. Before each tool call, emit one concise user-visible execution note inside <progress> and </progress>, for example <progress>Inspecting script.js</progress>. These notes must state only the immediate action, never private reasoning. Use tools for every workspace fact and every file change. Start with one relevant inspection tool call (read_file for a named file; search_files or list_directory otherwise). Use write_file with complete initial content only for a new or blank target file, and keep the content small enough to fit one tool call; for existing or large files, read first and use replace_in_file with one focused contiguous edit. Read every changed file to verify it. Do not answer with a proposal, status, or completion claim before tool calls. Never claim a file changed unless that write tool succeeded. If a tool fails, do not claim completion: for a file-write failure, reread the current file and retry the write with an exact contiguous excerpt before responding. Never stop after only rereading. Do not use the terminal to write files."
       : undefined,
+    options.masterPrompt,
+    options.profileInstructions,
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+const executeFile = promisify(execFile);
+
+async function masterPromptRepositoryContext(
+  workspaceRoot: string,
+): Promise<MasterPromptContext["repository"]> {
+  try {
+    const { stdout } = await executeFile(
+      "git",
+      ["status", "--porcelain=v1", "--branch"],
+      { cwd: workspaceRoot, maxBuffer: 16 * 1024 },
+    );
+    const lines = stdout.split(/\r?\n/).filter(Boolean);
+    const branch = lines[0]?.startsWith("## ")
+      ? lines[0].slice(3).split("...")[0] || undefined
+      : undefined;
+    return {
+      branch,
+      changedFiles: lines
+        .slice(1)
+        .map((line) => line.slice(3).trim())
+        .filter(Boolean)
+        .slice(0, 100),
+    };
+  } catch {
+    return {};
+  }
 }
 
 function isApprovalController(
@@ -145,6 +181,12 @@ export class AgentHost {
   }
 
   async createRuntime(profile: AgentProfile): Promise<HostedRuntime> {
+    const masterPromptValidation = validateMasterPrompt(
+      this.options.masterPrompt,
+    );
+    if (!masterPromptValidation.valid) {
+      throw new Error(masterPromptValidation.errors.join(" "));
+    }
     const credential = await this.resolveCredential(profile.provider);
     const provider = await this.registry.create(profile.provider, {
       credential,
@@ -186,6 +228,34 @@ export class AgentHost {
     provider: ModelProvider,
     approval?: ToolApproval,
   ): Promise<HostedRuntime> {
+    const repository = await masterPromptRepositoryContext(
+      this.options.workspaceRoot,
+    );
+    const sessionPrompts = new Map<string, string>();
+    const promptForSession = (sessionId: string): string => {
+      const existing = sessionPrompts.get(sessionId);
+      if (existing !== undefined) return existing;
+      const masterPrompt = renderMasterPrompt(this.options.masterPrompt, {
+        workspace: {
+          name:
+            basename(this.options.workspaceRoot) || this.options.workspaceRoot,
+          root: this.options.workspaceRoot,
+        },
+        repository,
+        agent: { mode: profile.mode },
+        session: { id: sessionId },
+        date: { iso: new Date().toISOString() },
+      });
+      const composed = systemPrompt({
+        mode: profile.mode,
+        masterPrompt: [this.options.systemPrompt, masterPrompt]
+          .filter(Boolean)
+          .join("\n\n"),
+        profileInstructions: profile.instructions,
+      });
+      sessionPrompts.set(sessionId, composed);
+      return composed;
+    };
     const events = new EventBus<RuntimeEvent>();
     const tools = new ToolRegistry();
     const memory = new FileWorkspaceMemoryStore(this.options.workspaceRoot);
@@ -236,12 +306,7 @@ export class AgentHost {
         ]),
         events,
         workspaceRoot: this.options.workspaceRoot,
-        systemPrompt: systemPrompt({
-          systemPrompt: [this.options.systemPrompt, profile.instructions]
-            .filter(Boolean)
-            .join("\n\n"),
-          mode: profile.mode,
-        }),
+        systemPromptFactory: (session) => promptForSession(session.id),
         approval,
         memory,
         plans,
@@ -252,3 +317,6 @@ export class AgentHost {
     };
   }
 }
+import { execFile } from "node:child_process";
+import { basename } from "node:path";
+import { promisify } from "node:util";
