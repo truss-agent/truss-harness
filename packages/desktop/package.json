@@ -125,7 +125,7 @@
     "@truss-harness/cli": "0.1.23",
     "@truss-harness/mcp": "0.1.11",
     "@truss-harness/provider-openai-compatible": "0.1.14",
-    "@truss-harness/runtime": "0.1.12"
+    "@truss-harness/runtime": "0.1.13"
   },
   "devDependencies": {
     "electron": "37.10.3",
