@@ -99,6 +99,50 @@ describe("AgentRuntime", () => {
     expect(writes).toBe(1);
   });
 
+  it("normalizes string tool arguments from a compatible provider before execution", async () => {
+    const inputs: unknown[] = [];
+    const provider: ModelProvider = { id: "fake", async *stream(request) {
+      if (!request.messages.some((message) => message.role === "tool")) {
+        yield { type: "tool_call", id: "read-1", name: "read_file", input: '{"path":"README.md"}' as unknown as Record<string, never> } as const;
+        yield { type: "finish", reason: "tool_calls" } as const;
+        return;
+      }
+      yield { type: "text_delta", text: "Read it." } as const;
+      yield { type: "finish", reason: "stop" } as const;
+    }};
+    const tools = new ToolRegistry();
+    tools.register({ name: "read_file", description: "reads", inputSchema: { type: "object" }, async execute(input) { inputs.push(input); return { content: "read" }; } });
+    const runtime = new AgentRuntime({ provider, tools, sessions: new InMemorySessionStore(), context: new RecentHistoryContextManager(), events: new EventBus<RuntimeEvent>(), workspaceRoot: process.cwd() });
+
+    const session = await runtime.createSession();
+    await runtime.run(session.id, "Read README.md");
+
+    expect(inputs).toEqual([{ path: "README.md" }]);
+  });
+
+  it("returns non-empty recoverable feedback when a tool returns no content", async () => {
+    const toolFeedback: string[] = [];
+    const provider: ModelProvider = { id: "fake", async *stream(request) {
+      const toolResult = request.messages.find((message) => message.role === "tool");
+      if (!toolResult) {
+        yield { type: "tool_call", id: "broken-1", name: "broken", input: {} } as const;
+        yield { type: "finish", reason: "tool_calls" } as const;
+        return;
+      }
+      toolFeedback.push(toolResult.content);
+      yield { type: "text_delta", text: "Recovered." } as const;
+      yield { type: "finish", reason: "stop" } as const;
+    }};
+    const tools = new ToolRegistry();
+    tools.register({ name: "broken", description: "broken", inputSchema: { type: "object" }, async execute() { return { content: undefined } as unknown as { content: string }; } });
+    const runtime = new AgentRuntime({ provider, tools, sessions: new InMemorySessionStore(), context: new RecentHistoryContextManager(), events: new EventBus<RuntimeEvent>(), workspaceRoot: process.cwd() });
+
+    const session = await runtime.createSession();
+    await runtime.run(session.id, "Use the broken tool");
+
+    expect(toolFeedback).toEqual(["Tool execution failed: the tool returned no text content."]);
+  });
+
   it("allows a multi-step tool workflow to continue beyond 24 turns by default", async () => {
     let turns = 0;
     const provider: ModelProvider = { id: "fake", async *stream() {

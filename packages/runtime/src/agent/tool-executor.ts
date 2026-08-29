@@ -8,6 +8,7 @@ import type { WorkspaceToolRecord } from "../memory.js";
 import type { ToolRegistry } from "../tools.js";
 import { allowAllTools, type ToolApproval } from "./contracts.js";
 import { toolFailureRecovery } from "./edit-policy.js";
+import { normalizeToolResult } from "./tool-call-normalization.js";
 
 export interface AgentToolExecutorOptions {
   readonly tools: ToolRegistry;
@@ -54,10 +55,12 @@ export class AgentToolExecutor {
       result = { content: `Tool call denied: ${tool}`, isError: true };
     } else {
       try {
-        result = await implementation.execute(input, {
-          workspaceRoot: this.options.workspaceRoot,
-          signal,
-        });
+        result = normalizeToolResult(
+          await implementation.execute(input, {
+            workspaceRoot: this.options.workspaceRoot,
+            signal,
+          }),
+        );
       } catch (error) {
         result = {
           content: `Tool execution failed: ${error instanceof Error ? error.message : String(error)}\n\nRECOVERY: ${toolFailureRecovery(tool)}`,
