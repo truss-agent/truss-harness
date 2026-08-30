@@ -55,11 +55,10 @@ export function SiteFooter() {
             <strong>{brand.productName}</strong>
           </Link>
           <span className="site-footer-kicker">
-            Local-first agent infrastructure
+            Provider-flexible coding agent
           </span>
           <p>
-            One modular runtime for coding agents, wherever you do your best
-            work.
+            One runtime for the models, tools, and clients you choose.
           </p>
         </div>
         <div className="site-footer-links">
