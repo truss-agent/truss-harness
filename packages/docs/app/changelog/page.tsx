@@ -177,7 +177,7 @@ const entries = [
       "Kept Chat strictly non-mutating: it cannot write files, apply patches, run terminal commands, or create implementation plans.",
       "Limited Chat MCP access to servers explicitly marked read-only, matching the existing Plan-mode safety boundary.",
       "Hardened the VS Code-hosted Truss Go gateway, made the paired Android workspace open automatically, and showed clear connection progress while it starts.",
-      "Added signed VSIX GitHub Release delivery alongside the Marketplace, with direct download and manual-install guidance on the Downloads page.",
+      "Added signed VSIX GitHub Release delivery, with direct download and manual-install guidance on the Downloads page.",
     ],
   },
   {

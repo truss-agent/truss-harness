@@ -63,7 +63,7 @@ export const clientContent: Record<ClientId, ClientContent> = {
     screenshotSrc: "/screenshots/vscode.png",
     screenshotAlt: "Truss running in VS Code beside the editor and integrated terminal.",
     installLabel: "Download the VSIX",
-    installDescription: "Download the signed VSIX, install it from the Extensions menu, then select a local server and model from Settings.",
+    installDescription: "Download the current signed VSIX from GitHub Releases, install it from the Extensions menu, then select a local server and model from Settings.",
     primaryAction: { label: "Download the VS Code extension", href: "/download" },
     docsHref: "/docs/clients/vscode",
     highlights: [

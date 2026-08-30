@@ -382,9 +382,9 @@ export const blogArticles = [
           "Yes. Configure a reachable local endpoint, select an installed model, and use it from the extension.",
       },
       {
-        question: "Does the VS Code extension require the Marketplace?",
+        question: "How do I install the VS Code extension?",
         answer:
-          "No. Truss provides manually installable VSIX releases as well as its documented extension workflow.",
+          "Download the signed VSIX from the current Truss GitHub Release, then use Extensions: Install from VSIX in VS Code.",
       },
     ],
   },
