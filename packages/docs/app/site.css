@@ -3413,3 +3413,66 @@ body {
         width: 100%;
     }
 }
+
+/* Guides / blog */
+.blog-index-page,
+.blog-article-page { padding-block: 74px 104px; }
+.blog-index-intro { max-width: 760px; padding: 0; }
+.blog-index-grid { display: grid; gap: 22px; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); margin-top: 52px; }
+.blog-card { background: #edf4ee; border: 1px solid #b8cbbd; border-radius: 18px; display: flex; flex-direction: column; min-height: 330px; padding: 30px; }
+.blog-card:hover { border-color: #0b7965; box-shadow: 0 18px 38px rgba(25, 50, 41, .12); }
+.blog-card-meta, .blog-article-meta { color: #5d7067; display: flex; flex-wrap: wrap; font-size: 13px; gap: 8px; }
+.blog-card-meta span::after, .blog-article-meta span:not(:last-child)::after, .blog-article-meta time::after { color: #97aaa0; content: "•"; margin-left: 8px; }
+.blog-card h2 { font-size: 28px; margin: 21px 0 12px; }
+.blog-card h2 a:hover, .blog-related-links a:hover, .blog-breadcrumbs a:hover { color: #0b7965; }
+.blog-card p, .blog-article-dek, .blog-article-body p, .blog-article-body li { color: #4d6259; font-size: 17px; line-height: 1.65; }
+.blog-card > .site-text-link { font-weight: 750; margin-top: auto; }
+.blog-card-tags, .blog-keywords { display: flex; flex-wrap: wrap; gap: 7px; margin: 19px 0 23px; }
+.blog-card-tags span, .blog-keywords span { background: #dceae0; border-radius: 999px; color: #285143; font-size: 12px; font-weight: 700; padding: 6px 9px; }
+.blog-article { margin: 0 auto; max-width: 810px; }
+.blog-breadcrumbs { align-items: center; color: #5d7067; display: flex; flex-wrap: wrap; font-size: 13px; gap: 8px; margin: 0 auto 46px; max-width: 810px; }
+.blog-article-header { border-bottom: 1px solid #b8cbbd; padding-bottom: 34px; }
+.blog-article-header h1 { font-size: clamp(43px, 6vw, 68px); letter-spacing: -.045em; max-width: 800px; }
+.blog-article-dek { font-size: 21px; max-width: 760px; }
+.blog-article-meta { margin-top: 22px; }
+.blog-article-body { padding-top: 42px; }
+.blog-article-body section { margin-bottom: 48px; }
+.blog-article-body h2 { font-size: 32px; letter-spacing: -.025em; margin-bottom: 17px; }
+.blog-article-body ul { color: #4d6259; display: grid; gap: 9px; padding-left: 23px; }
+.blog-article-body pre { background: #12231d; border: 1px solid #2e6858; border-radius: 12px; color: #ddf4e6; margin: 24px 0 0; overflow-x: auto; padding: 20px; }
+.blog-article-body code { font: 14px/1.65 "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+.blog-article-links { background: #e5f1e8; border: 1px solid #98c5a5; border-radius: 18px; padding: 31px; }
+.blog-related-links { display: flex; flex-wrap: wrap; gap: 16px 22px; margin-top: 28px; }
+.blog-related-links a { color: #215c4d; font-size: 14px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.blog-faq details { border-bottom: 1px solid #c7d6cb; padding: 18px 0; }
+.blog-faq summary { color: #1a372e; cursor: pointer; font-size: 18px; font-weight: 750; list-style-position: outside; padding-right: 24px; }
+.blog-faq details p { margin: 14px 0 0; }
+
+:root[data-truss-theme="dark"] .blog-card { background: #13231e; border-color: #315548; }
+:root[data-truss-theme="dark"] .blog-card:hover { border-color: #4bd5b0; box-shadow: 0 18px 38px rgba(0, 0, 0, .28); }
+:root[data-truss-theme="dark"] .blog-card p,
+:root[data-truss-theme="dark"] .blog-article-dek,
+:root[data-truss-theme="dark"] .blog-article-body p,
+:root[data-truss-theme="dark"] .blog-article-body li,
+:root[data-truss-theme="dark"] .blog-card-meta,
+:root[data-truss-theme="dark"] .blog-article-meta,
+:root[data-truss-theme="dark"] .blog-breadcrumbs { color: #aec2b8; }
+:root[data-truss-theme="dark"] .blog-card-tags span,
+:root[data-truss-theme="dark"] .blog-keywords span { background: #1d4237; color: #c4efe0; }
+:root[data-truss-theme="dark"] .blog-article-header,
+:root[data-truss-theme="dark"] .blog-faq details { border-color: #315548; }
+:root[data-truss-theme="dark"] .blog-article-links { background: #132d25; border-color: #34705e; }
+:root[data-truss-theme="dark"] .blog-faq summary { color: #e3f2e9; }
+:root[data-truss-theme="dark"] .blog-related-links a { color: #82ddc2; }
+
+@media (max-width: 780px) {
+    .blog-index-page,
+    .blog-article-page { padding-block: 46px 72px; }
+    .blog-index-grid { margin-top: 34px; }
+    .blog-card { min-height: 0; padding: 24px; }
+    .blog-breadcrumbs { line-height: 1.5; margin-bottom: 32px; }
+    .blog-article-header h1 { font-size: 43px; }
+    .blog-article-dek { font-size: 19px; }
+    .blog-article-body h2 { font-size: 28px; }
+    .blog-article-links { padding: 24px; }
+}

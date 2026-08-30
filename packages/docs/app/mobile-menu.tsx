@@ -6,11 +6,12 @@ import { ThemeToggle } from "./theme-toggle";
 
 const links = [
   ["About", "/about"],
+  ["Guides", "/blog"],
   ["Features", "/features"],
   ["Clients", "/clients"],
   ["Changelog", "/changelog"],
   ["Docs", "/docs"],
-  ["Download", "/download"]
+  ["Download", "/download"],
 ] as const;
 
 export function MobileMenu() {

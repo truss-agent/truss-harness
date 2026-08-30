@@ -29,6 +29,7 @@ export function SiteHeader() {
         </div>
         <nav className="site-nav" aria-label="Primary navigation">
           <Link href="/about">About</Link>
+          <Link href="/blog">Guides</Link>
           <Link href="/features">Features</Link>
           <Link href="/clients">Clients</Link>
           <Link href="/changelog">Changelog</Link>
@@ -65,6 +66,7 @@ export function SiteFooter() {
           <span className="site-footer-label">Explore</span>
           <nav aria-label="Product links">
             <Link href="/download">Download</Link>
+            <Link href="/blog">Guides</Link>
             <Link href="/truss-go">Truss Go</Link>
             <Link href="/clients">Clients</Link>
             <Link href="/features">Features</Link>
