@@ -756,6 +756,583 @@ export const blogArticles = [
       },
     ],
   },
+  {
+    slug: "what-is-an-agent-harness",
+    title: "What Is an Agent Harness? The Runtime Behind an AI Agent",
+    description:
+      "An agent harness connects a model to context, tools, permissions, state, and an interface. Learn what it does and why it matters for coding agents.",
+    excerpt:
+      "A model can answer questions. An agent harness gives it a controlled way to understand a workspace, use tools, and recover from real work.",
+    publishedAt: "2026-08-28",
+    updatedAt: "2026-08-28",
+    readingTime: "7 min read",
+    keywords: [
+      "agent harness",
+      "AI agent harness",
+      "coding agent runtime",
+      "agent framework",
+    ],
+    sections: [
+      {
+        heading: "An agent harness is the operating layer around a model",
+        paragraphs: [
+          "An agent harness is the software that turns a language model into a useful agent. It selects context, exposes tools, applies permission rules, keeps a session, streams progress, and turns tool results back into the next model step. The model supplies reasoning; the harness supplies the working environment.",
+          "For a coding agent, that environment includes a repository, Git state, files, diagnostics, and commands. Without a harness, a model can suggest a patch. With one, it can inspect the relevant code, explain its plan, request the right capability, and leave an auditable trail of what happened.",
+        ],
+      },
+      {
+        heading: "What a useful harness owns",
+        paragraphs: [
+          "A practical harness owns the parts that should behave consistently no matter which model or user interface is active. That includes provider configuration, context selection, tool contracts, session recovery, approval policy, and interruption handling.",
+        ],
+        bullets: [
+          "Provider routing and credentials",
+          "Workspace context and memory",
+          "Read, write, search, Git, and terminal tools",
+          "Permission checks and approval requests",
+          "Streaming events, cancellation, and session state",
+        ],
+      },
+      {
+        heading: "Why the distinction matters",
+        paragraphs: [
+          "When the harness is separate from the editor, model, or hosted service, developers keep more options. You can move from a terminal workflow to a desktop workspace, select a different provider for a difficult task, or add a new tool without rebuilding the agent around a single surface.",
+          "Truss is built around this separation. Its clients provide the experience while the shared runtime keeps the agent loop, tools, context, and permission boundaries consistent.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: "Is an agent harness the same as an LLM framework?",
+        answer:
+          "Not exactly. An LLM framework may help call models or compose prompts. An agent harness adds the operational layer: tools, context, permissions, sessions, streaming, and recovery.",
+      },
+      {
+        question: "Do coding agents need an agent harness?",
+        answer:
+          "A simple chat assistant does not. A coding agent that needs to inspect a workspace, call tools, manage approvals, and resume work benefits from a dedicated harness.",
+      },
+    ],
+  },
+  {
+    slug: "coding-agent-runtime-explained",
+    title:
+      "Coding Agent Runtime: What It Is and Why It Should Outlive the Editor",
+    description:
+      "Learn what a coding-agent runtime does, how it differs from an IDE extension, and why a shared runtime creates a more durable AI development workflow.",
+    excerpt:
+      "Your editor is where you work. A coding-agent runtime is the layer that makes agent behavior, tools, and safety policies portable.",
+    publishedAt: "2026-08-27",
+    updatedAt: "2026-08-27",
+    readingTime: "6 min read",
+    keywords: [
+      "coding agent runtime",
+      "AI agent runtime",
+      "agent runtime architecture",
+      "IDE coding agent",
+    ],
+    sections: [
+      {
+        heading: "The runtime is the agent, not the panel around it",
+        paragraphs: [
+          "A coding-agent runtime coordinates model calls, context, tool execution, state, and error recovery. An IDE extension, desktop app, or terminal UI presents that runtime to a developer. Treating those layers separately keeps the core agent behavior from being trapped inside one interface.",
+          "That distinction shows up when a workflow changes. The same task may begin in a terminal, continue in an editor, and be reviewed in a desktop app. A runtime can keep the model profile, permission policy, plan, and workspace state coherent across those surfaces.",
+        ],
+      },
+      {
+        heading: "What belongs in a runtime",
+        paragraphs: [
+          "The runtime should know how to build a request, run a tool, enforce a policy, persist a session, and report events. It should not need to know which button opened a panel or how a particular editor renders a diff.",
+        ],
+        bullets: [
+          "Model and provider adapters",
+          "Agent modes and permission policy",
+          "Context, memory, checkpoints, and recovery",
+          "Tool schemas and execution results",
+          "Streaming, cancellation, and structured events",
+        ],
+      },
+      {
+        heading: "A portable runtime reduces rebuild work",
+        paragraphs: [
+          "A shared runtime lets a client gain improvements in agent behavior without each client inventing a separate tool loop. It also makes testing clearer because the behavior can be verified independently from the UI.",
+          "Truss uses this pattern so its desktop app, VS Code extension, CLI, terminal UI, Neovim client, and mobile companion can share the same agent foundation while remaining focused interfaces.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: "Is a coding-agent runtime a server?",
+        answer:
+          "It can run locally inside a client, behind a local service, or remotely. The important part is that it owns agent behavior independently from the interface.",
+      },
+      {
+        question: "Why not put all agent logic in an IDE extension?",
+        answer:
+          "It makes the agent harder to reuse, test, and evolve outside that editor. A runtime lets clients stay focused on UX while sharing reliable agent behavior.",
+      },
+    ],
+  },
+  {
+    slug: "ai-agent-tool-calling-explained",
+    title:
+      "AI Agent Tool Calling: How Coding Agents Read, Search, and Change Code",
+    description:
+      "Understand AI agent tool calling, from structured tool requests to permission checks, results, retries, and developer review in a coding workflow.",
+    excerpt:
+      "Tool calling is how an agent stops guessing about a repository and starts gathering evidence, under rules you can inspect.",
+    publishedAt: "2026-08-26",
+    updatedAt: "2026-08-26",
+    readingTime: "7 min read",
+    keywords: [
+      "AI agent tool calling",
+      "coding agent tools",
+      "LLM tool use",
+      "agent function calling",
+    ],
+    sections: [
+      {
+        heading: "Tool calling gives an agent evidence",
+        paragraphs: [
+          "Tool calling is a structured request from a model to software that can perform a specific action. For coding work, that might be reading a file, listing a directory, searching for a symbol, checking a Git diff, or running a test command.",
+          "The model does not execute arbitrary code by itself. It proposes a tool name and arguments. The harness validates that request, checks policy, runs the implementation if permitted, and returns a result the model can use for its next step.",
+        ],
+      },
+      {
+        heading: "Good tool design keeps boundaries explicit",
+        paragraphs: [
+          "Each tool should have a clear schema, a narrow description, and a predictable result. Read-only tools are useful for Chat and planning. Mutating tools, such as file writes and terminal commands, need stronger policy checks because they can change a workspace.",
+        ],
+        bullets: [
+          "Validate arguments before execution.",
+          "Separate read-only and mutating capabilities.",
+          "Show requested actions and results in the activity stream.",
+          "Stop or retry safely when a tool fails.",
+        ],
+      },
+      {
+        heading: "The developer remains part of the loop",
+        paragraphs: [
+          "Useful tool calling is not invisible automation. It should show what was read, searched, changed, or run, then preserve the normal review process with diffs and tests. That gives an agent enough evidence to help without turning the workspace into a black box.",
+          "Truss exposes tool activity and keeps Chat and Plan non-mutating. Agent mode is where permitted workspace changes and commands can happen under the selected policy.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: "Is tool calling the same as function calling?",
+        answer:
+          "They are closely related. Function calling usually describes the structured model output; tool calling includes validation, policy, execution, results, and the next agent step.",
+      },
+      {
+        question: "Can tool calling make a coding agent safer?",
+        answer:
+          "Yes, when tools are narrow, arguments are validated, sensitive actions require approval, and the user can see what the agent requested and what happened.",
+      },
+    ],
+  },
+  {
+    slug: "coding-agent-observability",
+    title: "Coding Agent Observability: See Context, Tool Calls, and Outcomes",
+    description:
+      "A practical introduction to coding-agent observability: what to inspect before, during, and after an agent run so debugging and review stay possible.",
+    excerpt:
+      "If you cannot see an agent's context, tool activity, and result, you cannot confidently debug or review its work.",
+    publishedAt: "2026-08-25",
+    updatedAt: "2026-08-25",
+    readingTime: "6 min read",
+    keywords: [
+      "coding agent observability",
+      "AI agent monitoring",
+      "agent tool call logs",
+      "agent debugging",
+    ],
+    sections: [
+      {
+        heading: "An agent needs an activity trail",
+        paragraphs: [
+          "A coding agent makes a sequence of decisions: what context to inspect, which tool to request, how to interpret the result, and whether a change is complete. Observability makes that sequence visible enough for a developer to review and correct.",
+          "The goal is not to expose every hidden model thought. The useful record is operational: active provider and model, selected mode, context sources, tool requests, tool results, errors, cancellation, changed files, and validation output.",
+        ],
+      },
+      {
+        heading: "What to inspect when a run goes wrong",
+        paragraphs: [
+          "Start with the concrete failure. Did the provider reject a key, rate-limit a request, return malformed tool arguments, or lose the relevant file context? Those are different problems and they need different fixes. A generic 'agent failed' message hides the evidence needed to solve any of them.",
+        ],
+        bullets: [
+          "Confirm the selected provider, model, and account.",
+          "Inspect the tool that failed and its validated arguments.",
+          "Check the returned error before retrying.",
+          "Review the diff and validation results after a write.",
+        ],
+      },
+      {
+        heading: "Visibility improves trust and iteration",
+        paragraphs: [
+          "When tool activity is visible, developers can interrupt a bad path early, tighten the task, or switch to a more appropriate model. It also makes a successful run easier to reproduce because the important actions are not hidden behind one final message.",
+          "Truss shows tool activity alongside conversations and keeps Git-aware review close to the working session, so an agent run can be treated like normal engineering work rather than a mysterious output generator.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: "What is agent observability?",
+        answer:
+          "It is the ability to inspect the operational behavior of an agent, including context selection, tool requests, results, failures, and final changes.",
+      },
+      {
+        question: "Do coding agents need logs?",
+        answer:
+          "They need useful activity records. The record should help a developer diagnose provider, tool, context, or validation problems without exposing unnecessary sensitive content.",
+      },
+    ],
+  },
+  {
+    slug: "how-to-evaluate-coding-agents",
+    title: "How to Evaluate a Coding Agent on Real Repositories",
+    description:
+      "Evaluate coding agents with realistic tasks, repeatable criteria, tool behavior, review quality, and failure handling instead of a single impressive demo.",
+    excerpt:
+      "A useful coding-agent evaluation measures how it works in a repository, not whether it can produce one plausible snippet.",
+    publishedAt: "2026-08-24",
+    updatedAt: "2026-08-24",
+    readingTime: "8 min read",
+    keywords: [
+      "evaluate coding agents",
+      "coding agent benchmark",
+      "AI coding agent evaluation",
+      "agent evals",
+    ],
+    sections: [
+      {
+        heading: "Use tasks that resemble your work",
+        paragraphs: [
+          "A benchmark question with one correct answer can be useful, but it does not tell you how an agent will behave in your codebase. Build a small task set from real maintenance work: explain a subsystem, find a regression, review a diff, add a focused test, make a bounded change, and recover from a failed command.",
+          "Keep tasks safe and reversible. A disposable repository or branch lets you compare agents without turning an evaluation into a production incident.",
+        ],
+      },
+      {
+        heading: "Measure the workflow, not just the final text",
+        paragraphs: [
+          "A correct patch is not enough if the agent used excessive context, ignored a permission boundary, changed unrelated files, or could not explain what it did. Evaluate the path as well as the outcome.",
+        ],
+        bullets: [
+          "Did it identify the right files and constraints?",
+          "Did it use tools deliberately and recover from failures?",
+          "Did it keep changes scoped and produce a reviewable diff?",
+          "Did the requested validation actually run and pass?",
+        ],
+      },
+      {
+        heading: "Compare model and harness separately",
+        paragraphs: [
+          "The same model can behave differently with different context selection, tool schemas, permissions, and retry behavior. Record the provider, model, prompt, workspace state, and policy so you know what changed between runs.",
+          "A provider-flexible runtime such as Truss makes this comparison more useful because the client workflow and tool boundaries can remain consistent while you test a different model profile.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: "What is the best benchmark for a coding agent?",
+        answer:
+          "The best benchmark is a repeatable set of safe tasks drawn from the work your team actually does, with clear expected evidence and validation.",
+      },
+      {
+        question: "Should I evaluate an agent with one large feature?",
+        answer:
+          "Use a mix. Large features reveal planning and persistence, but smaller tasks make failures easier to diagnose and compare.",
+      },
+    ],
+  },
+  {
+    slug: "persistent-coding-agent-sessions",
+    title:
+      "Persistent Coding Agent Sessions: Resume Work Without Rebuilding Context",
+    description:
+      "Learn why durable coding-agent sessions matter, what should persist, and how to resume work without relying on an endlessly growing chat transcript.",
+    excerpt:
+      "A persistent agent session should preserve useful workspace state, not force you to repeat the task every time an editor closes.",
+    publishedAt: "2026-08-23",
+    updatedAt: "2026-08-23",
+    readingTime: "6 min read",
+    keywords: [
+      "persistent coding agent sessions",
+      "AI agent memory",
+      "resume coding agent",
+      "agent checkpoint",
+    ],
+    sections: [
+      {
+        heading: "A session is more than chat history",
+        paragraphs: [
+          "A durable coding-agent session can retain the task, selected model profile, mode, permission policy, plan, useful workspace notes, and a bounded conversation transcript. That makes it possible to resume a real task without pretending every previous token needs to be sent again.",
+          "Persistence should be intentional. A session needs enough state to continue responsibly, but it should not silently preserve credentials or grow into an unsearchable archive of stale context.",
+        ],
+      },
+      {
+        heading: "Checkpoints make interruptions recoverable",
+        paragraphs: [
+          "Coding work is interrupted by editor restarts, failed provider requests, network changes, and simple context switches. A checkpoint records where the agent was, what it had observed, and what still needs verification so the next run can recover without guessing.",
+        ],
+        bullets: [
+          "Task and implementation-plan status",
+          "Selected provider, model, and agent mode",
+          "Relevant workspace notes and changed-file state",
+          "Bounded conversation history and recent tool outcomes",
+        ],
+      },
+      {
+        heading: "Resume with verification, not blind continuation",
+        paragraphs: [
+          "A resumed agent should re-check the workspace before it acts. Files may have changed, a branch may have moved, or a previous command may not have completed. The right behavior is to use the stored session as a starting point, then inspect current evidence.",
+          "Truss treats plans, workspace memory, and sessions as durable runtime state while still keeping tool activity and Git review visible when work resumes.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: "Should an AI coding agent remember everything forever?",
+        answer:
+          "No. Keep durable task and workspace state, but bound conversation history and re-check live files before resuming work.",
+      },
+      {
+        question: "What is an agent checkpoint?",
+        answer:
+          "A checkpoint is saved state that helps an agent resume after an interruption, including task progress, relevant context, and recent outcomes.",
+      },
+    ],
+  },
+  {
+    slug: "multi-agent-coding-workflow",
+    title: "Multi-Agent Coding Workflows: When Parallel Agents Help",
+    description:
+      "Use multiple coding agents without creating chaos: split research, review, and implementation work, define boundaries, and keep one human accountable.",
+    excerpt:
+      "Parallel agents help when tasks are independent and reviewable. They hurt when every agent changes the same files without a clear owner.",
+    publishedAt: "2026-08-22",
+    updatedAt: "2026-08-22",
+    readingTime: "7 min read",
+    keywords: [
+      "multi-agent coding workflow",
+      "parallel coding agents",
+      "AI agent orchestration",
+      "multi-agent software development",
+    ],
+    sections: [
+      {
+        heading: "Parallelism is not the same as delegation",
+        paragraphs: [
+          "Multiple agents are most useful when they can investigate or produce independent evidence at the same time. One agent can map an unfamiliar subsystem, another can review a diff, and another can draft test cases. A developer can then decide what should become a change.",
+          "Sending several agents into the same files with the same vague request usually creates duplication, conflicting edits, and more review work than it saves.",
+        ],
+      },
+      {
+        heading: "Give each agent a bounded role",
+        paragraphs: [
+          "Define the goal, inputs, allowed tools, and expected output for each run. Read-only research and review are easy to parallelize because they do not compete for workspace state. Writing tasks should have clear file ownership or happen sequentially after the evidence is combined.",
+        ],
+        bullets: [
+          "Research agent: inspect and summarize a subsystem.",
+          "Review agent: identify risks in a change or plan.",
+          "Test agent: propose cases and validation commands.",
+          "Implementation agent: make one bounded, reviewed change.",
+        ],
+      },
+      {
+        heading: "Keep a human as the integration point",
+        paragraphs: [
+          "Agents can produce useful observations, but the integration decision belongs to the person responsible for the repository. Review the evidence, resolve conflicts, choose the implementation path, and run the final validation once.",
+          "Truss keeps agents and their activity scoped to the workspace so parallel work can remain visible instead of leaking unrelated plans into a primary conversation.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: "When should I use multiple coding agents?",
+        answer:
+          "Use them for independent research, review, test design, or clearly separated implementation tasks. Avoid parallel edits to the same uncertain area.",
+      },
+      {
+        question: "Can multiple agents edit the same repository?",
+        answer:
+          "They can, but it requires explicit ownership and review. Read-only parallel work is safer and often more useful.",
+      },
+    ],
+  },
+  {
+    slug: "provider-agnostic-ai-agent",
+    title:
+      "Provider-Agnostic AI Agents: Avoid Lock-In Without Losing Capability",
+    description:
+      "A provider-agnostic AI agent keeps models, credentials, tools, and workflows separate so developers can choose the right provider for each task.",
+    excerpt:
+      "Provider flexibility is not about chasing every model. It is about keeping one workflow when a model, account, price, or policy changes.",
+    publishedAt: "2026-08-21",
+    updatedAt: "2026-08-21",
+    readingTime: "6 min read",
+    keywords: [
+      "provider-agnostic AI agent",
+      "multi-provider coding agent",
+      "AI provider lock-in",
+      "BYOK agent",
+    ],
+    sections: [
+      {
+        heading: "Provider choice is an engineering constraint",
+        paragraphs: [
+          "Model capability, price, context length, availability, privacy requirements, and account policy change over time. A coding workflow that only works with one provider turns each of those changes into a migration.",
+          "A provider-agnostic agent separates provider configuration from agent behavior. The tools, workspace context, permissions, and session model stay stable while the active provider profile can change.",
+        ],
+      },
+      {
+        heading: "Use profiles instead of hardcoded assumptions",
+        paragraphs: [
+          "A profile describes the endpoint, model, credential reference, and context setting that make sense for a task. It can point to a local server or a supported cloud account. Credentials should be stored in client-managed secure storage rather than committed with a repository.",
+        ],
+        bullets: [
+          "Use a local profile for private or offline work.",
+          "Use a cloud profile when a task needs stronger reasoning or capacity.",
+          "Keep a fallback profile for provider outages or limits.",
+          "Name profiles by purpose, not by a temporary model trend.",
+        ],
+      },
+      {
+        heading: "Flexibility needs an honest connection test",
+        paragraphs: [
+          "Provider support is only real when a profile can test its endpoint, authenticate, list or select a usable model, and report errors clearly. A 401 authentication failure, a network failure, and a rate limit are different conditions that should not be hidden behind one message.",
+          "Truss keeps provider selection within the same runtime so a change in model provider does not require a different client workflow or tool policy.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: "What does provider-agnostic mean for an AI agent?",
+        answer:
+          "It means the agent is designed to work with multiple compatible model providers while keeping its context, tools, permissions, and client workflow independent from any one vendor.",
+      },
+      {
+        question: "Does provider-agnostic mean every model works equally well?",
+        answer:
+          "No. Models differ in tool use, context, reliability, and price. Provider flexibility lets you choose deliberately without replacing the entire workflow.",
+      },
+    ],
+  },
+  {
+    slug: "coding-agent-safety-boundaries",
+    title: "Coding Agent Safety Boundaries: Keep Automation Reviewable",
+    description:
+      "Set practical safety boundaries for a coding agent with read-only modes, scoped permissions, approvals, diffs, and testable completion criteria.",
+    excerpt:
+      "Safe coding-agent automation is not about removing tools. It is about making powerful tools explicit, scoped, and reviewable.",
+    publishedAt: "2026-08-20",
+    updatedAt: "2026-08-20",
+    readingTime: "7 min read",
+    keywords: [
+      "coding agent safety",
+      "AI agent guardrails",
+      "agent permissions",
+      "safe coding automation",
+    ],
+    sections: [
+      {
+        heading: "Start with the least powerful mode",
+        paragraphs: [
+          "A coding agent does not need write access to explain an error, map a module, summarize a diff, or propose a plan. Read-only work is the right default for unfamiliar repositories and tasks where the main risk is a wrong assumption.",
+          "Move into a mutating mode only when the task is clear, the relevant files are known, and you are ready to review the result. That keeps exploration useful without making every question an automation event.",
+        ],
+      },
+      {
+        heading: "Scope capability to the task",
+        paragraphs: [
+          "Permissions should distinguish reading, writing, terminal execution, Git actions, and network access. A broad 'allow everything' switch is convenient, but it removes the signal that helps a developer notice an unexpected request.",
+        ],
+        bullets: [
+          "Use Chat for non-mutating questions.",
+          "Use Plan for read-only investigation and proposed steps.",
+          "Use Agent when edits or commands are actually needed.",
+          "Review requested actions when the policy asks.",
+        ],
+      },
+      {
+        heading: "Review is the final boundary",
+        paragraphs: [
+          "A permission prompt is not the last check. Inspect the changed files, read the Git diff, and run the validation that proves the task is complete. A clear stop button and visible activity make it possible to interrupt work before it expands.",
+          "Truss keeps these boundaries close to the agent workflow so a developer can grant the right capability for a real task without abandoning normal code review habits.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: "Are coding agents safe to use on production repositories?",
+        answer:
+          "They can be useful when work is scoped, permissions are explicit, sensitive actions are reviewed, and normal Git and test workflows remain in control.",
+      },
+      {
+        question: "What is the safest mode for a coding agent?",
+        answer:
+          "A read-only mode is safest for understanding a workspace. Grant writing or terminal capabilities only when a clear task requires them.",
+      },
+    ],
+  },
+  {
+    slug: "agentic-software-development-workflow",
+    title: "Agentic Software Development: A Practical Workflow for Developers",
+    description:
+      "Build an agentic software-development workflow around investigation, planning, bounded execution, review, and validation instead of one giant prompt.",
+    excerpt:
+      "Agentic development works best as a repeatable engineering loop: inspect, plan, act with boundaries, review, and verify.",
+    publishedAt: "2026-08-19",
+    updatedAt: "2026-08-19",
+    readingTime: "8 min read",
+    keywords: [
+      "agentic software development",
+      "agentic coding workflow",
+      "AI software development workflow",
+      "coding agent workflow",
+    ],
+    sections: [
+      {
+        heading: "Treat the agent as part of the development loop",
+        paragraphs: [
+          "Agentic software development is not handing a vague feature request to a model and hoping for a finished product. It is a workflow where an agent can inspect evidence, propose a plan, use bounded tools, and produce a change that a developer can review and validate.",
+          "This mirrors good engineering practice. The agent accelerates investigation and execution, while the developer retains responsibility for scope, trade-offs, and acceptance criteria.",
+        ],
+      },
+      {
+        heading: "Use a five-step loop",
+        paragraphs: [
+          "A repeatable loop prevents both the developer and the agent from jumping to edits before the problem is understood.",
+        ],
+        bullets: [
+          "Inspect: gather the error, affected files, and current Git state.",
+          "Plan: state the intended change and validation before writing.",
+          "Execute: use only the tools and permissions the task needs.",
+          "Review: inspect the diff, tool activity, and unexpected changes.",
+          "Verify: run tests, checks, or a concrete manual validation.",
+        ],
+      },
+      {
+        heading: "Make the handoff explicit",
+        paragraphs: [
+          "A good agent response identifies what changed, what it verified, and what remains uncertain. That makes it useful during a pull-request review or a later debugging session, not just at the moment a patch appears.",
+          "Truss supports this loop with Chat for questions, Plan for read-only investigation, Agent for permitted execution, durable workspace state, and Git-aware views for review.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: "What is agentic software development?",
+        answer:
+          "It is a development approach where agents participate in a structured engineering loop, using context and tools under human-defined boundaries rather than acting as a one-shot code generator.",
+      },
+      {
+        question: "Does agentic development replace code review?",
+        answer:
+          "No. It can improve preparation and execution, but diffs, tests, and human acceptance remain essential.",
+      },
+    ],
+  },
 ] as const satisfies readonly BlogArticle[];
 
 export function getBlogArticle(slug: string): BlogArticle | undefined {
