@@ -19,9 +19,8 @@ export default function ClientsPage() {
           <p className="site-eyebrow">Client surfaces</p>
           <h1>One runtime. The interface you want.</h1>
           <p>
-            Every Truss client works with the same local-model configuration,
-            tools, permission policies, workspace memory, and implementation
-            plans.
+            Every Truss client works with the same provider profiles, tools,
+            permission policies, workspace memory, and implementation plans.
           </p>
         </header>
         <section className="clients-index-grid">
@@ -46,7 +45,7 @@ export default function ClientsPage() {
             <h2>Run native agents inside Neovim.</h2>
             <p>
               Use Chat, Plan, and Edit with bounded editor context, native
-              approvals, changed-file navigation, and the shared local runtime.
+              approvals, changed-file navigation, and the shared agent runtime.
             </p>
             <Link
               className="site-button site-button-secondary"

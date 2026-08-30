@@ -99,16 +99,28 @@ body {
 }
 
 .site-theme-toggle {
+    align-items: center;
     background: transparent;
     border: 1px solid #99aaa1;
     border-radius: 5px;
     color: #40554d;
     cursor: pointer;
+    display: inline-flex;
     font: inherit;
-    font-size: 13px;
-    font-weight: 750;
+    justify-content: center;
     min-height: 36px;
-    padding: 0 15px;
+    padding: 0;
+    width: 36px;
+}
+
+.site-theme-toggle svg {
+    fill: none;
+    height: 17px;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+    width: 17px;
 }
 
 .site-theme-toggle:hover {
@@ -2584,17 +2596,17 @@ body {
     backdrop-filter: blur(18px) saturate(120%);
     -webkit-backdrop-filter: blur(18px) saturate(120%);
 }
-.site-footer-main { align-items: start; display: grid; gap: 48px; grid-template-columns: minmax(230px, 1.2fr) minmax(220px, .8fr) minmax(210px, .8fr); padding: 46px 0 38px; }
+.site-footer-main { align-items: start; display: grid; gap: 48px; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr) minmax(0, .8fr); padding: 46px 0 38px; }
 .site-footer-brand p { color: #52675e; font-size: 14px; line-height: 1.65; margin-top: 18px; max-width: 300px; }
 .site-footer-links { align-items: flex-start; gap: 16px; }
-.site-footer-links nav { display: grid; gap: 9px 18px; grid-template-columns: repeat(2, minmax(80px, 1fr)); justify-content: flex-start; }
+.site-footer-links nav { display: grid; gap: 9px 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); justify-content: flex-start; }
 .site-footer-links nav a,
 .site-footer-socials a { color: #405b50; font-size: 13px; font-weight: 700; transition: color .2s ease; }
 .site-footer-links nav a:hover,
 .site-footer-socials a:hover { color: #0b7965; }
-.site-footer-connect { display: grid; gap: 13px; }
+.site-footer-connect { display: grid; gap: 13px; min-width: 0; }
 .site-footer-connect p { color: #52675e; font-size: 13px; line-height: 1.55; margin: 0; max-width: 210px; }
-.site-footer-socials { display: flex; flex-wrap: wrap; gap: 8px; }
+.site-footer-socials { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .site-footer-socials a { border: 1px solid rgba(126, 168, 149, .45); border-radius: 999px; padding: 8px 11px; }
 .site-footer-socials span { color: #0b7965; font-size: 14px; margin-left: 3px; }
 .site-footer-bottom { align-items: center; border-top: 1px solid var(--site-line); color: #6b7d74; display: flex; font-size: 11px; justify-content: space-between; letter-spacing: .04em; padding-top: 17px; }
