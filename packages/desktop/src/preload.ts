@@ -9,6 +9,7 @@ import type {
 } from "./shared.js";
 
 const bridge: DesktopBridge = {
+  appVersion: () => ipcRenderer.invoke("truss:app-version"),
   initialState: () => ipcRenderer.invoke("truss:initial-state"),
   chooseWorkspace: () => ipcRenderer.invoke("truss:choose-workspace"),
   saveConversations: (

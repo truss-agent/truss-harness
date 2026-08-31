@@ -271,6 +271,7 @@ app.on("before-quit", () => {
 });
 
 registerSettingsIpc(ipcMain, settingsService, () => persisted);
+ipcMain.handle("truss:app-version", () => app.getVersion());
 
 async function complete(input: {
   readonly prefix?: unknown;

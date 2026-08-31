@@ -4,6 +4,15 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.47",
+    label: "Focused workspace sidebar",
+    changes: [
+      "Moved the resizable Git workspace pane below Files, where the persistent chat-history list previously consumed sidebar space.",
+      "Made conversations available from a compact Chats control in the Agent header, with a modal for selecting, deleting, and creating chats.",
+      "Added the active Desktop version to the top bar so installed builds are identifiable at a glance.",
+    ],
+  },
+  {
     version: "Runtime 0.1.13",
     label: "Resilient tool-call recovery",
     changes: [

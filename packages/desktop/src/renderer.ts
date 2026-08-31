@@ -111,6 +111,11 @@ const fileSearch = element<HTMLInputElement>("fileSearch");
 const clearFileSearch = element<HTMLButtonElement>("clearFileSearch");
 const fileContextMenu = element<HTMLDivElement>("fileContextMenu");
 const conversations = element<HTMLDivElement>("conversationList");
+const conversationDialog = element<HTMLDialogElement>("conversationDialog");
+const appVersion = element<HTMLElement>("appVersion");
+void desktop.appVersion().then((version) => {
+  appVersion.textContent = `v${version}`;
+});
 const workbench = document.querySelector<HTMLElement>(
   ".workbench",
 ) as HTMLElement;
@@ -120,9 +125,6 @@ const editorArea = document.querySelector<HTMLElement>(
 ) as HTMLElement;
 const filesSection = document.querySelector<HTMLElement>(
   ".files-section",
-) as HTMLElement;
-const historySection = document.querySelector<HTMLElement>(
-  ".history-section",
 ) as HTMLElement;
 const centerSurface = element<HTMLElement>("centerSurface");
 const terminalElements = desktopTerminalElements(document);
@@ -1364,6 +1366,7 @@ function renderConversations(): void {
         activeConversationId: conversation.id,
       };
       finishConversationNavigation();
+      conversationDialog.close();
     };
     const remove = document.createElement("button");
     remove.type = "button";
@@ -3726,11 +3729,9 @@ layoutController = new DesktopLayoutController(
     gitPanel: gitElements.panel,
     gitBody: gitElements.body,
     filesSection,
-    historySection,
     terminal: terminalElements.panel,
     sidebarSplitter: element<HTMLDivElement>("sidebarSplitter"),
     gitSplitter: element<HTMLDivElement>("gitSplitter"),
-    historySplitter: element<HTMLDivElement>("historySplitter"),
     terminalSplitter: element<HTMLDivElement>("terminalSplitter"),
   },
   { renderAgents, renderGit: () => gitController.render() },
@@ -3826,7 +3827,14 @@ element<HTMLButtonElement>("newChat").onclick = () => {
   cancelActiveRunForNavigation();
   createConversation();
   finishConversationNavigation();
+  conversationDialog.close();
 };
+element<HTMLButtonElement>("openConversationDialog").onclick = () => {
+  renderConversations();
+  conversationDialog.showModal();
+};
+element<HTMLButtonElement>("closeConversationDialog").onclick = () =>
+  conversationDialog.close();
 fileDiffToggle.onclick = () => {
   const path = activeWorkspaceFilePath();
   setCenterView("editor");

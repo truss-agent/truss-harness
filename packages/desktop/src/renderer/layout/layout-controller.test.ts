@@ -102,11 +102,9 @@ function elements(): LayoutElements {
     gitPanel: fakeElement(300, 220),
     gitBody: fakeElement(),
     filesSection: fakeElement(300, 220),
-    historySection: fakeElement(300, 220),
     terminal: fakeElement(800, 200),
     sidebarSplitter: fakeElement(6, 720),
     gitSplitter: fakeElement(300, 12),
-    historySplitter: fakeElement(300, 12),
     terminalSplitter: fakeElement(800, 6),
   };
 }

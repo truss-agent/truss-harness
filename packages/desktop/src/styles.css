@@ -154,6 +154,13 @@ button:focus-visible {
     letter-spacing: .15px;
 }
 
+.app-version {
+    color: #9badb5;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .02em;
+}
+
 .app-brand img {
     display: block;
     width: 22px;
@@ -2554,8 +2561,7 @@ dialog::backdrop {
 .sidebar {
     --git-height: 1fr;
     --files-height: 1fr;
-    --history-height: 1fr;
-    grid-template-rows: minmax(38px, var(--git-height)) 12px minmax(110px, var(--files-height)) 12px minmax(110px, var(--history-height));
+    grid-template-rows: minmax(110px, var(--files-height)) 12px minmax(38px, var(--git-height));
     overflow: hidden;
     border-right: 0;
 }
@@ -2572,6 +2578,33 @@ dialog::backdrop {
     display: grid;
     grid-template-rows: 38px minmax(0, 1fr);
     overflow: hidden;
+}
+
+.conversation-dialog {
+    display: none;
+    grid-template-rows: auto minmax(180px, 1fr) auto;
+    max-height: min(680px, calc(100vh - 72px));
+    min-height: 360px;
+}
+
+.conversation-dialog[open] {
+    display: grid;
+}
+
+.conversation-dialog .dialog-heading,
+.conversation-dialog-actions {
+    padding: 14px 16px;
+}
+
+.conversation-dialog .conversation-list {
+    border-bottom: 1px solid var(--desktop-border);
+    border-top: 1px solid var(--desktop-border);
+    padding: 10px;
+}
+
+.conversation-dialog-actions {
+    display: flex;
+    justify-content: flex-end;
 }
 
 .git-body {

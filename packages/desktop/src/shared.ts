@@ -275,6 +275,7 @@ export interface DesktopAgentsSnapshot {
 }
 
 export interface DesktopBridge {
+  appVersion(): Promise<string>;
   initialState(): Promise<DesktopState>;
   chooseWorkspace(): Promise<DesktopState | undefined>;
   saveConversations(
