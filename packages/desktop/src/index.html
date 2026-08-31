@@ -8,14 +8,16 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="runtime-lockup"><div class="app-brand"><img src="./assets/brand-logo.png" alt=""><span>Truss</span></div><span class="status-dot" id="statusDot"></span><span id="runtimeStatus">No model selected</span></div>
+    <div class="runtime-lockup"><div class="app-brand"><img src="./assets/brand-logo.png" alt=""><span>Truss</span><span id="appVersion" class="app-version" aria-label="Desktop version"></span></div><span class="status-dot" id="statusDot"></span><span id="runtimeStatus">No model selected</span></div>
     <div class="header-editor-actions"><div class="center-tabs" aria-label="Center view"><button class="active" data-center-view="editor">Editor</button><button data-center-view="preview">Preview</button><button data-center-view="agents">Agents</button></div><button id="formatFileButton" title="Format current file with Prettier">Format</button><button id="fileDiffToggle" title="Show the current file's diff">Diff</button></div>
     <details class="top-menu"><summary aria-label="Application menu">Menu</summary><div class="top-menu-panel"><button id="chooseWorkspace">Open workspace</button><button id="settingsButton">Settings</button><button id="connectTrussGo" title="Connect this workspace to Truss Go on the same Wi-Fi">Connect Truss Go</button></div></details>
   </header>
   <main class="workbench">
     <aside class="sidebar">
+      <section class="side-section files-section"><div class="section-heading"><span>Files</span><button id="refreshFiles" title="Refresh files">Refresh</button></div><div class="file-filter"><input id="fileSearch" type="search" autocomplete="off" spellcheck="false" placeholder="Filter files" aria-label="Filter files"><button id="clearFileSearch" type="button" title="Clear file filter" aria-label="Clear file filter" hidden>Clear</button></div><div id="fileTree" class="file-tree"></div></section>
+      <div id="gitSplitter" class="pane-splitter horizontal" role="separator" aria-label="Resize Git panel"></div>
       <section id="gitPanel" class="git-panel">
-        <div class="section-heading"><span>Git</span><div><button id="refreshGit" title="Refresh Git status">Refresh</button><button id="toggleGit" title="Collapse Git panel" aria-expanded="true">Hide</button></div></div>
+        <div class="section-heading"><span>Git</span><div><button id="refreshGit" title="Refresh Git status">Refresh</button><button id="toggleGit" title="Expand or collapse Git" aria-expanded="true">Hide</button></div></div>
         <div id="gitBody" class="git-body">
           <div class="git-summary"><span id="gitBranch">Checking repository...</span><span id="gitCounts"></span></div>
           <div class="git-actions"><button id="stageAll" title="Stage all changed files">Stage all</button><button id="discardAll" title="Discard all uncommitted file changes">Discard all</button><button id="pullGit" title="Pull from the configured remote">Pull</button><button id="pushGit" title="Push to the configured remote">Push</button></div>
@@ -24,10 +26,6 @@
           <form id="commitForm" class="commit-form"><input id="commitMessage" autocomplete="off" placeholder="Commit message"><button id="generateCommitMessage" type="button" title="Generate a commit message from your changes">Generate</button><button id="commitButton" class="primary" type="submit" title="Stage changes before committing">Commit</button></form>
         </div>
       </section>
-      <div id="gitSplitter" class="pane-splitter horizontal" role="separator" aria-label="Resize Git panel"></div>
-      <section class="side-section files-section"><div class="section-heading"><span>Files</span><button id="refreshFiles" title="Refresh files">Refresh</button></div><div class="file-filter"><input id="fileSearch" type="search" autocomplete="off" spellcheck="false" placeholder="Filter files" aria-label="Filter files"><button id="clearFileSearch" type="button" title="Clear file filter" aria-label="Clear file filter" hidden>Clear</button></div><div id="fileTree" class="file-tree"></div></section>
-      <div id="historySplitter" class="pane-splitter horizontal" role="separator" aria-label="Resize chat history"></div>
-      <section class="side-section history-section"><div class="section-heading"><span>Chats</span><button id="newChat" type="button" title="New chat">New</button></div><div id="conversationList" class="conversation-list"></div></section>
     </aside>
     <div id="sidebarSplitter" class="pane-splitter vertical" role="separator" aria-label="Resize sidebar"></div>
     <section class="editor-area">
@@ -50,7 +48,7 @@
     </section>
     <div id="chatSplitter" class="pane-splitter vertical" role="separator" aria-label="Resize agent panel"></div>
     <section class="chat-area">
-      <div class="chat-heading"><div><strong>Agent</strong><span id="chatStatus">Ready</span></div><div class="chat-heading-actions"><button id="toggleChat" type="button" aria-expanded="true" aria-controls="chatContent" title="Hide chat panel">Hide</button><button id="toggleChatDock" type="button" title="Move chat panel into the editor area" aria-pressed="false">Full size</button></div></div>
+      <div class="chat-heading"><div><strong>Agent</strong><span id="chatStatus">Ready</span></div><div class="chat-heading-actions"><button id="openConversationDialog" type="button" title="Open chats">Chats</button><button id="toggleChat" type="button" aria-expanded="true" aria-controls="chatContent" title="Hide chat panel">Hide</button><button id="toggleChatDock" type="button" title="Move chat panel into the editor area" aria-pressed="false">Full size</button></div></div>
       <div id="chatContent" class="chat-content">
         <div id="toolActivityPanel" class="tool-activity-panel" role="status" aria-live="polite" hidden></div>
         <section id="planPanel" class="plan-panel" hidden></section>
@@ -133,6 +131,11 @@
       <div class="dialog-actions"><button id="applySettings" class="primary" type="button">Apply</button></div>
     </form>
   </section>
+  <dialog id="conversationDialog" class="conversation-dialog">
+    <div class="dialog-heading"><div><strong>Chats</strong><span>Switch conversations or start a new one.</span></div><button id="closeConversationDialog" type="button" aria-label="Close chats">x</button></div>
+    <div id="conversationList" class="conversation-list"></div>
+    <div class="conversation-dialog-actions"><button id="newChat" class="primary" type="button">New chat</button></div>
+  </dialog>
   <dialog id="updateAvailableDialog">
     <form method="dialog" class="update-available-form">
       <div class="dialog-heading"><div><strong>Update available</strong><span id="updateAvailableMessage">A newer version of Truss is ready.</span></div></div>

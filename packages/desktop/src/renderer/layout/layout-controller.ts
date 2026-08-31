@@ -25,11 +25,9 @@ export interface LayoutElements {
   readonly gitPanel: HTMLElement;
   readonly gitBody: HTMLElement;
   readonly filesSection: HTMLElement;
-  readonly historySection: HTMLElement;
   readonly terminal: HTMLElement;
   readonly sidebarSplitter: HTMLElement;
   readonly gitSplitter: HTMLElement;
-  readonly historySplitter: HTMLElement;
   readonly terminalSplitter: HTMLElement;
 }
 
@@ -92,28 +90,9 @@ export class DesktopLayoutController {
       if (this.gitCollapsedValue) this.setGitCollapsed(false);
       const initial = this.sidebarTracks();
       return (delta) => {
-        const applied = clamp(delta, 160 - initial.git, initial.files - 110);
-        this.gitPanelHeight = initial.git + applied;
-        this.applySidebarTracks(
-          this.gitPanelHeight,
-          initial.files - applied,
-          initial.history,
-        );
-      };
-    });
-    this.bindPaneResize(this.elements.historySplitter, "y", () => {
-      const initial = this.sidebarTracks();
-      return (delta) => {
-        const applied = clamp(
-          delta,
-          110 - initial.files,
-          initial.history - 110,
-        );
-        this.applySidebarTracks(
-          initial.git,
-          initial.files + applied,
-          initial.history - applied,
-        );
+        const applied = clamp(delta, 110 - initial.files, initial.git - 160);
+        this.gitPanelHeight = initial.git - applied;
+        this.applySidebarTracks(this.gitPanelHeight, initial.files + applied);
       };
     });
     this.bindPaneResize(this.elements.terminalSplitter, "y", () => {
@@ -129,7 +108,6 @@ export class DesktopLayoutController {
       };
     });
     this.elements.gitSplitter.ondblclick = () => this.resetSidebarTracks();
-    this.elements.historySplitter.ondblclick = () => this.resetSidebarTracks();
     this.resizeObserver.observe(this.elements.sidebar);
   }
 
@@ -209,42 +187,36 @@ export class DesktopLayoutController {
     const next = collapsed
       ? collapsedSidebarTracks(tracks)
       : expandedSidebarTracks(tracks, this.gitPanelHeight);
-    this.applySidebarTracks(next.git, next.files, next.history);
+    this.applySidebarTracks(next.git, next.files);
   }
 
   resetSidebarTracks(): void {
-    const splitterHeight =
-      this.elements.gitSplitter.getBoundingClientRect().height +
-      this.elements.historySplitter.getBoundingClientRect().height;
+    const splitterHeight = this.elements.gitSplitter.getBoundingClientRect().height;
     const tracks = balancedSidebarTracks(
       this.elements.sidebar.getBoundingClientRect().height,
       splitterHeight,
       this.gitCollapsedValue,
     );
     if (!this.gitCollapsedValue) this.gitPanelHeight = tracks.git;
-    this.applySidebarTracks(tracks.git, tracks.files, tracks.history);
+    this.applySidebarTracks(tracks.git, tracks.files);
   }
 
   private sidebarTracks(): {
     readonly git: number;
     readonly files: number;
-    readonly history: number;
   } {
     return {
       git: this.elements.gitPanel.getBoundingClientRect().height,
       files: this.elements.filesSection.getBoundingClientRect().height,
-      history: this.elements.historySection.getBoundingClientRect().height,
     };
   }
 
   private applySidebarTracks(
     git: number,
     files: number,
-    history: number,
   ): void {
     this.elements.sidebar.style.setProperty("--git-height", `${git}px`);
     this.elements.sidebar.style.setProperty("--files-height", `${files}px`);
-    this.elements.sidebar.style.setProperty("--history-height", `${history}px`);
   }
 
   private resizeSidebar(): void {
@@ -253,16 +225,14 @@ export class DesktopLayoutController {
     );
     if (!sidebarHeight || sidebarHeight === this.observedSidebarHeight) return;
     this.observedSidebarHeight = sidebarHeight;
-    const splitterHeight =
-      this.elements.gitSplitter.getBoundingClientRect().height +
-      this.elements.historySplitter.getBoundingClientRect().height;
+    const splitterHeight = this.elements.gitSplitter.getBoundingClientRect().height;
     const tracks = resizeSidebarTracks(
       this.sidebarTracks(),
       sidebarHeight,
       splitterHeight,
       this.gitCollapsedValue,
     );
-    this.applySidebarTracks(tracks.git, tracks.files, tracks.history);
+    this.applySidebarTracks(tracks.git, tracks.files);
   }
 
   private bindPaneResize(
