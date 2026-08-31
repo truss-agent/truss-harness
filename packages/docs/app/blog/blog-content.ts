@@ -1333,6 +1333,281 @@ export const blogArticles = [
       },
     ],
   },
+  {
+    slug: "choose-ai-provider-for-coding-agents",
+    title: "How to Choose an AI Provider for a Coding Agent",
+    description:
+      "Compare AI providers for coding agents by capability, tool use, context limits, cost controls, privacy, and fallback options instead of brand loyalty.",
+    excerpt:
+      "A useful provider choice starts with the job, the repository boundary, and a real connection test, not a leaderboard screenshot.",
+    publishedAt: "2026-08-18",
+    updatedAt: "2026-08-18",
+    readingTime: "7 min read",
+    keywords: [
+      "choose AI provider for coding agent",
+      "best AI provider for coding agents",
+      "coding agent model provider comparison",
+      "BYOK provider selection",
+    ],
+    sections: [
+      {
+        heading: "Start with the workload",
+        paragraphs: [
+          "A provider is not a permanent identity for a coding agent. It is a capability and operational choice for a task. A narrow code explanation, a multi-file refactor, an agent run with tools, and a private offline review have different requirements.",
+          "Compare providers against representative tasks from your own repository. Record whether the model follows tool schemas, keeps scope, handles the available context, and produces a change you can validate.",
+        ],
+      },
+      {
+        heading: "Evaluate the operational constraints",
+        paragraphs: [
+          "Model quality matters, but so do authentication, rate limits, account spend, regional availability, endpoint compatibility, and error reporting. A provider that is excellent in a demo is not a good default if it cannot reliably authenticate or explain a failure in your working environment.",
+        ],
+        bullets: [
+          "Capability for the task and reliable structured tool use.",
+          "Context limit, latency, and predictable cost controls.",
+          "Where prompts and repository context are sent.",
+          "A tested fallback for outages, account limits, or unavailable models.",
+        ],
+      },
+      {
+        heading: "Separate the provider from the workflow",
+        paragraphs: [
+          "A provider-flexible harness lets you keep one permission policy, tool boundary, and review process while changing model profiles. Local endpoints can serve privacy or offline needs; supported cloud accounts can provide additional capacity when the task warrants it.",
+          "Truss keeps provider profiles separate from the client surface, so switching a model does not require moving from your terminal to a different editor or replacing your normal Git review workflow.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: "Should I use one provider for every coding task?",
+        answer:
+          "Usually not. Keep a small, tested set of profiles and choose based on task complexity, privacy requirements, tool reliability, availability, and cost.",
+      },
+      {
+        question: "How do I know a provider actually works with my agent?",
+        answer:
+          "Run a connection test, select a real model, then try a small read-only workspace task before relying on it for edits or terminal commands.",
+      },
+    ],
+  },
+  {
+    slug: "coding-agent-harness-comparison",
+    title:
+      "Coding Agent Harness Comparison: Truss, Cline, Continue, Roo Code, and OpenHands",
+    description:
+      "Compare coding-agent harnesses by runtime architecture, client surfaces, model freedom, tool boundaries, and workflow fit, including Truss, Cline, Continue, Roo Code, and OpenHands.",
+    excerpt:
+      "The right agent harness depends less on a single model and more on where you work, how tools are controlled, and how portable the workflow needs to be.",
+    publishedAt: "2026-08-17",
+    updatedAt: "2026-08-17",
+    readingTime: "9 min read",
+    keywords: [
+      "coding agent harness comparison",
+      "Truss vs Cline vs Continue",
+      "Roo Code vs OpenHands",
+      "best agent harness for coding",
+    ],
+    sections: [
+      {
+        heading: "Compare the harness, not just the chat window",
+        paragraphs: [
+          "A coding-agent harness coordinates models, workspace context, tools, permissions, and session state. Products can look similar in a screenshot while making very different trade-offs about where that loop runs, which interfaces are first-class, and how configuration is shared.",
+          "Cline and Roo Code are editor-centered agent experiences. Continue provides configurable agent clients and model/tool configuration. OpenHands focuses on an autonomous software-development agent platform. Truss is built as a source-available, provider-neutral runtime with Desktop, VS Code, CLI, terminal, Neovim, and mobile surfaces.",
+        ],
+      },
+      {
+        heading: "Use decision criteria that survive product changes",
+        paragraphs: [
+          "Do not select a harness from a feature checklist alone. Compare the workflow you will use daily: how a model is configured, what the agent can read or change, how tool activity is shown, whether sessions recover, and how the result reaches a reviewable diff.",
+        ],
+        bullets: [
+          "Interface fit: editor, terminal, standalone workspace, or automation.",
+          "Provider and local-endpoint flexibility.",
+          "Read-only planning, approvals, and tool permission boundaries.",
+          "Context selection, session recovery, Git and test review.",
+          "Configuration ownership, licensing, and deployment model.",
+        ],
+      },
+      {
+        heading: "Where Truss is different",
+        paragraphs: [
+          "Truss keeps the agent runtime independent from its interfaces. Its Chat, Plan, and Agent modes make the mutation boundary explicit, and its provider profiles can represent local servers or supported BYOK cloud accounts.",
+          "That makes Truss a strong fit when a developer wants one agent workflow across multiple clients without being locked into one editor or one provider. It is not automatically the best choice for every team; test every harness with a real repository and the policies you need.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: "Which coding agent harness is best?",
+        answer:
+          "The best fit depends on your interface, provider, permission, deployment, and review requirements. Run the same safe evaluation tasks in each candidate rather than relying on a generic ranking.",
+      },
+      {
+        question:
+          "Can I compare Cline, Continue, Roo Code, OpenHands, and Truss fairly?",
+        answer:
+          "Yes, if you compare the same task, model class, permissions, workspace context, and validation criteria. Recheck each project’s current documentation before a production decision because capabilities evolve.",
+      },
+    ],
+  },
+  {
+    slug: "reliable-tool-use-in-coding-agents",
+    title: "Make Coding Agent Tool Use More Reliable",
+    description:
+      "Improve coding-agent tool reliability with narrow schemas, argument validation, actionable errors, retries, and visible tool activity.",
+    excerpt:
+      "Tool reliability is an engineering problem: make requests structured, failures specific, and the next recovery step obvious.",
+    publishedAt: "2026-08-16",
+    updatedAt: "2026-08-16",
+    readingTime: "7 min read",
+    keywords: [
+      "coding agent tool reliability",
+      "LLM tool calling errors",
+      "reliable AI agent tools",
+      "agent tool schema validation",
+    ],
+    sections: [
+      {
+        heading: "Treat tool calls as an API contract",
+        paragraphs: [
+          "A model can request a tool, but the host must validate and execute it safely. Reliable agent tools have a precise name, input schema, permission category, and result shape. Ambiguous tools invite malformed arguments and confusing recovery.",
+          "The tool result should always tell the model what happened. A successful result contains useful evidence; a failed result identifies the rejected argument or operational problem in a form the next agent step can act on.",
+        ],
+      },
+      {
+        heading: "Make failure states distinguishable",
+        paragraphs: [
+          "Authentication failure, rate limit, malformed JSON, missing file, denied approval, and non-zero test exit are different conditions. Collapsing them into 'tool failed' causes needless retries and hides the correct fix.",
+          "Return a non-empty, structured string result after validating external data. Then keep a visible activity trail so the developer can see whether the problem belongs to the model, provider, tool host, workspace, or policy.",
+        ],
+      },
+      {
+        heading: "Design recovery before automation",
+        paragraphs: [
+          "Retries should be bounded and informed by the error. A syntax error may call for a corrected argument; a permission denial may call for a different plan; a rate limit calls for waiting or switching a provider profile, not repeating the same request.",
+          "Truss normalizes compatible-provider tool arguments and keeps tool activity, permissions, and cancellation visible so a failed call is recoverable evidence rather than a stuck agent state.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: "Why do coding-agent tool calls fail?",
+        answer:
+          "Common causes are malformed arguments, missing or incompatible tool schemas, provider formatting differences, permission denial, missing workspace files, authentication, and rate limits.",
+      },
+      {
+        question: "Should an agent retry a failed tool automatically?",
+        answer:
+          "Only when the error makes a safe retry meaningful. Bound retries and expose the failure so a developer can intervene when the problem is environmental or policy-related.",
+      },
+    ],
+  },
+  {
+    slug: "context-window-strategy-for-coding-agents",
+    title: "Context Window Strategy for Coding Agents",
+    description:
+      "Use a coding agent's context window deliberately: select evidence, summarize durable facts, refresh stale state, and avoid repository dumps.",
+    excerpt:
+      "More context is not automatically better. A context strategy chooses the smallest reliable evidence set for the current engineering decision.",
+    publishedAt: "2026-08-15",
+    updatedAt: "2026-08-15",
+    readingTime: "7 min read",
+    keywords: [
+      "coding agent context window strategy",
+      "AI code context management",
+      "LLM context window for codebase",
+      "agent context compression",
+    ],
+    sections: [
+      {
+        heading: "A context window is a budget",
+        paragraphs: [
+          "Every coding-agent request competes for a finite context budget. Filling it with an entire repository, stale transcripts, or unrelated logs can make the model less precise while leaving less room for the current task and tool results.",
+          "Begin with the task, the active file or error, relevant Git diff, and a focused search. Let read-only tools gather more evidence only when the initial set cannot support a decision.",
+        ],
+      },
+      {
+        heading: "Keep durable facts separate from raw history",
+        paragraphs: [
+          "A workspace summary, implementation plan, selected files, and verified constraints can remain useful over time. Raw conversation and tool output become stale quickly. Store the former as bounded session or workspace memory; refresh the latter from the live repository.",
+          "This is especially important after an interruption. The agent should not assume a file still matches yesterday’s tool output simply because it appears in a transcript.",
+        ],
+      },
+      {
+        heading: "Measure context quality by reviewability",
+        paragraphs: [
+          "Good context lets a developer explain why the agent touched a file and why the proposed test is relevant. If an agent cannot connect its answer to selected evidence, add precision to the task before adding more tokens.",
+          "Truss presents context and workspace activity beside the agent workflow so developers can start small, inspect what was used, and expand only when necessary.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question: "Should I give a coding agent my whole repository?",
+        answer:
+          "Usually no. Start with targeted files, a diff, an error, or a directory, then let the agent inspect additional evidence through read-only tools.",
+      },
+      {
+        question: "Does a larger context window solve bad agent results?",
+        answer:
+          "Not by itself. Selection, freshness, tool reliability, and a clear task often matter more than raw capacity.",
+      },
+    ],
+  },
+  {
+    slug: "secure-api-keys-for-coding-agents",
+    title:
+      "Secure API Keys for Coding Agents: BYOK Without Leaking Credentials",
+    description:
+      "Use your own provider account safely with a coding agent: local credential storage, environment boundaries, connection tests, rotation, and repository hygiene.",
+    excerpt:
+      "BYOK should give you provider control, not put a long-lived API key into a repository or a chat transcript.",
+    publishedAt: "2026-08-14",
+    updatedAt: "2026-08-14",
+    readingTime: "6 min read",
+    keywords: [
+      "secure API keys for coding agents",
+      "BYOK coding agent security",
+      "AI provider credential storage",
+      "coding agent API key safety",
+    ],
+    sections: [
+      {
+        heading: "A provider profile is not a repository secret",
+        paragraphs: [
+          "A coding-agent provider profile needs an endpoint, account label, model selection, and credential reference. The raw secret should stay in client-managed secure storage or a controlled environment variable, not in source code, workspace configuration, screenshots, or copied prompts.",
+          "This lets teammates share a project workflow without sharing one person’s provider account. Each developer can connect an approved account locally and choose the profile that meets the project policy.",
+        ],
+      },
+      {
+        heading: "Test before you rely on a credential",
+        paragraphs: [
+          "A connection test should distinguish invalid credentials from a model permission problem, endpoint failure, account credit issue, or rate limit. Do not solve a 401 by repeatedly sending real workspace context to a different endpoint.",
+          "After setup, make a small read-only request and verify the selected provider and model are what you expected. Keep an alternate profile for legitimate service limits rather than weakening repository controls.",
+        ],
+      },
+      {
+        heading: "Rotate and contain the blast radius",
+        paragraphs: [
+          "Use keys with the narrowest practical scope, revoke exposed keys promptly, and rotate credentials when a device, environment file, or pasted transcript may have leaked them. Keep secrets out of Git history; deleting a file later does not remove a committed credential.",
+          "Truss stores provider credentials through the client credential integration and keeps them out of workspace configuration, while provider profiles and connection feedback remain visible to the developer.",
+        ],
+      },
+    ],
+    faqs: [
+      {
+        question:
+          "Should I put an AI provider API key in my repository config?",
+        answer:
+          "No. Use secure client storage or an approved environment-secret mechanism, and ensure secret files are excluded from version control.",
+      },
+      {
+        question: "Can a coding agent read my API key?",
+        answer:
+          "A well-designed client should avoid exposing raw provider credentials to workspace context or normal agent tools. Verify the client’s credential model and keep secrets out of files the agent can read.",
+      },
+    ],
+  },
 ] as const satisfies readonly BlogArticle[];
 
 export function getBlogArticle(slug: string): BlogArticle | undefined {
