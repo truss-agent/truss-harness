@@ -6,6 +6,7 @@ import type {
 } from "@truss-harness/runtime";
 import { scheduleConversationNavigation } from "./conversation-navigation.js";
 import { markChangedAgentRuns } from "./renderer/agents/snapshot.js";
+import { AgentRoomController } from "./renderer/agents/room-controller.js";
 import {
   addTokenUsage,
   attachedWorkspacePaths,
@@ -559,7 +560,12 @@ function applyAgentsSnapshot(snapshot: DesktopAgentsSnapshot): void {
     );
 }
 
+let agentRoom: AgentRoomController | undefined;
+window.addEventListener("beforeunload", () => agentRoom?.dispose());
+
 function renderAgents(): void {
+  agentRoom ??= new AgentRoomController(desktop, applyAgentsSnapshot);
+  agentRoom.update(agentsSnapshot, rendererState.desktop.workspaceRoot);
   agentsPanel.replaceChildren();
   const heading = document.createElement("div");
   heading.className = "agents-heading";
@@ -948,7 +954,7 @@ function renderAgents(): void {
       detailPanel.append(changedHeading, files);
     }
   }
-  agentsPanel.append(heading, create, cards, detailPanel);
+  agentsPanel.append(heading, agentRoom.element, create, cards, detailPanel);
 }
 
 function agentApprovalPolicySelect(

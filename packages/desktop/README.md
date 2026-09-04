@@ -43,6 +43,27 @@ The terminal accepts both ordinary shell commands and Truss workspace commands. 
 
 Every installed Windows and Linux package checks the latest stable GitHub release when **Check for updates when Truss starts** is enabled in Settings. This preference is on by default. Windows and AppImage builds can download and restart into an update. Portable archives and Debian, RPM, and pacman packages open the matching release asset for the user to install with the normal archive or package-manager workflow. **Automatically download updates when supported** applies to native in-app updating. Development builds intentionally do not check for updates.
 
+## Agent Room (preview)
+
+Open **Agents**, create agents with your configured providers, and choose
+**Show 3D room**. Each agent has a desk. Live Plan runs appear at the meeting
+table, and completed work moves to the front handoff area. Click a person or
+use the roster to inspect output, assign a task, stop a run, or allow/deny a tool.
+Drag to orbit, scroll to zoom, and use **Reset camera** to return to the overview.
+The text controls also work without WebGL.
+
+Choose a **Team lead** for the workspace. Enter an agenda and select
+**Start planning meeting** to run it on every idle Plan agent. They plan
+independently through the runtime. Use **Prepare handoff to lead** on completed
+work, add review instructions, then **Assign task** to request synthesis.
+Completed lead output can similarly become an editable assignment for a worker.
+Preparing a brief never starts execution by itself.
+
+This preview supports user-directed teams. The current runtime does not expose
+autonomous parent/subagent relationships or multi-round group meetings; the room
+does not infer them. Existing runtime permissions and workspace write coordination
+still apply. This feature is available in the preview branch and is unreleased.
+
 ## Security model
 
 The renderer runs with `contextIsolation` enabled and `nodeIntegration` disabled. Filesystem, terminal, Git, provider, and runtime operations are exposed only through explicit IPC handlers in `src/main.ts`.

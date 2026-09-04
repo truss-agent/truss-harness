@@ -2,6 +2,15 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.48] - Unreleased
+
+### Added
+
+- Desktop Agent Room preview: a Three.js office driven by managed-agent runtime
+  snapshots, with desks, planning table, selectable team lead, live task and
+  approval controls, and editable completed-work handoffs. Includes equivalent
+  text controls, reduced motion, and an optional 3D view. No shared-runtime changes.
+
 ## [0.1.32] - 2026-08-09
 
 ### Fixed

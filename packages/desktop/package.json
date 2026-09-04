@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/desktop",
-  "version": "0.1.47",
+  "version": "0.1.48",
   "description": "Standalone desktop client for the Truss runtime.",
   "author": "Truss Contributors",
   "desktopName": "truss-harness.desktop",
@@ -121,6 +121,7 @@
     "highlight.js": "11.11.1",
     "prettier": "3.6.2",
     "qrcode": "^1.5.4",
+    "three": "^0.185.1",
     "@truss-harness/branding": "0.1.1",
     "@truss-harness/cli": "0.1.23",
     "@truss-harness/mcp": "0.1.11",
@@ -128,6 +129,7 @@
     "@truss-harness/runtime": "0.1.13"
   },
   "devDependencies": {
+    "@types/three": "^0.185.4",
     "electron": "37.10.3",
     "electron-builder": "^26.0.0",
     "esbuild": "^0.25.0"
