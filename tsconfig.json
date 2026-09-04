@@ -10,6 +10,7 @@
     { "path": "./packages/cli" },
     { "path": "./packages/tui" },
     { "path": "./packages/vscode" },
-    { "path": "./packages/desktop" }
+    { "path": "./packages/desktop" },
+    { "path": "./packages/control-center" }
   ]
 }

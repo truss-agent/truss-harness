@@ -1,0 +1,22 @@
+{
+  "name": "@truss-harness/control-center",
+  "version": "0.1.0",
+  "description": "Standalone multi-workspace agent coordination preview for Truss.",
+  "author": "Truss Contributors",
+  "type": "module",
+  "main": "./dist/main.cjs",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && esbuild ./dist/main.js --bundle --platform=node --format=cjs --external:electron --outfile=./dist/main.cjs && esbuild ./dist/preload.js --bundle --platform=node --format=cjs --external:electron --outfile=./dist/preload.cjs && esbuild ./dist/renderer.js --bundle --platform=browser --format=esm --outfile=./dist/renderer.bundle.js && node ./scripts/copy-static.mjs",
+    "dev": "npm run build && node ./scripts/start-electron.mjs"
+  },
+  "dependencies": {
+    "@truss-harness/agent-host": "0.1.12",
+    "@truss-harness/runtime": "0.1.13",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.4",
+    "electron": "37.10.3",
+    "esbuild": "^0.25.0"
+  }
+}

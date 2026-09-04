@@ -18,6 +18,7 @@
     "cli:local": "node packages/cli/dist/bin.js",
     "tui:local": "node packages/tui/dist/bin.js",
     "desktop:dev": "npm --workspace @truss-harness/desktop run dev",
+    "control-center:dev": "npm --workspace @truss-harness/control-center run dev",
     "mobile:start": "npm --workspace @truss-harness/mobile run start",
     "desktop:package": "npm --workspace @truss-harness/desktop run package",
     "desktop:package:win:all": "npm --workspace @truss-harness/desktop run package:win:all",
