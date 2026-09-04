@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/control-center",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Standalone multi-workspace agent coordination preview for Truss.",
   "author": "Truss Contributors",
   "type": "module",
@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@truss-harness/agent-host": "0.1.12",
+    "@truss-harness/provider-openai-compatible": "0.1.14",
     "@truss-harness/runtime": "0.1.13",
     "three": "^0.185.1"
   },

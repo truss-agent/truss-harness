@@ -127,6 +127,71 @@ async function perform(
   }
 }
 $("add-workspace").onclick = () => perform(() => bridge.chooseWorkspace());
+async function refreshModels(): Promise<void> {
+  const provider = $("provider") as HTMLSelectElement;
+  const endpoint = $("endpoint") as HTMLInputElement;
+  const refresh = $("refresh-models") as HTMLButtonElement;
+  refresh.disabled = true;
+  status.textContent = "Looking for models…";
+  try {
+    const models = await bridge.discoverLocalModels(
+      provider.value as "ollama" | "openai-compatible" | "llama-cpp",
+      endpoint.value,
+    );
+    const choices = $("models") as HTMLDataListElement;
+    choices.replaceChildren(...models.map((model) => new Option(model)));
+    const model = $("model") as HTMLInputElement;
+    if (models[0]) model.value = models[0];
+    status.textContent = models.length
+      ? `Found ${models.length} model${models.length === 1 ? "" : "s"}.`
+      : "No models were advertised. You can still enter a model ID manually.";
+  } catch (error) {
+    status.textContent =
+      error instanceof Error
+        ? `${error.message} You can still enter a model ID manually.`
+        : "Model discovery failed. You can still enter a model ID manually.";
+  } finally {
+    refresh.disabled = false;
+  }
+}
+$("refresh-models").onclick = () => void refreshModels();
+$("detect-models").onclick = () =>
+  void (async () => {
+    const button = $("detect-models") as HTMLButtonElement;
+    button.disabled = true;
+    status.textContent = "Checking Ollama, LM Studio, and llama.cpp…";
+    try {
+      const endpoints = await bridge.detectLocalEndpoints();
+      if (!endpoints.length) {
+        status.textContent =
+          "No local model server responded. Start its server, then try again.";
+        return;
+      }
+      const endpoint = endpoints[0];
+      if (!endpoint) return;
+      ($("provider") as HTMLSelectElement).value = endpoint.providerId;
+      ($("endpoint") as HTMLInputElement).value = endpoint.baseUrl;
+      status.textContent = `Found ${endpoint.label}. Refreshing its models…`;
+      await refreshModels();
+    } catch (error) {
+      status.textContent =
+        error instanceof Error
+          ? error.message
+          : "Local server discovery failed.";
+    } finally {
+      button.disabled = false;
+    }
+  })();
+$("provider").onchange = () => {
+  const provider = ($("provider") as HTMLSelectElement).value;
+  const endpoint = $("endpoint") as HTMLInputElement;
+  endpoint.value =
+    provider === "ollama"
+      ? "http://127.0.0.1:11434"
+      : provider === "llama-cpp"
+        ? "http://127.0.0.1:8080/v1"
+        : "http://127.0.0.1:1234/v1";
+};
 $("create").onclick = () =>
   perform(() =>
     bridge.createAgent({

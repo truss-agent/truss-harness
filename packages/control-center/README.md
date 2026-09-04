@@ -7,7 +7,10 @@ require the Desktop workspace app. Each folder gets its own `AgentHost` and
 repository while multiple repositories may run at once.
 
 Run `npm run control-center:dev` from the repository root. Add repository
-folders, create local-provider agents, then select an agent and assign a task.
+folders, then choose **Auto-detect local servers** to look for Ollama, LM Studio,
+and llama.cpp. **Refresh models** populates the selected endpoint's model picker;
+manual endpoint and model entry remain available if a server does not advertise
+models. Create local-provider agents, then select an agent and assign a task.
 Use Plan mode for a planning agent. Edit agent tool permissions follow the
 selected policy and approval prompts appear in the selected agent detail card.
 

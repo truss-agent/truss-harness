@@ -15,6 +15,10 @@ import type {
   ControlWorkspace,
   CreateControlAgentInput,
 } from "../shared.js";
+import {
+  discoverControlLocalEndpoints,
+  discoverControlModels,
+} from "./model-discovery.js";
 
 interface StoredState {
   readonly workspaces: readonly ControlWorkspace[];
@@ -86,6 +90,15 @@ export class ControlCenterService {
     await this.configureWorkspace(workspace);
     await this.persist();
     return this.publish();
+  }
+  discoverLocalEndpoints() {
+    return discoverControlLocalEndpoints();
+  }
+  discoverLocalModels(
+    providerId: "ollama" | "openai-compatible" | "llama-cpp",
+    endpointUrl: string,
+  ) {
+    return discoverControlModels(providerId, endpointUrl);
   }
   async removeWorkspace(id: string): Promise<ControlSnapshot> {
     const coordinator = this.requireCoordinator(id);

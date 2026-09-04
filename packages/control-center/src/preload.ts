@@ -7,6 +7,14 @@ import type {
 
 const bridge: ControlBridge = {
   snapshot: () => ipcRenderer.invoke("control-center:snapshot"),
+  detectLocalEndpoints: () =>
+    ipcRenderer.invoke("control-center:detect-local-endpoints"),
+  discoverLocalModels: (providerId, endpointUrl) =>
+    ipcRenderer.invoke(
+      "control-center:discover-local-models",
+      providerId,
+      endpointUrl,
+    ),
   chooseWorkspace: () => ipcRenderer.invoke("control-center:choose-workspace"),
   removeWorkspace: (id) =>
     ipcRenderer.invoke("control-center:remove-workspace", id),

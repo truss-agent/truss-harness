@@ -15,6 +15,14 @@ void app.whenReady().then(async () => {
   await service.load();
   service.subscribe(send);
   ipcMain.handle("control-center:snapshot", () => service.snapshot());
+  ipcMain.handle("control-center:detect-local-endpoints", () =>
+    service.discoverLocalEndpoints(),
+  );
+  ipcMain.handle(
+    "control-center:discover-local-models",
+    (_event, providerId, endpointUrl) =>
+      service.discoverLocalModels(providerId, endpointUrl),
+  );
   ipcMain.handle("control-center:choose-workspace", async () => {
     const choice = await dialog.showOpenDialog({
       properties: ["openDirectory", "createDirectory"],

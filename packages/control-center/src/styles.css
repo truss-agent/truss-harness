@@ -169,6 +169,11 @@ textarea {
   min-height: 20px;
   color: #b9e0c4;
 }
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 @media (max-width: 850px) {
   main {
     grid-template-columns: 1fr;

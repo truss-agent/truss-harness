@@ -15,6 +15,11 @@ export interface ControlAgent extends AgentProfile {
 export interface ControlRun extends AgentRunSummary {
   readonly workspaceId: string;
 }
+export interface ControlLocalEndpoint {
+  readonly providerId: "ollama" | "openai-compatible" | "llama-cpp";
+  readonly label: string;
+  readonly baseUrl: string;
+}
 export interface ControlSnapshot {
   readonly workspaces: readonly ControlWorkspace[];
   readonly agents: readonly ControlAgent[];
@@ -26,6 +31,11 @@ export interface CreateControlAgentInput extends CreateAgentProfileInput {
 export interface ControlBridge {
   snapshot(): Promise<ControlSnapshot>;
   chooseWorkspace(): Promise<ControlSnapshot | undefined>;
+  detectLocalEndpoints(): Promise<readonly ControlLocalEndpoint[]>;
+  discoverLocalModels(
+    providerId: ControlLocalEndpoint["providerId"],
+    endpointUrl: string,
+  ): Promise<readonly string[]>;
   removeWorkspace(id: string): Promise<ControlSnapshot>;
   createAgent(input: CreateControlAgentInput): Promise<ControlSnapshot>;
   deleteAgent(id: string): Promise<ControlSnapshot>;
