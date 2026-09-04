@@ -1,7 +1,21 @@
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const electron = process.platform === "win32" ? "electron.cmd" : "electron";
-spawn(electron, ["."], { cwd: root, stdio: "inherit", shell: process.platform === "win32" }).on("exit", (code) => process.exit(code ?? 0));
+const require = createRequire(import.meta.url);
+const electronBinary = require("electron");
+const environment = { ...process.env };
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+delete environment.ELECTRON_RUN_AS_NODE;
+
+const child = spawn(electronBinary, ["."], {
+  cwd: packageRoot,
+  env: environment,
+  stdio: "inherit",
+});
+child.once("exit", (code) => process.exit(code ?? 0));
+child.once("error", (error) => {
+  console.error(`Unable to launch Electron: ${error.message}`);
+  process.exit(1);
+});

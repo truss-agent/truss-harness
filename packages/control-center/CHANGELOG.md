@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2] - Unreleased
+
+### Fixed
+
+- Start the Control Center with its installed Electron executable and package
+  directory on Windows instead of launching it through a shell.
+
 ## [0.1.1] - Unreleased
 
 ### Added

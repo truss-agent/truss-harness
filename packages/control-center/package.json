@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/control-center",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Standalone multi-workspace agent coordination preview for Truss.",
   "author": "Truss Contributors",
   "type": "module",
