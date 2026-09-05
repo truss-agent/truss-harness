@@ -10,6 +10,7 @@ import {
 describe("agent edit policy", () => {
   it("recognizes edit requests and write-tool paths", () => {
     expect(hasEditIntent("Please refactor the runtime coordinator")).toBe(true);
+    expect(hasEditIntent("Please make a pirate game")).toBe(true);
     expect(hasEditIntent("Explain how the runtime coordinator works")).toBe(
       false,
     );
@@ -31,6 +32,9 @@ describe("agent edit policy", () => {
     expect(recoveryInstruction("no_tools", new Set())).toContain(
       "EXECUTION RECOVERY",
     );
+    expect(
+      recoveryInstruction("missing_file", new Set(), new Set(["README.md"])),
+    ).toContain("Create each missing requested file now with write_file");
     expect(turnBudgetInstruction(7)).toBeUndefined();
     expect(turnBudgetInstruction(6)).toContain("6 turns remain");
   });

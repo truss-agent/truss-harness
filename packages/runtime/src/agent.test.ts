@@ -363,6 +363,38 @@ describe("AgentRuntime", () => {
     await expect(runtime.run(session.id, "summarize the README")).resolves.toBeUndefined();
   });
 
+  it("creates a requested missing file instead of repeatedly exploring an empty workspace", async () => {
+    const workspaceRoot = join(process.cwd(), ".test-workspaces", randomUUID());
+    await mkdir(workspaceRoot, { recursive: true });
+    let turn = 0;
+    const provider: ModelProvider = { id: "fake", async *stream(request): AsyncIterable<ModelStreamEvent> {
+      turn += 1;
+      if (turn === 1) {
+        yield { type: "tool_call", id: "read-missing", name: "read_file", input: { path: "README.md" } } as const;
+        yield { type: "finish", reason: "tool_calls" } as const;
+      } else if (turn === 2) {
+        expect(request.messages[0]?.content).toContain("MISSING FILE RECOVERY");
+        yield { type: "tool_call", id: "write-missing", name: "write_file", input: { path: "README.md", content: "# New project\n" } } as const;
+        yield { type: "finish", reason: "tool_calls" } as const;
+      } else {
+        yield { type: "text_delta", text: "Created README.md." } as const;
+        yield { type: "finish", reason: "stop" } as const;
+      }
+    }};
+    const tools = new ToolRegistry();
+    registerFilesystemTools(tools);
+    const runtime = new AgentRuntime({ provider, tools, sessions: new InMemorySessionStore(), context: new RecentHistoryContextManager(), events: new EventBus<RuntimeEvent>(), workspaceRoot, requireWriteForEditIntent: true, deferTextUntilToolDecision: true });
+
+    try {
+      const session = await runtime.createSession();
+      await runtime.run(session.id, "Create a new project");
+      await expect(readFile(join(workspaceRoot, "README.md"), "utf8")).resolves.toBe("# New project\n");
+      expect(turn).toBe(3);
+    } finally {
+      await rm(workspaceRoot, { recursive: true, force: true });
+    }
+  });
+
   it("forces a failed file write to recover after rereading the current file", async () => {
     const workspaceRoot = join(process.cwd(), ".test-workspaces", randomUUID());
     await mkdir(workspaceRoot, { recursive: true });
@@ -396,7 +428,7 @@ describe("AgentRuntime", () => {
       const session = await runtime.createSession();
       await runtime.run(session.id, "Update script.js");
       await expect(readFile(join(workspaceRoot, "script.js"), "utf8")).resolves.toBe("const value = 2;\n");
-      expect(progress).toContain("Recovery: reread script.js and retry the file change with its current contents.");
+      expect(progress).toContain("Recovery: retry the file change for script.js with a non-empty path and the current file contents.");
       expect(turns).toBe(4);
     } finally {
       await rm(workspaceRoot, { recursive: true, force: true });

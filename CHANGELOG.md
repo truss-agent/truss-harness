@@ -2,6 +2,17 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.49] - 2026-09-04
+
+### Fixed
+
+- Recovered Edit-mode agents from a missing workspace-file read by requiring
+  creation of the missing file, and stopped repeated empty-workspace listing
+  after bounded recovery attempts.
+- Switched Chat to Agent mode for direct build requests and confirmations of a
+  prior build request, so those requests can create workspace files.
+- Supported both Anthropic API-key and OAuth bearer authentication during model discovery.
+
 ## [0.1.48] - 2026-09-04
 
 ### Fixed

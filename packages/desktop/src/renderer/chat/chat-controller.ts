@@ -260,7 +260,7 @@ export function tokenEstimate(messages: readonly DesktopMessage[]): number {
 
 export function isDirectWorkspaceChangeRequest(prompt: string): boolean {
   const action =
-    "(?:add|change|create|delete|edit|fix|implement|modify|overhaul|refactor|remove|rename|replace|rewrite|rework|update|write)";
+    "(?:add|build|change|create|delete|edit|fix|implement|make|modify|overhaul|refactor|remove|rename|replace|rewrite|rework|update|write)";
   const directRequest = new RegExp(
     `^\\s*(?:(?:please|can you|could you|would you)\\s+)?${action}\\b|^\\s*(?:i am going to|i'm going to|we need to|let's)\\s+${action}\\b`,
     "i",
@@ -268,6 +268,22 @@ export function isDirectWorkspaceChangeRequest(prompt: string): boolean {
   const errorReport =
     /\b(?:error|exception|stack trace|uncaught|referenceerror|typeerror|syntaxerror|not working|doesn['’]t work|broken|failed)\b/i;
   return directRequest.test(prompt) || errorReport.test(prompt);
+}
+
+/** Treat a short confirmation as an edit request when it follows one. */
+export function isWorkspaceChangeContinuation(
+  prompt: string,
+  messages: readonly DesktopMessage[],
+): boolean {
+  const confirmation =
+    /^(?:yes(?:[,. ]+(?:do it|please|go ahead))?|yeah|yep|do it|go ahead|continue|please do|make it|build it|start|hurry up|now)[!. ]*$/i;
+  return (
+    confirmation.test(prompt.trim()) &&
+    messages.some(
+      (message) =>
+        message.role === "user" && isDirectWorkspaceChangeRequest(message.content),
+    )
+  );
 }
 
 export function addTokenUsage(
