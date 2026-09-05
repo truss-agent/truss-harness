@@ -8,6 +8,7 @@ node_modules
 .next/
 **/.next/
 **/.next-*/
+packages/docs/public/_pagefind/
 .expo/
 **/.expo/
 dist/

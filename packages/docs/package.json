@@ -6,9 +6,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "node ../../scripts/prepare-docs-build.mjs && next build",
+    "postbuild": "pagefind --site .next/server/app --output-path public/_pagefind",
     "start": "next start"
   },
   "dependencies": {
+    "@truss-harness/branding": "0.1.1",
     "@vercel/analytics": "^2.0.1",
     "@vercel/speed-insights": "^2.0.0",
     "gsap": "^3.15.0",
@@ -16,12 +18,12 @@
     "nextra": "4.0.0",
     "nextra-theme-docs": "4.0.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "@truss-harness/branding": "0.1.1"
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",
     "@types/react": "^19.2.0",
+    "pagefind": "^1.5.2",
     "typescript": "^5.7.2"
   }
 }
