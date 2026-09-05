@@ -34,15 +34,14 @@ import type {
   DesktopWorkspaceUiState,
 } from "../shared.js";
 import { recoverStartupRuntime } from "../startup-runtime.js";
+import { discoverCloudModels } from "./cloud-model-discovery.js";
 import type { CredentialService } from "./credential-service.js";
 import {
   isLocalConfiguration,
   isThemePreference,
   localEndpoint,
-  modelInfoFromRecord,
   normalizeConfiguration,
   normalizeWorkspaceUiState,
-  usableChatModels,
 } from "./desktop-configuration.js";
 import type { ManagedAgentService } from "./managed-agent-service.js";
 import {
@@ -239,52 +238,12 @@ export class DesktopSettingsService {
           : await this.credentials.get(requestedProvider));
       if (!credential)
         throw new Error(`Enter an API key for ${definition.label} first.`);
-      const baseUrl = (partial.baseUrl || definition.baseUrl).replace(
-        /\/$/,
-        "",
+      const models = await discoverCloudModels(
+        definition,
+        partial.baseUrl || definition.baseUrl,
+        credential,
       );
-      const url =
-        definition.compatibility === "ollama-api"
-          ? `${baseUrl}/api/tags`
-          : `${baseUrl}/models`;
-      const records: unknown[] = [];
-      let nextUrl: string | undefined = url;
-      for (let page = 0; nextUrl && page < 20; page += 1) {
-        const response = await fetch(nextUrl, {
-          headers: { Authorization: `Bearer ${credential}` },
-        });
-        if (!response.ok)
-          throw new Error(
-            `${definition.label} model discovery failed (${response.status}).`,
-          );
-        const payload = (await response.json()) as {
-          readonly data?: readonly unknown[];
-          readonly models?: readonly unknown[];
-          readonly nextPageToken?: string;
-        };
-        records.push(
-          ...(definition.compatibility === "ollama-api"
-            ? (payload.models ?? [])
-            : (payload.data ?? [])),
-        );
-        if (definition.compatibility === "ollama-api" || !payload.nextPageToken)
-          nextUrl = undefined;
-        else {
-          const pagedUrl: URL = new URL(nextUrl);
-          pagedUrl.searchParams.set("pageToken", payload.nextPageToken);
-          nextUrl = pagedUrl.toString();
-        }
-      }
-      const models = usableChatModels(
-        records.flatMap((record) => {
-          const info = modelInfoFromRecord(record, requestedProvider);
-          return info ? [info] : [];
-        }),
-      );
-      return {
-        endpoints: [],
-        models: [...new Map(models.map((model) => [model.id, model])).values()],
-      };
+      return { endpoints: [], models };
     }
     const current = this.state().configuration;
     const configuration =

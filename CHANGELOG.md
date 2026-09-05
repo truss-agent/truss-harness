@@ -2,6 +2,13 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.48] - 2026-09-04
+
+### Fixed
+
+- Fixed Anthropic model discovery returning HTTP 400 by sending the required
+  API key and API version headers, and loading subsequent model pages.
+
 ## [0.1.32] - 2026-08-09
 
 ### Fixed
