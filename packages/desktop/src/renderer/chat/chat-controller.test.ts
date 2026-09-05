@@ -6,6 +6,7 @@ import {
   DesktopChatController,
   estimatedConversationUsage,
   isDirectWorkspaceChangeRequest,
+  isWorkspaceChangeContinuation,
   rankSlashFiles,
   tokenEstimate,
 } from "./chat-controller.js";
@@ -126,9 +127,18 @@ describe("chat request and usage policy", () => {
     expect(isDirectWorkspaceChangeRequest("Please fix the failing test")).toBe(
       true,
     );
+    expect(isDirectWorkspaceChangeRequest("Please make a pirate game")).toBe(
+      true,
+    );
     expect(isDirectWorkspaceChangeRequest("What does this file do?")).toBe(
       false,
     );
+    expect(
+      isWorkspaceChangeContinuation("yes do it", [
+        { role: "user", content: "Please make a pirate game" },
+        { role: "assistant", content: "I can do that." },
+      ]),
+    ).toBe(true);
     expect(tokenEstimate([{ role: "user", content: "12345678" }])).toBe(402);
   });
 

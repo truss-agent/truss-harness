@@ -1,6 +1,6 @@
 import type { ToolCall } from "../contracts.js";
 
-export type AgentRecoveryReason = "no_tools" | "write_failed";
+export type AgentRecoveryReason = "no_tools" | "write_failed" | "missing_file";
 
 export function workspacePath(call: ToolCall): string | undefined {
   return typeof call.input.path === "string" ? call.input.path : undefined;
@@ -27,7 +27,7 @@ export function toolFailureRecovery(tool: string): string {
 }
 
 export function hasEditIntent(prompt: string): boolean {
-  return /\b(?:add|change|create|delete|edit|fix|implement|modify|overhaul|refactor|remove|rename|replace|rewrite|rework|update|write|error|exception|stack trace|uncaught|referenceerror|typeerror|syntaxerror|not working|doesn['’]t work|broken|failed)\b/i.test(
+  return /\b(?:add|build|change|create|delete|edit|fix|implement|make|modify|overhaul|refactor|remove|rename|replace|rewrite|rework|update|write|error|exception|stack trace|uncaught|referenceerror|typeerror|syntaxerror|not working|doesn['’]t work|broken|failed)\b/i.test(
     prompt,
   );
 }
@@ -35,6 +35,7 @@ export function hasEditIntent(prompt: string): boolean {
 export function recoveryInstruction(
   reason: AgentRecoveryReason | undefined,
   pendingWritePaths: ReadonlySet<string>,
+  missingFilePaths: ReadonlySet<string> = new Set(),
 ): string | undefined {
   if (reason === "write_failed") {
     const paths = pendingWritePaths.size
@@ -44,6 +45,12 @@ export function recoveryInstruction(
   }
   if (reason === "no_tools") {
     return "EXECUTION RECOVERY: Your previous response described work but did not call any tools. This is Edit mode. Do not explain or propose a plan. Immediately call one relevant workspace inspection tool, then make the requested file change with write_file or replace_in_file and read the changed file to verify it.";
+  }
+  if (reason === "missing_file") {
+    const paths = missingFilePaths.size
+      ? `: ${[...missingFilePaths].join(", ")}`
+      : ".";
+    return `MISSING FILE RECOVERY: The requested workspace file does not exist${paths} Do not list the workspace again or describe work you will do. Create each missing requested file now with write_file, then read it to verify the content.`;
   }
   return undefined;
 }

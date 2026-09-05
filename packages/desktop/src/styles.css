@@ -802,22 +802,23 @@ button:focus-visible {
     border-left: 1px solid #2b383f;
     background: #151d22;
     overflow: hidden;
+    width: 100%;
+    max-width: 100%;
 }
 
 .chat-content {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
     min-height: 0;
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto auto;
+    overflow: hidden;
 }
 
-/* Let hidden optional panels leave no empty grid rows behind. */
-.chat-content:has(.tool-activity-panel:not([hidden])),
+/* Let the optional plan leave no empty grid row behind. */
 .chat-content:has(.plan-panel:not([hidden])) {
     grid-template-rows: auto minmax(0, 1fr) auto auto;
-}
-
-.chat-content:has(.tool-activity-panel:not([hidden])):has(.plan-panel:not([hidden])) {
-    grid-template-rows: auto auto minmax(0, 1fr) auto auto;
 }
 
 .chat-heading {
@@ -829,11 +830,6 @@ button:focus-visible {
 .chat-heading > div:first-child {
     display: grid;
     gap: 1px;
-}
-
-#chatStatus {
-    color: #9badb5;
-    font-size: 11px;
 }
 
 .chat-heading button {
@@ -895,8 +891,7 @@ button:focus-visible {
     font-size: 12px;
 }
 
-.plan-panel[hidden],
-.tool-activity-panel[hidden] {
+.plan-panel[hidden] {
     display: none !important;
 }
 
@@ -920,6 +915,9 @@ button:focus-visible {
 }
 
 .chat-messages {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
     min-height: 0;
     overflow: auto;
     display: flex;
@@ -935,10 +933,20 @@ button:focus-visible {
 }
 
 .message {
+    min-width: 0;
+    max-width: 100%;
     display: grid;
     gap: 4px;
     line-height: 1.5;
     white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.message > *,
+.markdown,
+.markdown li {
+    min-width: 0;
+    max-width: 100%;
     overflow-wrap: anywhere;
 }
 
@@ -1038,6 +1046,9 @@ button:focus-visible {
 }
 
 .composer {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 7px;
@@ -1101,12 +1112,16 @@ button:focus-visible {
 }
 
 .composer textarea {
+    min-width: 0;
+    max-width: 100%;
     min-height: 58px;
     max-height: 160px;
     resize: vertical;
 }
 
 .composer-actions {
+    min-width: 0;
+    max-width: 100%;
     display: flex;
     width: 100%;
     gap: 7px;
@@ -1127,12 +1142,17 @@ button:focus-visible {
 }
 
 .agent-controls {
+    min-width: 0;
+    width: 100%;
+    max-width: 100%;
     display: grid;
     gap: 5px;
     padding: 0 10px 10px;
 }
 
 .runtime-metrics {
+    min-width: 0;
+    max-width: 100%;
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -1142,6 +1162,13 @@ button:focus-visible {
     color: #9badb5;
     font-size: 11px;
     font-variant-numeric: tabular-nums;
+}
+
+.runtime-metrics > span {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .agent-control-row {
@@ -1823,7 +1850,6 @@ dialog::backdrop {
 :root[data-desktop-theme] .git-files,
 :root[data-desktop-theme] .file-tree,
 :root[data-desktop-theme] .conversation-list,
-:root[data-desktop-theme] .tool-activity-panel,
 :root[data-desktop-theme] .pane-splitter {
     color: var(--desktop-text);
     background: var(--desktop-panel);
@@ -2070,30 +2096,17 @@ dialog::backdrop {
     background: #33414a;
 }
 
-.tool-activity-panel {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    background: #151d22;
-    border-bottom: 1px solid #2b383f;
-    overflow-y: auto;
-    max-height: 200px;
-}
-
-.tool-activity-panel::-webkit-scrollbar { height: 4px; }
-.tool-activity-panel::-webkit-scrollbar-thumb { border-radius: 999px; background: #54d7b0; }
-.tool-activity-panel::-webkit-scrollbar-track { background: transparent; }
-:root[data-desktop-theme] .tool-activity-panel { scrollbar-color: var(--desktop-accent) transparent; }
-:root[data-desktop-theme] .tool-activity-panel::-webkit-scrollbar-thumb { background: var(--desktop-accent); }
-
 .tool-activity {
     overflow: hidden;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
     border: 1px solid #33414a;
     border-radius: 4px;
     background: #11171b;
     color: #b9c8cd;
     font-size: 11px;
-    margin: 8px;
+    margin: 3px 0 5px;
 }
 
 .tool-activity summary {
@@ -2105,6 +2118,10 @@ dialog::backdrop {
     cursor: pointer;
     color: #d2dfe2;
     font-weight: 700;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     list-style-position: inside;
 }
 
@@ -2115,6 +2132,13 @@ dialog::backdrop {
     border-radius: 50%;
     background: #54d7b0;
     content: "";
+}
+
+.tool-activity-summary-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .tool-activity[open] summary {
@@ -2132,6 +2156,7 @@ dialog::backdrop {
     padding: 0 7px 7px;
     max-height: 140px;
     overflow-y: auto;
+    min-width: 0;
 }
 
 .tool-activity-list::-webkit-scrollbar { width: 4px; }
@@ -2142,6 +2167,7 @@ dialog::backdrop {
 
 .tool-activity-row {
     overflow: hidden;
+    min-width: 0;
     padding: 5px 6px;
     border-left: 2px solid #627880;
     text-overflow: ellipsis;

@@ -12,6 +12,7 @@ import {
   DesktopChatController,
   estimatedConversationUsage,
   isDirectWorkspaceChangeRequest,
+  isWorkspaceChangeContinuation,
   rankSlashFiles,
   tokenEstimate,
 } from "./renderer/chat/chat-controller.js";
@@ -105,7 +106,6 @@ const rendererState = new RendererStateStore(initialDesktopState);
 
 const element = <T extends HTMLElement>(id: string): T =>
   document.getElementById(id) as T;
-const toolActivityPanel = element<HTMLDivElement>("toolActivityPanel");
 const fileTree = element<HTMLDivElement>("fileTree");
 const fileSearch = element<HTMLInputElement>("fileSearch");
 const clearFileSearch = element<HTMLButtonElement>("clearFileSearch");
@@ -158,7 +158,6 @@ const attachmentList = element<HTMLDivElement>("attachmentList");
 const sendChatButton = element<HTMLButtonElement>("sendChat");
 const cancelChatButton = element<HTMLButtonElement>("cancelChat");
 const slashMenu = element<HTMLDivElement>("slashMenu");
-const chatStatus = element<HTMLSpanElement>("chatStatus");
 const runtimeStatus = element<HTMLSpanElement>("runtimeStatus");
 const statusDot = element<HTMLSpanElement>("statusDot");
 const connectTrussGo = element<HTMLButtonElement>("connectTrussGo");
@@ -1033,7 +1032,6 @@ function saveWorkspaceUiState(): void {
 function renderChatRunState(): void {
   sendChatButton.hidden = chatController.busy;
   cancelChatButton.hidden = !chatController.busy;
-  chatStatus.textContent = chatController.agentActivity;
   statusDot.className = `status-dot ${chatController.busy ? "busy" : rendererState.desktop.configuration?.model ? "ready" : ""}`;
   renderChat();
   renderRuntime();
@@ -1148,9 +1146,6 @@ function renderRuntime(): void {
     : chatController.busy
       ? "Usage pending"
       : "Usage --";
-  chatStatus.textContent = chatController.busy
-    ? chatController.agentActivity
-    : "Ready";
   const elapsed = chatController.streamMetrics.startedAt
     ? (performance.now() - chatController.streamMetrics.startedAt) / 1_000
     : 0;
@@ -1463,6 +1458,7 @@ const renderMarkdown = createMarkdownRenderer({
 function messageView(
   message: DesktopMessage,
   activePlaceholder = false,
+  activity?: HTMLElement,
 ): HTMLElement {
   const view = document.createElement("div");
   view.className = `message ${message.role}`;
@@ -1477,7 +1473,9 @@ function messageView(
   } else {
     renderMarkdown(content, message.content);
   }
-  view.append(role, content);
+  view.append(role);
+  if (activity) view.append(activity);
+  view.append(content);
   if (message.attachments?.length) {
     const attachments = document.createElement("div");
     attachments.className = "message-attachments";
@@ -1509,7 +1507,6 @@ function renderChat(): void {
     empty.textContent =
       "Select a local model, then ask about the workspace. Plan is read-only; Agent can edit files and run commands.";
     chatMessages.append(empty);
-    toolActivityPanel.hidden = true;
     return;
   }
   const activities = chatController.activities(conversation.id);
@@ -1518,14 +1515,6 @@ function renderChat(): void {
     conversation.id === chatController.runningConversationId
       ? chatController.agentActivity
       : undefined;
-  if (activities.length || pendingSummary) {
-    toolActivityPanel.hidden = false;
-    toolActivityPanel.replaceChildren(
-      toolActivityView(conversation.id, activities, pendingSummary),
-    );
-  } else {
-    toolActivityPanel.hidden = true;
-  }
   const lastAssistantIndex = conversation.messages
     .map((message) => message.role)
     .lastIndexOf("assistant");
@@ -1537,6 +1526,11 @@ function renderChat(): void {
       messageView(
         message,
         showActivePlaceholder && index === lastAssistantIndex,
+        message.role === "assistant" &&
+          index === lastAssistantIndex &&
+          (activities.length || pendingSummary)
+          ? toolActivityView(conversation.id, activities, pendingSummary)
+          : undefined,
       ),
     );
   });
@@ -3217,10 +3211,13 @@ function toolActivityView(
   const toolCallCount = activities.filter(
     (activity) => activity.status !== "progress",
   ).length;
-  summary.textContent = running
+  const summaryLabel = document.createElement("span");
+  summaryLabel.className = "tool-activity-summary-label";
+  summaryLabel.textContent = running
     ? `Working: ${running.summary ?? running.tool}`
     : (pendingSummary ??
       `Activity: ${toolCallCount} tool call${toolCallCount === 1 ? "" : "s"}`);
+  summary.append(summaryLabel);
   const list = document.createElement("div");
   list.className = "tool-activity-list";
   for (const activity of activities) {
@@ -3245,6 +3242,7 @@ function toolActivityView(
     list.append(row);
   }
   trace.append(summary, list);
+  if (trace.open) queueMicrotask(() => (list.scrollTop = list.scrollHeight));
   return trace;
 }
 
@@ -3312,7 +3310,8 @@ async function sendChat(): Promise<void> {
   if (!prompt || chatController.busy) return;
   if (
     configuration().mode === "chat" &&
-    isDirectWorkspaceChangeRequest(prompt)
+    (isDirectWorkspaceChangeRequest(prompt) ||
+      isWorkspaceChangeContinuation(prompt, activeConversation()?.messages ?? []))
   ) {
     try {
       await applyConfiguration({ ...configuration(), mode: "edit" });

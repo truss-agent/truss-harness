@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { discoverCloudModels } from "./cloud-model-discovery.js";
 
 describe("desktop cloud model discovery", () => {
-  it("authenticates Anthropic model requests and follows cursor pages", async () => {
+  it("authenticates Anthropic API-key model requests and follows cursor pages", async () => {
     const requestFetch = vi.fn<typeof fetch>(async (input, init) => {
       const headers = new Headers(init?.headers);
       if (
@@ -45,6 +45,39 @@ describe("desktop cloud model discovery", () => {
     ]);
     expect(models[0].contextWindow).toBe(200_000);
     expect(requestFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses bearer authentication for Anthropic OAuth credentials", async () => {
+    const requestFetch = vi.fn<typeof fetch>(async (_input, init) => {
+      const headers = new Headers(init?.headers);
+      expect(headers.get("authorization")).toBe("Bearer sk-ant-oat-token");
+      expect(headers.has("x-api-key")).toBe(false);
+      return Response.json({ data: [{ id: "claude-test", type: "model" }] });
+    });
+    await discoverCloudModels(
+      cloudProviderDefinition("anthropic"),
+      "https://api.anthropic.com/v1",
+      "sk-ant-oat-token",
+      requestFetch,
+    );
+  });
+
+  it("retries Anthropic discovery with the alternate credential header after a 400", async () => {
+    const requestFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({}, { status: 400 }))
+      .mockResolvedValueOnce(
+        Response.json({ data: [{ id: "claude-test", type: "model" }] }),
+      );
+    await discoverCloudModels(
+      cloudProviderDefinition("anthropic"),
+      "https://api.anthropic.com/v1",
+      "test-key",
+      requestFetch,
+    );
+    expect(new Headers(requestFetch.mock.calls[1]?.[1]?.headers).get("authorization")).toBe(
+      "Bearer test-key",
+    );
   });
 
   it.each([
@@ -145,4 +178,24 @@ describe("desktop cloud model discovery", () => {
       ),
     ).rejects.toThrow("Anthropic model discovery failed (401).");
   });
+
+  it("includes a sanitized Anthropic error message", async () => {
+    const requestFetch = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json(
+          { error: { message: "Invalid API key sk-ant-secret" } },
+          { status: 400 },
+        ),
+      );
+    await expect(
+      discoverCloudModels(
+        cloudProviderDefinition("anthropic"),
+        "https://api.anthropic.com/v1",
+        "test-key",
+        requestFetch,
+      ),
+    ).rejects.toThrow("Invalid API key [redacted]");
+  });
+
 });

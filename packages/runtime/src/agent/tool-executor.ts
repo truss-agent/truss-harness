@@ -19,6 +19,7 @@ export interface AgentToolExecutorOptions {
 
 export type AgentToolExecution = WorkspaceToolRecord & {
   readonly recoveryRequired?: boolean;
+  readonly failure?: string;
 };
 
 export class AgentToolExecutor {
@@ -86,6 +87,11 @@ export class AgentToolExecutor {
       result.isError &&
       !result.content.startsWith("Tool call denied:") &&
       !result.content.startsWith("Unknown tool:");
-    return { name: tool, succeeded: !result.isError, recoveryRequired };
+    return {
+      name: tool,
+      succeeded: !result.isError,
+      recoveryRequired,
+      failure: result.isError ? result.content : undefined,
+    };
   }
 }

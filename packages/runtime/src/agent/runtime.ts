@@ -71,6 +71,8 @@ export class AgentRuntime {
     const completedTerminalCommands = new Set<string>();
     const filesNeedingVerification = new Set<string>();
     const pendingWriteRecoveryPaths = new Set<string>();
+    const missingFileRecoveryPaths = new Set<string>();
+    let lastReadWorkspacePath: string | undefined;
     let assistantText = "";
     let recoveryReason: AgentRecoveryReason | undefined;
     let recoveryAttempts = 0;
@@ -118,7 +120,11 @@ export class AgentRuntime {
         const systemPrompt = [
           this.options.systemPromptFactory?.(session) ??
             this.options.systemPrompt,
-          recoveryInstruction(recoveryReason, pendingWriteRecoveryPaths),
+          recoveryInstruction(
+            recoveryReason,
+            pendingWriteRecoveryPaths,
+            missingFileRecoveryPaths,
+          ),
           turnBudgetInstruction(this.maxTurns - turn),
         ]
           .filter(Boolean)
@@ -278,25 +284,40 @@ export class AgentRuntime {
           }
           if (execution.succeeded && call.name === "read_file" && path) {
             filesNeedingVerification.delete(path);
+            lastReadWorkspacePath = path;
           }
           if (execution.succeeded && isFileWrite(call) && path) {
             modifiedFiles.add(path);
             filesNeedingVerification.add(path);
             pendingWriteRecoveryPaths.delete(path);
+            missingFileRecoveryPaths.delete(path);
             if (!pendingWriteRecoveryPaths.size) {
               recoveryReason = undefined;
               recoveryAttempts = 0;
             }
           }
+          if (
+            !execution.succeeded &&
+            this.options.requireWriteForEditIntent &&
+            hasEditIntent(prompt) &&
+            call.name === "read_file" &&
+            path &&
+            execution.failure?.includes("ENOENT")
+          ) {
+            missingFileRecoveryPaths.add(path);
+            recoveryReason = "missing_file";
+            recoveryAttempts = 0;
+          }
           if (!execution.succeeded && execution.recoveryRequired) {
             failedWriteThisTurn = true;
             recoveryReason = "write_failed";
-            if (path) {
-              pendingWriteRecoveryPaths.add(path);
+            const recoveryPath = path ?? lastReadWorkspacePath;
+            if (recoveryPath) {
+              pendingWriteRecoveryPaths.add(recoveryPath);
               await this.emit({
                 type: "progress_delta",
                 sessionId,
-                text: `Recovery: reread ${path} and retry the file change with its current contents.`,
+                text: `Recovery: retry the file change for ${recoveryPath} with a non-empty path and the current file contents.`,
               });
             }
           }
@@ -306,6 +327,14 @@ export class AgentRuntime {
           if (recoveryAttempts >= 2) {
             throw new Error(
               `Agent could not recover the failed file write for ${[...pendingWriteRecoveryPaths].join(", ")} after recovery attempts.`,
+            );
+          }
+        }
+        if (missingFileRecoveryPaths.size && !modifiedFiles.size) {
+          recoveryAttempts += 1;
+          if (recoveryAttempts >= 2) {
+            throw new Error(
+              `Agent could not create the missing requested file(s): ${[...missingFileRecoveryPaths].join(", ")}.`,
             );
           }
         }
