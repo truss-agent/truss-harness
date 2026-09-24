@@ -11,6 +11,18 @@ export interface OpenAICompatibleProviderOptions {
   readonly fetch?: typeof globalThis.fetch;
 }
 
+export interface AnthropicProviderOptions {
+  readonly baseUrl: string;
+  readonly model: string;
+  readonly apiKey?: string;
+  /** Preferred over apiKey so credentials can be refreshed or backed by secure storage. */
+  readonly credential?: CredentialProvider;
+  readonly headers?: Readonly<Record<string, string>>;
+  /** Anthropic requires an explicit output-token limit for Messages requests. */
+  readonly maxTokens?: number;
+  readonly fetch?: typeof globalThis.fetch;
+}
+
 export type LocalEndpointKind = "ollama" | "openai-compatible";
 
 export interface LocalModelEndpoint {
@@ -75,7 +87,10 @@ export interface CloudProviderDefinition {
   readonly baseUrl: string;
   readonly apiKeyEnvironmentVariable: string;
   /** Wire protocol used by the provider's hosted endpoint. */
-  readonly compatibility: "openai-chat-completions" | "ollama-api";
+  readonly compatibility:
+    | "openai-chat-completions"
+    | "anthropic-messages"
+    | "ollama-api";
   readonly productionNote?: string;
 }
 

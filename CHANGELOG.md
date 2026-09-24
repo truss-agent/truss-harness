@@ -2,6 +2,13 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.50] - 2026-09-24
+
+### Fixed
+
+- Routed Desktop Anthropic chat through the native Messages API, preserving
+  streaming text, tool calls, tool results, and credential-safe errors.
+
 ## [0.1.49] - 2026-09-04
 
 ### Fixed
