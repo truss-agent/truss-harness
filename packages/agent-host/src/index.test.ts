@@ -1,3 +1,4 @@
+import { basename } from "node:path";
 import type {
   AgentProfile,
   CredentialProvider,
@@ -108,7 +109,7 @@ describe("AgentHost", () => {
     )?.content;
     expect(prompt).toContain("You are in Plan mode.");
     expect(prompt).toContain(
-      `<rules>${process.cwd().split("/").at(-1)} ${session.id}</rules>`,
+      `<rules>${basename(process.cwd())} ${session.id}</rules>`,
     );
     expect(prompt).toContain("Profile instructions.");
     expect(prompt?.indexOf("You are in Plan mode.")).toBeLessThan(
@@ -391,6 +392,7 @@ describe("AgentHost", () => {
       async create() {
         return {
           id: "test-provider",
+          // biome-ignore lint/correctness/useYield: This fixture fails before streaming any model events.
           async *stream(): AsyncIterable<ModelStreamEvent> {
             throw new Error(
               "Model request failed (402). sensitive upstream details",

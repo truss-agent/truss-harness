@@ -2,7 +2,7 @@
   "name": "truss-harness-vscode",
   "displayName": "Truss",
   "description": "VS Code client for the Truss runtime.",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "license": "SEE LICENSE IN LICENSE",
   "publisher": "truss-harness",
   "repository": {
@@ -161,7 +161,7 @@
     "@truss-harness/cli": "0.1.23",
     "@truss-harness/mcp": "0.1.11",
     "@truss-harness/provider-openai-compatible": "0.1.15",
-    "@truss-harness/runtime": "0.1.13"
+    "@truss-harness/runtime": "0.1.14"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",

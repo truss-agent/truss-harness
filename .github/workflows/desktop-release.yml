@@ -4,7 +4,8 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - "v*"
+      # VS Code uses vscode-v*; only numeric v* tags release Desktop.
+      - "v[0-9]*"
 
 permissions:
   contents: read
