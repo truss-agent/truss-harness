@@ -2,6 +2,13 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.51] - 2026-10-08
+
+### Changed
+
+- Aligned Desktop's pinned Runtime dependency with Runtime 0.1.14 so the
+  workspace builds against a single set of shared runtime types.
+
 ## [0.1.50] - 2026-09-24
 
 ### Fixed

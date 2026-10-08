@@ -25,7 +25,7 @@ describe("TUI workspace file collection", () => {
     await writeFile(join(root, "node_modules", "ignored.js"), "ignored");
 
     await expect(collectWorkspaceFiles(root)).resolves.toEqual([
-      { path: "src/a.ts" },
+      { path: join("src", "a.ts") },
       { path: "z.txt" },
     ]);
   });

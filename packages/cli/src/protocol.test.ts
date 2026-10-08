@@ -2,6 +2,8 @@ import {
   type ChatMessage,
   type ContextBlock,
   EventBus,
+  RUNTIME_PACKAGE_NAME,
+  RUNTIME_VERSION,
   type RuntimeEvent,
   type Session,
   type ToolCall,
@@ -176,8 +178,8 @@ describe("RuntimeService", () => {
           server: expect.objectContaining({
             identity: {
               runtime: {
-                packageName: "@truss-harness/runtime",
-                version: "0.1.13",
+                packageName: RUNTIME_PACKAGE_NAME,
+                version: RUNTIME_VERSION,
               },
               protocolVersions: [LOCAL_SERVICE_PROTOCOL_VERSION],
             },
@@ -248,8 +250,8 @@ describe("RuntimeService", () => {
             version: "test",
             identity: {
               runtime: {
-                packageName: "@truss-harness/runtime",
-                version: "0.1.13",
+                packageName: RUNTIME_PACKAGE_NAME,
+                version: RUNTIME_VERSION,
               },
               protocolVersions: [LOCAL_SERVICE_PROTOCOL_VERSION],
             },

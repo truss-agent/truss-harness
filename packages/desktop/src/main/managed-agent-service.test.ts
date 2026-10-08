@@ -1,3 +1,4 @@
+import { join, sep } from "node:path";
 import type { AgentProfile, Session, ToolCall } from "@truss-harness/runtime";
 import { describe, expect, it } from "vitest";
 import {
@@ -68,9 +69,12 @@ describe("managed agent plan isolation", () => {
     const first = managedAgentPlanPath("/workspace", "agent-1");
     const second = managedAgentPlanPath("/workspace", "agent-2");
 
-    expect(first).not.toBe("/workspace/.truss-harness/plans/active.json");
+    expect(first).not.toBe(
+      join("/workspace", ".truss-harness", "plans", "active.json"),
+    );
     expect(first).not.toBe(second);
-    expect(first).toMatch(
+    // Preserve the full isolation assertion across native path separators.
+    expect(first.split(sep).join("/")).toMatch(
       /^\/workspace\/\.truss-harness\/agents\/[a-f0-9]{24}\/plans\/active\.json$/,
     );
   });
