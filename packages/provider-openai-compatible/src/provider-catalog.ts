@@ -17,9 +17,8 @@ export const cloudProviderDefinitions: readonly CloudProviderDefinition[] = [
     label: "Anthropic",
     baseUrl: "https://api.anthropic.com/v1",
     apiKeyEnvironmentVariable: "ANTHROPIC_API_KEY",
-    compatibility: "openai-chat-completions",
-    productionNote:
-      "Uses Anthropic's evaluation-oriented OpenAI compatibility layer; a native adapter remains the preferred long-term integration.",
+    compatibility: "anthropic-messages",
+    productionNote: "Uses Anthropic's native Messages API and streaming protocol.",
   },
   {
     id: "openrouter",

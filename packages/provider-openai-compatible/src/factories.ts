@@ -7,7 +7,11 @@ import type {
 } from "./contracts.js";
 import { normalizeLocalBaseUrl } from "./discovery.js";
 import { cloudProviderDefinition } from "./provider-catalog.js";
-import { OllamaProvider, OpenAICompatibleProvider } from "./providers.js";
+import {
+  AnthropicProvider,
+  OllamaProvider,
+  OpenAICompatibleProvider,
+} from "./providers.js";
 
 export function createLocalModelProvider(
   configuration: LocalModelConfiguration,
@@ -33,6 +37,15 @@ export function createCloudModelProvider(
   configuration: CloudModelConfiguration,
 ): ModelProvider {
   const definition = cloudProviderDefinition(configuration.provider);
+  if (definition.compatibility === "anthropic-messages") {
+    return new AnthropicProvider({
+      baseUrl: definition.baseUrl,
+      model: configuration.model,
+      credential: configuration.credential,
+      headers: configuration.headers,
+      fetch: configuration.fetch,
+    });
+  }
   if (definition.compatibility === "ollama-api") {
     return new OllamaProvider({
       id: definition.id,
