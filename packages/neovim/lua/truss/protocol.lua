@@ -333,6 +333,25 @@ function Client:mcp_status(callback)
   self:request("mcp/status", {}, callback)
 end
 
+function Client:list_skills(callback)
+  self:request("skills/list", {}, callback)
+end
+
+function Client:update_skill_settings(scope, selection, callback)
+  self:request("skills/settings", {
+    scope = scope,
+    selection = selection == nil and vim.NIL or selection,
+  }, callback)
+end
+
+function Client:import_skill(path, callback)
+  self:request("skills/import", { path = path }, callback)
+end
+
+function Client:remove_skill(id, callback)
+  self:request("skills/remove", { id = id }, callback)
+end
+
 function Client:shutdown()
   if not self.process then
     return
