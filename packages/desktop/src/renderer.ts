@@ -148,7 +148,7 @@ const chatArea = document.querySelector<HTMLElement>(
 ) as HTMLElement;
 const toggleChat = element<HTMLButtonElement>("toggleChat");
 const showChatPanel = element<HTMLButtonElement>("showChatPanel");
-const chatSplitter = element<HTMLDivElement>("chatSplitter");
+const chatSplitter = element<HTMLHRElement>("chatSplitter");
 const toggleChatDock = element<HTMLButtonElement>("toggleChatDock");
 const planPanel = element<HTMLElement>("planPanel");
 const chatInput = element<HTMLTextAreaElement>("chatInput");
@@ -3732,9 +3732,9 @@ layoutController = new DesktopLayoutController(
     gitBody: gitElements.body,
     filesSection,
     terminal: terminalElements.panel,
-    sidebarSplitter: element<HTMLDivElement>("sidebarSplitter"),
-    gitSplitter: element<HTMLDivElement>("gitSplitter"),
-    terminalSplitter: element<HTMLDivElement>("terminalSplitter"),
+    sidebarSplitter: element<HTMLHRElement>("sidebarSplitter"),
+    gitSplitter: element<HTMLHRElement>("gitSplitter"),
+    terminalSplitter: element<HTMLHRElement>("terminalSplitter"),
   },
   { renderAgents, renderGit: () => gitController.render() },
 );
