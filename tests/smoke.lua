@@ -6,6 +6,9 @@ for _, name in ipairs({
   "TrussOpen",
   "TrussPlan",
   "TrussProfile",
+  "TrussSkillAdd",
+  "TrussSkillRemove",
+  "TrussSkills",
   "TrussTestConnection",
 }) do
   assert(commands[name], name .. " was not registered during normal startup")

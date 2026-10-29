@@ -96,6 +96,97 @@ test("protocol routes approval requests and host capability methods", function()
   equal(writes[4].method, "mcp/status")
 end)
 
+test("protocol sends skill requests", function()
+  local Protocol = require("truss.protocol")
+  local writes = {}
+  local client = Protocol.Client.new({})
+  client.process = {
+    write = function(_, value)
+      table.insert(writes, vim.json.decode(vim.trim(value)))
+    end,
+  }
+  client.initialized = true
+  client:list_skills()
+  client:update_skill_settings("workspace", { mode = "manual" })
+  client:update_skill_settings("workspace", nil)
+  client:import_skill("/skills/notes")
+  client:remove_skill("user:notes")
+  equal(writes[1].method, "skills/list")
+  equal(writes[2].method, "skills/settings")
+  equal(writes[2].params, { scope = "workspace", selection = { mode = "manual" } })
+  equal(writes[3].params.selection, vim.NIL)
+  equal(writes[4].params, { path = "/skills/notes" })
+  equal(writes[5].params, { id = "user:notes" })
+end)
+
+test("skill commands require host support and save through the service", function()
+  local truss = require("truss")
+  local notified = {}
+  local notify = vim.notify
+  vim.notify = function(message)
+    table.insert(notified, message)
+  end
+  local writes = {}
+  local selected
+  local select = vim.ui.select
+  vim.ui.select = function(items, _, on_choice)
+    on_choice(selected and selected(items) or nil)
+  end
+  local client = require("truss.protocol").Client.new({})
+  client.initialized = true
+  client.capabilities = { skills = true }
+  client.process = {
+    write = function(_, value)
+      local message = vim.json.decode(vim.trim(value))
+      table.insert(writes, message)
+      if message.method == "skills/list" then
+        client:feed(vim.json.encode({
+          jsonrpc = "2.0",
+          id = message.id,
+          result = {
+            skills = {
+              skills = {},
+              diagnostics = {},
+              selection = {
+                mode = "automatic",
+                superpowersEnabled = true,
+                skillIds = { "superpowers:brainstorming", "user:notes" },
+              },
+            },
+          },
+        }) .. "\n")
+      end
+    end,
+  }
+  truss._state.client = client
+
+  truss.add_skill("/skills/notes")
+  equal(#writes, 0, "import must wait for skill management support")
+  equal(notified[#notified], "Update truss-cli to manage skills from Neovim.")
+
+  -- Turning the pack off also drops selected pack skills.
+  selected = function(items)
+    selected = nil
+    return items[2]
+  end
+  truss.skills()
+  vim.wait(100, function()
+    return #writes >= 2
+  end)
+  equal(writes[2].method, "skills/settings")
+  equal(writes[2].params, {
+    scope = "user",
+    selection = { superpowersEnabled = false, skillIds = { "user:notes" } },
+  })
+  equal(
+    truss._skill_menu({ selection = { mode = "off", superpowersEnabled = false, skillIds = {} } }, "workspace")[4].label,
+    "Save changes for: this workspace"
+  )
+  truss._state.client = nil
+  vim.ui.select = select
+  vim.notify = notify
+end)
+
 test("protocol negotiates, runs, and cancels through the process transport", function()
   local Protocol = require("truss.protocol")
   local writes = {}
