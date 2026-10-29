@@ -111,6 +111,12 @@ export const docsRoutes = [
       "Configure managed Truss agents and their workspace instructions and execution settings.",
   },
   {
+    path: "/docs/runtime/skills",
+    title: "Skills",
+    description:
+      "Choose how Truss agents use Superpowers, personal and workspace skills across every client.",
+  },
+  {
     path: "/docs/runtime/workspace-commands",
     title: "Workspace Commands",
     description:

@@ -24,7 +24,9 @@ describe("route metadata", () => {
       alternates: { canonical: "/docs/clients/truss-go" },
     });
     const metadata = docsRoutes.map((route) => createDocsMetadata(route.path));
-    expect(new Set(metadata.map((entry) => entry.description)).size).toBe(19);
+    expect(new Set(metadata.map((entry) => entry.description)).size).toBe(
+      docsRoutes.length,
+    );
   });
   it("uses the preferred production origin while keeping explicit preview configuration separate", async () => {
     expect(
