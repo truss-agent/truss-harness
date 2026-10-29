@@ -1,19 +1,19 @@
 {
   "name": "@truss-harness/mcp",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Model Context Protocol client adapter for Truss.",
   "type": "module",
-  "main": "./dist/index.js",
+  "main": "./dist/bundled/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "default": "./dist/bundled/index.js"
     }
   },
   "scripts": {
-    "build": "tsc -b",
-    "prepack": "node ../../scripts/clean-publish-tests.mjs",
+    "build": "tsc -b && node --experimental-strip-types ../../scripts/bundle-published-package.mts mcp",
+    "prepack": "npm run build && node ../../scripts/clean-publish-tests.mjs",
     "prepublishOnly": "npm run build"
   },
   "files": [
@@ -22,7 +22,7 @@
     "logo.png"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22.15.1"
   },
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
@@ -37,7 +37,11 @@
     "access": "public"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.29.0",
-    "@truss-harness/runtime": "^0.1.11"
+    "@truss-harness/runtime": "^0.1.15"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "@hono/node-server": "^2.1.5",
+    "zod": "^4.6.7"
   }
 }

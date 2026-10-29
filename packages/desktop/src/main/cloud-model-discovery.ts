@@ -42,25 +42,22 @@ export async function discoverCloudModels(
         }
       : { "x-api-key": credential, "anthropic-version": "2023-06-01" }
     : { Authorization: `Bearer ${credential}` };
-  const anthropicFallbackHeaders: Record<string, string> | undefined =
-    anthropic
-      ? headers.Authorization
-        ? { "x-api-key": credential, "anthropic-version": "2023-06-01" }
-        : {
-            Authorization: `Bearer ${credential}`,
-            "anthropic-version": "2023-06-01",
-          }
-      : undefined;
+  const anthropicFallbackHeaders: Record<string, string> | undefined = anthropic
+    ? headers.Authorization
+      ? { "x-api-key": credential, "anthropic-version": "2023-06-01" }
+      : {
+          Authorization: `Bearer ${credential}`,
+          "anthropic-version": "2023-06-01",
+        }
+    : undefined;
   const records: unknown[] = [];
   let nextUrl: string | undefined = `${root}/${ollama ? "api/tags" : "models"}`;
   for (let page = 0; nextUrl && page < 20; page += 1) {
     let response = await requestFetch(nextUrl, { headers });
-    if (
-      !response.ok &&
-      response.status === 400 &&
-      anthropicFallbackHeaders
-    ) {
-      response = await requestFetch(nextUrl, { headers: anthropicFallbackHeaders });
+    if (!response.ok && response.status === 400 && anthropicFallbackHeaders) {
+      response = await requestFetch(nextUrl, {
+        headers: anthropicFallbackHeaders,
+      });
       if (response.ok) headers = anthropicFallbackHeaders;
     }
     if (!response.ok) {

@@ -27,6 +27,7 @@ import { useTuiInputController } from "./input-controller.js";
 import { calculateLayout, focusReducer } from "./layout.js";
 import { openExternalPreview } from "./processes.js";
 import { useRuntimeSessionController } from "./runtime-session.js";
+import { useSkillsController } from "./skills-controller.js";
 import { useTerminalController } from "./terminal-controller.js";
 import { type TuiThemeName, tuiTheme } from "./theme.js";
 import type { Screen, SettingsField } from "./types.js";
@@ -202,6 +203,10 @@ function App({
     openSearchResult,
     toggleDiff,
   } = workspaceFiles;
+  const skillsController = useSkillsController(
+    workspaceRoot,
+    initialConfiguration?.skills,
+  );
   const runtimeSession = useRuntimeSessionController({
     initialConfiguration,
     workspaceRoot,
@@ -215,6 +220,7 @@ function App({
     contextWindow,
     appendTerminal,
     showScreen: setScreen,
+    skills: skillsController.skills,
   });
   const {
     configuration,
@@ -374,6 +380,7 @@ function App({
       editorLineCount,
       chatTranscriptLength: chatTranscript.length,
       chatLineCount,
+      chatInput,
     },
     setters: {
       setScreen,
@@ -413,6 +420,15 @@ function App({
       loadFile: (entry) => void loadFile(entry),
       toggleDiff: () => void toggleDiff(),
       sendPrompt: () => void sendPrompt(),
+      openSkills: () => {
+        skillsController.refreshSkills();
+        setScreen("skills");
+      },
+      moveSkill: skillsController.moveSkill,
+      toggleSkill: skillsController.toggleSkill,
+      cycleSkillMode: skillsController.cycleSkillMode,
+      toggleSuperpowers: skillsController.toggleSuperpowers,
+      toggleSkillScope: skillsController.toggleSkillScope,
     },
   });
 
@@ -461,6 +477,14 @@ function App({
         pendingTool,
         agentProfiles,
         mcpStatuses,
+        skills: {
+          state: skillsController.skillState,
+          index: skillsController.skillIndex,
+          scope: skillsController.skillScope,
+          ...(skillsController.skillError
+            ? { error: skillsController.skillError }
+            : {}),
+        },
       }}
     />
   );

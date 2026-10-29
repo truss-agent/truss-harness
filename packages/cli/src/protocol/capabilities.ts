@@ -6,15 +6,21 @@ import type {
 
 export function serviceCapabilities(options: {
   readonly approval?: unknown;
+  readonly textRuntime?: unknown;
   readonly host?: {
     readonly testProviderConnection?: unknown;
     readonly listProfiles?: unknown;
     readonly listMcpServers?: unknown;
+    readonly skills?: {
+      readonly import?: unknown;
+      readonly remove?: unknown;
+    };
   };
   readonly capabilities?: Partial<RuntimeServiceCapabilities>;
 }): RuntimeServiceCapabilities {
   return {
     streaming: true,
+    textOnlyGeneration: Boolean(options.textRuntime),
     sessions: true,
     cancellation: true,
     approvals: Boolean(options.approval),
@@ -26,6 +32,10 @@ export function serviceCapabilities(options: {
     configurationProfiles: Boolean(options.host?.listProfiles),
     agentProfiles: false,
     mcpStatus: Boolean(options.host?.listMcpServers),
+    skills: Boolean(options.host?.skills),
+    skillManagement: Boolean(
+      options.host?.skills?.import && options.host.skills.remove,
+    ),
     ...options.capabilities,
   };
 }

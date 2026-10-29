@@ -3,6 +3,7 @@ import type { GitService } from "./git-service.js";
 import type { ManagedAgentService } from "./managed-agent-service.js";
 import type { DesktopRuntimeService } from "./runtime-service.js";
 import type { DesktopSettingsService } from "./settings-service.js";
+import type { DesktopSkillService } from "./skill-service.js";
 import type { TerminalService } from "./terminal-service.js";
 import type { WorkspaceService } from "./workspace-service.js";
 
@@ -16,6 +17,7 @@ export interface OperationalIpcDependencies {
   readonly git: GitService;
   readonly terminal: TerminalService;
   readonly gateway: TrussGoGatewayService;
+  readonly skills: DesktopSkillService;
   readonly revealPath: (path: string) => void;
   readonly openExternal: (value: string) => Promise<void>;
   readonly loadPlan: () => Promise<unknown>;
@@ -39,6 +41,7 @@ export function registerOperationalIpc({
   git,
   terminal,
   gateway,
+  skills,
   revealPath,
   openExternal,
   loadPlan,
@@ -69,6 +72,13 @@ export function registerOperationalIpc({
     (_event, callId, approved, allowAllForSession = false) =>
       runtime.resolveApproval(callId, approved, allowAllForSession),
   );
+
+  ipc.handle("truss:list-skills", () => skills.list());
+  ipc.handle("truss:update-skill-settings", (_event, scope, selection) =>
+    skills.setSettings(scope, selection),
+  );
+  ipc.handle("truss:import-skill", () => skills.importDirectory());
+  ipc.handle("truss:remove-skill", (_event, id) => skills.remove(id));
 
   ipc.handle("truss:list-files", () => workspace.collectFiles());
   ipc.handle("truss:list-directory", (_event, path) =>

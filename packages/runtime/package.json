@@ -1,25 +1,28 @@
 {
   "name": "@truss-harness/runtime",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
+      "default": "./dist/bundled/index.js"
     }
   },
   "files": [
     "dist",
     "README.md",
-    "logo.png"
+    "logo.png",
+    "skills/superpowers/LICENSE",
+    "skills/superpowers/UPSTREAM.json",
+    "skills/superpowers/TRUSS-COMPATIBILITY.md"
   ],
   "scripts": {
-    "build": "tsc -b",
-    "prepack": "node ../../scripts/clean-publish-tests.mjs",
+    "build": "tsc -b && node --experimental-strip-types ../../scripts/bundle-published-package.mts runtime",
+    "prepack": "npm run build && node ../../scripts/clean-publish-tests.mjs",
     "prepublishOnly": "npm run build"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.15.1"
   },
   "license": "SEE LICENSE IN LICENSE",
   "repository": {
@@ -37,7 +40,10 @@
     "local-first"
   ],
   "dependencies": {
-    "cheerio": "^1.2.0",
     "@truss-harness/branding": "0.1.1"
+  },
+  "devDependencies": {
+    "cheerio": "^1.2.0",
+    "undici": "^7.30.1"
   }
 }

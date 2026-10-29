@@ -1,3 +1,7 @@
+import type {
+  RuntimeServiceCapabilities,
+  RuntimeServiceSkillState,
+} from "@truss-harness/cli/protocol";
 import type { McpServerConfigurations } from "@truss-harness/mcp";
 import type {
   LocalModelEndpoint,
@@ -52,6 +56,7 @@ export interface ServiceResponse {
   readonly type: "response";
   readonly requestId: string;
   readonly result: {
+    readonly capabilities?: RuntimeServiceCapabilities;
     readonly protocolVersion?: number;
     readonly server?: {
       readonly name: "truss-cli";
@@ -66,6 +71,7 @@ export interface ServiceResponse {
     };
     readonly sessionId?: string;
     readonly aborted?: boolean;
+    readonly skills?: RuntimeServiceSkillState;
   };
 }
 
@@ -76,6 +82,14 @@ export interface ServiceError {
 }
 
 export type ServiceMessage =
+  | {
+      readonly type: "approval_request";
+      readonly requestId: string;
+      readonly sessionId: string;
+      readonly callId: string;
+      readonly tool: string;
+      readonly input: Record<string, unknown>;
+    }
   | ServiceEvent
   | ServiceLifecycle
   | ServiceResponse

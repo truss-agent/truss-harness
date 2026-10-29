@@ -10,9 +10,16 @@ export type ClientContent = {
   readonly installLabel: string;
   readonly installDescription: string;
   readonly commands?: readonly string[];
-  readonly primaryAction: { readonly label: string; readonly href: string; readonly external?: boolean };
+  readonly primaryAction: {
+    readonly label: string;
+    readonly href: string;
+    readonly external?: boolean;
+  };
   readonly docsHref: string;
-  readonly highlights: readonly { readonly title: string; readonly description: string }[];
+  readonly highlights: readonly {
+    readonly title: string;
+    readonly description: string;
+  }[];
   readonly workflow: readonly string[];
 };
 
@@ -21,76 +28,168 @@ export const clientContent: Record<ClientId, ClientContent> = {
     id: "cli",
     eyebrow: "Truss CLI",
     title: "Automate coding work from your shell.",
-    description: "Run local-model tasks in a terminal, automate repeatable work in scripts, or host the JSON-lines service behind other clients.",
+    description:
+      "Run local-model tasks in a terminal, automate repeatable work in scripts, or host the JSON-lines service behind other clients.",
     screenshotSrc: "/screenshots/cli.png",
-    screenshotAlt: "Truss CLI streaming a local-model chat response in a terminal.",
+    screenshotAlt:
+      "Truss CLI streaming a local-model chat response in a terminal.",
     installLabel: "Install with npm",
-    installDescription: "Requires Node.js 20 or newer. The same workspace profiles work across the CLI and TUI.",
-    commands: ["npm install -g @truss-harness/cli", "truss-cli models", "truss-cli config init", "truss-cli chat \"Review the current diff\""],
-    primaryAction: { label: "View CLI on npm", href: "https://www.npmjs.com/package/@truss-harness/cli", external: true },
+    installDescription:
+      "Requires Node.js 22.15.1 or newer (Node 24 LTS recommended). The same workspace profiles work across the CLI and TUI.",
+    commands: [
+      "npm install -g @truss-harness/cli",
+      "truss-cli models",
+      "truss-cli config init",
+      'truss-cli chat "Review the current diff"',
+    ],
+    primaryAction: {
+      label: "View CLI on npm",
+      href: "https://www.npmjs.com/package/@truss-harness/cli",
+      external: true,
+    },
     docsHref: "/docs/clients/cli",
     highlights: [
-      { title: "Run from anywhere", description: "Start a one-shot task or an ongoing chat directly in the shell you already use." },
-      { title: "Find local models", description: "Discover Ollama, LM Studio, llama.cpp, and compatible endpoints before choosing a profile." },
-      { title: "Automate safely", description: "Use workspace commands, plans, memory, MCP configuration, and the JSON-lines service without coupling your workflow to a UI." }
+      {
+        title: "Run from anywhere",
+        description:
+          "Start a one-shot task or an ongoing chat directly in the shell you already use.",
+      },
+      {
+        title: "Find local models",
+        description:
+          "Discover Ollama, LM Studio, llama.cpp, and compatible endpoints before choosing a profile.",
+      },
+      {
+        title: "Automate safely",
+        description:
+          "Use workspace commands, plans, memory, MCP configuration, and the JSON-lines service without coupling your workflow to a UI.",
+      },
     ],
-    workflow: ["Discover a server and model with truss-cli models.", "Create a workspace profile with truss-cli config init.", "Run a task, inspect streamed tool activity, and keep the workspace state for the next session."]
+    workflow: [
+      "Discover a server and model with truss-cli models.",
+      "Create a workspace profile with truss-cli config init.",
+      "Run a task, inspect streamed tool activity, and keep the workspace state for the next session.",
+    ],
   },
   tui: {
     id: "tui",
     eyebrow: "Truss Terminal UI",
     title: "A full coding workspace in your terminal.",
-    description: "Keep files, Git diffs, agent chat, tool approvals, and shell output together in a keyboard-first workspace.",
+    description:
+      "Keep files, Git diffs, agent chat, tool approvals, and shell output together in a keyboard-first workspace.",
     screenshotSrc: "/screenshots/tui.png",
-    screenshotAlt: "Truss Terminal UI with files, editor, agent response, and terminal panes.",
+    screenshotAlt:
+      "Truss Terminal UI with files, editor, agent response, and terminal panes.",
     installLabel: "Install with npm",
-    installDescription: "Requires Node.js 20 or newer and shares the CLI's local-model profiles and workspace state.",
+    installDescription:
+      "Requires Node.js 22.15.1 or newer (Node 24 LTS recommended) and shares the CLI's local-model profiles and workspace state.",
     commands: ["npm install -g @truss-harness/tui", "truss-tui"],
-    primaryAction: { label: "View TUI on npm", href: "https://www.npmjs.com/package/@truss-harness/tui", external: true },
+    primaryAction: {
+      label: "View TUI on npm",
+      href: "https://www.npmjs.com/package/@truss-harness/tui",
+      external: true,
+    },
     docsHref: "/docs/clients/tui",
     highlights: [
-      { title: "Four focused panes", description: "Move between files, editor, agent, and terminal panes without breaking the flow of an investigation." },
-      { title: "Review before action", description: "Inspect Git diffs and approve or deny model-requested tools in the same workspace." },
-      { title: "Keyboard-native control", description: "Search files, open model settings, run workspace commands, and interrupt generation without touching a mouse." }
+      {
+        title: "Four focused panes",
+        description:
+          "Move between files, editor, agent, and terminal panes without breaking the flow of an investigation.",
+      },
+      {
+        title: "Review before action",
+        description:
+          "Inspect Git diffs and approve or deny model-requested tools in the same workspace.",
+      },
+      {
+        title: "Keyboard-native control",
+        description:
+          "Search files, open model settings, run workspace commands, and interrupt generation without touching a mouse.",
+      },
     ],
-    workflow: ["Launch truss-tui from the repository you want to work in.", "Select a detected local endpoint and model if no profile is already configured.", "Attach files, inspect diffs, approve tools, and keep the terminal close to the agent loop."]
+    workflow: [
+      "Launch truss-tui from the repository you want to work in.",
+      "Select a detected local endpoint and model if no profile is already configured.",
+      "Attach files, inspect diffs, approve tools, and keep the terminal close to the agent loop.",
+    ],
   },
   vscode: {
     id: "vscode",
     eyebrow: "Truss for VS Code",
     title: "A local coding agent where you edit.",
-    description: "Bring streaming chat, focused file context, inline completions, approvals, and Git-aware actions into a VS Code side panel.",
+    description:
+      "Bring streaming chat, focused file context, inline completions, approvals, and Git-aware actions into a VS Code side panel.",
     screenshotSrc: "/screenshots/vscode.png",
-    screenshotAlt: "Truss running in VS Code beside the editor and integrated terminal.",
+    screenshotAlt:
+      "Truss running in VS Code beside the editor and integrated terminal.",
     installLabel: "Download the VSIX",
-    installDescription: "Download the current signed VSIX from GitHub Releases, install it from the Extensions menu, then select a local server and model from Settings.",
-    primaryAction: { label: "Download the VS Code extension", href: "/download" },
+    installDescription:
+      "Download the current signed VSIX from GitHub Releases, install it from the Extensions menu, then select a local server and model from Settings.",
+    primaryAction: {
+      label: "Download the VS Code extension",
+      href: "/download",
+    },
     docsHref: "/docs/clients/vscode",
     highlights: [
-      { title: "Editor-aware chat", description: "Attach up to eight workspace files through the composer and preserve useful conversation history in workspace state." },
-      { title: "Agent modes and approvals", description: "Switch between Chat, Plan, and Edit while keeping tool permissions explicit and appropriate to the workspace." },
-      { title: "Useful editor actions", description: "Accept local-model inline completions and generate a conventional commit message from Git changes without creating the commit for you." }
+      {
+        title: "Editor-aware chat",
+        description:
+          "Attach up to eight workspace files through the composer and preserve useful conversation history in workspace state.",
+      },
+      {
+        title: "Agent modes and approvals",
+        description:
+          "Switch between Chat, Plan, and Edit while keeping tool permissions explicit and appropriate to the workspace.",
+      },
+      {
+        title: "Useful editor actions",
+        description:
+          "Accept local-model inline completions and generate a conventional commit message from Git changes without creating the commit for you.",
+      },
     ],
-    workflow: ["Download the signed VSIX from the Truss website and install it from the VS Code Extensions menu.", "Open the Truss Activity Bar view and configure a detected endpoint or custom compatible server.", "Choose a model, mode, and tool policy, then use chat and editor actions from the workspace."]
+    workflow: [
+      "Download the signed VSIX from the Truss website and install it from the VS Code Extensions menu.",
+      "Open the Truss Activity Bar view and configure a detected endpoint or custom compatible server.",
+      "Choose a model, mode, and tool policy, then use chat and editor actions from the workspace.",
+    ],
   },
   desktop: {
     id: "desktop",
     eyebrow: "Truss Desktop",
     title: "A focused desktop workspace for coding agents.",
-    description: "Keep files, Git diffs, terminal work, persistent conversations, model controls, and tool approvals in one desktop app.",
+    description:
+      "Keep files, Git diffs, terminal work, persistent conversations, model controls, and tool approvals in one desktop app.",
     screenshotSrc: "/screenshots/desktop.png",
-    screenshotAlt: "Truss Desktop with Git, files, editor, terminal, and agent chat panels.",
+    screenshotAlt:
+      "Truss Desktop with Git, files, editor, terminal, and agent chat panels.",
     installLabel: "Download for your platform",
-    installDescription: "Windows installers and Linux AppImage, deb, rpm, and pacman packages are resolved from the latest stable release.",
+    installDescription:
+      "Windows installers and Linux AppImage, deb, rpm, and pacman packages are resolved from the latest stable release.",
     primaryAction: { label: "Download desktop", href: "/download" },
     docsHref: "/docs/clients/desktop",
     highlights: [
-      { title: "One focused workspace", description: "Browse files, inspect working-tree diffs, run terminal commands, and work with the agent in a single desktop surface." },
-      { title: "Git stays visible", description: "Review branch and changed-file state, stage or unstage files, generate a message, commit, pull, and push from the Git panel." },
-      { title: "Private by design", description: "The Electron renderer has no Node access; filesystem, terminal, provider, Git, and runtime work cross a narrow IPC bridge." }
+      {
+        title: "One focused workspace",
+        description:
+          "Browse files, inspect working-tree diffs, run terminal commands, and work with the agent in a single desktop surface.",
+      },
+      {
+        title: "Git stays visible",
+        description:
+          "Review branch and changed-file state, stage or unstage files, generate a message, commit, pull, and push from the Git panel.",
+      },
+      {
+        title: "Private by design",
+        description:
+          "The Electron renderer has no Node access; filesystem, terminal, provider, Git, and runtime work cross a narrow IPC bridge.",
+      },
     ],
-    workflow: ["Download the package for your operating system and architecture.", "Open a workspace and choose a detected local endpoint and model in Settings.", "Attach files, inspect diffs, approve tools, and use the Git and terminal panes alongside the conversation."]
-  }
+    workflow: [
+      "Download the package for your operating system and architecture.",
+      "Open a workspace and choose a detected local endpoint and model in Settings.",
+      "Attach files, inspect diffs, approve tools, and use the Git and terminal panes alongside the conversation.",
+    ],
+  },
 };
 
 export const clientIds = Object.keys(clientContent) as ClientId[];

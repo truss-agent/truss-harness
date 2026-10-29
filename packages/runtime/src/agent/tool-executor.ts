@@ -5,25 +5,46 @@ import type {
   ToolResult,
 } from "../contracts.js";
 import type { WorkspaceToolRecord } from "../memory.js";
+import { defaultToolOutputBytes, truncateUtf8 } from "../resource-limits.js";
 import type { ToolRegistry } from "../tools.js";
 import { allowAllTools, type ToolApproval } from "./contracts.js";
 import { toolFailureRecovery } from "./edit-policy.js";
 import { normalizeToolResult } from "./tool-call-normalization.js";
 
 export interface AgentToolExecutorOptions {
-  readonly tools: ToolRegistry;
+  readonly tools: Pick<ToolRegistry, "get">;
   readonly workspaceRoot: string;
   readonly approval?: ToolApproval;
+  /** Run-scoped tools whose own policy replaces ToolApproval. */
+  readonly preapproved?: ReadonlySet<string>;
+  readonly maxOutputBytes?: number;
   emit(event: RuntimeEvent): Promise<void>;
 }
 
 export type AgentToolExecution = WorkspaceToolRecord & {
   readonly recoveryRequired?: boolean;
   readonly failure?: string;
+  /** Text shown to the user when a preapproved tool ends the run to wait for them. */
+  readonly endTurn?: string;
 };
 
 export class AgentToolExecutor {
   constructor(private readonly options: AgentToolExecutorOptions) {}
+
+  private async approve(
+    call: ToolCall,
+    session: Session,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    signal?.throwIfAborted();
+    const approved = await (this.options.approval ?? allowAllTools).approve(
+      call,
+      session,
+      { signal },
+    );
+    signal?.throwIfAborted();
+    return approved;
+  }
 
   async execute(
     session: Session,
@@ -31,6 +52,7 @@ export class AgentToolExecutor {
     signal?: AbortSignal,
     preflightError?: string,
   ): Promise<AgentToolExecution> {
+    signal?.throwIfAborted();
     const { id: callId, name: tool, input } = call;
     await this.options.emit({
       type: "tool_call_requested",
@@ -39,6 +61,7 @@ export class AgentToolExecutor {
       tool,
       input,
     });
+    signal?.throwIfAborted();
     const implementation = this.options.tools.get(tool);
     let result: ToolResult;
     if (preflightError) {
@@ -51,11 +74,13 @@ export class AgentToolExecutor {
         isError: true,
       };
     } else if (
-      !(await (this.options.approval ?? allowAllTools).approve(call, session))
+      !this.options.preapproved?.has(tool) &&
+      !(await this.approve(call, session, signal))
     ) {
       result = { content: `Tool call denied: ${tool}`, isError: true };
     } else {
       try {
+        signal?.throwIfAborted();
         result = normalizeToolResult(
           await implementation.execute(input, {
             workspaceRoot: this.options.workspaceRoot,
@@ -63,12 +88,22 @@ export class AgentToolExecutor {
           }),
         );
       } catch (error) {
+        signal?.throwIfAborted();
+        if (error instanceof Error && error.name === "AbortError") throw error;
         result = {
           content: `Tool execution failed: ${error instanceof Error ? error.message : String(error)}\n\nRECOVERY: ${toolFailureRecovery(tool)}`,
           isError: true,
         };
       }
     }
+    signal?.throwIfAborted();
+    result = {
+      ...result,
+      content: truncateUtf8(
+        result.content,
+        this.options.maxOutputBytes ?? defaultToolOutputBytes,
+      ),
+    };
     session.messages.push({
       role: "tool",
       name: tool,
@@ -82,6 +117,7 @@ export class AgentToolExecutor {
       tool,
       result,
     });
+    signal?.throwIfAborted();
     const recoveryRequired =
       tool === "replace_in_file" &&
       result.isError &&
@@ -92,6 +128,11 @@ export class AgentToolExecutor {
       succeeded: !result.isError,
       recoveryRequired,
       failure: result.isError ? result.content : undefined,
+      ...(result.endTurn &&
+      !result.isError &&
+      this.options.preapproved?.has(tool)
+        ? { endTurn: result.content }
+        : {}),
     };
   }
 }

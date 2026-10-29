@@ -1,8 +1,12 @@
+---
+title: "Get Started"
+---
+
 # Get Started
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 22.15.1 or newer (Node 24 LTS recommended)
 - npm 10 or newer
 - A local model server such as Ollama, LM Studio, or llama.cpp
 - Or an API key for a supported BYOK cloud provider
@@ -75,7 +79,7 @@ For a cloud model, set `TRUSS_HARNESS_PROVIDER`, `TRUSS_HARNESS_MODEL`, and the 
 
 ## Run a first agent task
 
-Run Agent/Edit mode only inside a workspace you trust. Direct CLI chat is non-interactive and auto-allows tools.
+Run Agent/Edit mode only inside a workspace you trust. Direct CLI chat honors approval policy. Ask is the default, and a tool needing approval fails closed without a TTY. Use `--permission auto-all` only for explicitly authorized automation.
 
 ```sh
 truss-cli chat --mode edit "Read README.md and add one concise sentence describing the CLI. Make no other changes."

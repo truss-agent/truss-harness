@@ -2,7 +2,10 @@
 export type ResolvedCredential =
   | { readonly kind: "bearer"; readonly token: string }
   | { readonly kind: "header"; readonly name: string; readonly value: string }
-  | { readonly kind: "request-signer"; sign(request: Request): Promise<Request> };
+  | {
+      readonly kind: "request-signer";
+      sign(request: Request): Promise<Request>;
+    };
 
 /** A replaceable source of model-provider credentials. */
 export interface CredentialProvider {
@@ -18,12 +21,17 @@ export class ApiKeyCredential implements CredentialProvider {
   constructor(
     readonly id: string,
     private readonly source: ApiKeySource,
-    private readonly placement: { readonly kind: "bearer" } | { readonly kind: "header"; readonly name: string } = { kind: "bearer" }
+    private readonly placement:
+      | { readonly kind: "bearer" }
+      | { readonly kind: "header"; readonly name: string } = { kind: "bearer" },
   ) {}
 
   async resolve(): Promise<ResolvedCredential> {
-    const value = (typeof this.source === "function" ? await this.source() : this.source).trim();
-    if (!value) throw new Error(`Credential '${this.id}' did not resolve to a value.`);
+    const value = (
+      typeof this.source === "function" ? await this.source() : this.source
+    ).trim();
+    if (!value)
+      throw new Error(`Credential '${this.id}' did not resolve to a value.`);
     return this.placement.kind === "bearer"
       ? { kind: "bearer", token: value }
       : { kind: "header", name: this.placement.name, value };
@@ -35,7 +43,10 @@ export class CredentialProviderRegistry {
   private readonly credentials = new Map<string, CredentialProvider>();
 
   register(credential: CredentialProvider): void {
-    if (this.credentials.has(credential.id)) throw new Error(`Credential provider already registered: ${credential.id}`);
+    if (this.credentials.has(credential.id))
+      throw new Error(
+        `Credential provider already registered: ${credential.id}`,
+      );
     this.credentials.set(credential.id, credential);
   }
 
@@ -45,7 +56,8 @@ export class CredentialProviderRegistry {
 
   require(id: string): CredentialProvider {
     const credential = this.get(id);
-    if (!credential) throw new Error(`Credential provider is not registered: ${id}`);
+    if (!credential)
+      throw new Error(`Credential provider is not registered: ${id}`);
     return credential;
   }
 

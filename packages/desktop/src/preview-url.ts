@@ -1,7 +1,10 @@
-const localUrlPattern = /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d{1,5})?(?:\/[^\s'"\])>]*)?/gi;
-const serverAnnouncementPattern = /\b(?:accepting connections|listening|server\s+(?:is\s+)?running|available|serving http)\b|\blocal:/i;
+const localUrlPattern =
+  /https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::\d{1,5})?(?:\/[^\s'"\])>]*)?/gi;
+const serverAnnouncementPattern =
+  /\b(?:accepting connections|listening|server\s+(?:is\s+)?running|available|serving http)\b|\blocal:/i;
 
 function withoutAnsi(value: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape sequences intentionally contain the ESC control character.
   return value.replace(/\u001B\[[0-?]*[ -/]*[@-~]/g, "");
 }
 
@@ -18,8 +21,7 @@ export function previewServerUrlFromOutput(output: string): string | undefined {
     const lineStart = normalized.lastIndexOf("\n", index) + 1;
     const lineEnd = normalized.indexOf("\n", index);
     const line = normalized.slice(lineStart, lineEnd < 0 ? undefined : lineEnd);
-    if (!serverAnnouncementPattern.test(line))
-      continue;
+    if (!serverAnnouncementPattern.test(line)) continue;
     try {
       const url = new URL(match[0]);
       if (url.hostname === "0.0.0.0") url.hostname = "127.0.0.1";

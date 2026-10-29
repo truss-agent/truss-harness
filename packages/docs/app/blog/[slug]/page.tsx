@@ -143,7 +143,7 @@ export default async function BlogArticlePage({
               </time>
               <span>{article.readingTime}</span>
             </div>
-            <div className="blog-keywords" aria-label="Article topics">
+            <div className="blog-keywords">
               {article.keywords.map((keyword) => (
                 <span key={keyword}>{keyword}</span>
               ))}
@@ -220,6 +220,7 @@ export default async function BlogArticlePage({
       <SiteFooter />
       <script
         type="application/ld+json"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: JSON-LD serializes data and escapes HTML delimiters below.
         dangerouslySetInnerHTML={{
           __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
         }}

@@ -1,9 +1,12 @@
+import { workspaceTrustStore } from "./config.js";
+import type { WorkspaceTrustStore } from "./workspace-trust.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { AgentHost } from "@truss-harness/agent-host";
 import {
   ApiKeyCredential,
+  resolveWorkspacePath,
   AgentCoordinator,
   type AgentProfile,
   type AgentProfileStore,
@@ -21,11 +24,17 @@ const profilesFileName = "agents.json";
 const runHistoryFileName = "runs.json";
 
 export function agentProfilesPath(workspaceRoot: string): string {
-  return join(workspaceRoot, ".truss-harness", profilesFileName);
+  return resolveWorkspacePath(
+    workspaceRoot,
+    `.truss-harness/${profilesFileName}`,
+  );
 }
 
 export function agentRunHistoryPath(workspaceRoot: string): string {
-  return join(workspaceRoot, ".truss-harness", "agents", runHistoryFileName);
+  return resolveWorkspacePath(
+    workspaceRoot,
+    `.truss-harness/agents/${runHistoryFileName}`,
+  );
 }
 
 function validProfile(value: unknown): value is AgentProfile {
@@ -86,7 +95,12 @@ function validRunSummary(value: unknown): value is AgentRunSummary {
 
 /** Workspace-local profile storage. Credentials remain in environment/host storage. */
 export class FileAgentProfileStore implements AgentProfileStore {
-  constructor(private readonly workspaceRoot: string) {}
+  constructor(
+    private readonly workspaceRoot: string,
+    private readonly trustStore: WorkspaceTrustStore = workspaceTrustStore(
+      workspaceRoot,
+    ),
+  ) {}
 
   async list(): Promise<readonly AgentProfile[]> {
     try {
@@ -104,7 +118,26 @@ export class FileAgentProfileStore implements AgentProfileStore {
   }
 
   async get(id: string): Promise<AgentProfile | undefined> {
-    return (await this.list()).find((profile) => profile.id === id);
+    const profile = (await this.list()).find((profile) => profile.id === id);
+    if (profile && !(await this.isTrusted(profile)))
+      throw new Error(
+        `Agent profile '${id}' is untrusted or changed. Review its binding and policy, then run truss agents trust ${id}.`,
+      );
+    return profile;
+  }
+
+  async isTrusted(profile: AgentProfile): Promise<boolean> {
+    return this.trustStore.isTrusted(
+      `agent:${profile.id}`,
+      JSON.stringify(profile),
+    );
+  }
+
+  /** Explicit local authorization after reviewing a migrated/manual profile. */
+  async trust(id: string): Promise<void> {
+    const profile = (await this.list()).find((profile) => profile.id === id);
+    if (!profile) throw new Error("Unknown agent profile.");
+    await this.trustStore.trust(`agent:${id}`, JSON.stringify(profile));
   }
 
   async create(input: CreateAgentProfileInput): Promise<AgentProfile> {
@@ -129,6 +162,7 @@ export class FileAgentProfileStore implements AgentProfileStore {
       updatedAt: now,
     };
     await this.save([...(await this.list()), profile]);
+    await this.trustStore.trust(`agent:${profile.id}`, JSON.stringify(profile));
     return profile;
   }
 
@@ -167,6 +201,7 @@ export class FileAgentProfileStore implements AgentProfileStore {
         profile.id === id ? next : profile,
       ),
     );
+    await this.trustStore.trust(`agent:${next.id}`, JSON.stringify(next));
     return next;
   }
 
@@ -192,10 +227,9 @@ export class FileAgentRunHistoryStore implements AgentRunHistoryStore {
   constructor(private readonly workspaceRoot: string) {}
 
   async load(): Promise<readonly AgentRunSummary[]> {
+    const path = agentRunHistoryPath(this.workspaceRoot);
     try {
-      const parsed: unknown = JSON.parse(
-        await readFile(agentRunHistoryPath(this.workspaceRoot), "utf8"),
-      );
+      const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
       return Array.isArray(parsed) ? parsed.filter(validRunSummary) : [];
     } catch {
       // Treat a missing or malformed local history as empty. The next completed
@@ -236,7 +270,9 @@ function approval(profile: AgentProfile): ToolApproval {
 
 export function createCliAgentCoordinator(
   configuration: ClientConfiguration,
-  profiles = new FileAgentProfileStore(configuration.workspaceRoot),
+  profiles: AgentProfileStore = new FileAgentProfileStore(
+    configuration.workspaceRoot,
+  ),
 ): AgentCoordinator {
   const credential: CredentialProvider | undefined =
     configuration.credential ??

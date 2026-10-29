@@ -35,7 +35,15 @@ export const tuiThemes: Readonly<Record<TuiThemeName, TuiTheme>> = {
     warning: "#d3b978",
     error: "#d79a8e",
     overlay: "#13231d",
-    syntax: { blue: "#9eb4cf", cyan: "#8cc8bd", gray: "#71867d", green: "#a9c994", magenta: "#c4a8c8", red: "#d4958a", yellow: "#d6c184" }
+    syntax: {
+      blue: "#9eb4cf",
+      cyan: "#8cc8bd",
+      gray: "#71867d",
+      green: "#a9c994",
+      magenta: "#c4a8c8",
+      red: "#d4958a",
+      yellow: "#d6c184",
+    },
   },
   sage: {
     name: "sage",
@@ -51,7 +59,15 @@ export const tuiThemes: Readonly<Record<TuiThemeName, TuiTheme>> = {
     warning: "#d6ba83",
     error: "#d69b91",
     overlay: "#1a241d",
-    syntax: { blue: "#9eafcf", cyan: "#89c0b4", gray: "#7d8d80", green: "#afcc9a", magenta: "#c5aac4", red: "#d5958d", yellow: "#d7c183" }
+    syntax: {
+      blue: "#9eafcf",
+      cyan: "#89c0b4",
+      gray: "#7d8d80",
+      green: "#afcc9a",
+      magenta: "#c5aac4",
+      red: "#d5958d",
+      yellow: "#d7c183",
+    },
   },
   dusk: {
     name: "dusk",
@@ -67,12 +83,22 @@ export const tuiThemes: Readonly<Record<TuiThemeName, TuiTheme>> = {
     warning: "#ceb776",
     error: "#d29289",
     overlay: "#101d1c",
-    syntax: { blue: "#93aaca", cyan: "#7eb9ae", gray: "#687d76", green: "#9dbf8c", magenta: "#bda2c3", red: "#cf9188", yellow: "#d0ba80" }
-  }
+    syntax: {
+      blue: "#93aaca",
+      cyan: "#7eb9ae",
+      gray: "#687d76",
+      green: "#9dbf8c",
+      magenta: "#bda2c3",
+      red: "#cf9188",
+      yellow: "#d0ba80",
+    },
+  },
 };
 
 export function isTuiThemeName(value: unknown): value is TuiThemeName {
-  return typeof value === "string" && tuiThemeNames.includes(value as TuiThemeName);
+  return (
+    typeof value === "string" && tuiThemeNames.includes(value as TuiThemeName)
+  );
 }
 
 export function tuiTheme(value: TuiThemeName | undefined): TuiTheme {

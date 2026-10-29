@@ -1,6 +1,11 @@
+import { FileWorkspaceTrustStore, contentHash } from "./workspace-trust.js";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import {
+  createDefaultSkills,
+  type DefaultSkills,
+} from "@truss-harness/agent-host";
 import { brand } from "@truss-harness/branding";
 import {
   parseMcpServerConfigurations,
@@ -13,7 +18,13 @@ import {
   isLocalEndpointKind,
   type ModelProviderKind,
 } from "@truss-harness/provider-openai-compatible";
-import type { MasterPromptConfiguration } from "@truss-harness/runtime";
+import {
+  normalizeSkillSelection,
+  resolveWorkspacePath,
+  type MasterPromptConfiguration,
+  type SkillMode,
+  type SkillSelection,
+} from "@truss-harness/runtime";
 import type { AgentMode, ClientConfiguration } from "./runtime.js";
 import type { PermissionMode } from "./protocol.js";
 
@@ -36,12 +47,18 @@ export interface ProfileConfiguration {
   readonly mcpServers?: McpServerConfigurations;
   /** Visual preset used by the terminal UI. */
   readonly tuiTheme?: TuiThemeName;
+  /** Skill selection mode; Automatic by default. */
+  readonly skillMode?: SkillMode;
+  /** The bundled Superpowers pack; enabled by default. */
+  readonly superpowersEnabled?: boolean;
+  /** Qualified skill IDs that are always active, e.g. `user:release-notes`. */
+  readonly skillIds?: readonly string[];
 }
 
 export interface HarnessConfiguration extends ProfileConfiguration {
   readonly defaultProfile?: string;
   readonly profiles?: Readonly<Record<string, ProfileConfiguration>>;
-  /** User-level opt-in for executable MCP definitions from workspace configuration. */
+  /** Legacy field; workspace MCP now requires content-bound local config trust. */
   readonly allowWorkspaceMcpServers?: boolean;
 }
 
@@ -54,6 +71,14 @@ export interface ResolvedConfiguration extends ClientConfiguration {
   readonly permission: PermissionMode;
   readonly tuiTheme?: TuiThemeName;
   readonly paths: { readonly user: string; readonly workspace: string };
+  readonly provenance: Readonly<Record<string, string>>;
+  readonly skills: DefaultSkills;
+  readonly workspaceTrust: {
+    readonly status: "trusted" | "untrusted" | "missing";
+    readonly hash?: string;
+    readonly store: string;
+    readonly diagnostic?: string;
+  };
 }
 
 export interface ConfigurationPaths {
@@ -122,6 +147,38 @@ function object(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+function skillSettings(value: {
+  readonly mode?: unknown;
+  readonly superpowersEnabled?: unknown;
+  readonly skillIds?: unknown;
+}): Pick<
+  ProfileConfiguration,
+  "skillMode" | "superpowersEnabled" | "skillIds"
+> {
+  const selection = normalizeSkillSelection(
+    Object.fromEntries(
+      Object.entries(value).filter(([, entry]) => entry !== undefined),
+    ),
+  );
+  return {
+    ...(selection.mode ? { skillMode: selection.mode } : {}),
+    ...(selection.superpowersEnabled === undefined
+      ? {}
+      : { superpowersEnabled: selection.superpowersEnabled }),
+    ...(selection.skillIds ? { skillIds: selection.skillIds } : {}),
+  };
+}
+
+function switchValue(
+  value: string | undefined,
+  name: string,
+): boolean | undefined {
+  if (value === undefined || value === "") return undefined;
+  if (/^(?:1|true|on|yes)$/i.test(value)) return true;
+  if (/^(?:0|false|off|no)$/i.test(value)) return false;
+  throw new Error(`${name} must be on or off`);
+}
+
 function parseProfile(value: unknown): ProfileConfiguration {
   const source = object(value);
   if (!source) return {};
@@ -149,6 +206,11 @@ function parseProfile(value: unknown): ProfileConfiguration {
         ? undefined
         : parseMcpServerConfigurations(source.mcpServers),
     tuiTheme: validTuiTheme(source.tuiTheme),
+    ...skillSettings({
+      mode: source.skillMode,
+      superpowersEnabled: source.superpowersEnabled,
+      skillIds: source.skillIds,
+    }),
   };
 }
 
@@ -227,6 +289,13 @@ function environmentConfiguration(
       : undefined,
     mcpServers,
     tuiTheme: validTuiTheme(environment.TRUSS_HARNESS_TUI_THEME),
+    ...skillSettings({
+      mode: environment.TRUSS_HARNESS_SKILLS_MODE || undefined,
+      superpowersEnabled: switchValue(
+        environment.TRUSS_HARNESS_SUPERPOWERS_ENABLED,
+        "TRUSS_HARNESS_SUPERPOWERS_ENABLED",
+      ),
+    }),
   };
 }
 
@@ -243,6 +312,9 @@ const profileKeys = [
   "apiKeyEnv",
   "mcpServers",
   "tuiTheme",
+  "skillMode",
+  "superpowersEnabled",
+  "skillIds",
 ] as const satisfies readonly (keyof ProfileConfiguration)[];
 
 function mergeProfiles(
@@ -269,8 +341,164 @@ export function configurationPaths(
       : (environment.XDG_CONFIG_HOME ?? join(homedir(), ".config"));
   return {
     user: join(userRoot, brand.productSlug, "config.json"),
-    workspace: join(workspaceRoot, brand.workspaceDirectory, "config.json"),
+    workspace: resolveWorkspacePath(
+      workspaceRoot,
+      `${brand.workspaceDirectory}/config.json`,
+    ),
   };
+}
+
+export function workspaceTrustStore(
+  workspaceRoot: string,
+  paths = configurationPaths(workspaceRoot),
+): FileWorkspaceTrustStore {
+  return new FileWorkspaceTrustStore(
+    workspaceRoot,
+    join(dirname(paths.user), "workspace-trust.json"),
+  );
+}
+
+/** Explicit external config locations are caller authority; workspace paths are rechecked. */
+function checkedWorkspaceConfigurationPath(
+  workspaceRoot: string,
+  path: string,
+): string {
+  const candidate = relative(workspaceRoot, path);
+  return candidate === ".." ||
+    candidate.startsWith(`..${sep}`) ||
+    isAbsolute(candidate)
+    ? path
+    : resolveWorkspacePath(workspaceRoot, candidate);
+}
+
+async function workspaceConfiguration(
+  workspaceRoot: string,
+  paths: ConfigurationPaths,
+): Promise<{
+  configuration: HarnessConfiguration;
+  provenance: ResolvedConfiguration["workspaceTrust"];
+}> {
+  const store = workspaceTrustStore(workspaceRoot, paths);
+  let content: string;
+  try {
+    content = await readFile(
+      checkedWorkspaceConfigurationPath(workspaceRoot, paths.workspace),
+      "utf8",
+    );
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT")
+      return {
+        configuration: {},
+        provenance: { status: "missing", store: store.path },
+      };
+    throw error;
+  }
+  const trusted = await store.isTrusted("config", content);
+  let parsed: HarnessConfiguration;
+  let diagnostic: string | undefined;
+  try {
+    const source = JSON.parse(content) as unknown;
+    const safe = object(source);
+    parsed = trusted
+      ? parseConfiguration(source)
+      : {
+          tuiTheme: validTuiTheme(safe?.tuiTheme),
+        };
+  } catch (error) {
+    if (trusted) throw error;
+    parsed = {};
+    diagnostic =
+      "Ignored malformed untrusted workspace config. Review or remove it before using config trust.";
+  }
+  // Untrusted files may style the UI, but cannot choose a model or even a named
+  // user profile: that would indirectly select its credentials and authority.
+  return {
+    configuration: trusted ? parsed : { tuiTheme: parsed.tuiTheme },
+    provenance: {
+      status: trusted ? "trusted" : "untrusted",
+      hash: contentHash(content),
+      store: store.path,
+      ...(diagnostic ? { diagnostic } : {}),
+    },
+  };
+}
+
+/** Explicit local authorization of exactly the current configuration bytes. */
+export async function trustWorkspaceConfiguration(
+  workspaceRoot: string,
+  paths = configurationPaths(workspaceRoot),
+): Promise<string> {
+  const content = await readFile(
+    checkedWorkspaceConfigurationPath(workspaceRoot, paths.workspace),
+    "utf8",
+  );
+  parseConfiguration(JSON.parse(content) as unknown);
+  await workspaceTrustStore(workspaceRoot, paths).trust("config", content);
+  return contentHash(content);
+}
+
+function skillLayer(
+  layer: ProfileConfiguration,
+): Partial<SkillSelection> | undefined {
+  const value = {
+    ...(layer.skillMode ? { mode: layer.skillMode } : {}),
+    ...(layer.superpowersEnabled === undefined
+      ? {}
+      : { superpowersEnabled: layer.superpowersEnabled }),
+    ...(layer.skillIds ? { skillIds: layer.skillIds } : {}),
+  };
+  return Object.keys(value).length ? value : undefined;
+}
+
+/**
+ * Config files supply defaults beneath settings saved with /skills;
+ * environment and flags are explicit for this process and win.
+ */
+function skillsFor(
+  workspaceRoot: string,
+  paths: ConfigurationPaths,
+  configured: readonly (ProfileConfiguration | undefined)[],
+  explicit: readonly (ProfileConfiguration | undefined)[],
+): DefaultSkills {
+  return createDefaultSkills({
+    workspaceRoot,
+    userConfigDirectory: dirname(paths.user),
+    defaults: skillLayer(mergeProfiles(...configured)),
+    overrides: skillLayer(mergeProfiles(...explicit)),
+  });
+}
+
+/** Skill wiring for a workspace without requiring a model or provider. */
+export async function resolveSkills(options: {
+  readonly workspaceRoot: string;
+  readonly overrides?: ConfigurationOverrides;
+  readonly environment?: NodeJS.ProcessEnv;
+  readonly paths?: ConfigurationPaths;
+}): Promise<DefaultSkills> {
+  const environment = options.environment ?? process.env;
+  const paths =
+    options.paths ?? configurationPaths(options.workspaceRoot, environment);
+  const [user, workspaceResult] = await Promise.all([
+    readConfiguration(paths.user),
+    workspaceConfiguration(options.workspaceRoot, paths),
+  ]);
+  const workspace = workspaceResult.configuration;
+  const profile =
+    options.overrides?.profile ??
+    environment.TRUSS_HARNESS_PROFILE ??
+    workspace.defaultProfile ??
+    user.defaultProfile;
+  return skillsFor(
+    options.workspaceRoot,
+    paths,
+    [
+      user,
+      profile ? user.profiles?.[profile] : undefined,
+      workspace,
+      profile ? workspace.profiles?.[profile] : undefined,
+    ],
+    [environmentConfiguration(environment), options.overrides],
+  );
 }
 
 export async function resolveConfiguration(options: {
@@ -282,15 +510,16 @@ export async function resolveConfiguration(options: {
   const environment = options.environment ?? process.env;
   const paths =
     options.paths ?? configurationPaths(options.workspaceRoot, environment);
-  const [user, workspace] = await Promise.all([
+  const [user, workspaceResult] = await Promise.all([
     readConfiguration(paths.user),
-    readConfiguration(paths.workspace),
+    workspaceConfiguration(options.workspaceRoot, paths),
   ]);
+  const workspace = workspaceResult.configuration;
   const profile =
     options.overrides?.profile ??
+    environment.TRUSS_HARNESS_PROFILE ??
     workspace.defaultProfile ??
-    user.defaultProfile ??
-    environment.TRUSS_HARNESS_PROFILE;
+    user.defaultProfile;
   const userProfile = profile ? user.profiles?.[profile] : undefined;
   const workspaceProfile = profile ? workspace.profiles?.[profile] : undefined;
   const environmentProfile = environmentConfiguration(environment);
@@ -306,9 +535,37 @@ export async function resolveConfiguration(options: {
     environmentProfile,
     options.overrides,
   );
-  const workspaceMcpServers = user.allowWorkspaceMcpServers
-    ? (workspaceProfile?.mcpServers ?? workspace.mcpServers)
-    : undefined;
+  const skills = skillsFor(
+    options.workspaceRoot,
+    paths,
+    [user, userProfile, workspace, workspaceProfile],
+    [environmentProfile, options.overrides],
+  );
+  const provenance: Record<string, string> = {};
+  for (const [source, layer] of [
+    ["user", user],
+    ["user profile", userProfile],
+    ["workspace", workspace],
+    ["workspace profile", workspaceProfile],
+    ["environment", environmentProfile],
+    ["flags", options.overrides],
+  ] as const) {
+    for (const [key, value] of Object.entries(layer ?? {}))
+      if (value !== undefined) provenance[key] = source;
+  }
+  for (const key of [
+    "provider",
+    "baseUrl",
+    "model",
+    "permission",
+    "mode",
+    "internetAccess",
+  ])
+    provenance[key] ??= "default/detection";
+  const workspaceMcpServers =
+    workspaceResult.provenance.status === "trusted"
+      ? (workspaceProfile?.mcpServers ?? workspace.mcpServers)
+      : undefined;
   const mcpServers =
     options.overrides?.mcpServers ??
     environmentProfile.mcpServers ??
@@ -388,7 +645,10 @@ export async function resolveConfiguration(options: {
     mcpServers,
     profile,
     tuiTheme: merged.tuiTheme,
+    skills,
     paths,
+    workspaceTrust: workspaceResult.provenance,
+    provenance,
   };
 }
 
@@ -406,15 +666,16 @@ export async function listConfigurationProfiles(options: {
   const environment = options.environment ?? process.env;
   const paths =
     options.paths ?? configurationPaths(options.workspaceRoot, environment);
-  const [user, workspace] = await Promise.all([
+  const [user, workspaceResult] = await Promise.all([
     readConfiguration(paths.user),
-    readConfiguration(paths.workspace),
+    workspaceConfiguration(options.workspaceRoot, paths),
   ]);
+  const workspace = workspaceResult.configuration;
   const selected =
     options.selectedProfile ??
+    environment.TRUSS_HARNESS_PROFILE ??
     workspace.defaultProfile ??
-    user.defaultProfile ??
-    environment.TRUSS_HARNESS_PROFILE;
+    user.defaultProfile;
   const names = new Set([
     ...Object.keys(user.profiles ?? {}),
     ...Object.keys(workspace.profiles ?? {}),
@@ -449,6 +710,7 @@ export async function initializeWorkspaceConfiguration(
     if (!(error instanceof Error && "code" in error && error.code === "ENOENT"))
       throw error;
   }
+  checkedWorkspaceConfigurationPath(workspaceRoot, paths.workspace);
   await mkdir(dirname(paths.workspace), { recursive: true });
   await writeFile(
     paths.workspace,
@@ -530,6 +792,8 @@ export function parseConfigurationOverrides(arguments_: readonly string[]): {
     mode?: AgentMode;
     permission?: PermissionMode;
     internetAccess?: boolean;
+    skillMode?: SkillMode;
+    superpowersEnabled?: boolean;
   } = {};
   const rest: string[] = [];
   for (let index = 0; index < arguments_.length; index++) {
@@ -568,6 +832,13 @@ export function parseConfigurationOverrides(arguments_: readonly string[]): {
       overrides.internetAccess = true;
     } else if (argument === "--no-internet-access") {
       overrides.internetAccess = false;
+    } else if (argument === "--skills-mode") {
+      const mode = value();
+      if (mode !== "automatic" && mode !== "manual" && mode !== "off")
+        throw new Error("--skills-mode must be automatic, manual, or off");
+      overrides.skillMode = mode;
+    } else if (argument === "--superpowers") {
+      overrides.superpowersEnabled = switchValue(value(), "--superpowers");
     } else rest.push(argument);
   }
   return { overrides, rest };

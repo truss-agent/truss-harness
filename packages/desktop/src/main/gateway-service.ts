@@ -7,6 +7,8 @@ import {
   type RunningRemoteGateway,
   startRemoteGateway,
 } from "@truss-harness/gateway";
+import type { DefaultSkills } from "@truss-harness/agent-host";
+import { gatewaySkillController } from "@truss-harness/cli/skills";
 import type { AgentCoordinator } from "@truss-harness/runtime";
 import QRCode from "qrcode";
 import type { DesktopState } from "../shared.js";
@@ -39,6 +41,7 @@ export class TrussGoGatewayService {
     private readonly coordinator: () => AgentCoordinator | undefined,
     private readonly runtime: DesktopRuntimeService,
     private readonly platform: TrussGoGatewayPlatform = defaultPlatform,
+    private readonly skills?: () => Promise<DefaultSkills>,
   ) {}
 
   async stop(): Promise<void> {
@@ -64,6 +67,8 @@ export class TrussGoGatewayService {
     const token = this.platform.createToken();
     const configuredMcpServers = Object.entries(configuration.mcpServers ?? {});
     const coordinator = this.coordinator();
+    // Phones may list skills and change mode or selection, never import files.
+    const skills = await this.skills?.();
     try {
       this.gateway = await this.platform.startGateway({
         token,
@@ -73,6 +78,11 @@ export class TrussGoGatewayService {
           {
             id: "active-workspace",
             displayName: basename(state.workspaceRoot),
+            ...(skills
+              ? {
+                  skills: gatewaySkillController(skills, state.workspaceRoot),
+                }
+              : {}),
             ...(coordinator
               ? {
                   agents: createGatewayAgentController(coordinator, {

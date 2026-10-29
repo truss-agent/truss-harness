@@ -82,7 +82,10 @@ describe("remote gateway", () => {
     const events = new EventBus<RuntimeEvent>();
     const messages = new Map<string, []>();
     let sessionNumber = 0;
-    const runtimeModes: Array<{ readonly mode: string; readonly approvalMode?: string }> = [];
+    const runtimeModes: Array<{
+      readonly mode: string;
+      readonly approvalMode?: string;
+    }> = [];
     const runtime = {
       createSession: async (history: [] = []) => {
         const id = `session-${++sessionNumber}`;
@@ -95,64 +98,137 @@ describe("remote gateway", () => {
       },
       run: async (sessionId: string) => {
         await events.emit({ type: "run_started", sessionId });
-        await events.emit({ type: "run_completed", sessionId, modifiedFiles: [] });
-      }
+        await events.emit({
+          type: "run_completed",
+          sessionId,
+          modifiedFiles: [],
+        });
+      },
     } as unknown as AgentRuntime;
     const token = "a-secure-test-token-with-enough-characters";
     gateway = await startRemoteGateway({
       token,
       port: 0,
-      workspaces: [{
-        id: "workspace",
-        displayName: "Test workspace",
-        createRuntime: async (mode, approvalMode) => {
-          runtimeModes.push({ mode, approvalMode });
-          return { runtime: runtime as unknown as AgentRuntime, events };
-        }
-      }]
+      workspaces: [
+        {
+          id: "workspace",
+          displayName: "Test workspace",
+          createRuntime: async (mode, approvalMode) => {
+            runtimeModes.push({ mode, approvalMode });
+            return { runtime: runtime as unknown as AgentRuntime, events };
+          },
+        },
+      ],
     });
 
-    expect((await fetch(`${gateway.url}/v1/commands`, { method: "POST" })).status).toBe(401);
+    expect(
+      (await fetch(`${gateway.url}/v1/commands`, { method: "POST" })).status,
+    ).toBe(401);
     const created = await fetch(`${gateway.url}/v1/commands`, {
       method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ version: 1, requestId: "create-1", type: "create_session", workspaceId: "workspace", mode: "chat" })
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        version: 1,
+        requestId: "create-1",
+        type: "create_session",
+        workspaceId: "workspace",
+        mode: "chat",
+      }),
     });
-    expect(await created.json()).toEqual({ requestId: "create-1", type: "session_created", sessionId: "session-1" });
+    expect(await created.json()).toEqual({
+      requestId: "create-1",
+      type: "session_created",
+      sessionId: "session-1",
+    });
     const wrongVersion = await fetch(`${gateway.url}/v1/commands`, {
       method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ version: 2, requestId: "wrong-version", type: "send_message", sessionId: "session-1", prompt: "Hello" }),
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        version: 2,
+        requestId: "wrong-version",
+        type: "send_message",
+        sessionId: "session-1",
+        prompt: "Hello",
+      }),
     });
-    expect(await wrongVersion.json()).toMatchObject({ requestId: "wrong-version", type: "rejected", code: "invalid_command" });
+    expect(await wrongVersion.json()).toMatchObject({
+      requestId: "wrong-version",
+      type: "rejected",
+      code: "invalid_command",
+    });
 
-    const socket = new WebSocket(`${gateway.url.replace(/^http/, "ws")}/v1/events`);
+    const socket = new WebSocket(
+      `${gateway.url.replace(/^http/, "ws")}/v1/events`,
+    );
     await new Promise<void>((resolve, reject) => {
       socket.once("error", reject);
-      socket.once("open", () => socket.send(JSON.stringify({ type: "authenticate", token })));
+      socket.once("open", () =>
+        socket.send(JSON.stringify({ type: "authenticate", token })),
+      );
       socket.on("message", (payload) => {
         const event = JSON.parse(payload.toString()) as { type: string };
         if (event.type === "connected") resolve();
       });
     });
-    const completed = new Promise<void>((resolve) => socket.on("message", (payload) => {
-      if ((JSON.parse(payload.toString()) as { type: string }).type === "run_completed") resolve();
-    }));
+    const completed = new Promise<void>((resolve) =>
+      socket.on("message", (payload) => {
+        if (
+          (JSON.parse(payload.toString()) as { type: string }).type ===
+          "run_completed"
+        )
+          resolve();
+      }),
+    );
 
     const sent = await fetch(`${gateway.url}/v1/commands`, {
       method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ version: 1, requestId: "message-1", type: "send_message", sessionId: "session-1", prompt: "Hello" })
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        version: 1,
+        requestId: "message-1",
+        type: "send_message",
+        sessionId: "session-1",
+        prompt: "Hello",
+      }),
     });
-    expect(await sent.json()).toEqual({ requestId: "message-1", type: "accepted" });
+    expect(await sent.json()).toEqual({
+      requestId: "message-1",
+      type: "accepted",
+    });
     await completed;
     const switched = await fetch(`${gateway.url}/v1/commands`, {
       method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ version: 1, requestId: "switch-1", type: "change_session_mode", sessionId: "session-1", mode: "edit", toolApprovalMode: "auto-read" })
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        version: 1,
+        requestId: "switch-1",
+        type: "change_session_mode",
+        sessionId: "session-1",
+        mode: "edit",
+        toolApprovalMode: "auto-read",
+      }),
     });
-    expect(await switched.json()).toEqual({ requestId: "switch-1", type: "session_created", sessionId: "session-2" });
-    expect(runtimeModes).toEqual([{ mode: "chat", approvalMode: undefined }, { mode: "edit", approvalMode: "auto-read" }]);
+    expect(await switched.json()).toEqual({
+      requestId: "switch-1",
+      type: "session_created",
+      sessionId: "session-2",
+    });
+    expect(runtimeModes).toEqual([
+      { mode: "chat", approvalMode: undefined },
+      { mode: "edit", approvalMode: "auto-read" },
+    ]);
     socket.close();
   });
 
@@ -169,45 +245,67 @@ describe("remote gateway", () => {
       access: { canStart: true, canStop: true, canResolveApproval: true },
       events: agentEvents,
       async listProfiles() {
-        return [{ id: "agent-1", displayName: "Research", providerId: "ollama", modelId: "qwen", mode: "plan", approvalPolicy: "ask", internetAccess: false }];
+        return [
+          {
+            id: "agent-1",
+            displayName: "Research",
+            providerId: "ollama",
+            modelId: "qwen",
+            mode: "plan",
+            approvalPolicy: "ask",
+            internetAccess: false,
+          },
+        ];
       },
-      listRuns() { return [run]; },
+      listRuns() {
+        return [run];
+      },
       async start() {
         await agentEvents.emit({ type: "run_updated", run });
         return run;
       },
-      async stop() { return { ...run, state: "cancelled" as const }; },
-      async resolveApproval() { return true; },
+      async stop() {
+        return { ...run, state: "cancelled" as const };
+      },
+      async resolveApproval() {
+        return true;
+      },
     };
     const token = "a-secure-test-token-with-enough-characters";
     gateway = await startRemoteGateway({
       token,
       port: 0,
-      workspaces: [{
-        id: "workspace",
-        displayName: "Test workspace",
-        agents,
-        mcp: {
-          list: () => [
-            {
-              name: "filesystem",
-              state: "connected",
-              toolCount: 1,
-              tools: [
-                {
-                  name: "read_file",
-                  description: "Read a workspace file.",
-                  readOnly: true,
-                },
-              ],
-            },
-          ],
+      workspaces: [
+        {
+          id: "workspace",
+          displayName: "Test workspace",
+          agents,
+          mcp: {
+            list: () => [
+              {
+                name: "filesystem",
+                state: "connected",
+                toolCount: 1,
+                tools: [
+                  {
+                    name: "read_file",
+                    description: "Read a workspace file.",
+                    readOnly: true,
+                  },
+                ],
+              },
+            ],
+          },
+          createRuntime: async () => {
+            throw new Error("not used");
+          },
         },
-        createRuntime: async () => { throw new Error("not used"); },
-      }],
+      ],
     });
 
-    const listed = await fetch(`${gateway.url}/v1/workspaces`, { headers: { authorization: `Bearer ${token}` } });
+    const listed = await fetch(`${gateway.url}/v1/workspaces`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
     expect(await listed.json()).toMatchObject({
       workspaces: [
         {
@@ -230,12 +328,25 @@ describe("remote gateway", () => {
       ],
     });
 
-    const socket = new WebSocket(`${gateway.url.replace(/^http/, "ws")}/v1/events`);
+    const socket = new WebSocket(
+      `${gateway.url.replace(/^http/, "ws")}/v1/events`,
+    );
     const connected = new Promise<void>((resolve, reject) => {
       socket.once("error", reject);
-      socket.once("open", () => socket.send(JSON.stringify({ type: "authenticate", token, protocolVersions: [3, 2, 1] })));
+      socket.once("open", () =>
+        socket.send(
+          JSON.stringify({
+            type: "authenticate",
+            token,
+            protocolVersions: [3, 2, 1],
+          }),
+        ),
+      );
       socket.on("message", (payload) => {
-        const event = JSON.parse(payload.toString()) as { type: string; protocolVersion?: number };
+        const event = JSON.parse(payload.toString()) as {
+          type: string;
+          protocolVersion?: number;
+        };
         if (event.type === "connected") {
           expect(event.protocolVersion).toBe(3);
           resolve();
@@ -246,20 +357,53 @@ describe("remote gateway", () => {
 
     const available = await fetch(`${gateway.url}/v1/commands`, {
       method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ version: 2, requestId: "agents-1", type: "list_agents", workspaceId: "workspace" }),
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        version: 2,
+        requestId: "agents-1",
+        type: "list_agents",
+        workspaceId: "workspace",
+      }),
     });
-    expect(await available.json()).toMatchObject({ requestId: "agents-1", type: "agents_listed", profiles: [{ id: "agent-1", providerId: "ollama" }], runs: [{ id: "run-1" }] });
+    expect(await available.json()).toMatchObject({
+      requestId: "agents-1",
+      type: "agents_listed",
+      profiles: [{ id: "agent-1", providerId: "ollama" }],
+      runs: [{ id: "run-1" }],
+    });
 
-    const updated = new Promise<void>((resolve) => socket.on("message", (payload) => {
-      if ((JSON.parse(payload.toString()) as { type: string }).type === "agent_run_updated") resolve();
-    }));
+    const updated = new Promise<void>((resolve) =>
+      socket.on("message", (payload) => {
+        if (
+          (JSON.parse(payload.toString()) as { type: string }).type ===
+          "agent_run_updated"
+        )
+          resolve();
+      }),
+    );
     const started = await fetch(`${gateway.url}/v1/commands`, {
       method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ version: 2, requestId: "start-1", type: "start_agent", workspaceId: "workspace", agentId: "agent-1", prompt: "Review files" }),
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        version: 2,
+        requestId: "start-1",
+        type: "start_agent",
+        workspaceId: "workspace",
+        agentId: "agent-1",
+        prompt: "Review files",
+      }),
     });
-    expect(await started.json()).toMatchObject({ requestId: "start-1", type: "agent_run", run: { id: "run-1" } });
+    expect(await started.json()).toMatchObject({
+      requestId: "start-1",
+      type: "agent_run",
+      run: { id: "run-1" },
+    });
     await updated;
     socket.close();
   });
@@ -269,25 +413,66 @@ describe("remote gateway", () => {
       access: { canStart: false, canStop: true, canResolveApproval: true },
       events: new EventBus<AgentCoordinatorEvent>(),
       async listProfiles() {
-        return [{ id: "agent-1", displayName: "Review", providerId: "ollama", modelId: "qwen", mode: "plan", approvalPolicy: "ask", internetAccess: false }];
+        return [
+          {
+            id: "agent-1",
+            displayName: "Review",
+            providerId: "ollama",
+            modelId: "qwen",
+            mode: "plan",
+            approvalPolicy: "ask",
+            internetAccess: false,
+          },
+        ];
       },
-      listRuns() { return []; },
-      async start() { throw new Error("must not start"); },
-      async stop() { throw new Error("not used"); },
-      async resolveApproval() { return false; },
+      listRuns() {
+        return [];
+      },
+      async start() {
+        throw new Error("must not start");
+      },
+      async stop() {
+        throw new Error("not used");
+      },
+      async resolveApproval() {
+        return false;
+      },
     };
     const token = "a-secure-test-token-with-enough-characters";
     gateway = await startRemoteGateway({
       token,
       port: 0,
-      workspaces: [{ id: "workspace", displayName: "Test workspace", agents, createRuntime: async () => { throw new Error("not used"); } }],
+      workspaces: [
+        {
+          id: "workspace",
+          displayName: "Test workspace",
+          agents,
+          createRuntime: async () => {
+            throw new Error("not used");
+          },
+        },
+      ],
     });
     const response = await fetch(`${gateway.url}/v1/commands`, {
       method: "POST",
-      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ version: 2, requestId: "start-denied", type: "start_agent", workspaceId: "workspace", agentId: "agent-1", prompt: "Review" }),
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        version: 2,
+        requestId: "start-denied",
+        type: "start_agent",
+        workspaceId: "workspace",
+        agentId: "agent-1",
+        prompt: "Review",
+      }),
     });
-    expect(await response.json()).toMatchObject({ requestId: "start-denied", type: "rejected", code: "not_authorized" });
+    expect(await response.json()).toMatchObject({
+      requestId: "start-denied",
+      type: "rejected",
+      code: "not_authorized",
+    });
   });
 
   it("runs and stops an authorized coordinator profile through the v2 gateway", async () => {
@@ -326,16 +511,25 @@ describe("remote gateway", () => {
       ],
     });
 
-    const socket = new WebSocket(`${gateway.url.replace(/^http/, "ws")}/v1/events`);
+    const socket = new WebSocket(
+      `${gateway.url.replace(/^http/, "ws")}/v1/events`,
+    );
     await new Promise<void>((resolve, reject) => {
       socket.once("error", reject);
       socket.once("open", () =>
         socket.send(
-          JSON.stringify({ type: "authenticate", token, protocolVersions: [2] }),
+          JSON.stringify({
+            type: "authenticate",
+            token,
+            protocolVersions: [2],
+          }),
         ),
       );
       socket.on("message", (payload) => {
-        if ((JSON.parse(payload.toString()) as { type?: string }).type === "connected")
+        if (
+          (JSON.parse(payload.toString()) as { type?: string }).type ===
+          "connected"
+        )
           resolve();
       });
     });
@@ -374,7 +568,10 @@ describe("remote gateway", () => {
           readonly type?: string;
           readonly run?: { readonly id?: string; readonly state?: string };
         };
-        if (event.type === "agent_run_updated" && event.run?.state === "running")
+        if (
+          event.type === "agent_run_updated" &&
+          event.run?.state === "running"
+        )
           resolve(event.run.id ?? "");
       });
     });
@@ -395,6 +592,20 @@ describe("remote gateway", () => {
     const runId = await running;
     expect(runId).toBeTruthy();
 
+    const cancelled = new Promise<void>((resolve) => {
+      socket.on("message", (payload) => {
+        const event = JSON.parse(payload.toString()) as {
+          type?: string;
+          run?: { id?: string; state?: string };
+        };
+        if (
+          event.type === "agent_run_updated" &&
+          event.run?.id === runId &&
+          event.run.state === "cancelled"
+        )
+          resolve();
+      });
+    });
     const stopped = await agentCommand(gateway.url, token, {
       version: 2,
       requestId: "stop-visible",
@@ -405,8 +616,9 @@ describe("remote gateway", () => {
     expect(stopped).toMatchObject({
       requestId: "stop-visible",
       type: "agent_run",
-      run: { id: runId, state: "cancelled" },
+      run: { id: runId, state: expect.stringMatching(/^(running|cancelled)$/) },
     });
+    await cancelled;
     expect(factory.disposed).toBe(1);
     expect(coordinator.getRun(runId)?.state).toBe("cancelled");
     socket.close();

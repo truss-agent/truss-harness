@@ -69,7 +69,7 @@ export default function BlogIndexPage() {
                 <Link href={`/blog/${article.slug}`}>{article.title}</Link>
               </h2>
               <p>{article.excerpt}</p>
-              <div className="blog-card-tags" aria-label="Topics">
+              <div className="blog-card-tags">
                 {article.keywords.slice(0, 3).map((keyword) => (
                   <span key={keyword}>{keyword}</span>
                 ))}
@@ -84,6 +84,7 @@ export default function BlogIndexPage() {
       <SiteFooter />
       <script
         type="application/ld+json"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: JSON-LD serializes data and escapes HTML delimiters below.
         dangerouslySetInnerHTML={{
           __html: JSON.stringify(blogStructuredData).replace(/</g, "\\u003c"),
         }}

@@ -12,7 +12,9 @@ const tsconfigPath = join(docsRoot, "tsconfig.json");
 const nextEnvPath = join(docsRoot, "next-env.d.ts");
 
 if (relative(docsRoot, outputDirectory).startsWith("..")) {
-  throw new Error(`Refusing to use an output directory outside the docs workspace: ${outputDirectory}`);
+  throw new Error(
+    `Refusing to use an output directory outside the docs workspace: ${outputDirectory}`,
+  );
 }
 
 const [tsconfig, nextEnv] = await Promise.all([
@@ -38,11 +40,29 @@ try {
 
   if (result.error) throw result.error;
   status = result.status ?? 1;
+  if (status === 0) {
+    const search = spawnSync(
+      process.execPath,
+      [
+        "--experimental-strip-types",
+        join(repositoryRoot, "scripts/verify-docs-search.mts"),
+        join(outputDirectory, "server/app"),
+        join(outputDirectory, "pagefind"),
+      ],
+      { cwd: repositoryRoot, stdio: "inherit" },
+    );
+    if (search.error) throw search.error;
+    status = search.status ?? 1;
+  }
 } finally {
   await Promise.all([
     writeFile(tsconfigPath, tsconfig),
     writeFile(nextEnvPath, nextEnv),
     rm(outputDirectory, { force: true, recursive: true }),
+    rm(join(docsRoot, ".next-compat", outputDirectoryName), {
+      force: true,
+      recursive: true,
+    }),
   ]);
 }
 

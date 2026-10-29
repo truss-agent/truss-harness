@@ -31,17 +31,17 @@ export default function HomePage() {
                   className="site-button site-button-primary"
                   href="/download"
                 >
-                Choose your client
+                  Choose your client
                 </Link>
                 <Link
                   className="site-button site-button-secondary"
                   href="/docs/getting-started"
                 >
-                Read the docs
+                  Read the docs
                 </Link>
               </div>
             </div>
-            <div className="site-terminal" aria-label="Truss CLI preview">
+            <div className="site-terminal">
               <div className="site-terminal-bar">
                 <span>truss-harness CLI</span>
                 <span>local workspace</span>
@@ -233,8 +233,8 @@ export default function HomePage() {
                   <span>06</span>
                   <h3>Built to be replaced</h3>
                   <p>
-                  Providers, tools, context sources, memory, and clients are
-                  separate interfaces, so new capabilities do not rewrite the
+                    Providers, tools, context sources, memory, and clients are
+                    separate interfaces, so new capabilities do not rewrite the
                     agent runtime.
                   </p>
                 </article>

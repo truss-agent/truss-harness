@@ -8,6 +8,9 @@ import type {
   UpdateProviderAccountInput,
   UpdateAgentProfileInput,
   MasterPromptConfiguration,
+  SkillDiagnostic,
+  SkillMetadata,
+  SkillSelection,
 } from "@truss-harness/runtime";
 
 export type DesktopProvider = ModelProviderKind;
@@ -146,6 +149,7 @@ export interface DesktopWorkspaceUiState {
 
 export interface DesktopGitFile {
   readonly path: string;
+  readonly originalPath?: string;
   readonly indexStatus: string;
   readonly workTreeStatus: string;
 }
@@ -274,10 +278,27 @@ export interface DesktopAgentsSnapshot {
   readonly runs: readonly AgentRunSummary[];
 }
 
+/** Desktop saves skill choices for every workspace or only the current one. */
+export type DesktopSkillScope = "user" | "workspace";
+
+export interface DesktopSkillState {
+  readonly skills: readonly SkillMetadata[];
+  readonly diagnostics: readonly SkillDiagnostic[];
+  /** Effective selection that the next run in this workspace will use. */
+  readonly selection: SkillSelection;
+}
+
 export interface DesktopBridge {
   appVersion(): Promise<string>;
   initialState(): Promise<DesktopState>;
   chooseWorkspace(): Promise<DesktopState | undefined>;
+  listSkills(): Promise<DesktopSkillState>;
+  updateSkillSettings(
+    scope: DesktopSkillScope,
+    selection: Partial<SkillSelection> | null,
+  ): Promise<DesktopSkillState>;
+  importSkill(): Promise<DesktopSkillState | undefined>;
+  removeSkill(id: string): Promise<DesktopSkillState>;
   saveConversations(
     conversations: readonly DesktopConversation[],
     activeConversationId?: string,

@@ -1,13 +1,31 @@
 import { describe, expect, it } from "vitest";
-import { ModelRequestError } from "@truss-harness/runtime";
-import { OllamaProvider, OpenAICompatibleProvider, cloudProviderDefinitions, createCloudModelProvider, detectActiveLocalModel, detectLocalContextWindow, detectLocalEndpoints, generateCloudText, generateLocalText, listLocalModels, normalizeLocalBaseUrl } from "./index.js";
+import type { ModelRequestError } from "@truss-harness/runtime";
+import {
+  OllamaProvider,
+  OpenAICompatibleProvider,
+  cloudProviderDefinitions,
+  createCloudModelProvider,
+  detectActiveLocalModel,
+  detectLocalContextWindow,
+  detectLocalEndpoints,
+  generateCloudText,
+  generateLocalText,
+  listLocalModels,
+  normalizeLocalBaseUrl,
+} from "./index.js";
 import type { CredentialProvider } from "@truss-harness/runtime";
 
 describe("OpenAICompatibleProvider", () => {
   it("repairs LM Studio's root endpoint without changing custom compatible endpoints", () => {
-    expect(normalizeLocalBaseUrl("openai-compatible", "http://127.0.0.1:1234")).toBe("http://127.0.0.1:1234/v1");
-    expect(normalizeLocalBaseUrl("openai-compatible", "http://127.0.0.1:1234/v1")).toBe("http://127.0.0.1:1234/v1");
-    expect(normalizeLocalBaseUrl("openai-compatible", "http://localhost:8080/api")).toBe("http://localhost:8080/api");
+    expect(
+      normalizeLocalBaseUrl("openai-compatible", "http://127.0.0.1:1234"),
+    ).toBe("http://127.0.0.1:1234/v1");
+    expect(
+      normalizeLocalBaseUrl("openai-compatible", "http://127.0.0.1:1234/v1"),
+    ).toBe("http://127.0.0.1:1234/v1");
+    expect(
+      normalizeLocalBaseUrl("openai-compatible", "http://localhost:8080/api"),
+    ).toBe("http://localhost:8080/api");
   });
 
   it("uses LM Studio's v1 chat route when an older root endpoint is configured", async () => {
@@ -17,11 +35,18 @@ describe("OpenAICompatibleProvider", () => {
       model: "local-model",
       fetch: async (url) => {
         requestUrl = String(url);
-        return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\n');
-      }
+        return new Response(
+          'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\n',
+        );
+      },
     });
 
-    for await (const _event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
+    for await (const _event of provider.stream({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [],
+    })) {
+      /* Consume stream. */
+    }
     expect(requestUrl).toBe("http://127.0.0.1:1234/v1/chat/completions");
   });
 
@@ -31,22 +56,34 @@ describe("OpenAICompatibleProvider", () => {
       'data: {"choices":[{"delta":{"content":"world"}}]}\n\n',
       'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"read_file","arguments":"{\\"path\\":\\""}}]}}]}\n\n',
       'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"README.md\\"}"}}]},"finish_reason":"tool_calls"}]}\n\n',
-      "data: [DONE]\n\n"
+      "data: [DONE]\n\n",
     ].join("");
     const provider = new OpenAICompatibleProvider({
       baseUrl: "http://localhost:11434/v1",
       model: "test",
-      fetch: async () => new Response(body, { headers: { "content-type": "text/event-stream" } })
+      fetch: async () =>
+        new Response(body, {
+          headers: { "content-type": "text/event-stream" },
+        }),
     });
 
     const events = [];
-    for await (const event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) events.push(event);
+    for await (const event of provider.stream({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [],
+    }))
+      events.push(event);
 
     expect(events).toEqual([
       { type: "text_delta", text: "Hello " },
       { type: "text_delta", text: "world" },
-      { type: "tool_call", id: "call_1", name: "read_file", input: { path: "README.md" } },
-      { type: "finish", reason: "tool_calls" }
+      {
+        type: "tool_call",
+        id: "call_1",
+        name: "read_file",
+        input: { path: "README.md" },
+      },
+      { type: "finish", reason: "tool_calls" },
     ]);
   });
 
@@ -54,23 +91,30 @@ describe("OpenAICompatibleProvider", () => {
     const body = [
       `data: ${JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: "call_bad", function: { name: "write_file", arguments: '{"path":"README.md","content":"unterminated' } }] } }] })}\n\n`,
       `data: ${JSON.stringify({ choices: [{ delta: {}, finish_reason: "tool_calls" }] })}\n\n`,
-      "data: [DONE]\n\n"
+      "data: [DONE]\n\n",
     ].join("");
     const provider = new OpenAICompatibleProvider({
       baseUrl: "http://localhost:11434/v1",
       model: "test",
-      fetch: async () => new Response(body, { headers: { "content-type": "text/event-stream" } })
+      fetch: async () =>
+        new Response(body, {
+          headers: { "content-type": "text/event-stream" },
+        }),
     });
 
     const events = [];
-    for await (const event of provider.stream({ messages: [{ role: "user", content: "write it" }], tools: [] })) events.push(event);
+    for await (const event of provider.stream({
+      messages: [{ role: "user", content: "write it" }],
+      tools: [],
+    }))
+      events.push(event);
 
     expect(events[0]).toMatchObject({
       type: "tool_call",
       id: "call_bad",
       name: "write_file",
       input: {},
-      parseError: expect.stringContaining("Unterminated string")
+      parseError: expect.stringContaining("Unterminated string"),
     });
     expect(events.at(-1)).toEqual({ type: "finish", reason: "tool_calls" });
   });
@@ -78,20 +122,27 @@ describe("OpenAICompatibleProvider", () => {
   it("accepts a clean local-server close without an OpenAI [DONE] marker", async () => {
     const body = [
       'data: {"choices":[{"delta":{"content":"feat: add local commit messages"}}]}\n\n',
-      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}'
+      'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
     ].join("");
     const provider = new OpenAICompatibleProvider({
       baseUrl: "http://localhost:1234/v1",
       model: "local-model",
-      fetch: async () => new Response(body, { headers: { "content-type": "text/event-stream" } })
+      fetch: async () =>
+        new Response(body, {
+          headers: { "content-type": "text/event-stream" },
+        }),
     });
 
     const events = [];
-    for await (const event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) events.push(event);
+    for await (const event of provider.stream({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [],
+    }))
+      events.push(event);
 
     expect(events).toEqual([
       { type: "text_delta", text: "feat: add local commit messages" },
-      { type: "finish", reason: "stop" }
+      { type: "finish", reason: "stop" },
     ]);
   });
 
@@ -105,7 +156,9 @@ describe("OpenAICompatibleProvider", () => {
       baseUrl: "https://example.com/v1",
       model: "usage-model",
       fetch: async () =>
-        new Response(body, { headers: { "content-type": "text/event-stream" } }),
+        new Response(body, {
+          headers: { "content-type": "text/event-stream" },
+        }),
     });
 
     const events = [];
@@ -129,27 +182,36 @@ describe("OpenAICompatibleProvider", () => {
       model: "third-party-model",
       fetch: async (_url, init) => {
         request = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return new Response(JSON.stringify({
-          choices: [{
-            message: {
-              content: [
-                { type: "text", text: "Hello " },
-                { type: "output_text", text: { value: "from BYOK" } }
-              ]
-            },
-            finish_reason: "stop"
-          }]
-        }), { headers: { "content-type": "application/json" } });
-      }
+        return new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: [
+                    { type: "text", text: "Hello " },
+                    { type: "output_text", text: { value: "from BYOK" } },
+                  ],
+                },
+                finish_reason: "stop",
+              },
+            ],
+          }),
+          { headers: { "content-type": "application/json" } },
+        );
+      },
     });
 
     const events = [];
-    for await (const event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) events.push(event);
+    for await (const event of provider.stream({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [],
+    }))
+      events.push(event);
 
     expect(request).not.toHaveProperty("tools");
     expect(events).toEqual([
       { type: "text_delta", text: "Hello from BYOK" },
-      { type: "finish", reason: "stop" }
+      { type: "finish", reason: "stop" },
     ]);
   });
 
@@ -157,26 +219,46 @@ describe("OpenAICompatibleProvider", () => {
     const provider = new OpenAICompatibleProvider({
       baseUrl: "https://example.com/v1",
       model: "third-party-model",
-      fetch: async () => new Response(JSON.stringify({
-        choices: [{
-          message: {
-            content: null,
-            tool_calls: [{
-              id: "call_1",
-              function: { name: "read_file", arguments: "{\"path\":\"README.md\"}" }
-            }]
-          },
-          finish_reason: "tool_calls"
-        }]
-      }), { headers: { "content-type": "application/json" } })
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: null,
+                  tool_calls: [
+                    {
+                      id: "call_1",
+                      function: {
+                        name: "read_file",
+                        arguments: '{"path":"README.md"}',
+                      },
+                    },
+                  ],
+                },
+                finish_reason: "tool_calls",
+              },
+            ],
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
     });
 
     const events = [];
-    for await (const event of provider.stream({ messages: [{ role: "user", content: "read it" }], tools: [] })) events.push(event);
+    for await (const event of provider.stream({
+      messages: [{ role: "user", content: "read it" }],
+      tools: [],
+    }))
+      events.push(event);
 
     expect(events).toEqual([
-      { type: "tool_call", id: "call_1", name: "read_file", input: { path: "README.md" } },
-      { type: "finish", reason: "tool_calls" }
+      {
+        type: "tool_call",
+        id: "call_1",
+        name: "read_file",
+        input: { path: "README.md" },
+      },
+      { type: "finish", reason: "tool_calls" },
     ]);
   });
 
@@ -184,21 +266,28 @@ describe("OpenAICompatibleProvider", () => {
     const body = [
       'data: {"choices":[{"delta":{"content":"Hello "}}]}',
       'data: {"choices":[{"delta":{"content":"world"},"finish_reason":"stop"}]}',
-      "data: [DONE]"
+      "data: [DONE]",
     ].join("\n");
     const provider = new OpenAICompatibleProvider({
       baseUrl: "https://example.com/v1",
       model: "third-party-model",
-      fetch: async () => new Response(body, { headers: { "content-type": "text/event-stream" } })
+      fetch: async () =>
+        new Response(body, {
+          headers: { "content-type": "text/event-stream" },
+        }),
     });
 
     const events = [];
-    for await (const event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) events.push(event);
+    for await (const event of provider.stream({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [],
+    }))
+      events.push(event);
 
     expect(events).toEqual([
       { type: "text_delta", text: "Hello " },
       { type: "text_delta", text: "world" },
-      { type: "finish", reason: "stop" }
+      { type: "finish", reason: "stop" },
     ]);
   });
 
@@ -206,16 +295,27 @@ describe("OpenAICompatibleProvider", () => {
     const provider = new OpenAICompatibleProvider({
       baseUrl: "https://example.com/v1",
       model: "third-party-model",
-      fetch: async () => new Response(JSON.stringify({
-        choices: [{ message: { content: null }, finish_reason: "stop" }]
-      }), { headers: { "content-type": "application/json" } })
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: null }, finish_reason: "stop" }],
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
     });
 
     const consume = async (): Promise<void> => {
-      for await (const _event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
+      for await (const _event of provider.stream({
+        messages: [{ role: "user", content: "hi" }],
+        tools: [],
+      })) {
+        /* Consume stream. */
+      }
     };
 
-    await expect(consume()).rejects.toThrow("Model response did not include text or tool calls.");
+    await expect(consume()).rejects.toThrow(
+      "Model response did not include text or tool calls.",
+    );
   });
 
   it("forwards image attachments and bounded text files through the provider contract", async () => {
@@ -225,26 +325,51 @@ describe("OpenAICompatibleProvider", () => {
       model: "vision-model",
       fetch: async (_url, init) => {
         request = JSON.parse(String(init?.body)) as Record<string, unknown>;
-        return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
-      }
+        return new Response(
+          'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+        );
+      },
     });
 
     for await (const _event of provider.stream({
-      messages: [{
-        role: "user",
-        content: "Review these.",
-        attachments: [
-          { id: "image-1", kind: "image", name: "screen.png", mediaType: "image/png", data: "data:image/png;base64,AA==", size: 4 },
-          { id: "file-1", kind: "file", name: "notes.md", mediaType: "text/markdown", text: "# Notes", size: 7 }
-        ]
-      }],
-      tools: []
-    })) { /* Consume stream. */ }
+      messages: [
+        {
+          role: "user",
+          content: "Review these.",
+          attachments: [
+            {
+              id: "image-1",
+              kind: "image",
+              name: "screen.png",
+              mediaType: "image/png",
+              data: "data:image/png;base64,AA==",
+              size: 4,
+            },
+            {
+              id: "file-1",
+              kind: "file",
+              name: "notes.md",
+              mediaType: "text/markdown",
+              text: "# Notes",
+              size: 7,
+            },
+          ],
+        },
+      ],
+      tools: [],
+    })) {
+      /* Consume stream. */
+    }
 
-    const messages = request?.messages as readonly { readonly content: readonly Record<string, unknown>[] }[] | undefined;
+    const messages = request?.messages as
+      | readonly { readonly content: readonly Record<string, unknown>[] }[]
+      | undefined;
     expect(messages?.[0]?.content).toEqual([
-      { type: "text", text: "Review these.\n\nAttached file: notes.md (text/markdown, 7 bytes)\n\n# Notes" },
-      { type: "image_url", image_url: { url: "data:image/png;base64,AA==" } }
+      {
+        type: "text",
+        text: "Review these.\n\nAttached file: notes.md (text/markdown, 7 bytes)\n\n# Notes",
+      },
+      { type: "image_url", image_url: { url: "data:image/png;base64,AA==" } },
     ]);
   });
 
@@ -254,22 +379,36 @@ describe("OpenAICompatibleProvider", () => {
     const authorizations: string[] = [];
     const credential: CredentialProvider = {
       id: "refreshable",
-      async resolve() { return { kind: "bearer", token }; },
-      async refresh() { refreshes++; token = "fresh"; }
+      async resolve() {
+        return { kind: "bearer", token };
+      },
+      async refresh() {
+        refreshes++;
+        token = "fresh";
+      },
     };
     const provider = new OpenAICompatibleProvider({
       baseUrl: "https://example.com/v1",
       model: "test",
       credential,
       fetch: async (_url, init) => {
-        authorizations.push(new Headers(init?.headers).get("authorization") ?? "");
+        authorizations.push(
+          new Headers(init?.headers).get("authorization") ?? "",
+        );
         return authorizations.length === 1
           ? new Response("sensitive upstream error", { status: 401 })
-          : new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
-      }
+          : new Response(
+              'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+            );
+      },
     });
 
-    for await (const _event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
+    for await (const _event of provider.stream({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [],
+    })) {
+      /* Consume stream. */
+    }
     expect(authorizations).toEqual(["Bearer expired", "Bearer fresh"]);
     expect(refreshes).toBe(1);
   });
@@ -278,11 +417,17 @@ describe("OpenAICompatibleProvider", () => {
     const provider = new OpenAICompatibleProvider({
       baseUrl: "https://example.com/v1",
       model: "test",
-      fetch: async () => new Response("secret echoed by provider", { status: 400 })
+      fetch: async () =>
+        new Response("secret echoed by provider", { status: 400 }),
     });
 
     const consume = async (): Promise<void> => {
-      for await (const _event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
+      for await (const _event of provider.stream({
+        messages: [{ role: "user", content: "hi" }],
+        tools: [],
+      })) {
+        /* Consume stream. */
+      }
     };
     await expect(consume()).rejects.toThrow(
       "Model request was rejected (400).",
@@ -324,21 +469,51 @@ describe("OpenAICompatibleProvider", () => {
   });
 
   it("offers typed BYOK definitions for supported cloud providers", async () => {
-    expect(cloudProviderDefinitions.map(({ id }) => id)).toEqual(["openai", "anthropic", "openrouter", "groq", "together", "gemini", "xai", "mistral", "deepseek", "perplexity", "fireworks", "nvidia-nim", "xiaomi-mimo", "sakana-fugu", "ollama-cloud"]);
+    expect(cloudProviderDefinitions.map(({ id }) => id)).toEqual([
+      "openai",
+      "anthropic",
+      "openrouter",
+      "groq",
+      "together",
+      "gemini",
+      "xai",
+      "mistral",
+      "deepseek",
+      "perplexity",
+      "fireworks",
+      "nvidia-nim",
+      "xiaomi-mimo",
+      "sakana-fugu",
+      "ollama-cloud",
+    ]);
     let url = "";
     const provider = createCloudModelProvider({
       provider: "gemini",
       model: "gemini-test",
-      credential: { id: "gemini-key", async resolve() { return { kind: "bearer", token: "secret" }; } },
+      credential: {
+        id: "gemini-key",
+        async resolve() {
+          return { kind: "bearer", token: "secret" };
+        },
+      },
       fetch: async (input) => {
         url = String(input);
-        return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
-      }
+        return new Response(
+          'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+        );
+      },
     });
 
-    for await (const _event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
+    for await (const _event of provider.stream({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [],
+    })) {
+      /* Consume stream. */
+    }
     expect(provider.id).toBe("gemini");
-    expect(url).toBe("https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
+    expect(url).toBe(
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    );
   });
 
   it("uses the native Ollama API and bearer credentials for Ollama Cloud", async () => {
@@ -347,15 +522,25 @@ describe("OpenAICompatibleProvider", () => {
     const provider = createCloudModelProvider({
       provider: "ollama-cloud",
       model: "qwen3-coder:480b",
-      credential: { id: "ollama-key", async resolve() { return { kind: "bearer", token: "secret" }; } },
+      credential: {
+        id: "ollama-key",
+        async resolve() {
+          return { kind: "bearer", token: "secret" };
+        },
+      },
       fetch: async (input, init) => {
         url = String(input);
         authorization = new Headers(init?.headers).get("authorization") ?? "";
         return new Response('{"message":{"content":"ok"},"done":true}\n');
-      }
+      },
     });
 
-    for await (const _event of provider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
+    for await (const _event of provider.stream({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [],
+    })) {
+      /* Consume stream. */
+    }
     expect(provider.id).toBe("ollama-cloud");
     expect(url).toBe("https://ollama.com/api/chat");
     expect(authorization).toBe("Bearer secret");
@@ -363,15 +548,27 @@ describe("OpenAICompatibleProvider", () => {
     const sakanaProvider = createCloudModelProvider({
       provider: "sakana-fugu",
       model: "fugu-ultra",
-      credential: { id: "sakana-key", async resolve() { return { kind: "bearer", token: "sakana-secret" }; } },
+      credential: {
+        id: "sakana-key",
+        async resolve() {
+          return { kind: "bearer", token: "sakana-secret" };
+        },
+      },
       fetch: async (input, init) => {
         url = String(input);
         authorization = new Headers(init?.headers).get("authorization") ?? "";
-        return new Response('data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n');
+        return new Response(
+          'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
+        );
       },
     });
 
-    for await (const _event of sakanaProvider.stream({ messages: [{ role: "user", content: "hi" }], tools: [] })) { /* Consume stream. */ }
+    for await (const _event of sakanaProvider.stream({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [],
+    })) {
+      /* Consume stream. */
+    }
     expect(sakanaProvider.id).toBe("sakana-fugu");
     expect(url).toBe("https://api.sakana.ai/v1/chat/completions");
     expect(authorization).toBe("Bearer sakana-secret");
@@ -383,7 +580,12 @@ describe("OpenAICompatibleProvider", () => {
       {
         provider: "openai",
         model: "gpt-test",
-        credential: { id: "openai-key", async resolve() { return { kind: "bearer", token: "secret" }; } }
+        credential: {
+          id: "openai-key",
+          async resolve() {
+            return { kind: "bearer", token: "secret" };
+          },
+        },
       },
       "Complete the code.",
       {
@@ -391,10 +593,10 @@ describe("OpenAICompatibleProvider", () => {
           authorization = new Headers(init?.headers).get("authorization") ?? "";
           return new Response(
             'data: {"choices":[{"delta":{"content":"const value = 1;"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n',
-            { headers: { "content-type": "text/event-stream" } }
+            { headers: { "content-type": "text/event-stream" } },
           );
-        }
-      }
+        },
+      },
     );
 
     expect(text).toBe("const value = 1;");
@@ -404,26 +606,53 @@ describe("OpenAICompatibleProvider", () => {
 
 describe("local model discovery", () => {
   it("discovers Ollama and OpenAI-compatible model lists", async () => {
-    const ollama = { id: "ollama", label: "Ollama", kind: "ollama" as const, baseUrl: "http://ollama" };
-    const lmStudio = { id: "lm-studio", label: "LM Studio", kind: "openai-compatible" as const, baseUrl: "http://lm-studio/v1" };
-    const fetch = async (url: string | URL | Request) => new Response(
-      String(url).includes("ollama") ? JSON.stringify({ models: [{ name: "qwen3:8b" }] }) : JSON.stringify({ data: [{ id: "local-model" }] })
-    );
+    const ollama = {
+      id: "ollama",
+      label: "Ollama",
+      kind: "ollama" as const,
+      baseUrl: "http://ollama",
+    };
+    const lmStudio = {
+      id: "lm-studio",
+      label: "LM Studio",
+      kind: "openai-compatible" as const,
+      baseUrl: "http://lm-studio/v1",
+    };
+    const fetch = async (url: string | URL | Request) =>
+      new Response(
+        String(url).includes("ollama")
+          ? JSON.stringify({ models: [{ name: "qwen3:8b" }] })
+          : JSON.stringify({ data: [{ id: "local-model" }] }),
+      );
 
-    await expect(listLocalModels(ollama, { fetch })).resolves.toEqual([{ id: "qwen3:8b", name: "qwen3:8b" }]);
-    await expect(detectLocalEndpoints({ fetch, endpoints: [ollama, lmStudio] })).resolves.toEqual([ollama, lmStudio]);
+    await expect(listLocalModels(ollama, { fetch })).resolves.toEqual([
+      { id: "qwen3:8b", name: "qwen3:8b" },
+    ]);
+    await expect(
+      detectLocalEndpoints({ fetch, endpoints: [ollama, lmStudio] }),
+    ).resolves.toEqual([ollama, lmStudio]);
   });
 
   it("prefers the Ollama model currently reported as running", async () => {
-    const ollama = { id: "ollama", label: "Ollama", kind: "ollama" as const, baseUrl: "http://ollama" };
-    const fetch = async (url: string | URL | Request) => new Response(
-      String(url).endsWith("/api/ps") ? JSON.stringify({ models: [{ name: "qwen3:8b" }] }) : JSON.stringify({ models: [{ name: "other:latest" }] })
-    );
+    const ollama = {
+      id: "ollama",
+      label: "Ollama",
+      kind: "ollama" as const,
+      baseUrl: "http://ollama",
+    };
+    const fetch = async (url: string | URL | Request) =>
+      new Response(
+        String(url).endsWith("/api/ps")
+          ? JSON.stringify({ models: [{ name: "qwen3:8b" }] })
+          : JSON.stringify({ models: [{ name: "other:latest" }] }),
+      );
 
-    await expect(detectActiveLocalModel({ fetch, endpoints: [ollama] })).resolves.toEqual({
+    await expect(
+      detectActiveLocalModel({ fetch, endpoints: [ollama] }),
+    ).resolves.toEqual({
       endpoint: ollama,
       model: { id: "qwen3:8b", name: "qwen3:8b" },
-      active: true
+      active: true,
     });
   });
 });
@@ -431,9 +660,22 @@ describe("local model discovery", () => {
 describe("local text generation", () => {
   it("reads an OpenAI-compatible non-streaming response", async () => {
     const text = await generateLocalText(
-      { kind: "openai-compatible", baseUrl: "http://localhost:1234/v1", model: "local-model" },
+      {
+        kind: "openai-compatible",
+        baseUrl: "http://localhost:1234/v1",
+        model: "local-model",
+      },
       "Write a commit message.",
-      { fetch: async () => new Response(JSON.stringify({ choices: [{ message: { content: "feat: add commit message generation" } }] })) }
+      {
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              choices: [
+                { message: { content: "feat: add commit message generation" } },
+              ],
+            }),
+          ),
+      },
     );
 
     expect(text).toBe("feat: add commit message generation");
@@ -441,9 +683,20 @@ describe("local text generation", () => {
 
   it("reads an Ollama non-streaming response", async () => {
     const text = await generateLocalText(
-      { kind: "ollama", baseUrl: "http://localhost:11434", model: "local-model" },
+      {
+        kind: "ollama",
+        baseUrl: "http://localhost:11434",
+        model: "local-model",
+      },
       "Write a commit message.",
-      { fetch: async () => new Response(JSON.stringify({ message: { content: "fix: support local responses" } })) }
+      {
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              message: { content: "fix: support local responses" },
+            }),
+          ),
+      },
     );
 
     expect(text).toBe("fix: support local responses");
@@ -452,21 +705,61 @@ describe("local text generation", () => {
 
 describe("local context discovery", () => {
   it("reads a loaded LM Studio instance context length", async () => {
-    const endpoint = { id: "lm-studio", label: "LM Studio", kind: "openai-compatible" as const, baseUrl: "http://localhost:1234/v1" };
-    const contextWindow = await detectLocalContextWindow(endpoint, "local-model", {
-      fetch: async () => new Response(JSON.stringify({ data: [{ id: "local-model", loaded_instances: [{ id: "local-model", config: { context_length: 32768 } }] }] }))
-    });
+    const endpoint = {
+      id: "lm-studio",
+      label: "LM Studio",
+      kind: "openai-compatible" as const,
+      baseUrl: "http://localhost:1234/v1",
+    };
+    const contextWindow = await detectLocalContextWindow(
+      endpoint,
+      "local-model",
+      {
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              data: [
+                {
+                  id: "local-model",
+                  loaded_instances: [
+                    { id: "local-model", config: { context_length: 32768 } },
+                  ],
+                },
+              ],
+            }),
+          ),
+      },
+    );
 
     expect(contextWindow).toBe(32768);
   });
 
   it("reads the current LM Studio models response shape", async () => {
-    const endpoint = { id: "lm-studio", label: "LM Studio", kind: "openai-compatible" as const, baseUrl: "http://localhost:1234/v1" };
-    const contextWindow = await detectLocalContextWindow(endpoint, "loaded-model", {
-      fetch: async () => new Response(JSON.stringify({
-        models: [{ key: "stored-model", loaded_instances: [{ id: "loaded-model", config: { context_length: 32768 } }] }]
-      }))
-    });
+    const endpoint = {
+      id: "lm-studio",
+      label: "LM Studio",
+      kind: "openai-compatible" as const,
+      baseUrl: "http://localhost:1234/v1",
+    };
+    const contextWindow = await detectLocalContextWindow(
+      endpoint,
+      "loaded-model",
+      {
+        fetch: async () =>
+          new Response(
+            JSON.stringify({
+              models: [
+                {
+                  key: "stored-model",
+                  loaded_instances: [
+                    { id: "loaded-model", config: { context_length: 32768 } },
+                  ],
+                },
+              ],
+            }),
+          ),
+      },
+    );
 
     expect(contextWindow).toBe(32768);
   });
@@ -477,20 +770,29 @@ describe("OllamaProvider", () => {
     const body = [
       '{"message":{"role":"assistant","content":"Inspecting files. "},"done":false}\n',
       '{"message":{"role":"assistant","tool_calls":[{"function":{"name":"list_directory","arguments":{"path":"."}}}]},"done":false}\n',
-      '{"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}\n'
+      '{"message":{"role":"assistant","content":""},"done":true,"done_reason":"stop"}\n',
     ].join("");
     const provider = new OllamaProvider({
       baseUrl: "http://localhost:11434",
       model: "qwen3",
-      fetch: async () => new Response(body)
+      fetch: async () => new Response(body),
     });
     const events = [];
-    for await (const event of provider.stream({ messages: [{ role: "user", content: "list files" }], tools: [] })) events.push(event);
+    for await (const event of provider.stream({
+      messages: [{ role: "user", content: "list files" }],
+      tools: [],
+    }))
+      events.push(event);
 
     expect(events).toEqual([
       { type: "text_delta", text: "Inspecting files. " },
-      { type: "tool_call", id: "ollama-1", name: "list_directory", input: { path: "." } },
-      { type: "finish", reason: "stop" }
+      {
+        type: "tool_call",
+        id: "ollama-1",
+        name: "list_directory",
+        input: { path: "." },
+      },
+      { type: "finish", reason: "stop" },
     ]);
   });
 });

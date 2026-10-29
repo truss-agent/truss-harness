@@ -6,13 +6,13 @@ Provider-neutral TypeScript runtime for local-first coding-agent clients. It own
 
 For end-user clients, install `@truss-harness/cli` or `@truss-harness/tui`.
 
-## Runtime host 0.1.14
+## Runtime 0.1.15
 
-The standalone runtime-host bundle includes the native Anthropic Messages API
-adapter from provider 0.1.15. Anthropic sessions support streaming text, tool
-calls and results, attachments, and API-key or OAuth bearer credentials. The
-host reports Runtime 0.1.14 in its protocol handshake; the runtime interfaces
-remain compatible with existing clients.
+Runtime 0.1.15 adds skills: source-qualified skill IDs, discovery of bundled
+Superpowers, personal and workspace skills, a managed skill store, and
+per-run Automatic, Manual, or Off modes. It also tightens cancellation,
+workspace path containment, and approval enforcement. Existing runtime
+interfaces remain compatible.
 
 ## License and contributions
 

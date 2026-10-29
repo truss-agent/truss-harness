@@ -11,7 +11,8 @@ export type Screen =
   | "help"
   | "file-search"
   | "agents"
-  | "mcp";
+  | "mcp"
+  | "skills";
 
 export type SettingsField =
   | "server"

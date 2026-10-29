@@ -3,13 +3,18 @@
   "files": {
     "includes": [
       "**",
-      "!**/node_modules/**",
-      "!**/dist/**",
-      "!**/.next/**",
-      "!**/.next-*/**",
-      "!**/.expo/**",
-      "!**/release/**",
-      "!**/coverage/**"
+      "!**/node_modules",
+      "!**/dist",
+      "!**/.next",
+      "!**/.next-*",
+      "!**/.expo",
+      "!**/release",
+      "!**/coverage",
+      "!**/.test-workspaces",
+      "!**/.superpowers",
+      "!**/.cred",
+      "!packages/runtime/skills",
+      "!**/*.generated.ts"
     ]
   },
   "formatter": {
@@ -19,13 +24,23 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "preset": "recommended"
     }
   },
   "javascript": {
     "formatter": {
       "quoteStyle": "double",
       "trailingCommas": "all"
+    }
+  },
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "html": {
+    "parser": {
+      "interpolation": false
     }
   }
 }

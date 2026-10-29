@@ -10,7 +10,7 @@ credentials, and workspace policy stay in the local truss-cli service.
 Requirements:
 
 - Neovim 0.10 or newer
-- Node.js 20 or newer
+- Node.js 22.15.1 or newer (Node 24 LTS recommended)
 - truss-cli 0.1.14 or newer, installed and configured
 
 After installation, run:
@@ -53,6 +53,10 @@ COMMANDS                                                    *truss-commands*
 `:TrussTestConnection`   Test the selected provider without starting a run.
 `:TrussMcp`              Show credential-safe MCP server status.
 `:TrussProfile`          Select a named CLI configuration profile.
+`:TrussSkills`           Choose the skill mode, the Superpowers pack and
+                        always-active skills for all workspaces or this one.
+`:TrussSkillAdd {dir}`   Import a skill folder that contains SKILL.md.
+`:TrussSkillRemove {id}` Remove one of your imported skills, e.g. user:notes.
 
 Neovim's built-in `:checkhealth truss` command verifies the plugin, CLI,
 workspace, and optional Git integration without starting the service.

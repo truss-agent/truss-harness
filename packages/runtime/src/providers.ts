@@ -27,7 +27,9 @@ export class ModelProviderRegistry {
 
     const provider = this.providers.get(this.defaultProviderId);
     if (!provider) {
-      throw new Error(`Default model provider is not registered: ${this.defaultProviderId}`);
+      throw new Error(
+        `Default model provider is not registered: ${this.defaultProviderId}`,
+      );
     }
 
     return provider;

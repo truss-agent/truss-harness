@@ -88,8 +88,10 @@ export class GitCommitController {
       },
       async (_progress, cancellationToken) => {
         const current = await this.service();
+        if (cancellationToken.isCancellationRequested)
+          throw new Error("Commit message generation cancelled.");
         const run =
-          current.run(`You write accurate, production-quality Git commit messages. Analyze the diff and return only one Conventional Commit message.
+          current.generateText(`You write accurate, production-quality Git commit messages. Analyze the diff and return only one Conventional Commit message.
 
 Requirements:
 - First line format: type(optional scope): imperative summary
@@ -102,11 +104,19 @@ Requirements:
 Diff:
 ${diff}`);
         this.responses.begin(run.requestId);
-        const cancellation = cancellationToken.onCancellationRequested(() =>
-          current.abort(run.requestId),
-        );
+        let aborted = false;
+        const abort = () => {
+          if (!aborted) {
+            aborted = true;
+            current.abort(run.requestId);
+          }
+        };
+        const cancellation = cancellationToken.onCancellationRequested(abort);
+        if (cancellationToken.isCancellationRequested) abort();
         try {
           await run.result;
+          if (cancellationToken.isCancellationRequested)
+            throw new Error("Commit message generation cancelled.");
           const message = normalizeCommitMessage(
             this.responses.value(run.requestId) ?? "",
           );

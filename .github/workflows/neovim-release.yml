@@ -20,8 +20,12 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
+      - name: Verify merged master release source
+        run: |
+          git fetch --no-tags origin master:refs/remotes/origin/master
+          node scripts/verify-release-source.mts
       - run: npm ci
       - name: Validate CLI and plugin release metadata
         run: |

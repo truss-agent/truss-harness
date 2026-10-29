@@ -1,3 +1,4 @@
+import { getReleases } from "./server-releases";
 import { brand } from "@truss-harness/branding";
 import { SiteFooter, SiteHeader } from "../site-chrome";
 import { createPageMetadata } from "../site-metadata";
@@ -9,22 +10,17 @@ export const metadata = createPageMetadata({
   path: "/download",
 });
 
-function getReleaseApiUrl(repositoryUrl: string) {
-  const repository = repositoryUrl
-    .replace(/^https:\/\/github\.com\//, "")
-    .replace(/\/$/, "");
-  return `https://api.github.com/repos/${repository}/releases?per_page=100`;
-}
+export const revalidate = 3600;
 
-export default function DownloadPage() {
-  const apiUrl = getReleaseApiUrl(brand.repositoryUrl);
+export default async function DownloadPage() {
+  const releases = await getReleases();
 
   return (
     <div className="site">
       <SiteHeader />
       <main className="site-page download-page">
         <DownloadClient
-          apiUrl={apiUrl}
+          releases={releases}
           releasesUrl={`${brand.repositoryUrl}/releases`}
         />
       </main>

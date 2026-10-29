@@ -1,18 +1,24 @@
 import { randomUUID } from "node:crypto";
 import type { ContextBlock } from "../context.js";
 import type {
+  AgentTool,
   ChatAttachment,
   ChatMessage,
   ModelTokenUsage,
   RuntimeEvent,
   Session,
   ToolCall,
+  ToolDefinition,
 } from "../contracts.js";
 import type { WorkspaceTaskRecord, WorkspaceToolRecord } from "../memory.js";
 import { parseAgentPlan } from "../plans.js";
 import { withModelRetries } from "../retry.js";
 import { checkpoint } from "../sessions.js";
-import { type AgentRuntimeOptions, defaultAgentMaxTurns } from "./contracts.js";
+import {
+  type AgentRunContribution,
+  type AgentRuntimeOptions,
+  defaultAgentMaxTurns,
+} from "./contracts.js";
 import {
   type AgentRecoveryReason,
   hasEditIntent,
@@ -62,6 +68,7 @@ export class AgentRuntime {
     requestContext: readonly ContextBlock[] = [],
     attachments: readonly ChatAttachment[] = [],
   ): Promise<void> {
+    signal?.throwIfAborted();
     const session = await this.options.sessions.get(sessionId);
     if (!session) throw new Error(`Unknown session: ${sessionId}`);
     const taskId = randomUUID();
@@ -76,13 +83,11 @@ export class AgentRuntime {
     let assistantText = "";
     let recoveryReason: AgentRecoveryReason | undefined;
     let recoveryAttempts = 0;
-    const toolExecutor = new AgentToolExecutor({
-      tools: this.options.tools,
-      workspaceRoot: this.options.workspaceRoot,
-      approval: this.options.approval,
-      emit: (event) => this.emit(event),
-    });
-
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      signal?.throwIfAborted();
+      await this.emit(event);
+      signal?.throwIfAborted();
+    };
     await this.recordMemory({
       id: taskId,
       sessionId,
@@ -99,27 +104,71 @@ export class AgentRuntime {
     });
     session.checkpoint = checkpoint(session);
     await this.options.sessions.save(session);
-    await this.emit({ type: "run_started", sessionId });
+    await emit({ type: "run_started", sessionId });
     const provider = withModelRetries(
       this.options.provider,
       this.options.modelRetryPolicy,
       (retry) =>
-        this.emit({
+        emit({
           type: "progress_delta",
           sessionId,
           text: retryProgress(retry),
         }),
     );
 
+    let contribution: AgentRunContribution = {};
+    const complete = async (): Promise<void> => {
+      await this.options.sessions.save(session);
+      await this.recordMemory({
+        id: taskId,
+        sessionId,
+        objective: prompt,
+        status: "completed",
+        startedAt,
+        completedAt: new Date().toISOString(),
+        assistantSummary: this.summary(assistantText),
+        tools: executedTools,
+        modifiedFiles: [...modifiedFiles],
+      });
+      await emit({
+        type: "run_completed",
+        sessionId,
+        modifiedFiles: [...modifiedFiles],
+      });
+    };
+
     try {
+      contribution =
+        (await this.options.runContext?.begin({
+          runId: taskId,
+          sessionId,
+          prompt,
+          workspaceRoot: this.options.workspaceRoot,
+          signal,
+          progress: (text) => emit({ type: "progress_delta", sessionId, text }),
+        })) ?? {};
+      signal?.throwIfAborted();
+      const runTools = this.runTools(contribution.tools ?? []);
+      const toolExecutor = new AgentToolExecutor({
+        tools: runTools,
+        workspaceRoot: this.options.workspaceRoot,
+        approval: this.options.approval,
+        preapproved: new Set(
+          (contribution.tools ?? []).map((tool) => tool.name),
+        ),
+        emit: (event) => emit(event),
+      });
       for (let turn = 0; turn < this.maxTurns; turn++) {
+        signal?.throwIfAborted();
         const calls: ToolCall[] = [];
         let text = "";
         let usage: ModelTokenUsage | undefined;
+        let finishReason: "stop" | "tool_calls" | "length" | undefined;
         const progressParser = new ProgressStreamParser();
         const systemPrompt = [
           this.options.systemPromptFactory?.(session) ??
             this.options.systemPrompt,
+          contribution.instructions,
           recoveryInstruction(
             recoveryReason,
             pendingWriteRecoveryPaths,
@@ -130,19 +179,25 @@ export class AgentRuntime {
           .filter(Boolean)
           .join("\n\n");
 
+        const history = contribution.history;
+        const messages = await this.options.context.build(
+          history
+            ? { ...session, messages: history(session.messages) }
+            : session,
+          systemPrompt || undefined,
+          requestContext,
+        );
+        signal?.throwIfAborted();
         for await (const event of provider.stream({
-          messages: await this.options.context.build(
-            session,
-            systemPrompt || undefined,
-            requestContext,
-          ),
-          tools: this.options.tools.definitions(),
+          messages,
+          tools: runTools.definitions(),
           signal,
         })) {
+          signal?.throwIfAborted();
           if (event.type === "text_delta") {
             const parsed = progressParser.push(event.text);
             if (parsed.progress) {
-              await this.emit({
+              await emit({
                 type: "progress_delta",
                 sessionId,
                 text: parsed.progress,
@@ -151,7 +206,7 @@ export class AgentRuntime {
             text += parsed.content;
             if (parsed.content && !this.options.deferTextUntilToolDecision) {
               assistantText += parsed.content;
-              await this.emit({
+              await emit({
                 type: "text_delta",
                 sessionId,
                 text: parsed.content,
@@ -161,14 +216,24 @@ export class AgentRuntime {
             calls.push(normalizeToolCall(event));
           } else if (event.type === "finish") {
             usage = event.usage;
+            finishReason = event.reason;
           } else if (event.type === "error") {
             throw event.error;
           }
         }
-        if (usage) await this.emit({ type: "usage", sessionId, usage });
+        signal?.throwIfAborted();
+        if (!finishReason)
+          throw new Error(
+            "Model stream ended before its semantic finish; output is incomplete.",
+          );
+        if (finishReason === "length")
+          throw new Error(
+            "Model output is incomplete: token length limit reached. Resume with a new request.",
+          );
+        if (usage) await emit({ type: "usage", sessionId, usage });
         const finalProgress = progressParser.finish();
         if (finalProgress.progress) {
-          await this.emit({
+          await emit({
             type: "progress_delta",
             sessionId,
             text: finalProgress.progress,
@@ -177,7 +242,7 @@ export class AgentRuntime {
         text += finalProgress.content;
         if (finalProgress.content && !this.options.deferTextUntilToolDecision) {
           assistantText += finalProgress.content;
-          await this.emit({
+          await emit({
             type: "text_delta",
             sessionId,
             text: finalProgress.content,
@@ -219,12 +284,12 @@ export class AgentRuntime {
           }
           if (text && this.options.deferTextUntilToolDecision) {
             assistantText += text;
-            await this.emit({ type: "text_delta", sessionId, text });
+            await emit({ type: "text_delta", sessionId, text });
           }
           if (this.options.savePlanOnCompletion && this.options.plans) {
             const parsed = parseAgentPlan(assistantText, prompt);
             if (parsed) {
-              await this.emit({
+              await emit({
                 type: "plan_updated",
                 sessionId,
                 plan: await this.options.plans.create({
@@ -234,27 +299,12 @@ export class AgentRuntime {
               });
             }
           }
-          await this.options.sessions.save(session);
-          await this.recordMemory({
-            id: taskId,
-            sessionId,
-            objective: prompt,
-            status: "completed",
-            startedAt,
-            completedAt: new Date().toISOString(),
-            assistantSummary: this.summary(assistantText),
-            tools: executedTools,
-            modifiedFiles: [...modifiedFiles],
-          });
-          await this.emit({
-            type: "run_completed",
-            sessionId,
-            modifiedFiles: [...modifiedFiles],
-          });
+          await complete();
           return;
         }
 
         let failedWriteThisTurn = false;
+        let awaitingUser: string | undefined;
         for (const call of calls) {
           const command =
             call.name === "run_terminal" &&
@@ -272,14 +322,29 @@ export class AgentRuntime {
                 ? `Repeated write blocked for ${path}. This file was already changed in this run. Read it again to verify the result before making another focused edit.`
                 : undefined,
           );
+          signal?.throwIfAborted();
           executedTools.push(execution);
+          awaitingUser ??= execution.endTurn;
+          // Unknown/plugin tools may change workspace state too; only known reads retain cached results.
+          if (
+            execution.succeeded &&
+            ![
+              "read_file",
+              "list_directory",
+              "search_files",
+              "grep",
+              "update_plan",
+            ].includes(call.name)
+          ) {
+            completedTerminalCommands.clear();
+          }
           if (command && execution.succeeded) {
             completedTerminalCommands.add(command);
           }
           if (call.name === "update_plan" && this.options.plans) {
             const plan = await this.options.plans.load();
             if (plan) {
-              await this.emit({ type: "plan_updated", sessionId, plan });
+              await emit({ type: "plan_updated", sessionId, plan });
             }
           }
           if (execution.succeeded && call.name === "read_file" && path) {
@@ -314,13 +379,26 @@ export class AgentRuntime {
             const recoveryPath = path ?? lastReadWorkspacePath;
             if (recoveryPath) {
               pendingWriteRecoveryPaths.add(recoveryPath);
-              await this.emit({
+              await emit({
                 type: "progress_delta",
                 sessionId,
                 text: `Recovery: retry the file change for ${recoveryPath} with a non-empty path and the current file contents.`,
               });
             }
           }
+        }
+        if (awaitingUser !== undefined) {
+          // A workflow is waiting on the user: end cleanly without demanding a write.
+          const reply = [
+            this.options.deferTextUntilToolDecision ? text : "",
+            awaitingUser,
+          ]
+            .filter(Boolean)
+            .join("\n\n");
+          assistantText += reply;
+          await emit({ type: "text_delta", sessionId, text: reply });
+          await complete();
+          return;
         }
         if (pendingWriteRecoveryPaths.size && !failedWriteThisTurn) {
           recoveryAttempts += 1;
@@ -358,7 +436,39 @@ export class AgentRuntime {
       });
       await this.emit({ type: "run_failed", sessionId, error: normalized });
       throw normalized;
+    } finally {
+      try {
+        await contribution.end?.();
+      } catch {
+        // Releasing run-scoped state must not replace the run outcome.
+      }
     }
+  }
+
+  /** Overlay run-scoped tools on the registry without letting them replace it. */
+  private runTools(extra: readonly AgentTool[]): {
+    get(name: string): AgentTool | undefined;
+    definitions(): ToolDefinition[];
+  } {
+    const scoped = new Map<string, AgentTool>();
+    for (const tool of extra) {
+      if (this.options.tools.get(tool.name) || scoped.has(tool.name))
+        throw new Error(
+          `Run context tool ${tool.name} conflicts with a registered tool`,
+        );
+      scoped.set(tool.name, tool);
+    }
+    return {
+      get: (name) => scoped.get(name) ?? this.options.tools.get(name),
+      definitions: () => [
+        ...this.options.tools.definitions(),
+        ...[...scoped.values()].map(({ name, description, inputSchema }) => ({
+          name,
+          description,
+          inputSchema,
+        })),
+      ],
+    };
   }
 
   private summary(text: string): string | undefined {

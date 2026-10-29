@@ -1,3 +1,7 @@
+import {
+  CanonicalWorkspaceFilesystemPolicy,
+  type WorkspaceFilesystemPolicy,
+} from "@truss-harness/runtime";
 import { createReadStream, type Dirent } from "node:fs";
 import {
   copyFile,
@@ -9,7 +13,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { Readable } from "node:stream";
 import type { DesktopFile } from "../shared.js";
 
@@ -31,14 +35,13 @@ const mediaTypes = new Map([
 ]);
 
 export class WorkspaceService {
-  constructor(private readonly workspaceRoot: () => string) {}
+  constructor(
+    private readonly workspaceRoot: () => string,
+    private readonly policy: WorkspaceFilesystemPolicy = new CanonicalWorkspaceFilesystemPolicy(),
+  ) {}
 
   resolvePath(path: string): string {
-    const workspace = resolve(this.workspaceRoot());
-    const target = resolve(workspace, path);
-    if (target !== workspace && !target.startsWith(`${workspace}${sep}`))
-      throw new Error("Path must remain inside the selected workspace.");
-    return target;
+    return this.policy.resolvePath(this.workspaceRoot(), path);
   }
 
   mediaType(path: string): string | undefined {

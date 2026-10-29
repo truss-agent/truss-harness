@@ -100,46 +100,51 @@ export class OllamaProvider implements ModelProvider {
     const decoder = new TextDecoder();
     let buffered = "";
     let callIndex = 0;
-    for await (const bytes of response.body) {
-      buffered += decoder.decode(bytes, { stream: true });
-      const lines = buffered.split(/\r?\n/);
-      buffered = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        const chunk = JSON.parse(line) as {
-          readonly message?: {
-            readonly content?: string;
-            readonly tool_calls?: readonly {
-              readonly function: {
-                readonly name: string;
-                readonly arguments: JsonObject;
-              };
-            }[];
-          };
-          readonly done?: boolean;
-          readonly done_reason?: "stop" | "length";
-          readonly prompt_eval_count?: number;
-          readonly eval_count?: number;
+    async function* records(): AsyncGenerator<string> {
+      for await (const bytes of response.body!) {
+        buffered += decoder.decode(bytes, { stream: true });
+        const lines = buffered.split(/\r?\n/);
+        buffered = lines.pop() ?? "";
+        yield* lines;
+      }
+      buffered += decoder.decode();
+      if (buffered.trim()) yield buffered;
+    }
+    for await (const line of records()) {
+      if (!line.trim()) continue;
+      const chunk = JSON.parse(line) as {
+        readonly message?: {
+          readonly content?: string;
+          readonly tool_calls?: readonly {
+            readonly function: {
+              readonly name: string;
+              readonly arguments: JsonObject;
+            };
+          }[];
         };
-        if (chunk.message?.content)
-          yield { type: "text_delta", text: chunk.message.content };
-        for (const toolCall of chunk.message?.tool_calls ?? []) {
-          yield {
-            type: "tool_call",
-            id: `ollama-${++callIndex}`,
-            name: toolCall.function.name,
-            input: toolCall.function.arguments,
-          };
-        }
-        if (chunk.done) {
-          const usage = tokenUsage(chunk);
-          yield {
-            type: "finish",
-            reason: chunk.done_reason === "length" ? "length" : "stop",
-            ...(usage ? { usage } : {}),
-          };
-          return;
-        }
+        readonly done?: boolean;
+        readonly done_reason?: "stop" | "length";
+        readonly prompt_eval_count?: number;
+        readonly eval_count?: number;
+      };
+      if (chunk.message?.content)
+        yield { type: "text_delta", text: chunk.message.content };
+      for (const toolCall of chunk.message?.tool_calls ?? []) {
+        yield {
+          type: "tool_call",
+          id: `ollama-${++callIndex}`,
+          name: toolCall.function.name,
+          input: toolCall.function.arguments,
+        };
+      }
+      if (chunk.done) {
+        const usage = tokenUsage(chunk);
+        yield {
+          type: "finish",
+          reason: chunk.done_reason === "length" ? "length" : "stop",
+          ...(usage ? { usage } : {}),
+        };
+        return;
       }
     }
     throw new Error("Ollama stream ended before its final response.");

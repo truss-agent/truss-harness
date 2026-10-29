@@ -6,24 +6,46 @@ on:
       - "truss-go-v*"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  release:
+  verify:
     runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Verify tag matches Truss Go version
+        run: node -e "const p=require('./packages/mobile/app.json'); const expected='truss-go-v'+p.expo.version; if(process.env.GITHUB_REF_NAME!==expected){throw new Error('Tag '+process.env.GITHUB_REF_NAME+' does not match Truss Go version '+p.expo.version)}"
+      - name: Verify merged master release source
+        run: |
+          git fetch --no-tags origin master:refs/remotes/origin/master
+          node scripts/verify-release-source.mts
+      - run: npm ci
+      - run: npm run build
+      - run: npm --workspace @truss-harness/mobile run typecheck
+      - run: npm test
+
+  release:
+    needs: verify
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
-      - name: Verify tag matches Truss Go version
-        run: node -e "const p=require('./packages/mobile/app.json'); const expected='truss-go-v'+p.expo.version; if(process.env.GITHUB_REF_NAME!==expected){throw new Error('Tag '+process.env.GITHUB_REF_NAME+' does not match Truss Go version '+p.expo.version)}"
       - run: npm ci
       - name: Configure Expo Application Services
         uses: expo/expo-github-action@v8
         with:
-          eas-version: latest
+          eas-version: 18.4.0
           token: ${{ secrets.EXPO_TOKEN }}
       - name: Build installable Android APK
         id: build

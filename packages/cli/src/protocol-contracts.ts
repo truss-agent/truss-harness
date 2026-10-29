@@ -5,6 +5,10 @@ import type {
   JsonObject,
   RuntimeEvent,
   Session,
+  SkillDiagnostic,
+  SkillImport,
+  SkillMetadata,
+  SkillSelection,
 } from "@truss-harness/runtime";
 import type { ProviderConnectionResult } from "@truss-harness/agent-host";
 import type { McpServerStatus } from "@truss-harness/mcp";
@@ -16,6 +20,8 @@ export const LOCAL_SERVICE_PROTOCOL_VERSIONS = [
 
 export interface RuntimeServiceCapabilities {
   readonly streaming: true;
+  /** Additive capability; absent on older hosts. */
+  readonly textOnlyGeneration?: boolean;
   readonly sessions: true;
   readonly cancellation: true;
   readonly approvals: boolean;
@@ -27,6 +33,10 @@ export interface RuntimeServiceCapabilities {
   readonly configurationProfiles: boolean;
   readonly agentProfiles: boolean;
   readonly mcpStatus: boolean;
+  /** Additive: skills can be listed and their mode/selection changed. */
+  readonly skills?: boolean;
+  /** Additive: local skills can be imported and removed. */
+  readonly skillManagement?: boolean;
 }
 
 /** Additive runtime-host identity returned during protocol initialization. */
@@ -61,7 +71,29 @@ export interface RuntimeServiceProfile {
   readonly permission?: PermissionMode;
 }
 
+/** Where a skill setting is saved; session settings need a session ID. */
+export type RuntimeServiceSkillScope = "user" | "workspace" | "session";
+
+export interface RuntimeServiceSkillState {
+  readonly skills: readonly SkillMetadata[];
+  readonly diagnostics: readonly SkillDiagnostic[];
+  /** Effective selection for the requested session (or new sessions). */
+  readonly selection: SkillSelection;
+}
+
+export interface RuntimeServiceSkills {
+  list(sessionId?: string): Promise<RuntimeServiceSkillState>;
+  setSettings(
+    scope: RuntimeServiceSkillScope,
+    sessionId: string | undefined,
+    selection: Partial<SkillSelection> | undefined,
+  ): Promise<RuntimeServiceSkillState>;
+  import?(input: SkillImport): Promise<SkillMetadata>;
+  remove?(id: string): Promise<void>;
+}
+
 export interface RuntimeServiceHost {
+  readonly skills?: RuntimeServiceSkills;
   testProviderConnection?(): Promise<ProviderConnectionResult>;
   listProfiles?(): Promise<readonly RuntimeServiceProfile[]>;
   listMcpServers?():
@@ -88,6 +120,7 @@ export type RuntimeServiceRequest =
       readonly type: "run";
       readonly requestId: string;
       readonly prompt: string;
+      readonly textOnly?: boolean;
       readonly sessionId?: string;
       readonly context?: readonly ContextBlock[];
       readonly attachments?: readonly ChatAttachment[];
@@ -113,6 +146,36 @@ export type RuntimeServiceRequest =
   | { readonly type: "test_provider"; readonly requestId: string }
   | { readonly type: "list_profiles"; readonly requestId: string }
   | { readonly type: "mcp_status"; readonly requestId: string }
+  | {
+      readonly type: "skills_list";
+      readonly requestId: string;
+      readonly sessionId?: string;
+    }
+  | {
+      readonly type: "skills_settings";
+      readonly requestId: string;
+      readonly scope: RuntimeServiceSkillScope;
+      readonly sessionId?: string;
+      /** Null clears the scope so it inherits again. */
+      readonly selection: Partial<SkillSelection> | null;
+    }
+  | {
+      readonly type: "skills_import";
+      readonly requestId: string;
+      /** Absolute local directory, or pasted SKILL.md content. */
+      readonly path?: string;
+      readonly content?: string;
+      readonly resources?: readonly {
+        readonly path: string;
+        readonly content: string;
+      }[];
+      readonly replace?: boolean;
+    }
+  | {
+      readonly type: "skills_remove";
+      readonly requestId: string;
+      readonly id: string;
+    }
   | { readonly type: "ping"; readonly requestId: string }
   | { readonly type: "shutdown"; readonly requestId: string };
 
@@ -148,6 +211,9 @@ export interface RuntimeServiceResult {
   readonly providerConnection?: ProviderConnectionResult;
   readonly profiles?: readonly RuntimeServiceProfile[];
   readonly mcpServers?: readonly McpServerStatus[];
+  readonly skills?: RuntimeServiceSkillState;
+  readonly skill?: SkillMetadata;
+  readonly removed?: boolean;
 }
 
 export type RuntimeServiceErrorCode =

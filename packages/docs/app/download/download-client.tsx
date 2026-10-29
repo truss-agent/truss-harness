@@ -176,46 +176,19 @@ function DesktopReleaseCard({
 }
 
 export function DownloadClient({
-  apiUrl,
+  releases,
   releasesUrl,
 }: {
-  apiUrl: string;
+  releases: readonly Release[];
   releasesUrl: string;
 }) {
-  const [release, setRelease] = useState<Release>();
-  const [releases, setReleases] = useState<readonly Release[]>([]);
+  const release = selectDesktopRelease(releases);
   const [recommended, setRecommended] = useState<DetectedBuild>();
-  const [status, setStatus] = useState<"loading" | "ready" | "unavailable">(
-    "loading",
-  );
+  const status = release ? "ready" : "unavailable";
 
   useEffect(() => {
     setRecommended(detectDesktopBuild(navigator.userAgent));
-
-    const controller = new AbortController();
-    fetch(apiUrl, {
-      headers: { Accept: "application/vnd.github+json" },
-      signal: controller.signal,
-    })
-      .then((response) => {
-        if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
-        return response.json() as Promise<Release[]>;
-      })
-      .then((releases) => {
-        const desktopRelease = selectDesktopRelease(releases);
-        if (!desktopRelease) throw new Error("No desktop release was found");
-        setReleases(releases);
-        setRelease(desktopRelease);
-        setStatus("ready");
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === "AbortError")
-          return;
-        setStatus("unavailable");
-      });
-
-    return () => controller.abort();
-  }, [apiUrl]);
+  }, []);
 
   const checksum = useMemo(
     () =>
@@ -367,14 +340,9 @@ export function DownloadClient({
                 <strong>{release.tag_name}</strong>{" "}
                 <span>Latest stable release</span>
               </p>
-            ) : status === "loading" ? (
-              <p>
-                <strong>Checking releases</strong>{" "}
-                <span>Finding the latest stable build</span>
-              </p>
             ) : (
               <p>
-                <strong>Downloads temporarily unavailable</strong>{" "}
+                <strong>Desktop downloads unavailable</strong>{" "}
                 <span>Please try again shortly</span>
               </p>
             )}

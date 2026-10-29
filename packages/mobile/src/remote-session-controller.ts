@@ -39,6 +39,11 @@ export type GatewaySocketFactory = (url: string) => GatewayEventSocket;
 export class MobileGatewayEventController {
   private socket: GatewayEventSocket | undefined;
   private connected = false;
+  private input: GatewayEventConnectionInput | undefined;
+
+  updateHandlers(input: GatewayEventConnectionInput): void {
+    this.input = input;
+  }
 
   constructor(
     private readonly createSocket: GatewaySocketFactory = (url) =>
@@ -46,13 +51,22 @@ export class MobileGatewayEventController {
   ) {}
 
   async ensureConnected(input: GatewayEventConnectionInput): Promise<void> {
-    if (this.connected && this.socket?.readyState === 1) return;
+    if (
+      this.connected &&
+      this.socket?.readyState === 1 &&
+      this.input?.gatewayUrl === input.gatewayUrl &&
+      this.input?.token === input.token
+    ) {
+      this.updateHandlers(input);
+      return;
+    }
     await this.connect(input);
   }
 
   connect(input: GatewayEventConnectionInput): Promise<void> {
     this.close();
-    input.onConnectionChange(false);
+    this.updateHandlers(input);
+    this.input?.onConnectionChange(false);
     const socket = this.createSocket(gatewayEventUrl(input.gatewayUrl));
     this.socket = socket;
     let settled = false;
@@ -93,7 +107,7 @@ export class MobileGatewayEventController {
         if (event.type === "connected") {
           authenticated = true;
           this.connected = true;
-          input.onConnectionChange(true);
+          this.input?.onConnectionChange(true);
           if (!settled) {
             settled = true;
             clearTimeout(timeout);
@@ -101,7 +115,7 @@ export class MobileGatewayEventController {
           }
           return;
         }
-        input.onEvent(event);
+        if (this.socket === socket) this.input?.onEvent(event);
       };
       socket.onerror = () => {
         if (!authenticated) {
@@ -109,13 +123,13 @@ export class MobileGatewayEventController {
             "Unable to connect to the gateway event stream. Keep the paired host open and confirm both devices are on the same network.",
           );
         } else if (this.socket === socket) {
-          input.onDisconnected("Gateway event stream disconnected.");
+          this.input?.onDisconnected("Gateway event stream disconnected.");
         }
       };
       socket.onclose = ({ code }) => {
         if (this.socket === socket) {
           this.connected = false;
-          input.onConnectionChange(false);
+          this.input?.onConnectionChange(false);
         }
         if (!authenticated) {
           rejectConnection(
@@ -124,7 +138,7 @@ export class MobileGatewayEventController {
               : "The gateway event stream closed before authentication.",
           );
         } else if (this.socket === socket) {
-          input.onDisconnected(
+          this.input?.onDisconnected(
             "Gateway event stream disconnected. Truss will reconnect before the next request.",
           );
         }

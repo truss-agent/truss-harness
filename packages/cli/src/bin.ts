@@ -1,59 +1,72 @@
 #!/usr/bin/env node
-import { cwd } from "node:process";
 import { readFile } from "node:fs/promises";
-import { basename, resolve as resolvePath } from "node:path";
+import { basename, dirname, join, resolve as resolvePath } from "node:path";
+import { cwd } from "node:process";
 import { createInterface } from "node:readline/promises";
+import { brand } from "@truss-harness/branding";
+import {
+  createGatewayAgentController,
+  startRemoteGateway,
+} from "@truss-harness/gateway";
+import type { McpServerStatus } from "@truss-harness/mcp";
 import {
   cloudProviderDefinitions,
   detectLocalEndpoints,
-  listLocalModels,
   type LocalEndpointKind,
   type LocalModelEndpoint,
+  listLocalModels,
 } from "@truss-harness/provider-openai-compatible";
-import { brand } from "@truss-harness/branding";
 import {
   executeWorkspaceCommand,
   workspaceCommandHelp,
 } from "@truss-harness/runtime";
-import {
-  createClientRuntime,
-  testClientProviderConnection,
-  type ClientRuntime,
-} from "./runtime.js";
-import {
-  configurationPaths,
-  initializeWorkspaceConfiguration,
-  listConfigurationProfiles,
-  parseConfigurationOverrides,
-  providerAccountEnvironmentVariable,
-  resolveConfiguration,
-  saveUserProfile,
-  type ResolvedConfiguration,
-} from "./config.js";
-import {
-  ProtocolToolApproval,
-  installRuntimeHostArtifact,
-  parseRuntimeHostManifest,
-  readRuntimeHostActivation,
-  rollbackRuntimeHost,
-  runService,
-  runtimeHostStorePath,
-  type PermissionMode,
-} from "./protocol.js";
+import qrcode from "qrcode-terminal";
 import {
   createCliAgentCoordinator,
   FileAgentProfileStore,
   profileFromConfiguration,
   waitForAgentRun,
 } from "./agents.js";
+import { runCliTurn } from "./cli-approval.js";
+import { withCliChatResources } from "./cli-chat.js";
 import {
-  createGatewayAgentController,
-  startRemoteGateway,
-} from "@truss-harness/gateway";
-import type { McpServerStatus } from "@truss-harness/mcp";
+  configurationPaths,
+  initializeWorkspaceConfiguration,
+  listConfigurationProfiles,
+  parseConfigurationOverrides,
+  providerAccountEnvironmentVariable,
+  type ResolvedConfiguration,
+  resolveConfiguration,
+  resolveSkills,
+  saveUserProfile,
+  trustWorkspaceConfiguration,
+} from "./config.js";
+import { InteractiveChat } from "./interactive/controller.js";
+import { FileConversationStore } from "./interactive/conversations.js";
+import { colorEnabled, createStyle } from "./interactive/renderer.js";
+import { openTerminal } from "./interactive/terminal.js";
 import { formatMcpStatuses } from "./mcp.js";
+import {
+  installRuntimeHostArtifact,
+  type PermissionMode,
+  ProtocolToolApproval,
+  parseRuntimeHostManifest,
+  readRuntimeHostActivation,
+  rollbackRuntimeHost,
+  runService,
+  runtimeHostStorePath,
+} from "./protocol.js";
+import {
+  type ClientRuntime,
+  createClientRuntime,
+  testClientProviderConnection,
+} from "./runtime.js";
+import {
+  gatewaySkillController,
+  runSkillsCommand,
+  skillServiceHost,
+} from "./skills.js";
 import { CLI_VERSION, formatCliVersion } from "./version.js";
-import qrcode from "qrcode-terminal";
 
 const help = `${brand.productName} CLI
 
@@ -92,10 +105,19 @@ Commands:
   runtime install <artifact> <manifest>
                         Verify and activate a downloaded runtime-host asset
   runtime rollback       Restore the prior verified runtime-host asset
+  config trust          Authorize reviewed workspace config until its content changes
+  config status         Show effective policy and trust provenance
+  agents trust <id>     Authorize one reviewed migrated/manual profile
   agents list           List workspace-local multi-agent profiles
   agents add <name>     Add a profile using the selected configuration
   agents remove <id>    Remove an idle profile
   agents run <id> <task> Run a profile and stream its status
+  skills [list]         Show skills and the active skill selection
+  skills add <dir>      Import a skill directory into your skills
+  skills remove <id>    Remove an imported skill
+  skills mode <mode>    automatic (default), manual, or off
+  skills superpowers <on|off>  Enable or disable the bundled Superpowers pack
+  skills select [<id>...]      Choose always-active skills
   help                  Show this reference
 
 Options:
@@ -108,6 +130,8 @@ Options:
   --permission <name>    ask, auto-read, or auto-all
   --internet-access      Enable public web search and page fetching
   --no-internet-access   Disable internet tools
+  --skills-mode <mode>   automatic, manual, or off for this run
+  --superpowers <on|off> Enable or disable Superpowers for this run
   --gateway-token <token>  Required 24+ character token for gateway clients
   --gateway-port <port>    Gateway port (default: 4787)
   --gateway-host <host>    Bind address (default: 127.0.0.1; use a trusted LAN only)
@@ -123,8 +147,8 @@ Permissions:
   auto-read              Auto-allow workspace reads; ask for writes, commands, and web
   auto-all               Auto-allow every registered tool
 
-  Direct '${brand.cliCommand} chat' runs non-interactively and auto-allows tools.
-  Use it only in a trusted workspace. Internet tools remain off unless enabled.
+  Direct chat honors permission policy. Noninteractive approval requests fail closed.
+  Internet tools remain off unless enabled.
 
 Environment:
   TRUSS_HARNESS_MODEL       Required model identifier
@@ -139,6 +163,8 @@ Environment:
   TRUSS_HARNESS_AGENT_MODE  chat (default), plan, or edit
   TRUSS_HARNESS_PERMISSION_MODE ask (default), auto-read, or auto-all
   TRUSS_HARNESS_INTERNET_ACCESS true or 1 to enable public web tools
+  TRUSS_HARNESS_SKILLS_MODE automatic (default), manual, or off
+  TRUSS_HARNESS_SUPERPOWERS_ENABLED on (default) or off
   TRUSS_HARNESS_API_KEY     Optional generic bearer token
   OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY,
   TOGETHER_API_KEY, GEMINI_API_KEY, XAI_API_KEY, MISTRAL_API_KEY,
@@ -257,93 +283,134 @@ async function waitForShutdown(): Promise<void> {
 async function runInteractiveChat(
   initialConfiguration: ResolvedConfiguration,
 ): Promise<void> {
-  let configuration = initialConfiguration;
-  let client = await createClientRuntime(configuration);
-  let session = await client.runtime.createSession();
-  let messages = session.messages;
-  subscribeToRuntimeEvents(client.events);
-  const readline = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    terminal: process.stdin.isTTY === true,
-  });
-  process.stdout.write(
-    brand.productName +
-      " interactive chat. :help for controls. Mode: " +
-      configuration.mode +
-      ".\n",
+  await withCliChatResources(
+    {
+      permission: initialConfiguration.permission,
+      canPrompt: process.stdin.isTTY === true && process.stdout.isTTY === true,
+      createReadline: () =>
+        createInterface({
+          input: process.stdin,
+          output: process.stdout,
+          terminal: process.stdin.isTTY === true,
+        }),
+    },
+    async (resources) => {
+      const readline = resources.readline!;
+      let configuration = initialConfiguration;
+      let client = await resources.createRuntime(configuration);
+      let session = await client.runtime.createSession();
+      let messages = session.messages;
+      subscribeToRuntimeEvents(client.events);
+      process.stdout.write(
+        brand.productName +
+          " interactive chat. :help for controls. Mode: " +
+          configuration.mode +
+          ".\n",
+      );
+
+      const replaceRuntime = async (
+        mode: "chat" | "plan" | "edit",
+      ): Promise<void> => {
+        const current = await client.runtime.getSession(session.id);
+        messages = current?.messages ?? messages;
+        await resources.disposeRuntime(client);
+        configuration = { ...configuration, mode };
+        client = await resources.createRuntime(configuration);
+        session = await client.runtime.createSession(messages);
+        subscribeToRuntimeEvents(client.events);
+        process.stdout.write("\n[mode: " + mode + "]\n");
+      };
+
+      while (true) {
+        const line = await readline
+          .question(brand.cliCommand + " (" + configuration.mode + ") > ")
+          .catch(() => undefined);
+        if (line === undefined) break;
+        const input = line.trim();
+        if (!input) continue;
+        if (input === ":exit" || input === ":quit") break;
+        if (input === ":help") {
+          process.stdout.write(
+            "Controls: :mode chat|plan|edit, :clear, :exit. You can also prefix a message with --mode chat|plan|edit.\n",
+          );
+          continue;
+        }
+        if (input === ":clear") {
+          session = await client.runtime.createSession();
+          messages = session.messages;
+          process.stdout.write("[conversation cleared]\n");
+          continue;
+        }
+        const modeCommand = input.match(/^:mode\s+(chat|plan|edit)$/);
+        if (modeCommand) {
+          await replaceRuntime(modeCommand[1] as "chat" | "plan" | "edit");
+          continue;
+        }
+        if (input.startsWith(":mode")) {
+          process.stdout.write("Use :mode chat, :mode plan, or :mode edit.\n");
+          continue;
+        }
+
+        const next = inlineMode(input);
+        if (next.mode && next.mode !== configuration.mode)
+          await replaceRuntime(next.mode);
+        if (!next.prompt) continue;
+        const workspaceCommand = await executeWorkspaceCommand({
+          workspaceRoot: cwd(),
+          input: next.prompt,
+        });
+        if (workspaceCommand.handled) {
+          process.stdout.write(workspaceCommand.message + "\n");
+          continue;
+        }
+        try {
+          await runCliTurn(client.runtime, session.id, next.prompt, readline);
+          process.stdout.write("\n");
+        } catch (error) {
+          process.stderr.write(
+            "\n" +
+              (error instanceof Error ? error.message : String(error)) +
+              "\n",
+          );
+        }
+      }
+    },
   );
+}
 
-  const replaceRuntime = async (
-    mode: "chat" | "plan" | "edit",
-  ): Promise<void> => {
-    const current = await client.runtime.getSession(session.id);
-    messages = current?.messages ?? messages;
-    await client.dispose();
-    configuration = { ...configuration, mode };
-    client = await createClientRuntime(configuration);
-    session = await client.runtime.createSession(messages);
-    subscribeToRuntimeEvents(client.events);
-    process.stdout.write("\n[mode: " + mode + "]\n");
-  };
-
+/** Transcript chat with composer and slash menu, for a real terminal. */
+async function runTerminalChat(
+  configuration: ResolvedConfiguration,
+  resolveProfile: (profile: string) => Promise<ResolvedConfiguration>,
+): Promise<void> {
+  const style = createStyle(colorEnabled(process.env, true));
+  let chat: InteractiveChat | undefined;
+  const terminal = openTerminal(process.stdin, process.stdout, {
+    onData: (chunk) => chat?.handleData(chunk),
+    onResize: () => chat?.handleResize(),
+  });
+  const stop = () => void chat?.close();
+  process.once("SIGTERM", stop);
   try {
-    while (true) {
-      const line = await readline
-        .question(brand.cliCommand + " (" + configuration.mode + ") > ")
-        .catch(() => undefined);
-      if (line === undefined) break;
-      const input = line.trim();
-      if (!input) continue;
-      if (input === ":exit" || input === ":quit") break;
-      if (input === ":help") {
-        process.stdout.write(
-          "Controls: :mode chat|plan|edit, :clear, :exit. You can also prefix a message with --mode chat|plan|edit.\n",
-        );
-        continue;
-      }
-      if (input === ":clear") {
-        session = await client.runtime.createSession();
-        messages = session.messages;
-        process.stdout.write("[conversation cleared]\n");
-        continue;
-      }
-      const modeCommand = input.match(/^:mode\s+(chat|plan|edit)$/);
-      if (modeCommand) {
-        await replaceRuntime(modeCommand[1] as "chat" | "plan" | "edit");
-        continue;
-      }
-      if (input.startsWith(":mode")) {
-        process.stdout.write("Use :mode chat, :mode plan, or :mode edit.\n");
-        continue;
-      }
-
-      const next = inlineMode(input);
-      if (next.mode && next.mode !== configuration.mode)
-        await replaceRuntime(next.mode);
-      if (!next.prompt) continue;
-      const workspaceCommand = await executeWorkspaceCommand({
-        workspaceRoot: cwd(),
-        input: next.prompt,
-      });
-      if (workspaceCommand.handled) {
-        process.stdout.write(workspaceCommand.message + "\n");
-        continue;
-      }
-      try {
-        await client.runtime.run(session.id, next.prompt);
-        process.stdout.write("\n");
-      } catch (error) {
-        process.stderr.write(
-          "\n" +
-            (error instanceof Error ? error.message : String(error)) +
-            "\n",
-        );
-      }
-    }
+    chat = new InteractiveChat({
+      configuration,
+      workspaceRoot: cwd(),
+      write: terminal.write,
+      columns: terminal.columns,
+      style,
+      createRuntime: createClientRuntime,
+      resolveProfile,
+      conversations: new FileConversationStore(
+        join(dirname(configuration.paths.user), "conversations"),
+        cwd(),
+      ),
+    });
+    await chat.start();
+    await chat.closed;
   } finally {
-    readline.close();
-    await client.dispose();
+    await chat?.close();
+    process.removeListener("SIGTERM", stop);
+    terminal.restore();
   }
 }
 
@@ -374,7 +441,7 @@ async function runSetup(): Promise<void> {
       setupKind.toLowerCase() === "byok"
     ) {
       process.stdout.write(brand.productName + " cloud BYOK setup\n\n");
-      cloudProviderDefinitions.forEach((provider, index) =>
+      cloudProviderDefinitions.forEach((provider, index) => {
         process.stdout.write(
           String(index + 1) +
             ". " +
@@ -382,8 +449,8 @@ async function runSetup(): Promise<void> {
             " (" +
             provider.id +
             ")\n",
-        ),
-      );
+        );
+      });
       const provider =
         cloudProviderDefinitions[
           selectedIndex(
@@ -429,7 +496,7 @@ async function runSetup(): Promise<void> {
     process.stdout.write(
       "Choose a local model server. Values in brackets are defaults.\n\n",
     );
-    endpoints.forEach((endpoint, index) =>
+    endpoints.forEach((endpoint, index) => {
       process.stdout.write(
         String(index + 1) +
           ". " +
@@ -437,8 +504,8 @@ async function runSetup(): Promise<void> {
           " (" +
           endpoint.baseUrl +
           ")\n",
-      ),
-    );
+      );
+    });
     process.stdout.write(String(endpoints.length + 1) + ". Custom endpoint\n");
     const endpointChoice = selectedIndex(
       await ask("Server", "1"),
@@ -469,9 +536,9 @@ async function runSetup(): Promise<void> {
     }
 
     const models = await listLocalModels(endpoint).catch(() => []);
-    models.forEach((model, index) =>
-      process.stdout.write(String(index + 1) + ". " + model.name + "\n"),
-    );
+    models.forEach((model, index) => {
+      process.stdout.write(String(index + 1) + ". " + model.name + "\n");
+    });
     const model = models.length
       ? models[selectedIndex(await ask("Model", "1"), models.length, 0)].name
       : await ask("Model ID", "local-model");
@@ -517,7 +584,11 @@ async function runSetup(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const [command = "help", ...rawArgs] = process.argv.slice(2);
+  const interactiveTerminal =
+    process.stdin.isTTY === true && process.stdout.isTTY === true;
+  // A bare command in a terminal opens chat; in scripts it prints help.
+  const [command = interactiveTerminal ? "chat" : "help", ...rawArgs] =
+    process.argv.slice(2);
   if (command === "help" || command === "--help" || command === "-h") {
     process.stdout.write(help);
     return;
@@ -552,6 +623,23 @@ async function main(): Promise<void> {
       process.stdout.write(`${JSON.stringify(paths, null, 2)}\n`);
       return;
     }
+    if (action === "trust") {
+      const hash = await trustWorkspaceConfiguration(cwd(), paths);
+      process.stdout.write(
+        `Trusted workspace configuration ${paths.workspace}\nSHA-256 ${hash}\nAuthorization is stored in your user configuration directory and expires when the file changes.\n`,
+      );
+      return;
+    }
+    if (action === "status") {
+      const config = await resolveConfiguration({
+        workspaceRoot: cwd(),
+        paths,
+      });
+      process.stdout.write(
+        `${JSON.stringify({ workspaceTrust: config.workspaceTrust, provenance: config.provenance, effective: { provider: config.provider, model: config.model, mode: config.mode, permission: config.permission, internetAccess: config.internetAccess }, precedence: "flags > environment > trusted workspace > user > defaults" }, null, 2)}\n`,
+      );
+      return;
+    }
     if (action === "init") {
       process.stdout.write(
         `Created ${await initializeWorkspaceConfiguration(cwd(), paths)}\n`,
@@ -559,7 +647,7 @@ async function main(): Promise<void> {
       return;
     }
     throw new Error(
-      `Use ${brand.cliCommand} config path or ${brand.cliCommand} config init`,
+      `Use ${brand.cliCommand} config path, init, status, or trust`,
     );
   }
 
@@ -614,6 +702,7 @@ async function main(): Promise<void> {
           agents: createGatewayAgentController(coordinator, {
             allowStart: true,
           }),
+          skills: gatewaySkillController(configuration.skills, workspaceRoot),
           ...(mcpStatuses.size
             ? {
                 mcp: {
@@ -688,10 +777,27 @@ async function main(): Promise<void> {
     const profiles = new FileAgentProfileStore(cwd());
     if (action === "list") {
       const values = await profiles.list();
+      const rows = await Promise.all(
+        values.map(
+          async (profile) =>
+            `${profile.id}\t${profile.displayName}\t${profile.provider.providerId}\t${profile.provider.modelId}\t${profile.mode}\t${profile.approvalPolicy}\t${(await profiles.isTrusted(profile)) ? "trusted" : "untrusted"}`,
+        ),
+      );
       process.stdout.write(
         values.length
-          ? `${values.map((profile) => `${profile.id}\t${profile.displayName}\t${profile.provider.providerId}\t${profile.provider.modelId}\t${profile.mode}\t${profile.approvalPolicy}`).join("\n")}\n`
+          ? `${rows.join("\n")}\n`
           : "No agent profiles. Add one with `truss agents add <name>`.\n",
+      );
+      return;
+    }
+    if (action === "trust") {
+      if (!identifier)
+        throw new Error(
+          "Use truss agents trust <id> after reviewing the profile binding and policy.",
+        );
+      await profiles.trust(identifier);
+      process.stdout.write(
+        `Trusted exact current content of agent ${identifier}.\n`,
       );
       return;
     }
@@ -772,7 +878,7 @@ async function main(): Promise<void> {
       return;
     }
     throw new Error(
-      `Use ${brand.cliCommand} agents list, add, remove, or run.`,
+      `Use ${brand.cliCommand} agents list, add, trust, remove, or run.`,
     );
   }
 
@@ -845,6 +951,16 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "skills") {
+    process.exitCode = await runSkillsCommand(
+      args,
+      await resolveSkills({ workspaceRoot: cwd(), overrides }),
+      cwd(),
+      (text) => process.stdout.write(text),
+    );
+    return;
+  }
+
   if (command === "chat" && args.length) {
     const prompt = args.join(" ").trim();
     if (!prompt)
@@ -864,6 +980,15 @@ async function main(): Promise<void> {
     workspaceRoot: cwd(),
     overrides,
   });
+
+  if (configuration.workspaceTrust.status === "untrusted")
+    process.stderr.write(
+      "[config] Workspace authority ignored until reviewed and authorized with truss config trust.\n",
+    );
+  if (configuration.workspaceTrust.diagnostic)
+    process.stderr.write(
+      `[config] ${configuration.workspaceTrust.diagnostic}\n`,
+    );
 
   if (command === "mcp") {
     const positional = args.filter((argument) => argument !== "--json");
@@ -909,20 +1034,33 @@ async function main(): Promise<void> {
       );
     }
     try {
-      await runService(client.runtime, client.events, approval, {
-        serverVersion: CLI_VERSION,
-        host: {
-          testProviderConnection: () =>
-            testClientProviderConnection(configuration),
-          listProfiles: () =>
-            listConfigurationProfiles({
-              workspaceRoot: configuration.workspaceRoot,
-              selectedProfile: configuration.profile,
-              paths: configuration.paths,
-            }),
-          listMcpServers: () => client.mcp.statuses,
-        },
+      const textClient = await createClientRuntime({
+        ...configuration,
+        textOnly: true,
       });
+      try {
+        await runService(client.runtime, client.events, approval, {
+          textRuntime: textClient,
+          serverVersion: CLI_VERSION,
+          host: {
+            skills: skillServiceHost(
+              configuration.skills,
+              configuration.workspaceRoot,
+            ),
+            testProviderConnection: () =>
+              testClientProviderConnection(configuration),
+            listProfiles: () =>
+              listConfigurationProfiles({
+                workspaceRoot: configuration.workspaceRoot,
+                selectedProfile: configuration.profile,
+                paths: configuration.paths,
+              }),
+            listMcpServers: () => client.mcp.statuses,
+          },
+        });
+      } finally {
+        await textClient.dispose();
+      }
     } finally {
       await client.dispose();
     }
@@ -937,41 +1075,58 @@ async function main(): Promise<void> {
   }
 
   if (command === "chat" && !args.join(" ").trim()) {
-    await runInteractiveChat(configuration);
+    if (interactiveTerminal)
+      await runTerminalChat(configuration, (profile) =>
+        resolveConfiguration({
+          workspaceRoot: cwd(),
+          overrides: { ...overrides, profile },
+        }),
+      );
+    else await runInteractiveChat(configuration);
     return;
   }
 
-  const client = await createClientRuntime(configuration);
-  const { runtime, events } = client;
-  for (const server of client.mcpServers) {
-    process.stderr.write(
-      `[mcp] ${server.name}: ${server.state}${server.error ? ` (${server.error})` : ` (${server.toolCount} tools)`}\n`,
-    );
-  }
-
-  if (command === "chat") {
-    const prompt = args.join(" ").trim();
-    events.subscribe((event) => {
-      if (event.type === "text_delta") process.stdout.write(event.text);
-      if (event.type === "tool_call_requested")
-        process.stderr.write(`\n[tool] ${event.tool}\n`);
-      if (event.type === "plan_updated") {
+  if (command !== "chat")
+    throw new Error(`Unknown command: ${command}\n\n${help}`);
+  await withCliChatResources(
+    {
+      permission: configuration.permission,
+      canPrompt: process.stdin.isTTY === true && process.stdout.isTTY === true,
+      createReadline: () =>
+        process.stdin.isTTY === true && process.stdout.isTTY === true
+          ? createInterface({
+              input: process.stdin,
+              output: process.stdout,
+              terminal: true,
+            })
+          : undefined,
+    },
+    async (resources) => {
+      const client = await resources.createRuntime(configuration);
+      const readline = resources.readline;
+      const { runtime, events } = client;
+      for (const server of client.mcpServers) {
         process.stderr.write(
-          `\n[plan] ${event.plan.title}\n${event.plan.steps.map((step) => `  ${step.status === "completed" ? "[x]" : step.status === "in_progress" ? "[..]" : "[ ]"} ${step.content}`).join("\n")}\n`,
+          `[mcp] ${server.name}: ${server.state}${server.error ? ` (${server.error})` : ` (${server.toolCount} tools)`}\n`,
         );
       }
-    });
-    try {
-      const session = await runtime.createSession();
-      await runtime.run(session.id, prompt);
-      process.stdout.write("\n");
-    } finally {
-      await client.dispose();
-    }
-    return;
-  }
 
-  throw new Error(`Unknown command: ${command}\n\n${help}`);
+      const prompt = args.join(" ").trim();
+      events.subscribe((event) => {
+        if (event.type === "text_delta") process.stdout.write(event.text);
+        if (event.type === "tool_call_requested")
+          process.stderr.write(`\n[tool] ${event.tool}\n`);
+        if (event.type === "plan_updated") {
+          process.stderr.write(
+            `\n[plan] ${event.plan.title}\n${event.plan.steps.map((step) => `  ${step.status === "completed" ? "[x]" : step.status === "in_progress" ? "[..]" : "[ ]"} ${step.content}`).join("\n")}\n`,
+          );
+        }
+      });
+      const session = await runtime.createSession();
+      await runCliTurn(runtime, session.id, prompt, readline);
+      process.stdout.write("\n");
+    },
+  );
 }
 
 main().catch((error: unknown) => {

@@ -1,3 +1,7 @@
+---
+title: "VS Code Guide"
+---
+
 # <Brand /> VS Code Extension
 
 The extension contains the side-panel UI, local model settings, approval prompts, chat history, inline completion, commit-message action, and a bundled Truss runtime service.
@@ -87,6 +91,10 @@ for concurrency and Edit-run safety rules.
 ## Workspace commands
 
 The chat composer accepts `/init`, `/update [note]`, `/status`, `/clear-memory`, and `/help`. These run locally, so they work without a configured model. Use the **Help** button in the side panel to display them, or run the matching **<Brand />** actions from the Command Palette.
+
+## Skills
+
+Run **Truss: Manage Skills** from the Command Palette to set the mode, the Superpowers pack, and always-active skills, for all workspaces or this workspace, and to import or remove skills. If `trussHarness.command` points to an older `truss-cli` without skills, the command asks you to update it. See [Skills](/docs/runtime/skills).
 
 ## MCP servers
 

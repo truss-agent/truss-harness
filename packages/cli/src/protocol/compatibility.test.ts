@@ -13,7 +13,7 @@ describe("validateRuntimeServiceHandshake", () => {
             identity: {
               runtime: {
                 packageName: "@truss-harness/runtime",
-            version: "0.1.11",
+                version: "0.1.11",
               },
               protocolVersions: [1],
             },
@@ -46,7 +46,8 @@ describe("validateRuntimeServiceHandshake", () => {
       ),
     ).toEqual({
       compatible: false,
-      reason: "The service did not provide a compatible Truss runtime identity.",
+      reason:
+        "The service did not provide a compatible Truss runtime identity.",
     });
   });
 });

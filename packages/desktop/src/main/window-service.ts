@@ -1,5 +1,6 @@
 import { join } from "node:path";
-import { BrowserWindow, shell, webContents } from "electron";
+import { pathToFileURL } from "node:url";
+import { BrowserWindow, shell, webContents, session } from "electron";
 
 export class DesktopWindowService {
   private window: BrowserWindow | undefined;
@@ -29,13 +30,26 @@ export class DesktopWindowService {
         preload: join(this.distDirectory(), "preload.cjs"),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false,
+        sandbox: true,
         webviewTag: true,
       },
     });
     this.window = window;
     window.center();
     window.webContents.setZoomFactor(this.zoomFactor());
+    const appUrl = pathToFileURL(join(this.distDirectory(), "index.html")).href;
+    denyPermissions(window.webContents.session);
+    window.webContents.on("will-navigate", (event, url) => {
+      if (url.split("#")[0] === appUrl) return;
+      event.preventDefault();
+      if (isAllowedPreviewUrl(url) && url !== "about:blank")
+        void shell.openExternal(url);
+    });
+    window.webContents.setWindowOpenHandler(({ url }) => {
+      if (isAllowedPreviewUrl(url) && url !== "about:blank")
+        void shell.openExternal(url);
+      return { action: "deny" };
+    });
     window.webContents.on(
       "will-attach-webview",
       (event, webPreferences, params) => {
@@ -43,6 +57,7 @@ export class DesktopWindowService {
           event.preventDefault();
           return;
         }
+        denyPermissions(session.fromPartition(params.partition || ""));
         delete webPreferences.preload;
         webPreferences.nodeIntegration = false;
         webPreferences.contextIsolation = true;
@@ -50,6 +65,7 @@ export class DesktopWindowService {
       },
     );
     window.webContents.on("did-attach-webview", (_event, contents) => {
+      denyPermissions(contents.session);
       contents.setWindowOpenHandler(({ url }) => {
         if (isAllowedPreviewUrl(url) && url !== "about:blank")
           void shell.openExternal(url);
@@ -109,4 +125,11 @@ export function isAllowedPreviewUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function denyPermissions(target: Electron.Session): void {
+  target.setPermissionRequestHandler((_contents, _permission, callback) =>
+    callback(false),
+  );
+  target.setPermissionCheckHandler(() => false);
 }

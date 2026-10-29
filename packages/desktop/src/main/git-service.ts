@@ -5,6 +5,11 @@ import type {
   DesktopGitStatus,
 } from "../shared.js";
 
+/** `--` ends options; selected filenames still need literal pathspec magic. */
+function literalPathspec(path: string): string {
+  return `:(literal)${path}`;
+}
+
 type ExecFile = (
   command: string,
   args: readonly string[],
@@ -74,17 +79,19 @@ export class GitService {
 
   async status(): Promise<DesktopGitStatus> {
     try {
-      const output = await this.command([
-        "status",
-        "--porcelain=v1",
-        "--branch",
-      ]);
+      const { stdout: output } = await this.execFile(
+        "git",
+        ["status", "--porcelain=v1", "--branch", "-z"],
+        { cwd: this.workspaceRoot(), maxBuffer: 1_000_000 },
+      );
       const pushRemote = await this.pushRemoteName();
       let branch: string | undefined;
       let ahead = 0;
       let behind = 0;
       const files: DesktopGitStatus["files"][number][] = [];
-      for (const line of output.split(/\r?\n/)) {
+      const records = output.split("\0");
+      for (let index = 0; index < records.length; index++) {
+        const line = records[index]!;
         if (line.startsWith("## ")) {
           const details = line.slice(3);
           branch = details.split("...")[0].trim();
@@ -106,6 +113,9 @@ export class GitService {
         if (line.length < 4) continue;
         files.push({
           path: line.slice(3),
+          ...(/[RC]/.test(line.slice(0, 2))
+            ? { originalPath: records[++index] }
+            : {}),
           indexStatus: line[0],
           workTreeStatus: line[1],
         });
@@ -207,7 +217,7 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
       "--no-ext-diff",
       "HEAD",
       "--",
-      relativePath,
+      literalPathspec(relativePath),
     ]);
     if (againstHead) return againstHead;
     const staged = await this.output([
@@ -215,13 +225,13 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
       "--cached",
       "--no-ext-diff",
       "--",
-      relativePath,
+      literalPathspec(relativePath),
     ]);
     const workingTree = await this.output([
       "diff",
       "--no-ext-diff",
       "--",
-      relativePath,
+      literalPathspec(relativePath),
     ]);
     if (staged || workingTree)
       return [staged, workingTree].filter(Boolean).join("\n");
@@ -229,7 +239,7 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
       "ls-files",
       "--error-unmatch",
       "--",
-      relativePath,
+      literalPathspec(relativePath),
     ]);
     if (!tracked) {
       const untracked = await this.output([
@@ -245,11 +255,29 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
   }
 
   stage(paths: readonly string[]): Promise<string> {
-    return this.command(["add", "--", ...this.paths(paths)]);
+    return this.command([
+      "add",
+      "--",
+      ...this.paths(paths).map(literalPathspec),
+    ]);
+  }
+
+  private async renamePaths(paths: readonly string[]): Promise<string[]> {
+    const selected = this.paths(paths);
+    const status = await this.status();
+    const originals = status.files
+      .filter(
+        (file) =>
+          selected.includes(file.path) &&
+          file.originalPath &&
+          file.indexStatus === "R",
+      )
+      .map((file) => file.originalPath!);
+    return [...new Set([...selected, ...originals])];
   }
 
   async unstage(paths: readonly string[]): Promise<string> {
-    const selected = this.paths(paths);
+    const selected = (await this.renamePaths(paths)).map(literalPathspec);
     try {
       return await this.command(["restore", "--staged", "--", ...selected]);
     } catch {
@@ -258,7 +286,7 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
   }
 
   async discard(paths: readonly string[]): Promise<string> {
-    const selected = this.paths(paths);
+    const selected = await this.renamePaths(paths);
     const tracked: string[] = [];
     const stagedNew: string[] = [];
     const untracked: string[] = [];
@@ -266,7 +294,13 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
       if (await this.pathExistsAtHead(path)) tracked.push(path);
       else if (
         (
-          await this.output(["diff", "--cached", "--name-only", "--", path])
+          await this.output([
+            "diff",
+            "--cached",
+            "--name-only",
+            "--",
+            literalPathspec(path),
+          ])
         ).trim()
       )
         stagedNew.push(path);
@@ -281,22 +315,40 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
           "--staged",
           "--worktree",
           "--",
-          ...tracked,
+          ...tracked.map(literalPathspec),
         ]),
       );
     if (stagedNew.length) {
       try {
         output.push(
-          await this.command(["restore", "--staged", "--", ...stagedNew]),
+          await this.command([
+            "restore",
+            "--staged",
+            "--",
+            ...stagedNew.map(literalPathspec),
+          ]),
         );
       } catch {
-        output.push(await this.command(["rm", "--cached", "--", ...stagedNew]));
+        output.push(
+          await this.command([
+            "rm",
+            "--cached",
+            "--",
+            ...stagedNew.map(literalPathspec),
+          ]),
+        );
       }
     }
     const removable = [...stagedNew, ...untracked];
     if (removable.length)
       output.push(
-        await this.command(["clean", "-f", "-d", "--", ...removable]),
+        await this.command([
+          "clean",
+          "-f",
+          "-d",
+          "--",
+          ...removable.map(literalPathspec),
+        ]),
       );
     return output.filter(Boolean).join("\n") || "Discarded selected changes.";
   }
@@ -304,7 +356,6 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
   async commit(message: string): Promise<string> {
     if (typeof message !== "string" || !message.trim())
       throw new Error("Enter a commit message.");
-    await this.command(["add", "-A", "--"]);
     return this.command(["commit", "-m", message.trim()]);
   }
 

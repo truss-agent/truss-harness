@@ -1,7 +1,13 @@
 import type { WorkspacePlan } from "./plans.js";
 
 /** JSON-compatible values passed between the runtime, providers, and tools. */
-export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
 
 export type JsonSchema = JsonObject & { readonly type: "object" };
@@ -95,10 +101,15 @@ export interface ToolExecutionContext {
 export interface ToolResult {
   readonly content: string;
   readonly isError?: boolean;
+  /** Honored only for run-scoped contributed tools: ends the run awaiting the user. */
+  readonly endTurn?: boolean;
 }
 
 export interface AgentTool extends ToolDefinition {
-  execute(input: JsonObject, context: ToolExecutionContext): Promise<ToolResult>;
+  execute(
+    input: JsonObject,
+    context: ToolExecutionContext,
+  ): Promise<ToolResult>;
 }
 
 export interface Session {
@@ -116,12 +127,48 @@ export interface SessionCheckpoint {
 
 export type RuntimeEvent =
   | { readonly type: "run_started"; readonly sessionId: string }
-  | { readonly type: "usage"; readonly sessionId: string; readonly usage: ModelTokenUsage }
+  | {
+      readonly type: "usage";
+      readonly sessionId: string;
+      readonly usage: ModelTokenUsage;
+    }
   /** Short user-visible execution note, never hidden chain-of-thought. */
-  | { readonly type: "progress_delta"; readonly sessionId: string; readonly text: string }
-  | { readonly type: "text_delta"; readonly sessionId: string; readonly text: string }
-  | { readonly type: "tool_call_requested"; readonly sessionId: string; readonly callId: string; readonly tool: string; readonly input: JsonObject }
-  | { readonly type: "tool_completed"; readonly sessionId: string; readonly callId: string; readonly tool: string; readonly result: ToolResult }
-  | { readonly type: "plan_updated"; readonly sessionId: string; readonly plan: WorkspacePlan }
-  | { readonly type: "run_completed"; readonly sessionId: string; readonly modifiedFiles: readonly string[] }
-  | { readonly type: "run_failed"; readonly sessionId: string; readonly error: Error };
+  | {
+      readonly type: "progress_delta";
+      readonly sessionId: string;
+      readonly text: string;
+    }
+  | {
+      readonly type: "text_delta";
+      readonly sessionId: string;
+      readonly text: string;
+    }
+  | {
+      readonly type: "tool_call_requested";
+      readonly sessionId: string;
+      readonly callId: string;
+      readonly tool: string;
+      readonly input: JsonObject;
+    }
+  | {
+      readonly type: "tool_completed";
+      readonly sessionId: string;
+      readonly callId: string;
+      readonly tool: string;
+      readonly result: ToolResult;
+    }
+  | {
+      readonly type: "plan_updated";
+      readonly sessionId: string;
+      readonly plan: WorkspacePlan;
+    }
+  | {
+      readonly type: "run_completed";
+      readonly sessionId: string;
+      readonly modifiedFiles: readonly string[];
+    }
+  | {
+      readonly type: "run_failed";
+      readonly sessionId: string;
+      readonly error: Error;
+    };

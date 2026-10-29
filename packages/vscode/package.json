@@ -2,7 +2,7 @@
   "name": "truss-harness-vscode",
   "displayName": "Truss",
   "description": "VS Code client for the Truss runtime.",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "license": "SEE LICENSE IN LICENSE",
   "publisher": "truss-harness",
   "repository": {
@@ -15,7 +15,7 @@
   "homepage": "https://github.com/truss-agent/truss-harness#readme",
   "type": "module",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.101.0"
   },
   "categories": [
     "Other"
@@ -34,7 +34,8 @@
     "onCommand:trussHarness.initializeWorkspace",
     "onCommand:trussHarness.updateWorkspaceMemory",
     "onCommand:trussHarness.showWorkspaceStatus",
-    "onCommand:trussHarness.clearWorkspaceMemory"
+    "onCommand:trussHarness.clearWorkspaceMemory",
+    "onCommand:trussHarness.manageSkills"
   ],
   "main": "./dist/extension.cjs",
   "contributes": {
@@ -75,6 +76,10 @@
       {
         "command": "trussHarness.manageAgents",
         "title": "Truss: Manage Agent Profiles"
+      },
+      {
+        "command": "trussHarness.manageSkills",
+        "title": "Truss: Manage Skills"
       },
       {
         "command": "trussHarness.configureByokProvider",
@@ -153,18 +158,18 @@
     "prepublishOnly": "npm run package"
   },
   "dependencies": {
-    "@truss-harness/agent-host": "0.1.12",
-    "@truss-harness/gateway": "0.1.11",
+    "@truss-harness/agent-host": "0.1.13",
+    "@truss-harness/gateway": "0.1.12",
     "@types/qrcode": "^1.5.6",
     "qrcode": "^1.5.4",
     "@truss-harness/branding": "0.1.1",
-    "@truss-harness/cli": "0.1.23",
-    "@truss-harness/mcp": "0.1.11",
-    "@truss-harness/provider-openai-compatible": "0.1.15",
-    "@truss-harness/runtime": "0.1.14"
+    "@truss-harness/cli": "0.1.24",
+    "@truss-harness/mcp": "0.1.12",
+    "@truss-harness/provider-openai-compatible": "0.1.16",
+    "@truss-harness/runtime": "0.1.15"
   },
   "devDependencies": {
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "^1.101.0",
     "@vscode/vsce": "^3.6.2",
     "esbuild": "^0.25.0"
   },

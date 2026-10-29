@@ -4,8 +4,13 @@ import {
   LOCAL_SERVICE_PROTOCOL_VERSIONS,
   validateRuntimeServiceHandshake,
 } from "@truss-harness/cli/protocol";
-import type { ChatAttachment, ContextBlock } from "@truss-harness/runtime";
+import type {
+  ChatAttachment,
+  ContextBlock,
+  SkillSelection,
+} from "@truss-harness/runtime";
 import type { Disposable } from "vscode";
+import type { RuntimeServiceSkillState } from "@truss-harness/cli/protocol";
 import type {
   ConversationMessage,
   RunHandle,
@@ -23,6 +28,12 @@ export class RuntimeService implements Disposable {
   private readonly reader;
   private requestSequence = 0;
   private readonly ready: Promise<void>;
+  private failure: Error | undefined;
+  private textOnlyGeneration = false;
+  private skillSupport = { skills: false, skillManagement: false };
+  get isClosed(): boolean {
+    return Boolean(this.failure);
+  }
 
   constructor(
     command: string,
@@ -31,6 +42,8 @@ export class RuntimeService implements Disposable {
     environment: NodeJS.ProcessEnv,
     private readonly onEvent: (event: ServiceEvent) => void,
     onDiagnostic: (text: string) => void,
+    private readonly onClosed: () => void = () => {},
+    handshakeTimeoutMs = 8_000,
   ) {
     this.process = spawn(command, [...commandArguments, "serve"], {
       cwd,
@@ -51,7 +64,13 @@ export class RuntimeService implements Disposable {
         new Error(`Truss service exited with code ${code ?? "unknown"}.`),
       ),
     );
-    this.ready = this.initialize();
+    const timeout = setTimeout(
+      () => this.failAll(new Error("Truss service initialization timed out.")),
+      handshakeTimeoutMs,
+    );
+    this.ready = this.initialize().finally(() => clearTimeout(timeout));
+    void this.ready.catch(() => undefined);
+    this.process.stdin.on("error", (error) => this.failAll(error));
   }
 
   run(
@@ -69,6 +88,10 @@ export class RuntimeService implements Disposable {
     });
   }
 
+  generateText(prompt: string): RunHandle {
+    return this.request({ type: "run", prompt, textOnly: true });
+  }
+
   async waitUntilReady(): Promise<void> {
     await this.ready;
   }
@@ -83,6 +106,39 @@ export class RuntimeService implements Disposable {
       throw new Error("The Truss service did not create a session.");
     }
     return response.result.sessionId;
+  }
+
+  /** Skill capabilities; an older external truss-cli advertises neither. */
+  async skillCapabilities(): Promise<{
+    readonly skills: boolean;
+    readonly skillManagement: boolean;
+  }> {
+    await this.ready;
+    return this.skillSupport;
+  }
+
+  async listSkills(): Promise<RuntimeServiceSkillState> {
+    return skillState(await this.skillRequest({ type: "skills_list" }));
+  }
+
+  async updateSkillSettings(
+    scope: "user" | "workspace",
+    selection: Partial<SkillSelection> | null,
+  ): Promise<RuntimeServiceSkillState> {
+    return skillState(
+      await this.skillRequest({ type: "skills_settings", scope, selection }),
+    );
+  }
+
+  /** `path` must come from a trusted VS Code folder picker. */
+  async importSkill(path: string): Promise<RuntimeServiceSkillState> {
+    await this.skillRequest({ type: "skills_import", path }, true);
+    return this.listSkills();
+  }
+
+  async removeSkill(id: string): Promise<RuntimeServiceSkillState> {
+    await this.skillRequest({ type: "skills_remove", id }, true);
+    return this.listSkills();
   }
 
   abort(requestId: string): void {
@@ -118,10 +174,28 @@ export class RuntimeService implements Disposable {
       response.result,
       LOCAL_SERVICE_PROTOCOL_VERSIONS,
     );
+    this.textOnlyGeneration =
+      response.result.capabilities?.textOnlyGeneration === true;
+    this.skillSupport = {
+      skills: response.result.capabilities?.skills === true,
+      skillManagement: response.result.capabilities?.skillManagement === true,
+    };
     if (!handshake.compatible)
       throw new Error(
         `${handshake.reason} Update truss-cli or clear trussHarness.command to use the bundled service.`,
       );
+  }
+
+  private async skillRequest(
+    payload: Record<string, unknown>,
+    manage = false,
+  ): Promise<ServiceResponse["result"]> {
+    const support = await this.skillCapabilities();
+    if (!(manage ? support.skillManagement : support.skills))
+      throw new Error(
+        "This Truss service does not support skills. Update truss-cli or clear trussHarness.command to use the bundled service.",
+      );
+    return (await this.request(payload).result).result;
   }
 
   private request(
@@ -139,7 +213,22 @@ export class RuntimeService implements Disposable {
       resolve: resolveRequest!,
       reject: rejectRequest!,
     });
-    const send = () => this.write({ ...payload, requestId });
+    const send = () => {
+      if (
+        this.failure ||
+        (payload.textOnly === true && !this.textOnlyGeneration)
+      ) {
+        this.requests.delete(requestId);
+        rejectRequest!(
+          this.failure ??
+            new Error(
+              "The host does not support text-only generation. Update truss-cli.",
+            ),
+        );
+        return;
+      }
+      this.write({ ...payload, requestId });
+    };
     if (waitForReady) {
       void this.ready.then(send, (error: unknown) => {
         this.requests.delete(requestId);
@@ -152,7 +241,14 @@ export class RuntimeService implements Disposable {
   }
 
   private write(payload: Record<string, unknown>): void {
-    this.process.stdin.write(`${JSON.stringify(payload)}\n`);
+    if (this.failure) return;
+    try {
+      this.process.stdin.write(`${JSON.stringify(payload)}\n`, (error) => {
+        if (error) this.failAll(error);
+      });
+    } catch (error) {
+      this.failAll(error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   private handleMessage(line: string): void {
@@ -166,7 +262,7 @@ export class RuntimeService implements Disposable {
       this.onEvent(message);
       return;
     }
-    if (message.type === "lifecycle") return;
+    if (message.type !== "response" && message.type !== "error") return;
     const request = message.requestId
       ? this.requests.get(message.requestId)
       : undefined;
@@ -177,7 +273,18 @@ export class RuntimeService implements Disposable {
   }
 
   private failAll(error: Error): void {
+    if (!this.failure) {
+      this.failure = error;
+      this.onClosed();
+    }
     for (const request of this.requests.values()) request.reject(error);
     this.requests.clear();
   }
+}
+
+function skillState(
+  result: ServiceResponse["result"],
+): RuntimeServiceSkillState {
+  if (!result.skills) throw new Error("The Truss service returned no skills.");
+  return result.skills;
 }

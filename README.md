@@ -38,7 +38,8 @@ for run policy, safety behavior, and CLI commands.
 
 ![Truss CLI running in a terminal](packages/docs/public/screenshots/cli.png)
 
-Use the CLI for direct tasks, scripts, and automations.
+Use the CLI for direct tasks, scripts, and automations. The CLI, TUI, and
+Neovim service require Node.js 22.15.1 or newer; Node 24 LTS is recommended.
 
 ~~~sh
 npm install --global @truss-harness/cli
@@ -61,6 +62,8 @@ truss-tui
 ### VS Code
 
 ![Truss running inside VS Code](packages/docs/public/screenshots/vscode.png)
+
+VS Code 1.101 or newer is required for its bundled Node runtime.
 
 Download the [Truss VS Code extension](https://truss-agent.com/download), install the signed `.vsix`, and open the Truss Activity Bar view. Then select a detected local server or enter your endpoint and model. The extension supports streaming chat, focused file context, inline completions, agent modes, Git-aware actions, and tool approvals.
 
@@ -132,6 +135,22 @@ Example .truss-harness/config.json:
 }
 ~~~
 
+Review the workspace configuration, then authorize that exact file locally:
+
+~~~sh
+truss-cli config trust
+truss-cli config status
+~~~
+
+Trust is stored beside your user configuration, bound to the canonical workspace
+and file contents. Editing the file requires trust again. Existing repositories
+and `config init` templates start untrusted: they cannot select endpoints,
+credentials, permission policy, editing mode, or executable MCP commands.
+User settings, environment variables, and explicit flags continue to work.
+Only the top-level theme is applied from untrusted files. Workspace model
+settings require `config trust` or an explicit `--model` choice; an untrusted
+repository cannot replace your selected local or cloud model.
+
 Use a profile for a task:
 
 ~~~sh
@@ -149,6 +168,8 @@ You can also configure a one-off session with environment variables:
 | TRUSS_HARNESS_API_KEY | Optional token for a protected endpoint |
 | TRUSS_HARNESS_SYSTEM_PROMPT | Optional system prompt |
 | TRUSS_HARNESS_MCP_SERVERS | Optional JSON object containing local MCP servers |
+| TRUSS_HARNESS_SKILLS_MODE | Optional skill mode: automatic, manual, or off |
+| TRUSS_HARNESS_SUPERPOWERS_ENABLED | Optional on or off for the bundled Superpowers skills |
 
 The Desktop app and VS Code extension keep endpoint, model, mode, and
 permission choices in their own settings. API keys should stay in the client’s
@@ -167,7 +188,18 @@ Choose the mode that fits the task:
 
 Tool permissions are independent from mode. Use **Ask every time** to approve
 each action, **Auto-allow read-only** to approve safe inspection automatically,
-or **Auto-allow all tools** only in a workspace you trust.
+or **Auto-allow all tools** only in a workspace you trust. Direct CLI chat honors
+`--permission` too. Ask is the default; without a TTY, a tool needing approval
+fails promptly. For authorized automation, explicitly choose `--permission auto-all`.
+Ctrl+C cancels generation and pending approvals.
+
+Existing workspace managed-agent profiles need review and `truss-cli agents trust <id>`.
+Profiles created or updated through a trusted local client retain their own
+content-bound receipts. Adding a profile does not trust other profiles.
+
+Workspace file operations check canonical paths, including symlink targets and
+parents of new files. Safe internal symlinks work. These pathname checks cannot
+prevent hostile concurrent symlink swaps; terminal commands retain OS access.
 
 ## MCP servers
 
@@ -192,14 +224,26 @@ CLI/TUI users can add the same definitions to their shared configuration:
 Chat and Plan modes load only servers marked readOnly; Edit mode loads every
 enabled server. Workspace MCP definitions are
 ignored by default because they can start local processes; explicitly trust
-them with "allowWorkspaceMcpServers": true in your user configuration when
-appropriate.
+the reviewed workspace configuration with `truss-cli config trust`. The legacy
+`allowWorkspaceMcpServers` flag no longer authorizes repository commands.
 
 Use `truss-cli mcp status`, `truss-cli mcp tools`, or
 `truss-cli mcp reconnect <name>` for safe terminal diagnostics. The TUI opens
 the same credential-safe server/tool status with `c`. Paired Truss Go clients
 can view status, but server commands, environment values, and credentials stay
 on the host.
+
+## Skills
+
+Skills are instruction folders with a `SKILL.md` that agents follow for a kind
+of work. Truss bundles the [Superpowers](https://github.com/obra/superpowers)
+pack (MIT), on by default. In **Automatic** mode agents load relevant skills on
+their own, **Manual** uses only the skills you mark always active, and **Off**
+uses none. Import your own skills with `truss-cli skills add <folder>`, Desktop
+Settings, **Truss: Manage Skills** in VS Code, or `:TrussSkillAdd` in Neovim.
+They are shared by every client. Skills in a repository's
+`.truss-harness/skills` folder stay untrusted until you import them. See
+[Skills](https://truss-agent.com/docs/runtime/skills).
 
 ## Learn more
 

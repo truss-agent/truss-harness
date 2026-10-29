@@ -1,5 +1,12 @@
-import type { ChatAttachment, JsonObject, ModelTokenUsage, RuntimeEvent, ToolResult } from "./contracts.js";
+import type {
+  ChatAttachment,
+  JsonObject,
+  ModelTokenUsage,
+  RuntimeEvent,
+  ToolResult,
+} from "./contracts.js";
 import type { WorkspacePlan } from "./plans.js";
+import type { SkillSelection, SkillSourceKind } from "./skills/contracts.js";
 
 /** The first version of the provider-neutral protocol used by remote Truss clients. */
 export const REMOTE_SESSION_PROTOCOL_VERSION = 1 as const;
@@ -39,12 +46,7 @@ export interface RemoteMcpToolSummary {
 /** Credential-safe MCP lifecycle state for paired read-only status views. */
 export interface RemoteMcpServerStatus {
   readonly name: string;
-  readonly state:
-    | "idle"
-    | "disabled"
-    | "connecting"
-    | "connected"
-    | "failed";
+  readonly state: "idle" | "disabled" | "connecting" | "connected" | "failed";
   readonly toolCount: number;
   readonly error?: string;
   readonly tools?: readonly RemoteMcpToolSummary[];
@@ -66,6 +68,23 @@ export interface RemoteHostCapabilities {
   readonly agentActions: readonly RemoteAgentAction[];
   /** Whether the host exposes read-only, credential-safe MCP status. */
   readonly supportsMcpStatus?: boolean;
+  /** Whether the paired client may list skills and change workspace/session skill settings. */
+  readonly supportsSkills?: boolean;
+}
+
+/** Skill metadata safe to show on a paired device; no paths or content. */
+export interface RemoteSkillSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly source: SkillSourceKind;
+  readonly bundle?: string;
+  readonly trusted: boolean;
+}
+
+export interface RemoteSkillState {
+  readonly skills: readonly RemoteSkillSummary[];
+  readonly selection: SkillSelection;
 }
 
 /** Metadata used by a transport during pairing and connection setup. Authentication remains transport-owned. */
@@ -102,7 +121,14 @@ export interface RemoteAgentRunSummary {
   readonly id: string;
   readonly agentId: string;
   readonly sessionId?: string;
-  readonly state: "idle" | "queued" | "running" | "waiting_for_approval" | "completed" | "failed" | "cancelled";
+  readonly state:
+    | "idle"
+    | "queued"
+    | "running"
+    | "waiting_for_approval"
+    | "completed"
+    | "failed"
+    | "cancelled";
   readonly startedAt?: string;
   readonly completedAt?: string;
   readonly latestProgress?: string;
@@ -115,39 +141,185 @@ export interface RemoteAgentRunSummary {
 
 /** Commands a remote client may request. The host authorizes every command against its own policy. */
 export type RemoteClientCommand =
-  | (RemoteCommandEnvelope & { readonly type: "create_session"; readonly workspaceId: string; readonly mode: "chat" | "plan" | "edit"; readonly toolApprovalMode?: RemoteToolApprovalMode })
-  | (RemoteCommandEnvelope & { readonly type: "change_session_mode"; readonly sessionId: string; readonly mode: "chat" | "plan" | "edit"; readonly toolApprovalMode?: RemoteToolApprovalMode })
-  | (RemoteCommandEnvelope & { readonly type: "send_message"; readonly sessionId: string; readonly prompt: string; readonly attachments?: readonly ChatAttachment[] })
-  | (RemoteCommandEnvelope & { readonly type: "approve_tool"; readonly sessionId: string; readonly callId: string; readonly approved: boolean })
-  | (RemoteCommandEnvelope & { readonly type: "interrupt"; readonly sessionId: string })
+  | (RemoteCommandEnvelope & {
+      readonly type: "create_session";
+      readonly workspaceId: string;
+      readonly mode: "chat" | "plan" | "edit";
+      readonly toolApprovalMode?: RemoteToolApprovalMode;
+    })
+  | (RemoteCommandEnvelope & {
+      readonly type: "change_session_mode";
+      readonly sessionId: string;
+      readonly mode: "chat" | "plan" | "edit";
+      readonly toolApprovalMode?: RemoteToolApprovalMode;
+    })
+  | (RemoteCommandEnvelope & {
+      readonly type: "send_message";
+      readonly sessionId: string;
+      readonly prompt: string;
+      readonly attachments?: readonly ChatAttachment[];
+    })
+  | (RemoteCommandEnvelope & {
+      readonly type: "approve_tool";
+      readonly sessionId: string;
+      readonly callId: string;
+      readonly approved: boolean;
+    })
+  | (RemoteCommandEnvelope & {
+      readonly type: "interrupt";
+      readonly sessionId: string;
+    })
   | (RemoteAgentCommandEnvelope & { readonly type: "list_agents" })
-  | (RemoteAgentCommandEnvelope & { readonly type: "start_agent"; readonly agentId: string; readonly prompt: string; readonly attachments?: readonly ChatAttachment[] })
-  | (RemoteAgentCommandEnvelope & { readonly type: "stop_agent"; readonly runId: string })
-  | (RemoteAgentCommandEnvelope & { readonly type: "resolve_agent_approval"; readonly runId: string; readonly callId: string; readonly approved: boolean });
+  | (RemoteAgentCommandEnvelope & {
+      readonly type: "start_agent";
+      readonly agentId: string;
+      readonly prompt: string;
+      readonly attachments?: readonly ChatAttachment[];
+    })
+  | (RemoteAgentCommandEnvelope & {
+      readonly type: "stop_agent";
+      readonly runId: string;
+    })
+  | (RemoteAgentCommandEnvelope & {
+      readonly type: "list_skills";
+      readonly sessionId?: string;
+    })
+  | (RemoteAgentCommandEnvelope & {
+      readonly type: "update_skill_settings";
+      /** Remote clients never change user-wide defaults. */
+      readonly scope: "workspace" | "session";
+      readonly sessionId?: string;
+      readonly selection: Partial<SkillSelection> | null;
+    })
+  | (RemoteAgentCommandEnvelope & {
+      readonly type: "resolve_agent_approval";
+      readonly runId: string;
+      readonly callId: string;
+      readonly approved: boolean;
+    });
 
 export type RemoteCommandResult =
-  | { readonly requestId: string; readonly type: "session_created"; readonly sessionId: string }
+  | {
+      readonly requestId: string;
+      readonly type: "session_created";
+      readonly sessionId: string;
+    }
   | { readonly requestId: string; readonly type: "accepted" }
-  | { readonly requestId: string; readonly type: "agents_listed"; readonly profiles: readonly RemoteAgentProfile[]; readonly runs: readonly RemoteAgentRunSummary[] }
-  | { readonly requestId: string; readonly type: "agent_run"; readonly run: RemoteAgentRunSummary }
-  | { readonly requestId: string; readonly type: "rejected"; readonly code: "invalid_command" | "not_authorized" | "not_found" | "conflict"; readonly message: string };
+  | {
+      readonly requestId: string;
+      readonly type: "agents_listed";
+      readonly profiles: readonly RemoteAgentProfile[];
+      readonly runs: readonly RemoteAgentRunSummary[];
+    }
+  | {
+      readonly requestId: string;
+      readonly type: "agent_run";
+      readonly run: RemoteAgentRunSummary;
+    }
+  | ({
+      readonly requestId: string;
+      readonly type: "skills_listed";
+    } & RemoteSkillState)
+  | {
+      readonly requestId: string;
+      readonly type: "rejected";
+      readonly code:
+        | "invalid_command"
+        | "not_authorized"
+        | "not_found"
+        | "conflict";
+      readonly message: string;
+    };
 
 /** JSON-safe, sequenced events for clients that are not running in the host process. */
 export type RemoteSessionEvent =
-  | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "run_started"; readonly sessionId: string }
-  | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "usage"; readonly sessionId: string; readonly usage: ModelTokenUsage }
-  | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "progress_delta"; readonly sessionId: string; readonly text: string }
-  | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "text_delta"; readonly sessionId: string; readonly text: string }
-  | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "tool_call_requested"; readonly sessionId: string; readonly callId: string; readonly tool: string; readonly input: JsonObject }
-  | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "tool_completed"; readonly sessionId: string; readonly callId: string; readonly tool: string; readonly result: ToolResult }
-  | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "plan_updated"; readonly sessionId: string; readonly plan: WorkspacePlan }
-  | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "run_completed"; readonly sessionId: string; readonly modifiedFiles: readonly string[] }
-  | { readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION; readonly sequence: number; readonly type: "run_failed"; readonly sessionId: string; readonly message: string };
+  | {
+      readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION;
+      readonly sequence: number;
+      readonly type: "run_started";
+      readonly sessionId: string;
+    }
+  | {
+      readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION;
+      readonly sequence: number;
+      readonly type: "usage";
+      readonly sessionId: string;
+      readonly usage: ModelTokenUsage;
+    }
+  | {
+      readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION;
+      readonly sequence: number;
+      readonly type: "progress_delta";
+      readonly sessionId: string;
+      readonly text: string;
+    }
+  | {
+      readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION;
+      readonly sequence: number;
+      readonly type: "text_delta";
+      readonly sessionId: string;
+      readonly text: string;
+    }
+  | {
+      readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION;
+      readonly sequence: number;
+      readonly type: "tool_call_requested";
+      readonly sessionId: string;
+      readonly callId: string;
+      readonly tool: string;
+      readonly input: JsonObject;
+    }
+  | {
+      readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION;
+      readonly sequence: number;
+      readonly type: "tool_completed";
+      readonly sessionId: string;
+      readonly callId: string;
+      readonly tool: string;
+      readonly result: ToolResult;
+    }
+  | {
+      readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION;
+      readonly sequence: number;
+      readonly type: "plan_updated";
+      readonly sessionId: string;
+      readonly plan: WorkspacePlan;
+    }
+  | {
+      readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION;
+      readonly sequence: number;
+      readonly type: "run_completed";
+      readonly sessionId: string;
+      readonly modifiedFiles: readonly string[];
+    }
+  | {
+      readonly version: typeof REMOTE_SESSION_PROTOCOL_VERSION;
+      readonly sequence: number;
+      readonly type: "run_failed";
+      readonly sessionId: string;
+      readonly message: string;
+    };
 
 /** Agent events are v2 envelopes; nested runtime events remain compatible v1 payloads. */
 export type RemoteAgentEvent =
-  | { readonly version: typeof REMOTE_AGENT_PROTOCOL_VERSION; readonly sequence: number; readonly type: "agent_run_updated"; readonly workspaceId: string; readonly run: RemoteAgentRunSummary }
-  | { readonly version: typeof REMOTE_AGENT_PROTOCOL_VERSION; readonly sequence: number; readonly type: "agent_runtime"; readonly workspaceId: string; readonly agentId: string; readonly runId: string; readonly runSequence: number; readonly occurredAt: string; readonly event: RemoteSessionEvent };
+  | {
+      readonly version: typeof REMOTE_AGENT_PROTOCOL_VERSION;
+      readonly sequence: number;
+      readonly type: "agent_run_updated";
+      readonly workspaceId: string;
+      readonly run: RemoteAgentRunSummary;
+    }
+  | {
+      readonly version: typeof REMOTE_AGENT_PROTOCOL_VERSION;
+      readonly sequence: number;
+      readonly type: "agent_runtime";
+      readonly workspaceId: string;
+      readonly agentId: string;
+      readonly runId: string;
+      readonly runSequence: number;
+      readonly occurredAt: string;
+      readonly event: RemoteSessionEvent;
+    };
 
 export type RemoteGatewayEvent = RemoteSessionEvent | RemoteAgentEvent;
 
@@ -155,18 +327,50 @@ export type RemoteGatewayEvent = RemoteSessionEvent | RemoteAgentEvent;
  * Maps in-process runtime events to the versioned wire form. It intentionally
  * replaces Error instances with plain messages before a transport serializes them.
  */
-export function toRemoteSessionEvent(event: RuntimeEvent, sequence: number): RemoteSessionEvent {
-  const envelope = { version: REMOTE_SESSION_PROTOCOL_VERSION, sequence, sessionId: event.sessionId } as const;
+export function toRemoteSessionEvent(
+  event: RuntimeEvent,
+  sequence: number,
+): RemoteSessionEvent {
+  const envelope = {
+    version: REMOTE_SESSION_PROTOCOL_VERSION,
+    sequence,
+    sessionId: event.sessionId,
+  } as const;
   switch (event.type) {
-    case "run_started": return { ...envelope, type: event.type };
-    case "usage": return { ...envelope, type: event.type, usage: event.usage };
-    case "progress_delta": return { ...envelope, type: event.type, text: event.text };
-    case "text_delta": return { ...envelope, type: event.type, text: event.text };
-    case "tool_call_requested": return { ...envelope, type: event.type, callId: event.callId, tool: event.tool, input: event.input };
-    case "tool_completed": return { ...envelope, type: event.type, callId: event.callId, tool: event.tool, result: event.result };
-    case "plan_updated": return { ...envelope, type: event.type, plan: event.plan };
-    case "run_completed": return { ...envelope, type: event.type, modifiedFiles: event.modifiedFiles };
-    case "run_failed": return { ...envelope, type: event.type, message: event.error.message };
+    case "run_started":
+      return { ...envelope, type: event.type };
+    case "usage":
+      return { ...envelope, type: event.type, usage: event.usage };
+    case "progress_delta":
+      return { ...envelope, type: event.type, text: event.text };
+    case "text_delta":
+      return { ...envelope, type: event.type, text: event.text };
+    case "tool_call_requested":
+      return {
+        ...envelope,
+        type: event.type,
+        callId: event.callId,
+        tool: event.tool,
+        input: event.input,
+      };
+    case "tool_completed":
+      return {
+        ...envelope,
+        type: event.type,
+        callId: event.callId,
+        tool: event.tool,
+        result: event.result,
+      };
+    case "plan_updated":
+      return { ...envelope, type: event.type, plan: event.plan };
+    case "run_completed":
+      return {
+        ...envelope,
+        type: event.type,
+        modifiedFiles: event.modifiedFiles,
+      };
+    case "run_failed":
+      return { ...envelope, type: event.type, message: event.error.message };
   }
 }
 

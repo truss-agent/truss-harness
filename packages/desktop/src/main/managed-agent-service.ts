@@ -1,7 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import {
   AgentHost,
+  type AgentHostSkills,
   type ProviderConnectionResult,
 } from "@truss-harness/agent-host";
 import { brand } from "@truss-harness/branding";
@@ -38,6 +39,7 @@ export class ManagedAgentService {
       reference: string,
     ) => Promise<string | undefined>,
     private readonly send: (event: DesktopEvent) => void,
+    private readonly skills?: () => Promise<AgentHostSkills>,
   ) {}
 
   get coordinator(): AgentCoordinator | undefined {
@@ -49,9 +51,11 @@ export class ManagedAgentService {
     this.unsubscribeEvents = undefined;
     await this.coordinatorValue?.dispose();
     const state = this.state();
+    const skills = await this.skills?.();
     this.host = new AgentHost({
       workspaceRoot: state.workspaceRoot,
       mcpServers: state.configuration?.mcpServers,
+      ...(skills ? { skills } : {}),
       credentialResolver: {
         resolve: async (reference) => {
           const account = state.providerAccounts?.find(
@@ -67,10 +71,12 @@ export class ManagedAgentService {
       },
       approvalFactory: createAgentApproval,
       planStoreFactory: (profile) =>
-        new FileWorkspacePlanStore(
-          state.workspaceRoot,
-          managedAgentPlanPath(state.workspaceRoot, profile.id),
-        ),
+        new FileWorkspacePlanStore(state.workspaceRoot, {
+          workspaceRelativePath: relative(
+            state.workspaceRoot,
+            managedAgentPlanPath(state.workspaceRoot, profile.id),
+          ),
+        }),
     });
     this.coordinatorValue = new AgentCoordinator({
       profiles: new DesktopAgentProfileStore(

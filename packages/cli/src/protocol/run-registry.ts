@@ -32,6 +32,7 @@ export class RunRegistry {
   start(input: {
     readonly requestId: string;
     readonly prompt: string;
+    readonly runtime: RuntimeServiceRuntime;
     readonly sessionId?: string;
     readonly context: readonly ContextBlock[];
     readonly attachments: readonly ChatAttachment[];
@@ -39,6 +40,7 @@ export class RunRegistry {
     if (this.activeRequestIds.has(input.requestId))
       throw new Error("That requestId already has an active run.");
     this.activeRequestIds.add(input.requestId);
+    this.controllers.set(input.requestId, new AbortController());
     const run = this.run(input);
     this.activeRuns.add(run);
     void run.finally(() => this.activeRuns.delete(run));
@@ -65,6 +67,7 @@ export class RunRegistry {
   private async run(input: {
     readonly requestId: string;
     readonly prompt: string;
+    readonly runtime: RuntimeServiceRuntime;
     readonly sessionId?: string;
     readonly context: readonly ContextBlock[];
     readonly attachments: readonly ChatAttachment[];
@@ -72,8 +75,8 @@ export class RunRegistry {
     let sessionId: string | undefined;
     try {
       const session = input.sessionId
-        ? await this.options.runtime.getSession(input.sessionId)
-        : await this.options.runtime.createSession();
+        ? await input.runtime.getSession(input.sessionId)
+        : await input.runtime.createSession();
       if (this.options.isClosed()) return;
       if (!session) {
         this.options.sendError(
@@ -92,8 +95,7 @@ export class RunRegistry {
         );
         return;
       }
-      const controller = new AbortController();
-      this.controllers.set(input.requestId, controller);
+      const controller = this.controllers.get(input.requestId)!;
       this.requestSessions.set(input.requestId, sessionId);
       this.activeRequestBySession.set(sessionId, input.requestId);
       this.options.send({
@@ -102,7 +104,7 @@ export class RunRegistry {
         state: "started",
         sessionId,
       });
-      await this.options.runtime.run(
+      await input.runtime.run(
         sessionId,
         input.prompt,
         controller.signal,

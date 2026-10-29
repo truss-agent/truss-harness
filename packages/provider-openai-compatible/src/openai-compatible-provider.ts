@@ -123,7 +123,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
     const partialCalls = new Map<number, PartialToolCall>();
     let finalReason: "stop" | "tool_calls" | "length" = "stop";
-    let receivedChunk = false;
+    let receivedTerminalReason = false;
     let receivedText = false;
 
     const processData = (
@@ -147,14 +147,16 @@ export class OpenAICompatibleProvider implements ModelProvider {
       const choice = chunk.choices?.[0];
       const usage = tokenUsage(chunk.usage);
       if (!choice) return { done: false, ...(usage ? { usage } : {}) };
-      receivedChunk = true;
+
       const text = contentText(
         choice.delta?.content ?? choice.message?.content,
       );
       if (text) receivedText = true;
       appendChunk(partialCalls, choice);
-      if (choice.finish_reason)
+      if (choice.finish_reason) {
+        receivedTerminalReason = true;
         finalReason = finishReason(choice.finish_reason);
+      }
       return {
         done: false,
         ...(text ? { text } : {}),
@@ -223,7 +225,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
     // Some local OpenAI-compatible servers close after the final JSON event rather
     // than sending the optional OpenAI [DONE] marker. Process that buffered event
-    // and accept a clean close after at least one valid chunk.
+    // and accept a clean close only after a semantic terminal reason.
     buffered += decoder.decode();
     const trailingLines = buffered
       .split(/\r?\n/)
@@ -246,7 +248,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
         return;
       }
     }
-    if (receivedChunk) {
+    if (receivedTerminalReason) {
       const completed = finish();
       for (const call of completed.calls) yield { type: "tool_call", ...call };
       yield {

@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/gateway",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Authenticated HTTP/SSE gateway for remote Truss clients.",
   "type": "module",
   "exports": {
@@ -19,11 +19,11 @@
     "README.md"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22.15.1"
   },
   "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
-    "@truss-harness/runtime": "^0.1.11",
+    "@truss-harness/runtime": "^0.1.15",
     "@types/ws": "^8.18.1",
     "ws": "^8.21.1"
   }

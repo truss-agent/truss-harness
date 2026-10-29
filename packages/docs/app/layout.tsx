@@ -4,6 +4,7 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import type { Metadata, Viewport } from "next";
 import { siteUrl } from "./site-metadata";
 import "./site.css";
+import { ThemeProvider } from "./theme-provider";
 
 export const metadata: Metadata = {
   title: { default: brand.productName, template: `%s | ${brand.productName}` },
@@ -101,11 +102,12 @@ export default function RootLayout({
       <body>
         <script
           type="application/ld+json"
+          // biome-ignore lint/security/noDangerouslySetInnerHtml: JSON-LD serializes data and escapes HTML delimiters below.
           dangerouslySetInnerHTML={{
             __html: JSON.stringify(structuredData).replace(/</g, "\\u003c"),
           }}
         />
-        {children}
+        <ThemeProvider>{children}</ThemeProvider>
         <Analytics />
         <SpeedInsights />
       </body>

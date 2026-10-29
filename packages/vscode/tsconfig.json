@@ -11,5 +11,9 @@
     "skipLibCheck": true
   },
   "include": ["src"],
-  "references": [{ "path": "../branding" }, { "path": "../provider-openai-compatible" }, { "path": "../runtime" }]
+  "references": [
+    { "path": "../branding" },
+    { "path": "../provider-openai-compatible" },
+    { "path": "../runtime" }
+  ]
 }

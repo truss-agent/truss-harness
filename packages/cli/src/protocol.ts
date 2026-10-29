@@ -4,11 +4,9 @@ import {
   serviceCapabilities,
 } from "./protocol/capabilities.js";
 import { RunRegistry } from "./protocol/run-registry.js";
+import { skillRequest } from "./protocol/skills.js";
 import { jsonRpcMessage } from "./protocol/wire.js";
-import {
-  RUNTIME_PACKAGE_NAME,
-  RUNTIME_VERSION,
-} from "@truss-harness/runtime";
+import { RUNTIME_PACKAGE_NAME, RUNTIME_VERSION } from "@truss-harness/runtime";
 import {
   LOCAL_SERVICE_PROTOCOL_VERSIONS,
   type RuntimeServiceCapabilities,
@@ -49,6 +47,10 @@ export type {
 
 export interface RuntimeServiceOptions {
   readonly runtime: RuntimeServiceRuntime;
+  readonly textRuntime?: {
+    readonly runtime: RuntimeServiceRuntime;
+    readonly events: RuntimeServiceEventSource;
+  };
   readonly events: RuntimeServiceEventSource;
   readonly write: (message: RuntimeServiceWireMessage) => void;
   readonly approval?: ProtocolToolApproval;
@@ -66,6 +68,7 @@ export interface RuntimeServiceOptions {
 export class RuntimeService {
   private readonly runs: RunRegistry;
   private readonly unsubscribe: () => void;
+  private readonly unsubscribeText?: () => void;
   private readonly unsubscribeApproval?: () => void;
   private readonly capabilities: RuntimeServiceCapabilities;
   private initialized = false;
@@ -90,6 +93,11 @@ export class RuntimeService {
         requestId,
         event: serializeEvent(event),
       });
+    });
+    this.unsubscribeText = options.textRuntime?.events.subscribe((event) => {
+      const requestId = this.runs.requestForSession(event.sessionId);
+      if (requestId && !this.closed)
+        this.send({ type: "event", requestId, event: serializeEvent(event) });
     });
     this.unsubscribeApproval = options.approval?.subscribe((call, session) => {
       const requestId = this.runs.requestForSession(session.id);
@@ -269,6 +277,20 @@ export class RuntimeService {
         }));
         return "continue";
       }
+      if (
+        request.type === "skills_list" ||
+        request.type === "skills_settings" ||
+        request.type === "skills_import" ||
+        request.type === "skills_remove"
+      ) {
+        const skills = this.options.host?.skills;
+        if (!skills) return this.unavailableCapability(requestId, "Skills");
+        const operation = skillRequest(request.type, request, skills);
+        if (operation === "unavailable")
+          return this.unavailableCapability(requestId, "Skill management");
+        await this.hostResponse(requestId, operation);
+        return "continue";
+      }
     } catch (error) {
       this.sendError("invalid_request", requestError(error), requestId);
       return "continue";
@@ -286,6 +308,7 @@ export class RuntimeService {
     if (this.closed) return;
     this.closed = true;
     this.unsubscribe();
+    this.unsubscribeText?.();
     this.unsubscribeApproval?.();
     await this.runs.close();
     this.options.approval?.denyAll();
@@ -384,6 +407,14 @@ export class RuntimeService {
       return { ...common, type: "list_profiles" };
     if (request.method === "mcp/status")
       return { ...common, type: "mcp_status" };
+    if (request.method === "skills/list")
+      return { ...common, type: "skills_list" };
+    if (request.method === "skills/settings")
+      return { ...common, type: "skills_settings" };
+    if (request.method === "skills/import")
+      return { ...common, type: "skills_import" };
+    if (request.method === "skills/remove")
+      return { ...common, type: "skills_remove" };
     if (request.method === "service/ping") return { ...common, type: "ping" };
     if (request.method === "service/shutdown")
       return { ...common, type: "shutdown" };
@@ -409,6 +440,15 @@ export class RuntimeService {
 
   private startRun(requestId: string, request: Record<string, unknown>): void {
     const prompt = sanitizePrompt(request.prompt);
+    if (request.textOnly !== undefined && typeof request.textOnly !== "boolean")
+      throw new Error("textOnly must be a boolean.");
+    if (
+      request.textOnly === true &&
+      (!this.options.textRuntime || request.sessionId !== undefined)
+    )
+      throw new Error(
+        "Text-only generation requires an isolated supported runtime and no sessionId.",
+      );
     if (
       request.sessionId !== undefined &&
       typeof request.sessionId !== "string"
@@ -419,6 +459,10 @@ export class RuntimeService {
     this.runs.start({
       requestId,
       prompt,
+      runtime:
+        request.textOnly === true
+          ? this.options.textRuntime!.runtime
+          : this.options.runtime,
       sessionId:
         typeof request.sessionId === "string" ? request.sessionId : undefined,
       context,

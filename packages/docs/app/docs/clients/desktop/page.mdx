@@ -1,3 +1,7 @@
+---
+title: "Desktop Guide"
+---
+
 # <Brand /> Desktop App
 
 The desktop app is a standalone local-first workspace for Ollama, LM Studio, llama.cpp server, compatible local endpoints, and optional BYOK cloud providers. It runs the same runtime, tools, sessions, approvals, and provider configuration as the other Truss clients.
@@ -76,6 +80,10 @@ The terminal accepts ordinary workspace shell commands. It also recognizes `/hel
 Choose **Ask every time**, **Auto-allow read-only**, or **Auto-allow all tools** in Settings. File reads, searches, and directory listing are read-only; writes and terminal commands require approval unless the selected policy allows them.
 
 Enable **Allow public internet research** to expose bounded `web_search` and `web_fetch` tools. Internet access is off by default, and network requests require approval unless **Auto-allow all** is selected.
+
+## Skills
+
+**Settings → App & tools → Skills** lists available skills and sets the mode, the Superpowers pack, and always-active skills, for all workspaces or only this one. **Import folder** opens a folder picker, and **Remove** deletes one of your imported skills. Skills are shared with the CLI and every other client. See [Skills](/docs/runtime/skills).
 
 ## MCP servers
 

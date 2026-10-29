@@ -9,10 +9,13 @@ import {
 } from "@truss-harness/runtime";
 import { AgentHost, type AgentMode, type HostedRuntime } from "./host.js";
 import type { AgentProviderRegistry } from "./providers.js";
+import type { AgentHostSkills } from "./skills.js";
 
 /** Compatibility options for existing single-agent clients. */
 export interface HostedRuntimeOptions {
   readonly workspaceRoot: string;
+  /** Host-enforced helper generation without workspace tools or MCP. */
+  readonly textOnly?: boolean;
   readonly provider: ModelProviderKind;
   readonly baseUrl: string;
   readonly model: string;
@@ -27,7 +30,11 @@ export interface HostedRuntimeOptions {
   readonly internetAccess?: boolean;
   readonly mcpServers?: McpServerConfigurations;
   readonly providerRegistry?: AgentProviderRegistry;
+  readonly skills?: AgentHostSkills;
 }
+
+/** Profile ID of the primary conversation created by createHostedRuntime. */
+export const singleAgentProfileId = "single-agent";
 
 /**
  * Compatibility constructor used by existing CLI, Desktop, and TUI flows.
@@ -43,7 +50,7 @@ export async function createHostedRuntime(
       ? new ApiKeyCredential(`${options.provider}-api-key`, options.apiKey)
       : undefined);
   const profile: AgentProfile = {
-    id: "single-agent",
+    id: singleAgentProfileId,
     displayName: "Default agent",
     provider: {
       providerId: options.provider,
@@ -67,6 +74,7 @@ export async function createHostedRuntime(
     approvalFactory: () => options.approval,
     providerRegistry: options.providerRegistry,
     credentialResolver: { resolve: async () => credential },
+    ...(options.skills ? { skills: options.skills } : {}),
   });
-  return host.createRuntime(profile);
+  return host.createRuntime(profile, { textOnly: options.textOnly });
 }

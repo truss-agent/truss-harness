@@ -34,7 +34,9 @@ function UserConfigPath() {
 }
 
 function WorkspaceMarker({ boundary }: { readonly boundary: "start" | "end" }) {
-  return <code>{`<!-- ${brand.productSlug}:workspace-context:${boundary} -->`}</code>;
+  return (
+    <code>{`<!-- ${brand.productSlug}:workspace-context:${boundary} -->`}</code>
+  );
 }
 
 export function useMDXComponents(components: Record<string, unknown>) {
@@ -49,6 +51,6 @@ export function useMDXComponents(components: Record<string, unknown>) {
     WorkspaceMemoryPath,
     UserConfigPath,
     WorkspaceMarker,
-    ...components
+    ...components,
   };
 }

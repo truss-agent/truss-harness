@@ -81,6 +81,13 @@ Use `:TrussTestConnection` to safely test the active provider and
 named CLI configuration profile and restarts the reusable service without
 moving keys into Lua.
 
+`:TrussSkills` chooses how agents use skills: Automatic (agents load relevant
+skills), Manual (only skills you mark always active) or Off, and turns the
+bundled Superpowers pack on or off. `:TrussSkillAdd {dir}` imports a folder
+with a `SKILL.md`, and `:TrussSkillRemove {id}` removes one of your skills.
+Skills are shared with the CLI, TUI, Desktop and VS Code, and changes apply to
+the next run.
+
 `:checkhealth truss` verifies the local Neovim and CLI versions, executable
 resolution, workspace access, and optional Git integration without starting
 the service or contacting a provider. See the

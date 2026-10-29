@@ -80,5 +80,6 @@ export function normalizeToolResult(value: unknown): ToolResult {
       ? result.content
       : "Tool completed without output.",
     ...(result.isError ? { isError: true } : {}),
+    ...(result.endTurn === true ? { endTurn: true } : {}),
   };
 }

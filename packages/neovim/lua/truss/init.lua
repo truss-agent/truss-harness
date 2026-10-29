@@ -423,6 +423,177 @@ function M.select_profile()
   end)
 end
 
+local skill_mode_order = { "automatic", "manual", "off" }
+
+local function skill_client(manage, callback)
+  local panel = ensure_panel()
+  connect(function(error_message)
+    if error_message then
+      return
+    end
+    local capabilities = state.client.capabilities
+    if not capabilities.skills or (manage and not capabilities.skillManagement) then
+      notify("Update truss-cli to manage skills from Neovim.")
+      return
+    end
+    callback(panel)
+  end)
+end
+
+local function skill_result(panel, callback)
+  return function(request_error, result)
+    if request_error then
+      panel:add_activity(request_error.message or tostring(request_error))
+      return
+    end
+    if callback then
+      callback(result or {})
+    end
+  end
+end
+
+local function without_pack_skills(skill_ids)
+  local kept = {}
+  for _, id in ipairs(skill_ids or {}) do
+    if not vim.startswith(id, "superpowers:") then
+      table.insert(kept, id)
+    end
+  end
+  return kept
+end
+
+local function skill_selectable(skills, skill)
+  return skill.trusted
+    and (skills.selection.superpowersEnabled or not vim.startswith(skill.id, "superpowers:"))
+end
+
+--- Skill menu entries for one listed state, exposed for tests.
+function M._skill_menu(skills, scope)
+  local selection = skills.selection
+  return {
+    { action = "mode", label = "Mode: " .. selection.mode },
+    {
+      action = "superpowers",
+      label = "Superpowers pack: " .. (selection.superpowersEnabled and "on" or "off"),
+    },
+    {
+      action = "select",
+      label = string.format("Always-active skills (%d)", #(selection.skillIds or {})),
+    },
+    {
+      action = "scope",
+      label = "Save changes for: " .. (scope == "user" and "all workspaces" or "this workspace"),
+    },
+  }
+end
+
+function M.skills(scope)
+  scope = scope or "user"
+  skill_client(false, function(panel)
+    state.client:list_skills(skill_result(panel, function(result)
+      local skills = result.skills
+      if not skills then
+        return
+      end
+      local save = function(selection)
+        state.client:update_skill_settings(scope, selection, skill_result(panel, function()
+          M.skills(scope)
+        end))
+      end
+      vim.ui.select(M._skill_menu(skills, scope), {
+        prompt = "Truss skills (changes apply to the next run)",
+        format_item = function(item)
+          return item.label
+        end,
+      }, function(item)
+        if not item then
+          return
+        end
+        if item.action == "scope" then
+          M.skills(scope == "user" and "workspace" or "user")
+        elseif item.action == "mode" then
+          vim.ui.select(skill_mode_order, { prompt = "Skill mode" }, function(mode)
+            if mode then
+              save({ mode = mode })
+            end
+          end)
+        elseif item.action == "superpowers" then
+          if skills.selection.superpowersEnabled then
+            save({
+              superpowersEnabled = false,
+              skillIds = without_pack_skills(skills.selection.skillIds),
+            })
+          else
+            save({ superpowersEnabled = true })
+          end
+        else
+          local selected = {}
+          for _, id in ipairs(skills.selection.skillIds or {}) do
+            selected[id] = true
+          end
+          local choices = {}
+          for _, skill in ipairs(skills.skills or {}) do
+            if selected[skill.id] or skill_selectable(skills, skill) then
+              table.insert(choices, skill)
+            end
+          end
+          vim.ui.select(choices, {
+            prompt = "Toggle an always-active skill",
+            format_item = function(skill)
+              return string.format(
+                "[%s] %s  %s",
+                selected[skill.id] and "x" or " ",
+                skill.id,
+                skill.description or ""
+              )
+            end,
+          }, function(skill)
+            if not skill then
+              return
+            end
+            local next_ids = {}
+            for _, id in ipairs(skills.selection.skillIds or {}) do
+              if id ~= skill.id then
+                table.insert(next_ids, id)
+              end
+            end
+            if not selected[skill.id] then
+              table.insert(next_ids, skill.id)
+            end
+            save({ skillIds = next_ids })
+          end)
+        end
+      end)
+    end))
+  end)
+end
+
+function M.add_skill(path)
+  if not path or path == "" then
+    notify("Give a skill folder that contains SKILL.md.", vim.log.levels.ERROR)
+    return
+  end
+  local directory = vim.fn.fnamemodify(vim.fn.expand(path), ":p"):gsub("[/\\]$", "")
+  skill_client(true, function(panel)
+    state.client:import_skill(directory, skill_result(panel, function(result)
+      local skill = result.skill or {}
+      notify("Imported skill " .. (skill.id or directory))
+    end))
+  end)
+end
+
+function M.remove_skill(id)
+  if not id or id == "" then
+    notify("Give the skill ID to remove, such as user:notes.", vim.log.levels.ERROR)
+    return
+  end
+  skill_client(true, function(panel)
+    state.client:remove_skill(id, skill_result(panel, function()
+      notify("Removed skill " .. id)
+    end))
+  end)
+end
+
 function M.status()
   local status = state.client and state.client.initialized and "connected" or "disconnected"
   local run = state.client and state.client.active_request and "run active" or "idle"
@@ -493,6 +664,24 @@ function M._register_commands()
   })
   vim.api.nvim_create_user_command("TrussProfile", M.select_profile, {
     desc = "Select a named Truss CLI profile",
+  })
+  vim.api.nvim_create_user_command("TrussSkills", function()
+    M.skills()
+  end, {
+    desc = "Choose Truss skill mode, Superpowers and always-active skills",
+  })
+  vim.api.nvim_create_user_command("TrussSkillAdd", function(command)
+    M.add_skill(command.args)
+  end, {
+    desc = "Import a skill folder into your Truss skills",
+    nargs = 1,
+    complete = "dir",
+  })
+  vim.api.nvim_create_user_command("TrussSkillRemove", function(command)
+    M.remove_skill(command.args)
+  end, {
+    desc = "Remove one of your imported Truss skills",
+    nargs = 1,
   })
   vim.api.nvim_create_autocmd("VimLeavePre", {
     group = vim.api.nvim_create_augroup("TrussNvim", { clear = true }),

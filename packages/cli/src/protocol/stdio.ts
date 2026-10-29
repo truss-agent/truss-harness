@@ -15,6 +15,10 @@ export async function runService(
   events: RuntimeServiceEventSource,
   approval?: ProtocolToolApproval,
   options: {
+    readonly textRuntime?: {
+      readonly runtime: RuntimeServiceRuntime;
+      readonly events: RuntimeServiceEventSource;
+    };
     readonly serverVersion?: string;
     readonly capabilities?: Partial<RuntimeServiceCapabilities>;
     readonly host?: RuntimeServiceHost;
@@ -23,6 +27,7 @@ export async function runService(
   const service = new RuntimeService({
     runtime,
     events,
+    textRuntime: options.textRuntime,
     approval,
     write: (message) => stdout.write(`${JSON.stringify(message)}\n`),
     serverVersion: options.serverVersion,

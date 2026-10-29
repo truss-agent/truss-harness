@@ -1,4 +1,7 @@
-if (process.env.npm_config_global === "true" || process.env.npm_config_global === "1") {
+if (
+  process.env.npm_config_global === "true" ||
+  process.env.npm_config_global === "1"
+) {
   process.stdout.write(`
 Truss CLI installed.
 
