@@ -1,4 +1,8 @@
-import { EventBus, type RuntimeEvent } from "@truss-harness/runtime";
+import {
+  type AgentRuntime,
+  EventBus,
+  type RuntimeEvent,
+} from "@truss-harness/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   type GatewaySkillController,
@@ -33,7 +37,7 @@ function runtime() {
         messages: [],
       }),
       run: async () => {},
-    },
+    } as unknown as AgentRuntime,
     events: new EventBus<RuntimeEvent>(),
   };
 }
