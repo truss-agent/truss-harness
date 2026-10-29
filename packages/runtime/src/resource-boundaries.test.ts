@@ -1,3 +1,6 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -78,6 +81,51 @@ describe("bounded process execution", () => {
 });
 
 describe("context and result byte budgets", () => {
+  it.skipIf(process.platform === "win32")(
+    "rejects a writerless FIFO promptly without hanging an isolated worker",
+    async () => {
+      const root = await workspace();
+      const path = join(root, "writerless.fifo");
+      await promisify(execFile)("mkfifo", [path]);
+      const source = await readFile(
+        new URL("./resource-limits.ts", import.meta.url),
+        "utf8",
+      );
+      const module =
+        "data:text/javascript;base64," +
+        Buffer.from(
+          transpileModule(source, {
+            compilerOptions: {
+              module: ModuleKind.ESNext,
+              target: ScriptTarget.ES2022,
+            },
+          }).outputText,
+        ).toString("base64");
+      const script = `
+      import { readBoundedText } from ${JSON.stringify(module)};
+      const started = Date.now();
+      try {
+        await readBoundedText(${JSON.stringify(path)}, 100, AbortSignal.timeout(25));
+        console.log(JSON.stringify({ rejected: false }));
+      } catch (error) {
+        console.log(JSON.stringify({ rejected: /regular/i.test(error.message), elapsed: Date.now() - started }));
+      }
+    `;
+      const result = await promisify(execFile)(
+        process.execPath,
+        ["--input-type=module", "--eval", script],
+        { timeout: 2000, killSignal: "SIGKILL", maxBuffer: 4096 },
+      );
+      const outcome = JSON.parse(result.stdout) as {
+        rejected: boolean;
+        elapsed: number;
+      };
+      expect(outcome.rejected).toBe(true);
+      expect(outcome.elapsed).toBeLessThan(500);
+      expect(result.stderr).toBe("");
+    },
+  );
+
   it("bounds built-in file reads before accumulating large files", async () => {
     const root = await workspace();
     await writeFile(join(root, "large.txt"), "🙂".repeat(100_000));

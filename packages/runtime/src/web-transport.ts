@@ -51,23 +51,31 @@ export class NodePublicWebTransport implements PublicWebTransport {
               signal,
             },
             (response) => {
-              const headers = new Headers();
-              for (const [name, value] of Object.entries(response.headers)) {
-                if (Array.isArray(value))
-                  value.forEach((entry) => headers.append(name, entry));
-                else if (value !== undefined) headers.set(name, value);
+              response.once("error", reject);
+              try {
+                const headers = new Headers();
+                for (const [name, value] of Object.entries(response.headers)) {
+                  if (Array.isArray(value))
+                    value.forEach((entry) => headers.append(name, entry));
+                  else if (value !== undefined) headers.set(name, value);
+                }
+                const status = response.statusCode ?? 500;
+                const empty = [204, 205, 304].includes(status);
+                if (empty) response.resume();
+                resolve(
+                  new Response(
+                    empty
+                      ? null
+                      : (Readable.toWeb(
+                          response,
+                        ) as ReadableStream<Uint8Array>),
+                    { status, headers },
+                  ),
+                );
+              } catch (error) {
+                response.destroy();
+                reject(error);
               }
-              const status = response.statusCode ?? 500;
-              const empty = [204, 205, 304].includes(status);
-              if (empty) response.resume();
-              resolve(
-                new Response(
-                  empty
-                    ? null
-                    : (Readable.toWeb(response) as ReadableStream<Uint8Array>),
-                  { status, headers },
-                ),
-              );
             },
           );
           request.once("error", reject);

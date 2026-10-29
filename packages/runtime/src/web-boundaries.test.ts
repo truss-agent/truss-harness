@@ -1,3 +1,6 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { ModuleKind, ScriptTarget, transpileModule } from "typescript";
 import { createServer } from "node:http";
 import { createServer as createHttpsServer } from "node:https";
 import { readFile } from "node:fs/promises";
@@ -9,6 +12,61 @@ const context = { workspaceRoot: "." };
 const publicResolver = async () => ["93.184.216.34", "2606:4700:4700::1111"];
 
 describe("public web boundaries", () => {
+  it("rejects unsupported HTTP status conversion without crashing and closes the failed response", async () => {
+    const source = await readFile(
+      new URL("./web-transport.ts", import.meta.url),
+      "utf8",
+    );
+    const module =
+      "data:text/javascript;base64," +
+      Buffer.from(
+        transpileModule(source, {
+          compilerOptions: {
+            module: ModuleKind.ESNext,
+            target: ScriptTarget.ES2022,
+          },
+        }).outputText,
+      ).toString("base64");
+    const script = `
+      import { createServer } from "node:http";
+      import { NodePublicWebTransport } from ${JSON.stringify(module)};
+      let failedResponseClosed = false;
+      const server = createServer((request, response) => {
+        if (request.url === "/bad") {
+          response.on("close", () => { failedResponseClosed = true; });
+          response.writeHead(600);
+          response.write("unsupported status; body deliberately remains open");
+        } else response.end("alive");
+      });
+      await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+      try {
+        const port = server.address().port;
+        const transport = new NodePublicWebTransport();
+        let rejected = false;
+        try { await transport.request(new URL("http://example.test:" + port + "/bad"), ["127.0.0.1"], AbortSignal.timeout(1000)); }
+        catch (error) { rejected = error instanceof RangeError; }
+        const response = await transport.request(new URL("http://example.test:" + port + "/good"), ["127.0.0.1"], AbortSignal.timeout(1000));
+        const body = await response.text();
+        await new Promise(resolve => setImmediate(resolve));
+        console.log(JSON.stringify({ rejected, failedResponseClosed, body }));
+      } finally {
+        server.closeAllConnections();
+        await new Promise(resolve => server.close(resolve));
+      }
+    `;
+    const result = await promisify(execFile)(
+      process.execPath,
+      ["--input-type=module", "--eval", script],
+      { timeout: 3000, killSignal: "SIGKILL", maxBuffer: 32_768 },
+    );
+    expect(JSON.parse(result.stdout)).toEqual({
+      rejected: true,
+      failedResponseClosed: true,
+      body: "alive",
+    });
+    expect(result.stderr).toBe("");
+  });
+
   it("connects only to pinned addresses while preserving the URL Host", async () => {
     const server = createServer((request, response) =>
       response.end(request.headers.host),

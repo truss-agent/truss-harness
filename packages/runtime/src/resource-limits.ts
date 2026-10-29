@@ -1,3 +1,4 @@
+import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { StringDecoder } from "node:string_decoder";
 
@@ -42,8 +43,15 @@ export async function readBoundedText(
 ): Promise<{ text: string; truncated: boolean }> {
   byteLimit(maximumBytes);
   signal?.throwIfAborted();
-  const file = await open(path, "r");
+  // POSIX FIFO open must not wait for a writer before descriptor validation.
+  // Windows has no POSIX FIFO flag; retain its native read-only open semantics.
+  const flags =
+    process.platform === "win32"
+      ? constants.O_RDONLY
+      : constants.O_RDONLY | constants.O_NONBLOCK;
+  const file = await open(path, flags);
   try {
+    signal?.throwIfAborted();
     if (!(await file.stat()).isFile())
       throw new Error("Only regular text files may be read.");
     const buffer = Buffer.alloc(maximumBytes + 1);
