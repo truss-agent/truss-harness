@@ -95,3 +95,91 @@ it("round-trips exact porcelain paths and rename origins through Git actions", a
     await service.discard(["renamed\nfile"]);
     expect((await service.status()).files).toEqual([]);
   }));
+
+it.each([
+  ["file*.txt", "file-other.txt"],
+  ["file?.txt", "file1.txt"],
+  ["file[ab].txt", "filea.txt"],
+  [":(glob)file*.txt", "file-other.txt"],
+])(
+  "keeps selected path %s literal across stage, diff, unstage and discard",
+  async (selected, other) =>
+    repository(async (root, git, service) => {
+      await writeFile(join(root, selected), "selected base\n");
+      await writeFile(join(root, other), "other base\n");
+      await git("add", ".");
+      await git("commit", "-qm", "base");
+      await writeFile(join(root, selected), "selected change\n");
+      await writeFile(join(root, other), "other change\n");
+      const diff = await service.diffFile(selected);
+      expect(diff).toContain("+selected change");
+      expect(diff).not.toContain("+other change");
+      await service.stage([selected]);
+      expect(
+        (await git("diff", "--cached", "--name-only", "-z"))
+          .split("\0")
+          .filter(Boolean),
+      ).toEqual([selected]);
+      await git("add", ".");
+      await service.unstage([selected]);
+      expect(
+        (await git("diff", "--cached", "--name-only", "-z"))
+          .split("\0")
+          .filter(Boolean),
+      ).toEqual([other]);
+      await service.discard([selected]);
+      expect(await git("show", `:./${other}`)).toBe("other change\n");
+      expect(await service.diffFile(selected)).toBe(
+        "No Git diff for this file.",
+      );
+      expect((await service.status()).files).toEqual([
+        { path: other, indexStatus: "M", workTreeStatus: " " },
+      ]);
+    }),
+);
+it("treats untracked and newly staged pathspec-magic names literally when discarding", async () =>
+  repository(async (root, git, service) => {
+    await writeFile(join(root, "base"), "base");
+    await git("add", ".");
+    await git("commit", "-qm", "base");
+    for (const staged of [false, true]) {
+      const selected = ":(glob)new*.txt";
+      const other = "new-other.txt";
+      await writeFile(join(root, selected), "selected\n");
+      await writeFile(join(root, other), "other\n");
+      if (staged) await git("add", ".");
+      const diff = await service.diffFile(selected);
+      expect(diff).toContain("+selected");
+      expect(diff).not.toContain("+other");
+      await service.discard([selected]);
+      expect((await service.status()).files.map((file) => file.path)).toEqual([
+        other,
+      ]);
+      await service.discard([other]);
+    }
+  }));
+it("treats both rename paths literally without restoring or unstaging matching siblings", async () =>
+  repository(async (root, git, service) => {
+    const source = "source*.txt",
+      destination = ":(glob)renamed*.txt",
+      other = "source-other.txt";
+    await writeFile(join(root, source), "source\n");
+    await writeFile(join(root, other), "base\n");
+    await git("add", ".");
+    await git("commit", "-qm", "base");
+    await git("--literal-pathspecs", "mv", "--", source, destination);
+    await writeFile(join(root, other), "other\n");
+    await git("add", ".");
+    await service.unstage([destination]);
+    expect(
+      (await git("diff", "--cached", "--name-only", "-z"))
+        .split("\0")
+        .filter(Boolean),
+    ).toEqual([other]);
+    await git("add", ".");
+    await service.discard([destination]);
+    expect((await service.status()).files).toEqual([
+      { path: other, indexStatus: "M", workTreeStatus: " " },
+    ]);
+    expect(await git("show", `:./${other}`)).toBe("other\n");
+  }));

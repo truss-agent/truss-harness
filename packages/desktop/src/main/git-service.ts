@@ -5,6 +5,11 @@ import type {
   DesktopGitStatus,
 } from "../shared.js";
 
+/** `--` ends options; selected filenames still need literal pathspec magic. */
+function literalPathspec(path: string): string {
+  return `:(literal)${path}`;
+}
+
 type ExecFile = (
   command: string,
   args: readonly string[],
@@ -212,7 +217,7 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
       "--no-ext-diff",
       "HEAD",
       "--",
-      relativePath,
+      literalPathspec(relativePath),
     ]);
     if (againstHead) return againstHead;
     const staged = await this.output([
@@ -220,13 +225,13 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
       "--cached",
       "--no-ext-diff",
       "--",
-      relativePath,
+      literalPathspec(relativePath),
     ]);
     const workingTree = await this.output([
       "diff",
       "--no-ext-diff",
       "--",
-      relativePath,
+      literalPathspec(relativePath),
     ]);
     if (staged || workingTree)
       return [staged, workingTree].filter(Boolean).join("\n");
@@ -234,7 +239,7 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
       "ls-files",
       "--error-unmatch",
       "--",
-      relativePath,
+      literalPathspec(relativePath),
     ]);
     if (!tracked) {
       const untracked = await this.output([
@@ -250,7 +255,11 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
   }
 
   stage(paths: readonly string[]): Promise<string> {
-    return this.command(["add", "--", ...this.paths(paths)]);
+    return this.command([
+      "add",
+      "--",
+      ...this.paths(paths).map(literalPathspec),
+    ]);
   }
 
   private async renamePaths(paths: readonly string[]): Promise<string[]> {
@@ -268,7 +277,7 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
   }
 
   async unstage(paths: readonly string[]): Promise<string> {
-    const selected = await this.renamePaths(paths);
+    const selected = (await this.renamePaths(paths)).map(literalPathspec);
     try {
       return await this.command(["restore", "--staged", "--", ...selected]);
     } catch {
@@ -285,7 +294,13 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
       if (await this.pathExistsAtHead(path)) tracked.push(path);
       else if (
         (
-          await this.output(["diff", "--cached", "--name-only", "--", path])
+          await this.output([
+            "diff",
+            "--cached",
+            "--name-only",
+            "--",
+            literalPathspec(path),
+          ])
         ).trim()
       )
         stagedNew.push(path);
@@ -300,22 +315,40 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
           "--staged",
           "--worktree",
           "--",
-          ...tracked,
+          ...tracked.map(literalPathspec),
         ]),
       );
     if (stagedNew.length) {
       try {
         output.push(
-          await this.command(["restore", "--staged", "--", ...stagedNew]),
+          await this.command([
+            "restore",
+            "--staged",
+            "--",
+            ...stagedNew.map(literalPathspec),
+          ]),
         );
       } catch {
-        output.push(await this.command(["rm", "--cached", "--", ...stagedNew]));
+        output.push(
+          await this.command([
+            "rm",
+            "--cached",
+            "--",
+            ...stagedNew.map(literalPathspec),
+          ]),
+        );
       }
     }
     const removable = [...stagedNew, ...untracked];
     if (removable.length)
       output.push(
-        await this.command(["clean", "-f", "-d", "--", ...removable]),
+        await this.command([
+          "clean",
+          "-f",
+          "-d",
+          "--",
+          ...removable.map(literalPathspec),
+        ]),
       );
     return output.filter(Boolean).join("\n") || "Discarded selected changes.";
   }
