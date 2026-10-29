@@ -1,3 +1,7 @@
+---
+title: "Configuration"
+---
+
 # Configuration
 
 The CLI and terminal UI share one JSON configuration system. Use named profiles for different local servers, cloud providers, and models instead of repeating environment variables.
@@ -15,7 +19,7 @@ On Windows, the user configuration file is <UserConfigPath />. Each workspace ca
 
 Review `.truss-harness/config.json`, then run `truss-cli config trust`. Authorization is stored beside your user configuration and binds the exact contents to the canonical workspace. Changes invalidate trust. Run `truss-cli config status` to inspect effective policy, setting provenance and trust status without displaying credentials.
 
-Only the top-level theme is applied from untrusted workspace files. Model settings require `config trust` or an explicit `--model` choice; an untrusted file cannot replace a user-selected local/cloud model or choose a router model. Untrusted files also cannot select providers, endpoints, credentials, named profiles, editing mode, approval policy, internet access or MCP commands. User configuration, environment variables and explicit flags remain available. Existing workspace configurations require this local review once; the legacy `allowWorkspaceMcpServers` switch is no longer sufficient. Malformed untrusted JSON is ignored with a diagnostic; repair or remove the file before trusting it.
+Only the top-level theme is applied from untrusted workspace files. Model settings in workspace files require `config trust` before they can select an execution model. An explicit `--model` flag selects that model independently; it does not authorize the workspace file. Untrusted workspace model names are suggestions for review only and cannot replace a user-selected local/cloud model or choose a router model. Untrusted files also cannot select providers, endpoints, credentials, named profiles, editing mode, approval policy, internet access or MCP commands. User configuration, environment variables and explicit flags remain available. Existing workspace configurations require this local review once; the legacy `allowWorkspaceMcpServers` switch is no longer sufficient. Malformed untrusted JSON is ignored with a diagnostic; repair or remove the file before trusting it.
 
 ## Interactive setup
 
@@ -158,9 +162,9 @@ User-level MCP definitions load normally. Workspace MCP definitions are ignored 
 ## Precedence
 
 1. CLI flags
-2. Selected workspace profile and workspace fields
-3. Selected user profile and user fields
-4. `TRUSS_HARNESS_*` environment variables
+2. `TRUSS_HARNESS_*` environment variables
+3. Selected trusted workspace profile and trusted workspace fields
+4. Selected user profile and user fields
 5. Detected local model and defaults
 
 CLI flags include `--profile`, `--provider`, `--base-url`, `--model`, `--mode`, `--permission`, `--internet-access`, and `--no-internet-access`.

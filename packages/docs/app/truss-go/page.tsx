@@ -1,3 +1,4 @@
+import { getReleases } from "../download/server-releases";
 import Link from "next/link";
 import Image from "next/image";
 import { brand } from "@truss-harness/branding";
@@ -11,14 +12,11 @@ export const metadata = createPageMetadata({
   path: "/truss-go"
 });
 
-function getRepository(repositoryUrl: string) {
-  return repositoryUrl.replace(/^https:\/\/github\.com\//, "").replace(/\/$/, "");
-}
+export const revalidate = 3600;
 
-export default function TrussGoPage() {
-  const repository = getRepository(brand.repositoryUrl);
+export default async function TrussGoPage() {
   const releasesUrl = `${brand.repositoryUrl}/releases`;
-  const apiUrl = `https://api.github.com/repos/${repository}/releases?per_page=30`;
+  const releases = await getReleases();
 
   return (
     <div className="site">
@@ -30,7 +28,7 @@ export default function TrussGoPage() {
             <h1>Your Truss workspace, in your pocket.</h1>
             <p>Start a trusted pairing from Truss Desktop or VS Code, scan its QR code, and keep working with the agent from your Android phone on the same Wi-Fi network.</p>
             <div className="site-actions">
-              <TrussGoDownloadClient apiUrl={apiUrl} releasesUrl={releasesUrl} />
+              <TrussGoDownloadClient releases={releases} releasesUrl={releasesUrl} />
               <Link className="site-button site-button-secondary" href="/docs/clients/truss-go">Read setup guide</Link>
             </div>
           </div>
@@ -72,7 +70,7 @@ export default function TrussGoPage() {
           <div><p className="site-eyebrow">Download options</p><h2>Choose the distribution that fits you.</h2><p>Google Play is the normal installation path. GitHub APKs are useful for testers and early access before the Play listing is available.</p></div>
           <div className="truss-go-distribution-cards">
             <article><span>Google Play</span><h3>Public release</h3><p>Coming soon. This will be the recommended option for everyday Android users.</p><span className="site-button download-button-unavailable" aria-disabled="true">Coming soon</span></article>
-            <article><span>GitHub Releases</span><h3>Direct APK</h3><p>Install the signed APK manually. Android will ask you to allow installs from the browser or file manager you use.</p><TrussGoDownloadClient apiUrl={apiUrl} releasesUrl={releasesUrl} /></article>
+            <article><span>GitHub Releases</span><h3>Direct APK</h3><p>Install the signed APK manually. Android will ask you to allow installs from the browser or file manager you use.</p><TrussGoDownloadClient releases={releases} releasesUrl={releasesUrl} /></article>
           </div>
         </section>
 
