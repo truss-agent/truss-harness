@@ -65,7 +65,7 @@ export function desktopSettingsElements(document: Document) {
       "superpowersEnabledInput",
     ),
     resetWorkspaceSkills: element<HTMLButtonElement>("resetWorkspaceSkills"),
-    skillList: element<HTMLDivElement>("skillList"),
+    skillList: element<HTMLUListElement>("skillList"),
     skillStatus: element<HTMLDivElement>("skillStatus"),
     checkUpdatesOnLaunch: element<HTMLInputElement>("checkUpdatesOnLaunch"),
     autoDownloadUpdates: element<HTMLInputElement>("autoDownloadUpdates"),

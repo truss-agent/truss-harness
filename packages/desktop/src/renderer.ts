@@ -2706,9 +2706,8 @@ function renderSkills(): void {
   resetWorkspaceSkills.hidden = skillScopeSelect.value !== "workspace";
   skillList.replaceChildren(
     ...skillRows(state).map((row) => {
-      const card = document.createElement("article");
+      const card = document.createElement("li");
       card.className = `mcp-server-card skill-card${row.available ? "" : " unavailable"}`;
-      card.setAttribute("role", "listitem");
       const heading = document.createElement("div");
       heading.className = "mcp-server-card-heading";
       const identity = document.createElement("div");

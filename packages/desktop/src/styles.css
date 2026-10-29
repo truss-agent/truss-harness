@@ -1835,6 +1835,12 @@ dialog::backdrop {
   gap: 10px;
 }
 
+.skill-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .skill-card.unavailable strong {
   color: #9badb5;
 }
