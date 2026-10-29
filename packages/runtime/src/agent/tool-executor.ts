@@ -25,12 +25,20 @@ export type AgentToolExecution = WorkspaceToolRecord & {
 export class AgentToolExecutor {
   constructor(private readonly options: AgentToolExecutorOptions) {}
 
+  private async approve(call: ToolCall, session: Session, signal?: AbortSignal): Promise<boolean> {
+    signal?.throwIfAborted();
+    const approved = await (this.options.approval ?? allowAllTools).approve(call, session);
+    signal?.throwIfAborted();
+    return approved;
+  }
+
   async execute(
     session: Session,
     call: ToolCall,
     signal?: AbortSignal,
     preflightError?: string,
   ): Promise<AgentToolExecution> {
+    signal?.throwIfAborted();
     const { id: callId, name: tool, input } = call;
     await this.options.emit({
       type: "tool_call_requested",
@@ -39,6 +47,7 @@ export class AgentToolExecutor {
       tool,
       input,
     });
+    signal?.throwIfAborted();
     const implementation = this.options.tools.get(tool);
     let result: ToolResult;
     if (preflightError) {
@@ -51,11 +60,12 @@ export class AgentToolExecutor {
         isError: true,
       };
     } else if (
-      !(await (this.options.approval ?? allowAllTools).approve(call, session))
+      !(await this.approve(call, session, signal))
     ) {
       result = { content: `Tool call denied: ${tool}`, isError: true };
     } else {
       try {
+        signal?.throwIfAborted();
         result = normalizeToolResult(
           await implementation.execute(input, {
             workspaceRoot: this.options.workspaceRoot,
@@ -63,12 +73,15 @@ export class AgentToolExecutor {
           }),
         );
       } catch (error) {
+        signal?.throwIfAborted();
+        if (error instanceof Error && error.name === "AbortError") throw error;
         result = {
           content: `Tool execution failed: ${error instanceof Error ? error.message : String(error)}\n\nRECOVERY: ${toolFailureRecovery(tool)}`,
           isError: true,
         };
       }
     }
+    signal?.throwIfAborted();
     session.messages.push({
       role: "tool",
       name: tool,
@@ -82,6 +95,7 @@ export class AgentToolExecutor {
       tool,
       result,
     });
+    signal?.throwIfAborted();
     const recoveryRequired =
       tool === "replace_in_file" &&
       result.isError &&

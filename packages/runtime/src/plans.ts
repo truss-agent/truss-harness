@@ -1,5 +1,6 @@
+import { FileWorkspaceStorageOwnership, type WorkspaceStorageOwnership } from "./storage-ownership.js";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { brand } from "@truss-harness/branding";
 
@@ -51,10 +52,9 @@ export function parseAgentPlan(text: string, objective: string): { readonly titl
 
 /** Durable active plan stored separately from source files and intended to be Git-ignored. */
 export class FileWorkspacePlanStore implements WorkspacePlanStore {
-  private pendingWrite: Promise<void> = Promise.resolve();
   readonly path: string;
 
-  constructor(workspaceRoot: string, path = join(workspaceRoot, brand.workspaceDirectory, "plans", "active.json")) {
+  constructor(workspaceRoot: string, path = join(workspaceRoot, brand.workspaceDirectory, "plans", "active.json"), private readonly ownership: WorkspaceStorageOwnership = new FileWorkspaceStorageOwnership()) {
     this.path = path;
   }
 
@@ -69,38 +69,41 @@ export class FileWorkspacePlanStore implements WorkspacePlanStore {
   }
 
   async create(input: { readonly title: string; readonly objective: string; readonly steps: readonly string[] }): Promise<WorkspacePlan> {
-    const now = new Date().toISOString();
-    const plan: WorkspacePlan = {
-      version: 1,
-      id: randomUUID(),
-      title: input.title,
-      objective: input.objective,
-      createdAt: now,
-      updatedAt: now,
-      status: "active",
-      steps: input.steps.map((content, index) => ({ id: `step-${index + 1}`, content, status: "pending" }))
-    };
-    await this.queueWrite(plan);
-    return plan;
+    return this.ownership.run(this.path, async () => {
+      const now = new Date().toISOString();
+      const plan: WorkspacePlan = {
+        version: 1,
+        id: randomUUID(),
+        title: input.title,
+        objective: input.objective,
+        createdAt: now,
+        updatedAt: now,
+        status: "active",
+        steps: input.steps.map((content, index) => ({ id: `step-${index + 1}`, content, status: "pending" }))
+      };
+      await this.write(plan);
+      return plan;
+    });
   }
 
   async updateStep(stepId: string, status: PlanStepStatus): Promise<WorkspacePlan> {
-    const current = await this.load();
-    if (!current) throw new Error("No active plan exists. Create a plan in Plan mode first.");
-    if (!current.steps.some((step) => step.id === stepId)) throw new Error(`Unknown plan step '${stepId}'.`);
-    const steps = current.steps.map((step) => step.id === stepId ? { ...step, status } : step);
-    const plan: WorkspacePlan = { ...current, steps, status: steps.every((step) => step.status === "completed") ? "completed" : "active", updatedAt: new Date().toISOString() };
-    await this.queueWrite(plan);
-    return plan;
+    return this.ownership.run(this.path, async () => {
+      const current = await this.load();
+      if (!current) throw new Error("No active plan exists. Create a plan in Plan mode first.");
+      if (!current.steps.some((step) => step.id === stepId)) throw new Error(`Unknown plan step '${stepId}'.`);
+      const steps = current.steps.map((step) => step.id === stepId ? { ...step, status } : step);
+      const plan: WorkspacePlan = { ...current, steps, status: steps.every((step) => step.status === "completed") ? "completed" : "active", updatedAt: new Date().toISOString() };
+      await this.write(plan);
+      return plan;
+    });
   }
 
-  private async queueWrite(plan: WorkspacePlan): Promise<void> {
-    this.pendingWrite = this.pendingWrite.then(async () => {
-      await mkdir(dirname(this.path), { recursive: true });
-      const temporary = `${this.path}.${process.pid}.tmp`;
+  private async write(plan: WorkspacePlan): Promise<void> {
+    await mkdir(dirname(this.path), { recursive: true });
+    const temporary = `${this.path}.${process.pid}.${randomUUID()}.tmp`;
+    try {
       await writeFile(temporary, `${JSON.stringify(plan, null, 2)}\n`, "utf8");
       await rename(temporary, this.path);
-    });
-    return this.pendingWrite;
+    } finally { await rm(temporary, { force: true }); }
   }
 }

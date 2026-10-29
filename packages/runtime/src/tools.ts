@@ -61,6 +61,7 @@ export const writeFileTool: AgentTool = {
   name: "write_file", description: "Create a new UTF-8 file or fully replace a small file using a workspace-relative path. For an existing or large file, read it first and use replace_in_file for one focused edit; do not send an entire large file in one tool call. Absolute paths are not allowed.",
   inputSchema: { type: "object", properties: { path: { type: "string" }, content: { type: "string" } }, required: ["path", "content"] },
   async execute(input, context) {
+    context.signal?.throwIfAborted();
     const content = stringInput(input, "content");
     const fullPath = resolveWorkspacePath(context.workspaceRoot, nonEmptyStringInput(input, "path"));
     let existing: string | undefined;
@@ -71,7 +72,8 @@ export const writeFileTool: AgentTool = {
       throw new Error("Refusing to replace a large file with substantially less content. Use replace_in_file for a focused edit.");
     }
     await mkdir(dirname(fullPath), { recursive: true });
-    await writeFile(fullPath, content, "utf8");
+    context.signal?.throwIfAborted();
+    await writeFile(fullPath, content, { encoding: "utf8", signal: context.signal });
     return { content: "File written." };
   }
 };
@@ -80,6 +82,7 @@ export const replaceInFileTool: AgentTool = {
   name: "replace_in_file", description: "Safely replace one unique contiguous string in a UTF-8 workspace file. Read the file first and copy the exact oldText. If the target file is blank, newText initializes it. Line-ending differences are handled automatically. Absolute paths are not allowed.",
   inputSchema: { type: "object", properties: { path: { type: "string" }, oldText: { type: "string" }, newText: { type: "string" } }, required: ["path", "oldText", "newText"] },
   async execute(input, context) {
+    context.signal?.throwIfAborted();
     const oldText = stringInput(input, "oldText");
     const newText = stringInput(input, "newText");
     const fullPath = resolveWorkspacePath(context.workspaceRoot, nonEmptyStringInput(input, "path"));
@@ -88,7 +91,8 @@ export const replaceInFileTool: AgentTool = {
     // file. There is no exact excerpt to match in a blank file, so initialize
     // it from newText rather than entering an unrecoverable retry loop.
     if (!existing.trim()) {
-      await writeFile(fullPath, newText, "utf8");
+      context.signal?.throwIfAborted();
+      await writeFile(fullPath, newText, { encoding: "utf8", signal: context.signal });
       return { content: "File was blank; wrote replacement content." };
     }
     const countOccurrences = (source: string, search: string) => source.split(search).length - 1;
@@ -115,12 +119,14 @@ export const replaceInFileTool: AgentTool = {
       const matches = [...existing.matchAll(whitespaceFlexible)];
       if (matches.length === 1) {
         const lineEnding = existing.includes("\r\n") ? "\r\n" : "\n";
-        await writeFile(fullPath, existing.replace(whitespaceFlexible, newText.replace(/\r\n|\r|\n/g, lineEnding)), "utf8");
+        context.signal?.throwIfAborted();
+        await writeFile(fullPath, existing.replace(whitespaceFlexible, () => newText.replace(/\r\n|\r|\n/g, lineEnding)), { encoding: "utf8", signal: context.signal });
         return { content: "File updated (matched with normalized whitespace)." };
       }
     }
     if (occurrences !== 1) throw new Error(`Expected oldText to occur exactly once, found ${occurrences}. Read the file again and retry with one exact contiguous excerpt from its current contents.`);
-    await writeFile(fullPath, existing.replace(sourceText, replacementText), "utf8");
+    context.signal?.throwIfAborted();
+    await writeFile(fullPath, existing.replace(sourceText, () => replacementText), { encoding: "utf8", signal: context.signal });
     return { content: "File updated." };
   }
 };

@@ -50,6 +50,10 @@ interface ActiveRun {
   created?: CreatedManagedAgentRuntime;
   unsubscribe?: () => void;
   ownsWriteLease: boolean;
+  cancellationRequested?: boolean;
+  execution?: Promise<void>;
+  runtimeError?: AgentRunError;
+  finishing?: boolean;
 }
 
 const maxAgentRunOutputChars = 20_000;
@@ -210,12 +214,19 @@ export class AgentCoordinator {
       throw new AgentCoordinatorError("not_found", "Unknown agent run.");
     }
     if (isTerminalAgentRunState(run.state)) return this.summary(run);
+    if (run.cancellationRequested) return this.summary(run);
+    run.cancellationRequested = true;
     run.controller?.abort();
     run.created?.approval?.denyAll();
-    await this.finish(run, "cancelled", {
-      code: "aborted",
-      message: "Stopped by user.",
-    });
+    if (run.state === "queued") {
+      await this.finish(run, "cancelled", { code: "aborted", message: "Stopped by user." });
+    } else {
+      // A stop request is observable immediately; ownership remains until launch drains.
+      run.state = "running";
+      run.activeTool = undefined;
+      run.latestProgress = "Stopping…";
+      await this.publishRun(run);
+    }
     return this.summary(run);
   }
 
@@ -224,6 +235,7 @@ export class AgentCoordinator {
       (run) => !isTerminalAgentRunState(run.state),
     );
     await Promise.all(active.map((run) => this.stop(run.id)));
+    await Promise.all(active.map(run => run.execution));
     return this.listRuns();
   }
 
@@ -245,6 +257,7 @@ export class AgentCoordinator {
 
   async dispose(): Promise<void> {
     await this.stopAll();
+    await Promise.all([...this.runs.values()].map(run => run.execution));
   }
 
   private pump(): Promise<void> {
@@ -256,7 +269,7 @@ export class AgentCoordinator {
   private async startReadyRuns(): Promise<void> {
     for (const run of this.runs.values()) {
       if (
-        run.state !== "queued" ||
+        run.state !== "queued" || run.cancellationRequested ||
         this.runningCount() >= this.maxConcurrentRuns
       ) {
         continue;
@@ -270,49 +283,33 @@ export class AgentCoordinator {
       run.startedAt = now();
       await this.publishRun(run);
       await this.publishLifecycle(run, "started");
-      void this.launch(run);
+      run.controller = new AbortController();
+      run.execution = this.launch(run);
     }
   }
 
   private async launch(run: ActiveRun): Promise<void> {
+    let error: AgentRunError | undefined;
     try {
       await this.options.runtimeFactory.validate(run.profile);
-      if (isTerminalAgentRunState(run.state)) return;
+      if (run.cancellationRequested) return;
       const created = await this.options.runtimeFactory.create(run.profile);
-      if (isTerminalAgentRunState(run.state)) {
-        await created.dispose();
-        return;
-      }
       run.created = created;
-      run.unsubscribe = created.events.subscribe((event) =>
-        this.handleRuntimeEvent(run, event),
-      );
+      if (run.cancellationRequested) return;
+      run.unsubscribe = created.events.subscribe((event) => this.handleRuntimeEvent(run, event));
       const session = await created.runtime.createSession();
-      // Stop may arrive while an asynchronous session is being allocated. In
-      // that case finish() has already disposed the created runtime; never
-      // start it again without an abort signal.
-      if (isTerminalAgentRunState(run.state)) return;
+      if (run.cancellationRequested) return;
       run.sessionId = session.id;
-      run.controller = new AbortController();
       await this.publishRun(run);
-      await created.runtime.run(
-        session.id,
-        run.prompt,
-        run.controller.signal,
-        [],
-        run.attachments,
-      );
-      if (!isTerminalAgentRunState(run.state)) {
-        await this.finish(run, "completed");
-      }
-    } catch (error) {
-      if (!isTerminalAgentRunState(run.state)) {
-        const message = error instanceof Error ? error.message : String(error);
-        await this.finish(run, "failed", {
-          code: "runtime_error",
-          message,
-        });
-      }
+      if (run.cancellationRequested) return;
+      await created.runtime.run(session.id, run.prompt, run.controller?.signal, [], run.attachments);
+      error = run.runtimeError;
+    } catch (cause) {
+      error = { code: "runtime_error", message: cause instanceof Error ? cause.message : String(cause) };
+    } finally {
+      // Runtime event handlers only record outcomes. Awaited handlers must never await their own run.
+      await this.finish(run, run.cancellationRequested ? "cancelled" : error ? "failed" : "completed",
+        run.cancellationRequested ? { code: "aborted", message: "Stopped by user." } : error);
     }
   }
 
@@ -320,7 +317,7 @@ export class AgentCoordinator {
     run: ActiveRun,
     event: RuntimeEvent,
   ): Promise<void> {
-    if (isTerminalAgentRunState(run.state)) return;
+    if (isTerminalAgentRunState(run.state) || run.cancellationRequested) return;
     const managed: ManagedAgentEvent = {
       agentId: run.agentId,
       runId: run.id,
@@ -329,6 +326,7 @@ export class AgentCoordinator {
       event,
     };
     await this.events.emit({ type: "runtime", event: managed });
+    if (run.cancellationRequested) return;
     if (event.type === "progress_delta") run.latestProgress = event.text;
     if (event.type === "text_delta") {
       run.output = appendAgentRunOutput(run.output, event.text);
@@ -346,14 +344,10 @@ export class AgentCoordinator {
     }
     if (event.type === "run_completed") {
       run.changedFiles = event.modifiedFiles;
-      await this.finish(run, "completed");
       return;
     }
     if (event.type === "run_failed") {
-      await this.finish(run, "failed", {
-        code: "runtime_error",
-        message: event.error.message,
-      });
+      run.runtimeError = { code: "runtime_error", message: event.error.message };
       return;
     }
     await this.publishRun(run);
@@ -364,24 +358,26 @@ export class AgentCoordinator {
     state: Extract<AgentRunState, "completed" | "failed" | "cancelled">,
     error?: AgentRunError,
   ): Promise<void> {
-    if (isTerminalAgentRunState(run.state)) return;
-    run.state = state;
-    run.error = error;
-    run.completedAt = now();
+    if (isTerminalAgentRunState(run.state) || run.finishing) return;
+    run.finishing = true;
     run.activeTool = undefined;
     run.unsubscribe?.();
     run.unsubscribe = undefined;
-    if (run.ownsWriteLease) {
-      this.writeLease.release(run.id);
-      run.ownsWriteLease = false;
-    }
-    this.runsByAgent.delete(run.agentId);
+
     const created = run.created;
     run.created = undefined;
     run.controller = undefined;
     const cleanupStartedAt = Date.now();
     if (created) await created.dispose().catch(() => undefined);
     const cleanupDurationMs = Date.now() - cleanupStartedAt;
+    if (run.ownsWriteLease) {
+      this.writeLease.release(run.id);
+      run.ownsWriteLease = false;
+    }
+    this.runsByAgent.delete(run.agentId);
+    run.state = state;
+    run.error = error;
+    run.completedAt = now();
     await this.publishRun(run);
     await this.publishLifecycle(run, state);
     this.history.remember(this.summary(run));

@@ -395,6 +395,12 @@ describe("remote gateway", () => {
     const runId = await running;
     expect(runId).toBeTruthy();
 
+    const cancelled = new Promise<void>((resolve) => {
+      socket.on("message", payload => {
+        const event = JSON.parse(payload.toString()) as { type?: string; run?: { id?: string; state?: string } };
+        if (event.type === "agent_run_updated" && event.run?.id === runId && event.run.state === "cancelled") resolve();
+      });
+    });
     const stopped = await agentCommand(gateway.url, token, {
       version: 2,
       requestId: "stop-visible",
@@ -405,8 +411,9 @@ describe("remote gateway", () => {
     expect(stopped).toMatchObject({
       requestId: "stop-visible",
       type: "agent_run",
-      run: { id: runId, state: "cancelled" },
+      run: { id: runId, state: expect.stringMatching(/^(running|cancelled)$/) },
     });
+    await cancelled;
     expect(factory.disposed).toBe(1);
     expect(coordinator.getRun(runId)?.state).toBe("cancelled");
     socket.close();

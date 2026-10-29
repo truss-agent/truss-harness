@@ -62,6 +62,7 @@ export class AgentRuntime {
     requestContext: readonly ContextBlock[] = [],
     attachments: readonly ChatAttachment[] = [],
   ): Promise<void> {
+    signal?.throwIfAborted();
     const session = await this.options.sessions.get(sessionId);
     if (!session) throw new Error(`Unknown session: ${sessionId}`);
     const taskId = randomUUID();
@@ -76,11 +77,16 @@ export class AgentRuntime {
     let assistantText = "";
     let recoveryReason: AgentRecoveryReason | undefined;
     let recoveryAttempts = 0;
+    const emit = async (event: RuntimeEvent): Promise<void> => {
+      signal?.throwIfAborted();
+      await this.emit(event);
+      signal?.throwIfAborted();
+    };
     const toolExecutor = new AgentToolExecutor({
       tools: this.options.tools,
       workspaceRoot: this.options.workspaceRoot,
       approval: this.options.approval,
-      emit: (event) => this.emit(event),
+      emit: (event) => emit(event),
     });
 
     await this.recordMemory({
@@ -99,12 +105,12 @@ export class AgentRuntime {
     });
     session.checkpoint = checkpoint(session);
     await this.options.sessions.save(session);
-    await this.emit({ type: "run_started", sessionId });
+    await emit({ type: "run_started", sessionId });
     const provider = withModelRetries(
       this.options.provider,
       this.options.modelRetryPolicy,
       (retry) =>
-        this.emit({
+        emit({
           type: "progress_delta",
           sessionId,
           text: retryProgress(retry),
@@ -113,9 +119,11 @@ export class AgentRuntime {
 
     try {
       for (let turn = 0; turn < this.maxTurns; turn++) {
+        signal?.throwIfAborted();
         const calls: ToolCall[] = [];
         let text = "";
         let usage: ModelTokenUsage | undefined;
+        let finishReason: "stop" | "tool_calls" | "length" | undefined;
         const progressParser = new ProgressStreamParser();
         const systemPrompt = [
           this.options.systemPromptFactory?.(session) ??
@@ -130,19 +138,22 @@ export class AgentRuntime {
           .filter(Boolean)
           .join("\n\n");
 
+        const messages = await this.options.context.build(
+          session,
+          systemPrompt || undefined,
+          requestContext,
+        );
+        signal?.throwIfAborted();
         for await (const event of provider.stream({
-          messages: await this.options.context.build(
-            session,
-            systemPrompt || undefined,
-            requestContext,
-          ),
+          messages,
           tools: this.options.tools.definitions(),
           signal,
         })) {
+          signal?.throwIfAborted();
           if (event.type === "text_delta") {
             const parsed = progressParser.push(event.text);
             if (parsed.progress) {
-              await this.emit({
+              await emit({
                 type: "progress_delta",
                 sessionId,
                 text: parsed.progress,
@@ -151,7 +162,7 @@ export class AgentRuntime {
             text += parsed.content;
             if (parsed.content && !this.options.deferTextUntilToolDecision) {
               assistantText += parsed.content;
-              await this.emit({
+              await emit({
                 type: "text_delta",
                 sessionId,
                 text: parsed.content,
@@ -161,14 +172,18 @@ export class AgentRuntime {
             calls.push(normalizeToolCall(event));
           } else if (event.type === "finish") {
             usage = event.usage;
+            finishReason = event.reason;
           } else if (event.type === "error") {
             throw event.error;
           }
         }
-        if (usage) await this.emit({ type: "usage", sessionId, usage });
+        signal?.throwIfAborted();
+        if (!finishReason) throw new Error("Model stream ended before its semantic finish; output is incomplete.");
+        if (finishReason === "length") throw new Error("Model output is incomplete: token length limit reached. Resume with a new request.");
+        if (usage) await emit({ type: "usage", sessionId, usage });
         const finalProgress = progressParser.finish();
         if (finalProgress.progress) {
-          await this.emit({
+          await emit({
             type: "progress_delta",
             sessionId,
             text: finalProgress.progress,
@@ -177,7 +192,7 @@ export class AgentRuntime {
         text += finalProgress.content;
         if (finalProgress.content && !this.options.deferTextUntilToolDecision) {
           assistantText += finalProgress.content;
-          await this.emit({
+          await emit({
             type: "text_delta",
             sessionId,
             text: finalProgress.content,
@@ -219,12 +234,12 @@ export class AgentRuntime {
           }
           if (text && this.options.deferTextUntilToolDecision) {
             assistantText += text;
-            await this.emit({ type: "text_delta", sessionId, text });
+            await emit({ type: "text_delta", sessionId, text });
           }
           if (this.options.savePlanOnCompletion && this.options.plans) {
             const parsed = parseAgentPlan(assistantText, prompt);
             if (parsed) {
-              await this.emit({
+              await emit({
                 type: "plan_updated",
                 sessionId,
                 plan: await this.options.plans.create({
@@ -246,7 +261,7 @@ export class AgentRuntime {
             tools: executedTools,
             modifiedFiles: [...modifiedFiles],
           });
-          await this.emit({
+          await emit({
             type: "run_completed",
             sessionId,
             modifiedFiles: [...modifiedFiles],
@@ -272,14 +287,19 @@ export class AgentRuntime {
                 ? `Repeated write blocked for ${path}. This file was already changed in this run. Read it again to verify the result before making another focused edit.`
                 : undefined,
           );
+          signal?.throwIfAborted();
           executedTools.push(execution);
+          // Unknown/plugin tools may change workspace state too; only known reads retain cached results.
+          if (execution.succeeded && !["read_file", "list_directory", "search_files", "grep", "update_plan"].includes(call.name)) {
+            completedTerminalCommands.clear();
+          }
           if (command && execution.succeeded) {
             completedTerminalCommands.add(command);
           }
           if (call.name === "update_plan" && this.options.plans) {
             const plan = await this.options.plans.load();
             if (plan) {
-              await this.emit({ type: "plan_updated", sessionId, plan });
+              await emit({ type: "plan_updated", sessionId, plan });
             }
           }
           if (execution.succeeded && call.name === "read_file" && path) {
@@ -314,7 +334,7 @@ export class AgentRuntime {
             const recoveryPath = path ?? lastReadWorkspacePath;
             if (recoveryPath) {
               pendingWriteRecoveryPaths.add(recoveryPath);
-              await this.emit({
+              await emit({
                 type: "progress_delta",
                 sessionId,
                 text: `Recovery: retry the file change for ${recoveryPath} with a non-empty path and the current file contents.`,

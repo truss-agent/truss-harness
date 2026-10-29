@@ -1,3 +1,4 @@
+import { emptyWorkspaceMemorySnapshot, type WorkspaceTaskRecord, type WorkspaceMemoryStore } from "@truss-harness/runtime";
 import { basename } from "node:path";
 import type {
   AgentProfile,
@@ -60,6 +61,20 @@ function testProviderFactory(
 }
 
 describe("AgentHost", () => {
+  it("records completed runs in injected workspace memory", async () => {
+    const tasks: WorkspaceTaskRecord[] = [];
+    const memory: WorkspaceMemoryStore = {
+      async load() { return { ...emptyWorkspaceMemorySnapshot(), tasks }; },
+      async upsertTask(task) { const index = tasks.findIndex(current => current.id === task.id); if (index >= 0) tasks[index] = task; else tasks.push(task); },
+      async updateRepositoryState() {}, async clear() { tasks.splice(0); },
+    };
+    const registry = new AgentProviderRegistry(); registry.register(testProviderFactory([]));
+    const host = new AgentHost({ workspaceRoot: process.cwd(), providerRegistry: registry, credentialResolver: { async resolve() { return { id: "test", async resolve() { return { kind: "bearer", token: "test" }; } }; } }, memoryStoreFactory: () => memory });
+    const hosted = await host.createRuntime(profile());
+    try { const session = await hosted.runtime.createSession(); await hosted.runtime.run(session.id, "hello"); expect(tasks).toHaveLength(1); expect(tasks[0]?.status).toBe("completed"); } finally { await hosted.dispose(); }
+  });
+
+
   it("renders a safe master prompt after mode safety and before profile instructions", async () => {
     let request: ModelRequest | undefined;
     const registry = new AgentProviderRegistry();

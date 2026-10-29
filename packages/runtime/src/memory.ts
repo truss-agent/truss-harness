@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import { FileWorkspaceStorageOwnership, type WorkspaceStorageOwnership } from "./storage-ownership.js";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { brand } from "@truss-harness/branding";
@@ -81,13 +83,14 @@ function normalizeSnapshot(value: unknown): WorkspaceMemorySnapshot {
 
 /** Durable, workspace-local memory stored outside normal source directories. */
 export class FileWorkspaceMemoryStore implements WorkspaceMemoryStore {
-  private pendingWrite: Promise<void> = Promise.resolve();
+  private readonly ownership: WorkspaceStorageOwnership;
   readonly path: string;
 
-  constructor(workspaceRoot: string, options: { readonly path?: string; readonly maxTasks?: number; readonly maxFiles?: number } = {}) {
+  constructor(workspaceRoot: string, options: { readonly path?: string; readonly maxTasks?: number; readonly maxFiles?: number; readonly ownership?: WorkspaceStorageOwnership } = {}) {
     this.path = options.path ?? join(workspaceRoot, brand.workspaceDirectory, "agent-state.json");
     this.maxTasks = options.maxTasks ?? 30;
     this.maxFiles = options.maxFiles ?? 80;
+    this.ownership = options.ownership ?? new FileWorkspaceStorageOwnership();
   }
 
   private readonly maxTasks: number;
@@ -104,35 +107,34 @@ export class FileWorkspaceMemoryStore implements WorkspaceMemoryStore {
   }
 
   async upsertTask(task: WorkspaceTaskRecord): Promise<void> {
-    this.pendingWrite = this.pendingWrite.then(async () => {
+    return this.ownership.run(this.path, async () => {
       const current = await this.load();
       const tasks = [task, ...current.tasks.filter((existing) => existing.id !== task.id)].slice(0, this.maxTasks);
       const modified = task.modifiedFiles.map((path) => ({ path, updatedAt: task.completedAt ?? new Date().toISOString() }));
       const recentlyModifiedFiles = [...modified, ...current.recentlyModifiedFiles.filter((entry) => !task.modifiedFiles.includes(entry.path))].slice(0, this.maxFiles);
       await this.write({ version: 1, updatedAt: new Date().toISOString(), tasks, recentlyModifiedFiles, repository: current.repository });
     });
-    return this.pendingWrite;
   }
 
   async updateRepositoryState(state: WorkspaceRepositoryState): Promise<void> {
-    this.pendingWrite = this.pendingWrite.then(async () => {
+    return this.ownership.run(this.path, async () => {
       const current = await this.load();
       await this.write({ ...current, updatedAt: new Date().toISOString(), repository: state });
     });
-    return this.pendingWrite;
   }
 
   async clear(): Promise<void> {
-    this.pendingWrite = this.pendingWrite.then(async () => {
+    return this.ownership.run(this.path, async () => {
       await rm(this.path, { force: true });
     });
-    return this.pendingWrite;
   }
 
   private async write(snapshot: WorkspaceMemorySnapshot): Promise<void> {
     await mkdir(dirname(this.path), { recursive: true });
-    const temporaryPath = `${this.path}.${process.pid}.tmp`;
-    await writeFile(temporaryPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
-    await rename(temporaryPath, this.path);
+    const temporaryPath = `${this.path}.${process.pid}.${randomUUID()}.tmp`;
+    try {
+      await writeFile(temporaryPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+      await rename(temporaryPath, this.path);
+    } finally { await rm(temporaryPath, { force: true }); }
   }
 }

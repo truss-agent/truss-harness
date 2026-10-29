@@ -476,7 +476,7 @@ export class AnthropicProvider implements ModelProvider {
       yield* processEvent(buffered);
       if (ended) return;
     }
-    if (receivedText || blocks.size) yield* emitCompleted();
+    if (stopReason) yield* emitCompleted();
     else throw new Error("Anthropic stream ended before message_stop.");
   }
 }

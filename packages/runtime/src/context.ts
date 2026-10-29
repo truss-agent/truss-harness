@@ -4,6 +4,31 @@ import type { WorkspaceMemoryStore } from "./memory.js";
 import type { WorkspacePlanStore } from "./plans.js";
 import { resolveWorkspacePath } from "./workspace.js";
 
+/** Select recent complete exchanges; never retain a result without its whole call group. */
+function recentExchanges(messages: readonly ChatMessage[], maxMessages: number): ChatMessage[] {
+  const groups: ChatMessage[][] = [];
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index]!;
+    if (message.role === "tool") continue;
+    const group = [message];
+    if (message.role === "assistant" && message.toolCalls?.length) {
+      const pending = new Set(message.toolCalls.map(call => call.id));
+      while (messages[index + 1]?.role === "tool") {
+        const result = messages[++index]!;
+        if (result.toolCallId && pending.delete(result.toolCallId)) group.push(result);
+      }
+      if (pending.size) continue;
+    }
+    groups.push(group);
+  }
+  const selected: ChatMessage[] = [];
+  for (const group of groups.reverse()) {
+    if (selected.length + group.length > maxMessages) break;
+    selected.unshift(...group);
+  }
+  return selected;
+}
+
 export interface ContextManager {
   build(session: Session, systemPrompt?: string, requestContext?: readonly ContextBlock[]): Promise<ChatMessage[]>;
 }
@@ -14,7 +39,7 @@ export class RecentHistoryContextManager implements ContextManager {
   async build(session: Session, systemPrompt?: string, requestContext: readonly ContextBlock[] = []): Promise<ChatMessage[]> {
     const context = formatContextBlocks(requestContext, this.maxContextCharacters);
     const prompt = [systemPrompt, context ? `Workspace context:\n${context}` : undefined].filter(Boolean).join("\n\n");
-    return [ ...(prompt ? [{ role: "system" as const, content: prompt }] : []), ...session.messages.slice(-this.maxMessages) ];
+    return [ ...(prompt ? [{ role: "system" as const, content: prompt }] : []), ...recentExchanges(session.messages, this.maxMessages) ];
   }
 }
 
@@ -124,6 +149,6 @@ export class CompositeContextManager implements ContextManager {
     const context = formatContextBlocks(blocks, this.options.maxContextCharacters ?? 24_000);
     const prompt = [systemPrompt, context ? `Workspace context:\n${context}` : undefined].filter(Boolean).join("\n\n");
 
-    return [...(prompt ? [{ role: "system" as const, content: prompt }] : []), ...session.messages.slice(-maxMessages)];
+    return [...(prompt ? [{ role: "system" as const, content: prompt }] : []), ...recentExchanges(session.messages, maxMessages)];
   }
 }

@@ -66,6 +66,7 @@ class FakeRuntime {
       text: "Inspecting workspace",
     });
     this.started.resolve();
+    signal?.throwIfAborted();
     await Promise.race([
       this.gate.promise,
       new Promise<void>((_resolve, reject) =>
@@ -320,6 +321,7 @@ describe("AgentCoordinator", () => {
     expect(factory.created).toEqual([first.id]);
 
     await coordinator.stop(firstRun.id);
+    await waitFor(() => coordinator.getRun(firstRun.id)?.state === "cancelled", "cancelled run should drain");
     expect(lease.holder()).toBeUndefined();
     await expect(coordinator.deleteProfile(first.id)).resolves.toBe(true);
   });
@@ -436,6 +438,7 @@ describe("AgentCoordinator", () => {
     );
 
     await coordinator.stop(run.id);
+    await waitFor(() => coordinator.getRun(run.id)?.state === "cancelled", "cancelled approval should drain");
 
     expect(coordinator.getRun(run.id)?.state).toBe("cancelled");
     expect(lease.holder()).toBeUndefined();
