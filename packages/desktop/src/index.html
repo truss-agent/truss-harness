@@ -121,6 +121,17 @@
           <details class="mcp-advanced"><summary>Advanced JSON import/export</summary><p>Reference secrets with ${env:VARIABLE_NAME}; never paste API keys directly into configuration.</p><label class="mcp-setting">MCP servers (JSON)<textarea id="mcpServersInput" rows="8" spellcheck="false" placeholder='{"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]&#125;&#125;'></textarea></label></details>
           <div id="mcpStatus" class="mcp-status">No MCP servers configured.</div>
         </section>
+        <section class="mcp-manager skills-manager" aria-label="Skills">
+          <div class="mcp-manager-heading"><div><strong>Skills</strong><span>Instruction packs that agents load when they are relevant. Shared with the CLI and other Truss clients.</span></div><button id="importSkill" type="button">Import folder</button></div>
+          <div class="skills-controls">
+            <label>Save changes for<select id="skillScopeSelect"><option value="user">All workspaces</option><option value="workspace">This workspace</option></select></label>
+            <label>Mode<select id="skillModeSelect"><option value="automatic">Automatic</option><option value="manual">Manual (selected only)</option><option value="off">Off</option></select></label>
+            <label class="checkbox-setting"><input id="superpowersEnabledInput" type="checkbox"><span>Bundled Superpowers pack</span></label>
+            <button id="resetWorkspaceSkills" type="button">Clear workspace choices</button>
+          </div>
+          <div id="skillList" class="mcp-server-list" role="list"></div>
+          <div id="skillStatus" class="mcp-status" role="status">Skills load when Settings opens.</div>
+        </section>
         <section class="update-settings" aria-label="Desktop updates">
           <strong>Desktop updates</strong>
           <label class="checkbox-setting"><input id="checkUpdatesOnLaunch" type="checkbox"><span>Check for updates when Truss starts</span></label>

@@ -1,3 +1,4 @@
+import type { DefaultSkills } from "@truss-harness/agent-host";
 import {
   type ClientConfiguration,
   createClientRuntime,
@@ -65,6 +66,7 @@ export class DesktopRuntimeService {
     private readonly workspace: WorkspaceService,
     private readonly send: (event: DesktopEvent) => void,
     private readonly runtimeHostStore: () => string = () => "",
+    private readonly skills?: () => Promise<DefaultSkills>,
   ) {}
 
   get mcpServers(): ClientRuntime["mcpServers"] {
@@ -225,6 +227,7 @@ export class DesktopRuntimeService {
       masterPrompt: configuration.masterPrompt,
       mcpServers: configuration.mcpServers,
       approval,
+      ...(this.skills ? { skills: await this.skills() } : {}),
     };
   }
 

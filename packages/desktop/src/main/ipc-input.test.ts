@@ -6,12 +6,26 @@ it.each([
   ["truss:discover-models", [{ provider: 42 }]],
   ["truss:save-workspace-ui-state", [{ expandedDirectories: 42 }]],
   ["truss:configure-theme", [{ name: "custom", custom: { background: 42 } }]],
+  ["truss:update-skill-settings", ["session", { mode: "off" }]],
+  ["truss:update-skill-settings", ["user", { mode: "loud" }]],
+  ["truss:update-skill-settings", ["user", { skillIds: "user:x" }]],
+  ["truss:update-skill-settings", ["user", { path: "/etc" }]],
+  ["truss:import-skill", ["/home/user/skill"]],
+  ["truss:remove-skill", [42]],
 ])("rejects malformed nested fields on %s", (channel, args) => {
   expect(validDesktopIpcInput(channel, args)).toBe(false);
 });
 it.each([
   ["truss:configure-theme", [{ name: "blue" }]],
   ["truss:adjust-zoom", [-1]],
+  ["truss:list-skills", []],
+  ["truss:import-skill", []],
+  ["truss:remove-skill", ["user:notes"]],
+  ["truss:update-skill-settings", ["workspace", null]],
+  [
+    "truss:update-skill-settings",
+    ["user", { mode: "manual", superpowersEnabled: false, skillIds: [] }],
+  ],
   ["truss:update-agent", ["agent", { instructions: "inspect code" }]],
   [
     "truss:save-provider-account",

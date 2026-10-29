@@ -12,6 +12,11 @@ const bridge: DesktopBridge = {
   appVersion: () => ipcRenderer.invoke("truss:app-version"),
   initialState: () => ipcRenderer.invoke("truss:initial-state"),
   chooseWorkspace: () => ipcRenderer.invoke("truss:choose-workspace"),
+  listSkills: () => ipcRenderer.invoke("truss:list-skills"),
+  updateSkillSettings: (scope, selection) =>
+    ipcRenderer.invoke("truss:update-skill-settings", scope, selection),
+  importSkill: () => ipcRenderer.invoke("truss:import-skill"),
+  removeSkill: (id) => ipcRenderer.invoke("truss:remove-skill", id),
   saveConversations: (
     conversations: readonly DesktopConversation[],
     activeConversationId?: string,

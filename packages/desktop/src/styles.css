@@ -1828,6 +1828,21 @@ dialog::backdrop {
   display: none;
 }
 
+.skills-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.skill-card.unavailable strong {
+  color: #9badb5;
+}
+
+.skill-card .checkbox-setting {
+  justify-content: flex-start;
+}
+
 .mcp-server-actions {
   justify-content: flex-start;
   flex-wrap: wrap;

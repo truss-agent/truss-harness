@@ -57,6 +57,12 @@ import {
   initialDesktopState,
   RendererStateStore,
 } from "./renderer/state/renderer-state.js";
+import {
+  skillRows,
+  skillSummary,
+  superpowersChange,
+  toggledSkillIds,
+} from "./renderer/skills/skills-view.js";
 import { DesktopTerminalController } from "./renderer/terminal/terminal-controller.js";
 import {
   desktopTerminalElements,
@@ -77,6 +83,8 @@ import {
   type DesktopMessage,
   type DesktopModelInfo,
   type DesktopProvider,
+  type DesktopSkillScope,
+  type DesktopSkillState,
   type DesktopThemePreference,
   type DesktopToolActivity,
   type DesktopWorkspaceUiState,
@@ -225,6 +233,13 @@ const {
   mcpCwdInput,
   mcpEnabledInput,
   mcpReadOnlyInput,
+  importSkill,
+  skillScopeSelect,
+  skillModeSelect,
+  superpowersEnabledInput,
+  resetWorkspaceSkills,
+  skillList,
+  skillStatus,
   checkUpdatesOnLaunch,
   autoDownloadUpdates,
   themeSelect,
@@ -2673,6 +2688,141 @@ function renderUpdate(
   }
 }
 
+let skillState: DesktopSkillState | undefined;
+
+function renderSkills(): void {
+  const state = skillState;
+  const disabled = !state;
+  for (const control of [
+    skillModeSelect,
+    superpowersEnabledInput,
+    importSkill,
+    resetWorkspaceSkills,
+  ])
+    control.disabled = disabled;
+  if (!state) return;
+  skillModeSelect.value = state.selection.mode;
+  superpowersEnabledInput.checked = state.selection.superpowersEnabled;
+  resetWorkspaceSkills.hidden = skillScopeSelect.value !== "workspace";
+  skillList.replaceChildren(
+    ...skillRows(state).map((row) => {
+      const card = document.createElement("article");
+      card.className = `mcp-server-card skill-card${row.available ? "" : " unavailable"}`;
+      card.setAttribute("role", "listitem");
+      const heading = document.createElement("div");
+      heading.className = "mcp-server-card-heading";
+      const identity = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = row.id;
+      const description = document.createElement("span");
+      description.textContent = row.note
+        ? `${row.description} - ${row.note}`
+        : row.description;
+      identity.append(title, description);
+      const badge = document.createElement("span");
+      badge.className = "mcp-state";
+      badge.textContent = row.origin;
+      heading.append(identity, badge);
+      const actions = document.createElement("div");
+      actions.className = "mcp-server-actions";
+      const always = document.createElement("label");
+      always.className = "checkbox-setting";
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.checked = row.selected;
+      // A selected skill stays clearable even when it cannot run.
+      checkbox.disabled = !row.available && !row.selected;
+      checkbox.dataset.skillSelect = row.id;
+      const label = document.createElement("span");
+      label.textContent = "Always active";
+      always.append(checkbox, label);
+      actions.append(always);
+      if (row.removable) {
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.dataset.skillRemove = row.id;
+        remove.textContent = "Remove";
+        actions.append(remove);
+      }
+      card.append(heading, actions);
+      return card;
+    }),
+  );
+  skillStatus.textContent = [
+    skillSummary(state),
+    ...state.diagnostics.map(
+      (diagnostic) => `${diagnostic.skillId ?? "Skill"}: ${diagnostic.message}`,
+    ),
+  ].join(" ");
+}
+
+async function runSkillAction(
+  action: () => Promise<DesktopSkillState | undefined>,
+): Promise<void> {
+  try {
+    const next = await action();
+    if (next) skillState = next;
+    renderSkills();
+  } catch (error) {
+    renderSkills();
+    skillStatus.textContent =
+      error instanceof Error ? error.message : String(error);
+  }
+}
+
+function saveSkillSettings(
+  selection: Parameters<typeof desktop.updateSkillSettings>[1],
+): void {
+  void runSkillAction(() =>
+    desktop.updateSkillSettings(
+      skillScopeSelect.value as DesktopSkillScope,
+      selection,
+    ),
+  );
+}
+
+skillScopeSelect.onchange = () => renderSkills();
+skillModeSelect.onchange = () =>
+  saveSkillSettings({
+    mode: skillModeSelect.value as DesktopSkillState["selection"]["mode"],
+  });
+superpowersEnabledInput.onchange = () => {
+  if (!skillState) return;
+  saveSkillSettings(
+    superpowersChange(skillState.selection, superpowersEnabledInput.checked),
+  );
+};
+resetWorkspaceSkills.onclick = () =>
+  void runSkillAction(() => desktop.updateSkillSettings("workspace", null));
+importSkill.onclick = () => void runSkillAction(() => desktop.importSkill());
+skillList.onchange = (event) => {
+  const checkbox = event.target as HTMLInputElement;
+  const id = checkbox.dataset.skillSelect;
+  if (!id || !skillState) return;
+  saveSkillSettings({
+    skillIds: toggledSkillIds(skillState.selection, id, checkbox.checked),
+  });
+};
+skillList.onclick = (event) => {
+  const id = (event.target as HTMLElement).closest<HTMLButtonElement>(
+    "button[data-skill-remove]",
+  )?.dataset.skillRemove;
+  if (!id) return;
+  void requestConfirmation({
+    title: "Remove skill",
+    message: `Remove ${id} from your skills? Every Truss client stops using it.`,
+    confirmLabel: "Remove",
+    danger: true,
+  })
+    .then((confirmed) => {
+      if (confirmed) void runSkillAction(() => desktop.removeSkill(id));
+    })
+    .catch((error: unknown) => {
+      skillStatus.textContent =
+        error instanceof Error ? error.message : String(error);
+    });
+};
+
 function populateSettings(): void {
   const current = configuration();
   if (isLocalProvider(current.provider)) {
@@ -2708,6 +2858,7 @@ function populateSettings(): void {
   masterPromptTemplate.value = current.masterPrompt?.template ?? "";
   settingsController.loadMcpDraft(current.mcpServers);
   syncMcpAdvancedJson();
+  void runSkillAction(() => desktop.listSkills());
   checkUpdatesOnLaunch.checked = rendererState.desktop.updates.checkOnLaunch;
   autoDownloadUpdates.checked = rendererState.desktop.updates.autoDownload;
   themeSelect.value = desktopThemeNames.includes(

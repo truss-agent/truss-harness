@@ -99,11 +99,11 @@ function register(names: string, validators: readonly Validator[]): void {
   for (const name of names.split(" ")) signatures[`truss:${name}`] = validators;
 }
 register(
-  "app-version initial-state stop-chat list-agents stop-all-agents list-files get-plan git-status git-graph git-generate-commit-message git-pull git-push stop-terminal connect-truss-go disconnect-truss-go credential-storage check-for-updates download-update install-update choose-workspace refresh-local-model",
+  "app-version initial-state stop-chat list-agents stop-all-agents list-files get-plan git-status git-graph git-generate-commit-message git-pull git-push stop-terminal connect-truss-go disconnect-truss-go credential-storage check-for-updates download-update install-update choose-workspace refresh-local-model list-skills import-skill",
   [],
 );
 register(
-  "delete-agent stop-agent list-directory read-file create-workspace-file create-workspace-folder delete-workspace-entry reveal-workspace-entry diff-file git-commit run-terminal open-external delete-provider-account",
+  "delete-agent stop-agent list-directory read-file create-workspace-file create-workspace-folder delete-workspace-entry reveal-workspace-entry diff-file git-commit run-terminal open-external delete-provider-account remove-skill",
   [string],
 );
 register(
@@ -167,6 +167,19 @@ register("configure-theme", [
   }),
 ]);
 register("adjust-zoom", [oneOf(-1, 1)]);
+register("update-skill-settings", [
+  oneOf("user", "workspace"),
+  (value) =>
+    value === null ||
+    (partial({
+      mode: oneOf("automatic", "manual", "off"),
+      superpowersEnabled: bool,
+      skillIds: (ids) => array(string)(ids) && (ids as unknown[]).length <= 64,
+    })(value) &&
+      Object.keys(value as object).every((key) =>
+        ["mode", "superpowersEnabled", "skillIds"].includes(key),
+      )),
+]);
 register("configure-updates", [
   shape({ checkOnLaunch: bool, autoDownload: bool }),
 ]);

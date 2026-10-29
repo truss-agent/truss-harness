@@ -41,6 +41,7 @@ import {
 import { ManagedAgentService } from "./main/managed-agent-service.js";
 import { DesktopRuntimeService } from "./main/runtime-service.js";
 import { DesktopSettingsService } from "./main/settings-service.js";
+import { DesktopSkillService } from "./main/skill-service.js";
 import { TerminalService } from "./main/terminal-service.js";
 import { DesktopUpdateService } from "./main/update-service.js";
 import {
@@ -76,6 +77,10 @@ const credentialService = new CredentialService(
     decrypt: (value) => safeStorage.decryptString(value),
   },
 );
+const skillService = new DesktopSkillService({
+  workspaceRoot: () => persisted.workspaceRoot,
+  chooseDirectory,
+});
 const runtimeService = new DesktopRuntimeService(
   () => persisted,
   (state) => {
@@ -85,6 +90,7 @@ const runtimeService = new DesktopRuntimeService(
   workspaceService,
   send,
   () => join(app.getPath("userData"), "runtime-host"),
+  () => skillService.skills(),
 );
 const managedAgents = new ManagedAgentService(
   () => persisted,
@@ -94,6 +100,7 @@ const managedAgents = new ManagedAgentService(
   persistState,
   (reference) => credentialService.get(reference),
   send,
+  () => skillService.skills(),
 );
 const trussGo = new TrussGoGatewayService(
   () => persisted,
@@ -142,16 +149,18 @@ const settingsService = new DesktopSettingsService(
   runtimeService,
   managedAgents,
   updateService,
-  async () => {
-    const options: OpenDialogOptions = { properties: ["openDirectory"] };
-    windowService.focus();
-    const selection = windowService.current
-      ? await dialog.showOpenDialog(windowService.current, options)
-      : await dialog.showOpenDialog(options);
-    return selection.canceled ? undefined : selection.filePaths[0];
-  },
+  chooseDirectory,
   (zoomFactor) => windowService.setZoomFactor(zoomFactor),
 );
+async function chooseDirectory(): Promise<string | undefined> {
+  const options: OpenDialogOptions = { properties: ["openDirectory"] };
+  windowService.focus();
+  const selection = windowService.current
+    ? await dialog.showOpenDialog(windowService.current, options)
+    : await dialog.showOpenDialog(options);
+  return selection.canceled ? undefined : selection.filePaths[0];
+}
+
 function send(event: DesktopEvent): void {
   windowService.send("truss:event", event);
 }
@@ -362,6 +371,7 @@ registerOperationalIpc({
   git: gitService,
   terminal: terminalService,
   gateway: trussGo,
+  skills: skillService,
   revealPath: (path) => shell.showItemInFolder(path),
   openExternal: (value) => shell.openExternal(validatedPreviewUrl(value)),
   loadPlan: () => new FileWorkspacePlanStore(persisted.workspaceRoot).load(),
