@@ -106,6 +106,8 @@ const trussGo = new TrussGoGatewayService(
   () => persisted,
   () => managedAgents.coordinator,
   runtimeService,
+  undefined,
+  () => skillService.skills(),
 );
 const gitService = new GitService(
   () => persisted.workspaceRoot,

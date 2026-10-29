@@ -1,4 +1,8 @@
-import type { RunningRemoteGateway } from "@truss-harness/gateway";
+import { createDefaultSkills } from "@truss-harness/agent-host";
+import type {
+  RunningRemoteGateway,
+  startRemoteGateway,
+} from "@truss-harness/gateway";
 import { describe, expect, it, vi } from "vitest";
 import type { DesktopState } from "../shared.js";
 import { TrussGoGatewayService } from "./gateway-service.js";
@@ -62,6 +66,44 @@ describe("TrussGoGatewayService", () => {
     await service.stop();
     expect(close).toHaveBeenCalledOnce();
     expect(disposeRemoteClients).toHaveBeenCalledTimes(2);
+  });
+
+  it("offers skill listing and settings to paired phones, not imports", async () => {
+    const startGateway = vi.fn(
+      async (): Promise<RunningRemoteGateway> => ({
+        url: "http://192.168.1.20:4787",
+        close: async () => undefined,
+      }),
+    );
+    const service = new TrussGoGatewayService(
+      () => state,
+      () => undefined,
+      {
+        mcpServers: [],
+        createRemoteRuntime: vi.fn(),
+        disposeRemoteClients: vi.fn(async () => undefined),
+      } as never,
+      {
+        detectAddress: () => "192.168.1.20",
+        createToken: () => "a".repeat(64),
+        startGateway,
+        createPairingUri: ({ gatewayUrl }) => gatewayUrl,
+        createQrDataUrl: async (value) => value,
+      },
+      async () =>
+        createDefaultSkills({
+          workspaceRoot: state.workspaceRoot,
+          userConfigDirectory: "/unused",
+        }),
+    );
+    await service.connect();
+    const [options] = startGateway.mock.calls[0] as unknown as [
+      Parameters<typeof startRemoteGateway>[0],
+    ];
+    const skills = options.workspaces[0]?.skills;
+    expect(typeof skills?.list).toBe("function");
+    expect(typeof skills?.setSettings).toBe("function");
+    expect(Object.keys(skills ?? {}).sort()).toEqual(["list", "setSettings"]);
   });
 
   it("explains a stable-port conflict", async () => {
