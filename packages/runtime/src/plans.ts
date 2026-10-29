@@ -51,11 +51,20 @@ export function parseAgentPlan(text: string, objective: string): { readonly titl
   return steps.length ? { title, steps } : undefined;
 }
 
+/** Host-owned plan paths remain workspace-contained on every access. */
+export interface WorkspacePlanLocation {
+  readonly workspaceRelativePath: string;
+}
+
 /** Durable active plan stored separately from source files and intended to be Git-ignored. */
 export class FileWorkspacePlanStore implements WorkspacePlanStore {
-  get path(): string { return this.explicitPath ?? resolveWorkspacePath(this.workspaceRoot, `${brand.workspaceDirectory}/plans/active.json`); }
+  get path(): string {
+    return typeof this.location === "string"
+      ? this.location
+      : resolveWorkspacePath(this.workspaceRoot, this.location?.workspaceRelativePath ?? `${brand.workspaceDirectory}/plans/active.json`);
+  }
 
-  constructor(private readonly workspaceRoot: string, private readonly explicitPath?: string, private readonly ownership: WorkspaceStorageOwnership = new FileWorkspaceStorageOwnership()) {}
+  constructor(private readonly workspaceRoot: string, private readonly location?: string | WorkspacePlanLocation, private readonly ownership: WorkspaceStorageOwnership = new FileWorkspaceStorageOwnership()) {}
 
   async load(): Promise<WorkspacePlan | undefined> {
     try {

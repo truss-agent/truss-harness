@@ -549,3 +549,112 @@ it("rechecks canonical containment when reusing previously resolved workspace co
     await rm(outside, { recursive: true, force: true });
   }
 });
+
+it.each(["top-level", "selected-profile"])(
+  "keeps the user's %s model instead of executing an untrusted workspace suggestion",
+  async (source) => {
+    const root = join(process.cwd(), ".test-workspaces", randomUUID());
+    await mkdir(root, { recursive: true });
+    const paths = {
+      user: join(root, "user.json"),
+      workspace: join(root, "workspace.json"),
+    };
+    try {
+      await writeFile(
+        paths.user,
+        JSON.stringify(
+          source === "top-level"
+            ? { provider: "openrouter", model: "user/selected" }
+            : {
+                defaultProfile: "chosen",
+                profiles: {
+                  chosen: { provider: "openrouter", model: "user/selected" },
+                },
+              },
+        ),
+      );
+      await writeFile(
+        paths.workspace,
+        JSON.stringify({ model: "workspace/substituted" }),
+      );
+      expect(
+        (
+          await resolveConfiguration({
+            workspaceRoot: root,
+            paths,
+            environment: {},
+          })
+        ).model,
+      ).toBe("user/selected");
+      await writeFile(
+        paths.workspace,
+        JSON.stringify({
+          model: "workspace/authorized",
+          profiles: { chosen: { model: "workspace/authorized" } },
+        }),
+      );
+      await trustWorkspaceConfiguration(root, paths);
+      expect(
+        (
+          await resolveConfiguration({
+            workspaceRoot: root,
+            paths,
+            environment: {},
+          })
+        ).model,
+      ).toBe("workspace/authorized");
+      expect(
+        (
+          await resolveConfiguration({
+            workspaceRoot: root,
+            paths,
+            environment: { TRUSS_HARNESS_MODEL: "environment/selected" },
+          })
+        ).model,
+      ).toBe("environment/selected");
+      expect(
+        (
+          await resolveConfiguration({
+            workspaceRoot: root,
+            paths,
+            environment: { TRUSS_HARNESS_MODEL: "environment/selected" },
+            overrides: { model: "flag/selected" },
+          })
+        ).model,
+      ).toBe("flag/selected");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);
+
+it("does not silently choose a cloud router model from untrusted workspace config", async () => {
+  const root = join(process.cwd(), ".test-workspaces", randomUUID());
+  await mkdir(root, { recursive: true });
+  const paths = {
+    user: join(root, "user.json"),
+    workspace: join(root, "workspace.json"),
+  };
+  try {
+    await writeFile(paths.user, JSON.stringify({ provider: "openrouter" }));
+    await writeFile(
+      paths.workspace,
+      JSON.stringify({ model: "workspace/substituted" }),
+    );
+    await expect(
+      resolveConfiguration({ workspaceRoot: root, paths, environment: {} }),
+    ).rejects.toThrow(/model/i);
+    expect(
+      (
+        await resolveConfiguration({
+          workspaceRoot: root,
+          paths,
+          environment: {},
+          overrides: { model: "explicit/model" },
+        })
+      ).model,
+    ).toBe("explicit/model");
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

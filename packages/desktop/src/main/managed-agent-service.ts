@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import {
   AgentHost,
   type ProviderConnectionResult,
@@ -67,10 +67,12 @@ export class ManagedAgentService {
       },
       approvalFactory: createAgentApproval,
       planStoreFactory: (profile) =>
-        new FileWorkspacePlanStore(
-          state.workspaceRoot,
-          managedAgentPlanPath(state.workspaceRoot, profile.id),
-        ),
+        new FileWorkspacePlanStore(state.workspaceRoot, {
+          workspaceRelativePath: relative(
+            state.workspaceRoot,
+            managedAgentPlanPath(state.workspaceRoot, profile.id),
+          ),
+        }),
     });
     this.coordinatorValue = new AgentCoordinator({
       profiles: new DesktopAgentProfileStore(

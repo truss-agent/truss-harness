@@ -15,7 +15,7 @@ On Windows, the user configuration file is <UserConfigPath />. Each workspace ca
 
 Review `.truss-harness/config.json`, then run `truss-cli config trust`. Authorization is stored beside your user configuration and binds the exact contents to the canonical workspace. Changes invalidate trust. Run `truss-cli config status` to inspect effective policy, setting provenance and trust status without displaying credentials.
 
-Untrusted workspace files can suggest a top-level model or theme, but cannot select providers, endpoints, credentials, named profiles, editing mode, approval policy, internet access or MCP commands. User configuration, environment variables and explicit flags remain available. Existing workspace configurations require this local review once; the legacy `allowWorkspaceMcpServers` switch is no longer sufficient. Malformed untrusted JSON is ignored with a diagnostic; repair or remove the file before trusting it.
+Only the top-level theme is applied from untrusted workspace files. Model settings require `config trust` or an explicit `--model` choice; an untrusted file cannot replace a user-selected local/cloud model or choose a router model. Untrusted files also cannot select providers, endpoints, credentials, named profiles, editing mode, approval policy, internet access or MCP commands. User configuration, environment variables and explicit flags remain available. Existing workspace configurations require this local review once; the legacy `allowWorkspaceMcpServers` switch is no longer sufficient. Malformed untrusted JSON is ignored with a diagnostic; repair or remove the file before trusting it.
 
 ## Interactive setup
 

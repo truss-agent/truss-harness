@@ -341,7 +341,6 @@ async function workspaceConfiguration(
     parsed = trusted
       ? parseConfiguration(source)
       : {
-          model: typeof safe?.model === "string" ? safe.model : undefined,
           tuiTheme: validTuiTheme(safe?.tuiTheme),
         };
   } catch (error) {
@@ -350,12 +349,12 @@ async function workspaceConfiguration(
     diagnostic =
       "Ignored malformed untrusted workspace config. Review or remove it before using config trust.";
   }
-  // Untrusted files may suggest a model/theme, but cannot choose even a named
+  // Untrusted files may style the UI, but cannot choose a model or even a named
   // user profile: that would indirectly select its credentials and authority.
   return {
     configuration: trusted
       ? parsed
-      : { model: parsed.model, tuiTheme: parsed.tuiTheme },
+      : { tuiTheme: parsed.tuiTheme },
     provenance: {
       status: trusted ? "trusted" : "untrusted",
       hash: contentHash(content),

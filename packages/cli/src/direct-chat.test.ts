@@ -110,3 +110,89 @@ it("real CLI ask and auto-read fail closed without a TTY; explicit auto-all writ
     await rm(root, { recursive: true, force: true });
   }
 }, 30000);
+
+it.runIf(process.platform === "linux").each(["one-shot", "interactive"])(
+  "real %s TTY CLI exits after provider initialization rejects",
+  async (kind) => {
+    const root = await mkdtemp(join(tmpdir(), "truss-tty-init-"));
+    const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+    const args = [
+      process.execPath,
+      resolve("packages/cli/dist/bin.js"),
+      "chat",
+      ...(kind === "one-shot" ? ["fixture"] : []),
+      "--provider",
+      "ollama",
+      "--model",
+      "fixture",
+      "--base-url",
+      "invalid",
+    ];
+    try {
+      // Linux util-linux script supplies a real PTY while this test keeps its
+      // input pipe open. EOF must not accidentally hide a leaked stdin owner.
+      const result = await new Promise<{
+        code: number | null;
+        output: string;
+        stalled: boolean;
+      }>((resolveChild, reject) => {
+        const child = spawn(
+          "/usr/bin/script",
+          [
+            "--quiet",
+            "--return",
+            "--command",
+            `exec ${args.map(quote).join(" ")}`,
+            "/dev/null",
+          ],
+          {
+            cwd: root,
+            env: {
+              PATH: process.env.PATH,
+              XDG_CONFIG_HOME: join(root, "user"),
+            },
+            stdio: ["pipe", "pipe", "pipe"],
+          },
+        );
+        let output = "",
+          stalled = false;
+        let exitDeadline: ReturnType<typeof setTimeout> | undefined;
+        const terminate = () => {
+          stalled = true;
+          child.kill("SIGTERM");
+        };
+        const startupDeadline = setTimeout(terminate, 15000);
+        const receive = (chunk: Buffer) => {
+          output += chunk.toString();
+          if (
+            !exitDeadline &&
+            output.includes("requires a valid HTTP or HTTPS endpoint")
+          ) {
+            clearTimeout(startupDeadline);
+            exitDeadline = setTimeout(terminate, 1500);
+          }
+        };
+        child.stdout.on("data", receive);
+        child.stderr.on("data", receive);
+        child.once("error", (error) => {
+          clearTimeout(startupDeadline);
+          clearTimeout(exitDeadline);
+          reject(error);
+        });
+        child.once("close", (code) => {
+          clearTimeout(startupDeadline);
+          clearTimeout(exitDeadline);
+          resolveChild({ code, output, stalled });
+        });
+      });
+      expect(result.output).toContain(
+        "Ollama requires a valid HTTP or HTTPS endpoint.",
+      );
+      expect(result.stalled, result.output).toBe(false);
+      expect(result.code, result.output).toBe(1);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+  25000,
+);

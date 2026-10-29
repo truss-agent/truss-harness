@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { CliToolApproval, runCliTurn } from "./cli-approval.js";
+import { runCliTurn } from "./cli-approval.js";
+import { withCliChatResources } from "./cli-chat.js";
 import { cwd } from "node:process";
 import { readFile } from "node:fs/promises";
 import { basename, resolve as resolvePath } from "node:path";
@@ -262,101 +263,99 @@ async function waitForShutdown(): Promise<void> {
 async function runInteractiveChat(
   initialConfiguration: ResolvedConfiguration,
 ): Promise<void> {
-  let configuration = initialConfiguration;
-  const readline = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    terminal: process.stdin.isTTY === true,
-  });
-  const approval = new CliToolApproval(
-    configuration.permission,
-    process.stdin.isTTY === true && process.stdout.isTTY === true
-      ? readline
-      : undefined,
+  await withCliChatResources(
+    {
+      permission: initialConfiguration.permission,
+      canPrompt: process.stdin.isTTY === true && process.stdout.isTTY === true,
+      createReadline: () =>
+        createInterface({
+          input: process.stdin,
+          output: process.stdout,
+          terminal: process.stdin.isTTY === true,
+        }),
+    },
+    async (resources) => {
+      const readline = resources.readline!;
+      let configuration = initialConfiguration;
+      let client = await resources.createRuntime(configuration);
+      let session = await client.runtime.createSession();
+      let messages = session.messages;
+      subscribeToRuntimeEvents(client.events);
+      process.stdout.write(
+        brand.productName +
+          " interactive chat. :help for controls. Mode: " +
+          configuration.mode +
+          ".\n",
+      );
+
+      const replaceRuntime = async (
+        mode: "chat" | "plan" | "edit",
+      ): Promise<void> => {
+        const current = await client.runtime.getSession(session.id);
+        messages = current?.messages ?? messages;
+        await resources.disposeRuntime(client);
+        configuration = { ...configuration, mode };
+        client = await resources.createRuntime(configuration);
+        session = await client.runtime.createSession(messages);
+        subscribeToRuntimeEvents(client.events);
+        process.stdout.write("\n[mode: " + mode + "]\n");
+      };
+
+      while (true) {
+        const line = await readline
+          .question(brand.cliCommand + " (" + configuration.mode + ") > ")
+          .catch(() => undefined);
+        if (line === undefined) break;
+        const input = line.trim();
+        if (!input) continue;
+        if (input === ":exit" || input === ":quit") break;
+        if (input === ":help") {
+          process.stdout.write(
+            "Controls: :mode chat|plan|edit, :clear, :exit. You can also prefix a message with --mode chat|plan|edit.\n",
+          );
+          continue;
+        }
+        if (input === ":clear") {
+          session = await client.runtime.createSession();
+          messages = session.messages;
+          process.stdout.write("[conversation cleared]\n");
+          continue;
+        }
+        const modeCommand = input.match(/^:mode\s+(chat|plan|edit)$/);
+        if (modeCommand) {
+          await replaceRuntime(modeCommand[1] as "chat" | "plan" | "edit");
+          continue;
+        }
+        if (input.startsWith(":mode")) {
+          process.stdout.write("Use :mode chat, :mode plan, or :mode edit.\n");
+          continue;
+        }
+
+        const next = inlineMode(input);
+        if (next.mode && next.mode !== configuration.mode)
+          await replaceRuntime(next.mode);
+        if (!next.prompt) continue;
+        const workspaceCommand = await executeWorkspaceCommand({
+          workspaceRoot: cwd(),
+          input: next.prompt,
+        });
+        if (workspaceCommand.handled) {
+          process.stdout.write(workspaceCommand.message + "\n");
+          continue;
+        }
+        try {
+          await runCliTurn(client.runtime, session.id, next.prompt, readline);
+          process.stdout.write("\n");
+        } catch (error) {
+          process.stderr.write(
+            "\n" +
+              (error instanceof Error ? error.message : String(error)) +
+              "\n",
+          );
+        }
+      }
+    },
   );
-  let client = await createClientRuntime({ ...configuration, approval });
-  let session = await client.runtime.createSession();
-  let messages = session.messages;
-  subscribeToRuntimeEvents(client.events);
-  process.stdout.write(
-    brand.productName +
-      " interactive chat. :help for controls. Mode: " +
-      configuration.mode +
-      ".\n",
-  );
-
-  const replaceRuntime = async (
-    mode: "chat" | "plan" | "edit",
-  ): Promise<void> => {
-    const current = await client.runtime.getSession(session.id);
-    messages = current?.messages ?? messages;
-    await client.dispose();
-    configuration = { ...configuration, mode };
-    client = await createClientRuntime({ ...configuration, approval });
-    session = await client.runtime.createSession(messages);
-    subscribeToRuntimeEvents(client.events);
-    process.stdout.write("\n[mode: " + mode + "]\n");
-  };
-
-  try {
-    while (true) {
-      const line = await readline
-        .question(brand.cliCommand + " (" + configuration.mode + ") > ")
-        .catch(() => undefined);
-      if (line === undefined) break;
-      const input = line.trim();
-      if (!input) continue;
-      if (input === ":exit" || input === ":quit") break;
-      if (input === ":help") {
-        process.stdout.write(
-          "Controls: :mode chat|plan|edit, :clear, :exit. You can also prefix a message with --mode chat|plan|edit.\n",
-        );
-        continue;
-      }
-      if (input === ":clear") {
-        session = await client.runtime.createSession();
-        messages = session.messages;
-        process.stdout.write("[conversation cleared]\n");
-        continue;
-      }
-      const modeCommand = input.match(/^:mode\s+(chat|plan|edit)$/);
-      if (modeCommand) {
-        await replaceRuntime(modeCommand[1] as "chat" | "plan" | "edit");
-        continue;
-      }
-      if (input.startsWith(":mode")) {
-        process.stdout.write("Use :mode chat, :mode plan, or :mode edit.\n");
-        continue;
-      }
-
-      const next = inlineMode(input);
-      if (next.mode && next.mode !== configuration.mode)
-        await replaceRuntime(next.mode);
-      if (!next.prompt) continue;
-      const workspaceCommand = await executeWorkspaceCommand({
-        workspaceRoot: cwd(),
-        input: next.prompt,
-      });
-      if (workspaceCommand.handled) {
-        process.stdout.write(workspaceCommand.message + "\n");
-        continue;
-      }
-      try {
-        await runCliTurn(client.runtime, session.id, next.prompt, readline);
-        process.stdout.write("\n");
-      } catch (error) {
-        process.stderr.write(
-          "\n" +
-            (error instanceof Error ? error.message : String(error)) +
-            "\n",
-        );
-      }
-    }
-  } finally {
-    approval.denyAll();
-    readline.close();
-    await client.dispose();
-  }
 }
 
 function selectedIndex(input: string, count: number, fallback: number): number {
@@ -996,48 +995,47 @@ async function main(): Promise<void> {
     return;
   }
 
-  const readline =
-    process.stdin.isTTY === true && process.stdout.isTTY === true
-      ? createInterface({
-          input: process.stdin,
-          output: process.stdout,
-          terminal: true,
-        })
-      : undefined;
-  const approval = new CliToolApproval(configuration.permission, readline);
-  const client = await createClientRuntime({ ...configuration, approval });
-  const { runtime, events } = client;
-  for (const server of client.mcpServers) {
-    process.stderr.write(
-      `[mcp] ${server.name}: ${server.state}${server.error ? ` (${server.error})` : ` (${server.toolCount} tools)`}\n`,
-    );
-  }
-
-  if (command === "chat") {
-    const prompt = args.join(" ").trim();
-    events.subscribe((event) => {
-      if (event.type === "text_delta") process.stdout.write(event.text);
-      if (event.type === "tool_call_requested")
-        process.stderr.write(`\n[tool] ${event.tool}\n`);
-      if (event.type === "plan_updated") {
+  if (command !== "chat")
+    throw new Error(`Unknown command: ${command}\n\n${help}`);
+  await withCliChatResources(
+    {
+      permission: configuration.permission,
+      canPrompt: process.stdin.isTTY === true && process.stdout.isTTY === true,
+      createReadline: () =>
+        process.stdin.isTTY === true && process.stdout.isTTY === true
+          ? createInterface({
+              input: process.stdin,
+              output: process.stdout,
+              terminal: true,
+            })
+          : undefined,
+    },
+    async (resources) => {
+      const client = await resources.createRuntime(configuration);
+      const readline = resources.readline;
+      const { runtime, events } = client;
+      for (const server of client.mcpServers) {
         process.stderr.write(
-          `\n[plan] ${event.plan.title}\n${event.plan.steps.map((step) => `  ${step.status === "completed" ? "[x]" : step.status === "in_progress" ? "[..]" : "[ ]"} ${step.content}`).join("\n")}\n`,
+          `[mcp] ${server.name}: ${server.state}${server.error ? ` (${server.error})` : ` (${server.toolCount} tools)`}\n`,
         );
       }
-    });
-    try {
+
+      const prompt = args.join(" ").trim();
+      events.subscribe((event) => {
+        if (event.type === "text_delta") process.stdout.write(event.text);
+        if (event.type === "tool_call_requested")
+          process.stderr.write(`\n[tool] ${event.tool}\n`);
+        if (event.type === "plan_updated") {
+          process.stderr.write(
+            `\n[plan] ${event.plan.title}\n${event.plan.steps.map((step) => `  ${step.status === "completed" ? "[x]" : step.status === "in_progress" ? "[..]" : "[ ]"} ${step.content}`).join("\n")}\n`,
+          );
+        }
+      });
       const session = await runtime.createSession();
       await runCliTurn(runtime, session.id, prompt, readline);
       process.stdout.write("\n");
-    } finally {
-      approval.denyAll();
-      readline?.close();
-      await client.dispose();
-    }
-    return;
-  }
-
-  throw new Error(`Unknown command: ${command}\n\n${help}`);
+    },
+  );
 }
 
 main().catch((error: unknown) => {

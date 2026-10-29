@@ -144,7 +144,9 @@ and file contents. Editing the file requires trust again. Existing repositories
 and `config init` templates start untrusted: they cannot select endpoints,
 credentials, permission policy, editing mode, or executable MCP commands.
 User settings, environment variables, and explicit flags continue to work.
-Only top-level model and theme suggestions are read from untrusted files.
+Only the top-level theme is applied from untrusted files. Workspace model
+settings require `config trust` or an explicit `--model` choice; an untrusted
+repository cannot replace your selected local or cloud model.
 
 Use a profile for a task:
 
