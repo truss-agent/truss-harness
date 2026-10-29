@@ -1,6 +1,7 @@
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, opendir, stat, writeFile } from "node:fs/promises";
 import { dirname, join, relative } from "node:path";
-import { spawn } from "node:child_process";
+import { NodeProcessRunner, type ProcessRunner } from "./process-runner.js";
+import { defaultToolOutputBytes, readBoundedText, truncateUtf8 } from "./resource-limits.js";
 import type { AgentTool, JsonObject, ToolExecutionContext, ToolResult } from "./contracts.js";
 import type { PlanStepStatus, WorkspacePlanStore } from "./plans.js";
 import { resolveWorkspacePath } from "./workspace.js";
@@ -49,12 +50,18 @@ function optionalNumberInput(input: JsonObject, key: string, fallback: number): 
   return normalized;
 }
 
+async function readEditableFile(path: string): Promise<string> {
+  const result = await readBoundedText(path, 2_000_000);
+  if (result.truncated) throw new Error("File exceeds the 2000000-byte edit limit; use a dedicated editor.");
+  return result.text;
+}
+
 const pathSchema = { type: "object" as const, properties: { path: { type: "string" } }, required: ["path"] };
 const ignoredDirectories = new Set([".git", "node_modules", "dist", "coverage"]);
 
 export const readFileTool: AgentTool = {
   name: "read_file", description: "Read a UTF-8 file using a workspace-relative path such as README.md. Absolute paths are not allowed.", inputSchema: pathSchema,
-  async execute(input, context) { return { content: await readFile(resolveWorkspacePath(context.workspaceRoot, nonEmptyStringInput(input, "path")), "utf8") }; }
+  async execute(input, context) { return { content: (await readBoundedText(resolveWorkspacePath(context.workspaceRoot, nonEmptyStringInput(input, "path")), defaultToolOutputBytes, context.signal)).text }; }
 };
 
 export const writeFileTool: AgentTool = {
@@ -65,7 +72,7 @@ export const writeFileTool: AgentTool = {
     const content = stringInput(input, "content");
     const fullPath = resolveWorkspacePath(context.workspaceRoot, nonEmptyStringInput(input, "path"));
     let existing: string | undefined;
-    try { existing = await readFile(fullPath, "utf8"); } catch (error) {
+    try { existing = await readEditableFile(fullPath); } catch (error) {
       if (!(error && typeof error === "object" && "code" in error && error.code === "ENOENT")) throw error;
     }
     if (existing && existing.length >= 4_096 && content.length < existing.length * 0.25) {
@@ -86,7 +93,7 @@ export const replaceInFileTool: AgentTool = {
     const oldText = stringInput(input, "oldText");
     const newText = stringInput(input, "newText");
     const fullPath = resolveWorkspacePath(context.workspaceRoot, nonEmptyStringInput(input, "path"));
-    const existing = await readFile(fullPath, "utf8");
+    const existing = await readEditableFile(fullPath);
     // A model can reasonably use a focused replacement while scaffolding a
     // file. There is no exact excerpt to match in a blank file, so initialize
     // it from newText rather than entering an unrecoverable retry loop.
@@ -150,13 +157,24 @@ export function createUpdatePlanTool(plans: WorkspacePlanStore): AgentTool {
 export const listDirectoryTool: AgentTool = {
   name: "list_directory", description: "List entries in a workspace directory. Omit path to list the workspace root.",
   inputSchema: { type: "object", properties: { path: { type: "string" } } },
-  async execute(input, context) { return { content: (await readdir(resolveWorkspacePath(context.workspaceRoot, optionalStringInput(input, "path", ".")), { withFileTypes: true })).map(e => `${e.isDirectory() ? "dir" : "file"}\t${e.name}`).join("\n") }; }
+  async execute(input, context) {
+    const entries: string[] = [];
+    let bytes = 0;
+    for await (const entry of await opendir(resolveWorkspacePath(context.workspaceRoot, optionalStringInput(input, "path", ".")))) {
+      context.signal?.throwIfAborted();
+      const line = `${entry.isDirectory() ? "dir" : "file"}\t${entry.name}`;
+      bytes += Buffer.byteLength(line) + 1;
+      if (bytes > defaultToolOutputBytes - 30) { entries.push("[Content truncated]"); break; }
+      entries.push(line);
+    }
+    return { content: entries.join("\n") };
+  }
 };
 
 async function walkFiles(root: string, current: string, maxFiles: number, files: string[]): Promise<void> {
   if (files.length >= maxFiles) return;
 
-  for (const entry of await readdir(current, { withFileTypes: true })) {
+  for await (const entry of await opendir(current)) {
     if (files.length >= maxFiles) return;
     if (entry.isDirectory()) {
       if (!ignoredDirectories.has(entry.name)) {
@@ -179,7 +197,7 @@ export const searchFilesTool: AgentTool = {
   async execute(input, context) {
     const query = nonEmptyStringInput(input, "query").toLowerCase();
     const basePath = resolveWorkspacePath(context.workspaceRoot, optionalStringInput(input, "path", "."));
-    const maxResults = Math.floor(optionalNumberInput(input, "maxResults", 50));
+    const maxResults = Math.min(10_000, Math.floor(optionalNumberInput(input, "maxResults", 50)));
     const files: string[] = [];
 
     if (!(await stat(basePath)).isDirectory()) {
@@ -188,7 +206,7 @@ export const searchFilesTool: AgentTool = {
 
     await walkFiles(context.workspaceRoot, basePath, 10_000, files);
     const matches = files.filter((file) => file.toLowerCase().includes(query)).slice(0, maxResults);
-    return { content: matches.join("\n") || "No matching files." };
+    return { content: truncateUtf8(matches.join("\n") || "No matching files.", defaultToolOutputBytes) };
   }
 };
 
@@ -203,27 +221,40 @@ export const grepTool: AgentTool = {
   async execute(input, context) {
     const query = nonEmptyStringInput(input, "query");
     const basePath = resolveWorkspacePath(context.workspaceRoot, optionalStringInput(input, "path", "."));
-    const maxResults = Math.floor(optionalNumberInput(input, "maxResults", 100));
+    const maxResults = Math.min(10_000, Math.floor(optionalNumberInput(input, "maxResults", 100)));
     const files: string[] = [];
     const matches: string[] = [];
+    let outputBytes = 0;
+    let outputFull = false;
 
     await walkFiles(context.workspaceRoot, basePath, 10_000, files);
 
     for (const file of files) {
-      if (matches.length >= maxResults) break;
+      context.signal?.throwIfAborted();
+      if (matches.length >= maxResults || outputFull) break;
 
       const fullPath = resolveWorkspacePath(context.workspaceRoot, file);
       const fileStat = await stat(fullPath);
       if (fileStat.size > 1_000_000) continue;
 
-      const content = await readFile(fullPath, "utf8");
+      const bounded = await readBoundedText(fullPath, 1_000_000, context.signal);
+      if (bounded.truncated) continue;
+      const content = bounded.text;
       if (content.includes("\0")) continue;
 
       const lines = content.split(/\r?\n/);
       for (let index = 0; index < lines.length && matches.length < maxResults; index++) {
         const column = lines[index].indexOf(query);
         if (column !== -1) {
-          matches.push(`${file}:${index + 1}:${column + 1}: ${lines[index]}`);
+          const line = `${file}:${index + 1}:${column + 1}: ${lines[index]}`;
+          const remaining = defaultToolOutputBytes - outputBytes - 1;
+          if (Buffer.byteLength(line) > remaining - 30) {
+            if (remaining >= 30) matches.push(truncateUtf8(line, remaining, true));
+            outputFull = true;
+            break;
+          }
+          matches.push(line);
+          outputBytes += Buffer.byteLength(line) + 1;
         }
       }
     }
@@ -232,24 +263,33 @@ export const grepTool: AgentTool = {
   }
 };
 
-export function createTerminalTool(timeoutMs = 30_000): AgentTool {
+export interface TerminalToolOptions {
+  readonly runner?: ProcessRunner;
+  readonly maxOutputBytes?: number;
+  readonly drainTimeoutMs?: number;
+}
+
+export function createTerminalTool(timeoutMs = 30_000, options: TerminalToolOptions = {}): AgentTool {
+  const runner = options.runner ?? new NodeProcessRunner();
   return {
-    name: "run_terminal", description: "Run a build, test, Git, or inspection command from the workspace root. Do not use shell redirection or content-writing commands to edit workspace files; use write_file or replace_in_file instead.",
+    name: "run_terminal", description: "Run an approved build, test, Git, or inspection command from the workspace root. Terminal commands have the user's OS capabilities; this is not a filesystem sandbox. Use write_file or replace_in_file for workspace edits.",
     inputSchema: { type: "object", properties: { command: { type: "string" } }, required: ["command"] },
     async execute(input, context): Promise<ToolResult> {
       const command = nonEmptyStringInput(input, "command");
+      // A usability guard, not an access boundary: approved shell commands have OS capabilities.
       if (/[>]|\b(?:add-content|set-content|out-file|tee|sed\s+-i)\b/i.test(command)) {
         return { content: "Terminal file-writing commands and shell redirection are disabled for agents. Use write_file or replace_in_file to modify workspace files.", isError: true };
       }
-      return new Promise((resolveResult) => {
-        const child = spawn(command, { cwd: context.workspaceRoot, shell: true, signal: context.signal, windowsHide: true });
-        let output = "";
-        child.stdout.on("data", (data: Buffer) => { output += data; });
-        child.stderr.on("data", (data: Buffer) => { output += data; });
-        const timer = setTimeout(() => child.kill(), timeoutMs);
-        child.on("close", (code) => { clearTimeout(timer); resolveResult({ content: output || `Process exited with code ${code ?? "unknown"}.`, isError: code !== 0 }); });
-        child.on("error", (error) => { clearTimeout(timer); resolveResult({ content: error.message, isError: true }); });
-      });
+      const result = await runner.run({ command, cwd: context.workspaceRoot, signal: context.signal, timeoutMs, maxOutputBytes: options.maxOutputBytes, drainTimeoutMs: options.drainTimeoutMs });
+      const status = result.outcome === "timeout" ? "Process timed out."
+        : result.outcome === "aborted" ? "Process aborted."
+        : result.outcome === "drain_timeout" ? "Process output drain timed out."
+        : result.outcome === "error" ? "Process execution failed."
+        : `Process exited with code ${result.exitCode ?? "unknown"}.`;
+      return {
+        content: truncateUtf8(result.outcome === "exited" ? result.output || status : `${status}\n${result.output}`, options.maxOutputBytes ?? defaultToolOutputBytes),
+        isError: result.outcome !== "exited" || result.exitCode !== 0,
+      };
     }
   };
 }

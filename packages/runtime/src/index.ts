@@ -20,3 +20,7 @@ export * from "./version.js";
 export * from "./master-prompt.js";
 
 export { CanonicalWorkspaceFilesystemPolicy, resolveWorkspacePath, type WorkspaceFilesystemPolicy } from "./workspace.js";
+
+export * from "./web-transport.js";
+export * from "./process-runner.js";
+export * from "./resource-limits.js";

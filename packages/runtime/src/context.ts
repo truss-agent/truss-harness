@@ -1,11 +1,11 @@
-import { readFile } from "node:fs/promises";
+import { boundedJsonBytes, byteLimit, defaultContextBytes, readBoundedText } from "./resource-limits.js";
 import type { ChatMessage, Session } from "./contracts.js";
 import type { WorkspaceMemoryStore } from "./memory.js";
 import type { WorkspacePlanStore } from "./plans.js";
 import { resolveWorkspacePath } from "./workspace.js";
 
 /** Select recent complete exchanges; never retain a result without its whole call group. */
-function recentExchanges(messages: readonly ChatMessage[], maxMessages: number): ChatMessage[] {
+function recentExchanges(messages: readonly ChatMessage[], maxMessages: number, maximumBytes: number, prefix: readonly ChatMessage[]): ChatMessage[] {
   const groups: ChatMessage[][] = [];
   for (let index = 0; index < messages.length; index++) {
     const message = messages[index]!;
@@ -24,6 +24,7 @@ function recentExchanges(messages: readonly ChatMessage[], maxMessages: number):
   const selected: ChatMessage[] = [];
   for (const group of groups.reverse()) {
     if (selected.length + group.length > maxMessages) break;
+    if (boundedJsonBytes([...prefix, ...group, ...selected], maximumBytes) > maximumBytes) break;
     selected.unshift(...group);
   }
   return selected;
@@ -35,11 +36,9 @@ export interface ContextManager {
 
 /** Keeps a bounded recent conversation; richer repository context can implement this interface later. */
 export class RecentHistoryContextManager implements ContextManager {
-  constructor(private readonly maxMessages = 40, private readonly maxContextCharacters = 24_000) {}
+  constructor(private readonly maxMessages = 40, private readonly maxContextCharacters = 24_000, private readonly maxHistoryBytes = defaultContextBytes) {}
   async build(session: Session, systemPrompt?: string, requestContext: readonly ContextBlock[] = []): Promise<ChatMessage[]> {
-    const context = formatContextBlocks(requestContext, this.maxContextCharacters);
-    const prompt = [systemPrompt, context ? `Workspace context:\n${context}` : undefined].filter(Boolean).join("\n\n");
-    return [ ...(prompt ? [{ role: "system" as const, content: prompt }] : []), ...recentExchanges(session.messages, this.maxMessages) ];
+    return buildBoundedContext(session, systemPrompt, requestContext, this.maxMessages, this.maxContextCharacters, this.maxHistoryBytes);
   }
 }
 
@@ -53,18 +52,23 @@ export interface ContextProvider {
   collect(session: Session): Promise<readonly ContextBlock[]>;
 }
 
-export function formatContextBlocks(blocks: readonly ContextBlock[], maxCharacters: number): string {
+export function formatContextBlocks(blocks: readonly ContextBlock[], maxCharacters: number, maxBytes = defaultContextBytes): string {
+  let remainingBytes = maxBytes;
   let remaining = maxCharacters;
   const selected: string[] = [];
   const prioritized = [...blocks].sort((left, right) => (right.priority ?? 0) - (left.priority ?? 0));
 
   for (const block of prioritized) {
+    if (block.source.length + block.content.length > remaining || block.source.length + block.content.length > remainingBytes) continue;
     const source = block.source.replaceAll("&", "&amp;").replaceAll('"', "&quot;");
     const formatted = `<context source="${source}">\n${block.content}\n</context>`;
-    if (formatted.length > remaining) continue;
+    const separator = selected.length ? 2 : 0;
+    const bytes = Buffer.byteLength(formatted) + separator;
+    if (formatted.length + separator > remaining || bytes > remainingBytes) continue;
 
     selected.push(formatted);
-    remaining -= formatted.length;
+    remaining -= formatted.length + separator;
+    remainingBytes -= bytes;
   }
 
   return selected.join("\n\n");
@@ -75,17 +79,25 @@ export class StaticContextProvider implements ContextProvider {
   async collect(): Promise<readonly ContextBlock[]> { return this.blocks; }
 }
 
+export interface WorkspaceFileContextOptions {
+  readonly maxBytes?: number;
+  readonly maxFileBytes?: number;
+}
+
 export class WorkspaceFileContextProvider implements ContextProvider {
-  constructor(private readonly workspaceRoot: string, private readonly paths: readonly string[]) {}
+  constructor(private readonly workspaceRoot: string, private readonly paths: readonly string[], private readonly options: WorkspaceFileContextOptions = {}) {}
 
   async collect(): Promise<readonly ContextBlock[]> {
     const blocks: ContextBlock[] = [];
-
+    let remaining = byteLimit(this.options.maxBytes ?? 24_000);
+    const perFile = byteLimit(this.options.maxFileBytes ?? 12_000);
     for (const path of this.paths) {
+      if (remaining < 2) break;
       const fullPath = resolveWorkspacePath(this.workspaceRoot, path);
-      blocks.push({ source: path, content: await readFile(fullPath, "utf8"), priority: 100 });
+      const { text } = await readBoundedText(fullPath, Math.min(remaining, perFile));
+      blocks.push({ source: path, content: text, priority: 100 });
+      remaining -= Buffer.byteLength(text);
     }
-
     return blocks;
   }
 }
@@ -137,7 +149,7 @@ export class WorkspacePlanContextProvider implements ContextProvider {
 export class CompositeContextManager implements ContextManager {
   constructor(
     private readonly providers: readonly ContextProvider[] = [],
-    private readonly options: { maxMessages?: number; maxContextCharacters?: number } = {}
+    private readonly options: { maxMessages?: number; maxContextCharacters?: number; maxHistoryBytes?: number } = {}
   ) {}
 
   async build(session: Session, systemPrompt?: string, requestContext: readonly ContextBlock[] = []): Promise<ChatMessage[]> {
@@ -146,9 +158,20 @@ export class CompositeContextManager implements ContextManager {
       ...requestContext,
       ...(await Promise.all(this.providers.map((provider) => provider.collect(session)))).flat()
     ];
-    const context = formatContextBlocks(blocks, this.options.maxContextCharacters ?? 24_000);
-    const prompt = [systemPrompt, context ? `Workspace context:\n${context}` : undefined].filter(Boolean).join("\n\n");
-
-    return [...(prompt ? [{ role: "system" as const, content: prompt }] : []), ...recentExchanges(session.messages, maxMessages)];
+    return buildBoundedContext(session, systemPrompt, blocks, maxMessages, this.options.maxContextCharacters ?? 24_000, this.options.maxHistoryBytes ?? defaultContextBytes);
   }
+}
+
+function buildBoundedContext(session: Session, systemPrompt: string | undefined, blocks: readonly ContextBlock[], maxMessages: number, maxCharacters: number, maxBytes: number): ChatMessage[] {
+  byteLimit(maxBytes);
+  const system: ChatMessage[] = systemPrompt ? [{ role: "system", content: systemPrompt }] : [];
+  const systemBytes = boundedJsonBytes(system, maxBytes);
+  if (systemBytes > maxBytes) throw new Error("System instructions exceed the context byte budget.");
+  // JSON escaping can expand source text by up to six bytes per UTF-16 unit.
+  const context = formatContextBlocks(blocks, maxCharacters, maxBytes - systemBytes);
+  const prompt = [systemPrompt, context ? `Workspace context:\n${context}` : undefined].filter(Boolean).join("\n\n");
+  const prefix: ChatMessage[] = prompt ? [{ role: "system", content: prompt }] : [];
+  // If escaped workspace blocks overflow, retain the intact system instructions.
+  const selectedPrefix = boundedJsonBytes(prefix, maxBytes) <= maxBytes ? prefix : system;
+  return [...selectedPrefix, ...recentExchanges(session.messages, maxMessages, maxBytes, selectedPrefix)];
 }

@@ -96,7 +96,15 @@ export function createGatewayAgentController(
   };
   return {
     access,
-    events: coordinator.events,
+    events: {
+      subscribe(listener) {
+        return coordinator.events.subscribe(event => {
+          const agentId = event.type === "run_updated" ? event.run.agentId
+            : event.type === "runtime" ? event.event.agentId : event.record.agentId;
+          if (visible(agentId)) return listener(event);
+        });
+      },
+    },
     async listProfiles() {
       return (await coordinator.listProfiles())
         .filter((profile) => visible(profile.id))
@@ -201,6 +209,17 @@ function hasToken(candidate: string, expectedToken: string): boolean {
   const actual = Buffer.from(candidate);
   const expected = Buffer.from(expectedToken);
   return actual.length === expected.length && timingSafeEqual(actual, expected);
+}
+
+/** Only origin-form targets are accepted; Host never supplies the parsing base. */
+function parseRequestUrl(request: IncomingMessage): URL {
+  const target = request.url ?? "/";
+  if (!target.startsWith("/") || target.startsWith("//") || /[\\\x00-\x20#]/.test(target)) throw new Error("Invalid request target");
+  if (request.headers.host !== undefined) {
+    const host = new URL(`http://${request.headers.host}`);
+    if (host.username || host.password || host.pathname !== "/" || host.search || host.hash) throw new Error("Invalid Host");
+  }
+  return new URL(target, "http://gateway.invalid");
 }
 
 /**
@@ -400,7 +419,9 @@ export async function startRemoteGateway(options: RemoteGatewayOptions): Promise
   };
 
   const server = createServer(async (request, response) => {
-    const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+    let url: URL;
+    try { url = parseRequestUrl(request); }
+    catch { return reply(response, 400, { error: "Invalid request target or Host." }); }
     if (request.method === "GET" && url.pathname === "/health") return reply(response, 200, { ok: true });
     if (!authorize(request)) return reply(response, 401, { error: "Unauthorized" });
 
@@ -436,7 +457,9 @@ export async function startRemoteGateway(options: RemoteGatewayOptions): Promise
 
   const webSockets = new WebSocketServer({ noServer: true });
   server.on("upgrade", (request, socket, head) => {
-    const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+    let url: URL;
+    try { url = parseRequestUrl(request); }
+    catch { socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n"); return; }
     if (url.pathname !== "/v1/events") return socket.destroy();
     webSockets.handleUpgrade(request, socket, head, (client) => {
       const timeout = setTimeout(() => client.close(1008, "Authentication timed out."), 5_000);

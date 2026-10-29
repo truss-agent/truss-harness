@@ -3,12 +3,15 @@ import { isIP } from "node:net";
 import { load } from "cheerio";
 import type { AgentTool, JsonObject, ToolResult } from "./contracts.js";
 import type { ToolRegistry } from "./tools.js";
+import { NodePublicWebTransport, type PublicWebTransport } from "./web-transport.js";
 
 const defaultSearchEndpoint = "https://html.duckduckgo.com/html/";
 const blockedHostnames = new Set(["localhost", "localhost.localdomain"]);
 
 export interface WebToolOptions {
+  /** Trusted override: must provide the same address-pinning/security contract as transport. */
   readonly fetch?: typeof globalThis.fetch;
+  readonly transport?: PublicWebTransport;
   readonly resolveHost?: (hostname: string) => Promise<readonly string[]>;
   readonly searchEndpoint?: string;
   readonly timeoutMs?: number;
@@ -67,7 +70,7 @@ async function defaultResolveHost(hostname: string): Promise<readonly string[]> 
   return (await lookup(hostname, { all: true, verbatim: true })).map((entry) => entry.address);
 }
 
-async function validatePublicUrl(value: string, resolveHost: NonNullable<WebToolOptions["resolveHost"]>): Promise<URL> {
+async function validatePublicUrl(value: string, resolveHost: NonNullable<WebToolOptions["resolveHost"]>): Promise<{ url: URL; addresses: readonly string[] }> {
   let url: URL;
   try {
     url = new URL(value);
@@ -76,7 +79,7 @@ async function validatePublicUrl(value: string, resolveHost: NonNullable<WebTool
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Only HTTP and HTTPS URLs are allowed.");
   if (url.username || url.password) throw new Error("URLs containing credentials are not allowed.");
-  const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
+  const hostname = url.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
   if (blockedHostnames.has(hostname) || hostname.endsWith(".localhost") || hostname.endsWith(".local")) {
     throw new Error("Local and private network URLs are not available to internet tools.");
   }
@@ -84,63 +87,77 @@ async function validatePublicUrl(value: string, resolveHost: NonNullable<WebTool
   if (!addresses.length || addresses.some(isPrivateAddress)) {
     throw new Error("Local and private network URLs are not available to internet tools.");
   }
-  return url;
+  return { url, addresses };
 }
 
-async function readLimitedBody(response: Response, maximumBytes: number): Promise<string> {
+/** Bound waits even for an explicitly injected dependency that ignores AbortSignal. */
+function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted();
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
+async function disposeBody(response: Response): Promise<void> {
+  // Disposal is best effort and must not extend the operation deadline for custom streams.
+  if (!response.body?.locked) void response.body?.cancel().catch(() => undefined);
+}
+
+async function readLimitedBody(response: Response, maximumBytes: number, signal: AbortSignal): Promise<string> {
   const declaredLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) {
-    throw new Error(`Response exceeds the ${maximumBytes}-byte limit.`);
-  }
+  if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) throw new Error(`Response exceeds the ${maximumBytes}-byte limit.`);
   if (!response.body) return "";
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maximumBytes) {
-      await reader.cancel();
-      throw new Error(`Response exceeds the ${maximumBytes}-byte limit.`);
+  try {
+    while (true) {
+      const { done, value } = await abortable(reader.read(), signal);
+      if (done) break;
+      total += value.byteLength;
+      if (total > maximumBytes) throw new Error(`Response exceeds the ${maximumBytes}-byte limit.`);
+      chunks.push(value);
     }
-    chunks.push(value);
+    return Buffer.concat(chunks, total).toString("utf8");
+  } finally {
+    void reader.cancel().catch(() => undefined);
+    reader.releaseLock();
   }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder().decode(bytes);
 }
 
-async function fetchPublicText(value: string, options: Required<Pick<WebToolOptions, "fetch" | "resolveHost" | "timeoutMs" | "maxResponseBytes" | "maxRedirects">>, signal?: AbortSignal): Promise<{ readonly url: string; readonly contentType: string; readonly body: string }> {
-  let url = await validatePublicUrl(value, options.resolveHost);
-  for (let redirect = 0; redirect <= options.maxRedirects; redirect++) {
-    const response = await options.fetch(url, {
-      headers: { accept: "text/html, text/plain, application/json, application/xml, text/xml, text/markdown;q=0.9" },
-      redirect: "manual",
-      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(options.timeoutMs)]) : AbortSignal.timeout(options.timeoutMs)
-    });
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
-      if (!location) throw new Error(`Redirect from ${url} did not include a location.`);
-      if (redirect === options.maxRedirects) throw new Error("Too many redirects.");
-      url = await validatePublicUrl(new URL(location, url).toString(), options.resolveHost);
-      continue;
+async function fetchPublicText(value: string, options: ReturnType<typeof dependencies>, signal?: AbortSignal): Promise<{ readonly url: string; readonly contentType: string; readonly body: string }> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new Error("Web operation timeout.")), options.timeoutMs);
+  const operationSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+  try {
+    let target = value;
+    for (let redirect = 0; redirect <= options.maxRedirects; redirect++) {
+      const { url, addresses } = await abortable(validatePublicUrl(target, options.resolveHost), operationSignal);
+      const pending = options.fetch
+        ? options.fetch(url, { headers: { accept: "text/html, text/plain, application/json, application/xml, text/xml, text/markdown;q=0.9" }, redirect: "manual", signal: operationSignal })
+        : options.transport.request(url, addresses, operationSignal);
+      // If a trusted custom transport ignores abort and resolves late, still dispose its response.
+      void pending.then(response => { if (operationSignal.aborted) void disposeBody(response); }, () => undefined);
+      const response = await abortable(pending, operationSignal);
+      try {
+        if (response.status >= 300 && response.status < 400) {
+          const location = response.headers.get("location");
+          if (!location) throw new Error(`Redirect from ${url} did not include a location.`);
+          if (redirect === options.maxRedirects) throw new Error("Too many redirects.");
+          target = new URL(location, url).toString();
+          continue;
+        }
+        if (!response.ok) throw new Error(`Request failed with HTTP ${response.status}.`);
+        const contentType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase() ?? "text/plain";
+        const supported = contentType.startsWith("text/") || contentType === "application/json" || contentType === "application/xml" || contentType.endsWith("+json") || contentType.endsWith("+xml");
+        if (!supported) throw new Error(`Unsupported response content type: ${contentType}.`);
+        return { url: url.toString(), contentType, body: await readLimitedBody(response, options.maxResponseBytes, operationSignal) };
+      } finally { await disposeBody(response); }
     }
-    if (!response.ok) throw new Error(`Request failed with HTTP ${response.status}.`);
-    const contentType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase() ?? "text/plain";
-    const supported = contentType.startsWith("text/")
-      || contentType === "application/json"
-      || contentType === "application/xml"
-      || contentType.endsWith("+json")
-      || contentType.endsWith("+xml");
-    if (!supported) throw new Error(`Unsupported response content type: ${contentType}.`);
-    return { url: url.toString(), contentType, body: await readLimitedBody(response, options.maxResponseBytes) };
-  }
-  throw new Error("Too many redirects.");
+    throw new Error("Too many redirects.");
+  } finally { clearTimeout(timer); }
 }
 
 function htmlToReadableText(html: string): { readonly title?: string; readonly text: string } {
@@ -162,7 +179,8 @@ function htmlToReadableText(html: string): { readonly title?: string; readonly t
 
 function dependencies(options: WebToolOptions) {
   return {
-    fetch: options.fetch ?? globalThis.fetch,
+    fetch: options.fetch,
+    transport: options.transport ?? new NodePublicWebTransport(),
     resolveHost: options.resolveHost ?? defaultResolveHost,
     timeoutMs: options.timeoutMs ?? 15_000,
     maxResponseBytes: options.maxResponseBytes ?? 750_000,

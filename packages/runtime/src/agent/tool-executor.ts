@@ -1,3 +1,4 @@
+import { defaultToolOutputBytes, truncateUtf8 } from "../resource-limits.js";
 import type {
   RuntimeEvent,
   Session,
@@ -14,6 +15,7 @@ export interface AgentToolExecutorOptions {
   readonly tools: ToolRegistry;
   readonly workspaceRoot: string;
   readonly approval?: ToolApproval;
+  readonly maxOutputBytes?: number;
   emit(event: RuntimeEvent): Promise<void>;
 }
 
@@ -82,6 +84,7 @@ export class AgentToolExecutor {
       }
     }
     signal?.throwIfAborted();
+    result = { ...result, content: truncateUtf8(result.content, this.options.maxOutputBytes ?? defaultToolOutputBytes) };
     session.messages.push({
       role: "tool",
       name: tool,
