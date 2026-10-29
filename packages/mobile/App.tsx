@@ -25,12 +25,21 @@ import type {
   ApprovalMode,
   ChatItem,
   RemoteEvent,
+  RemoteSkillState,
   SavedGateway,
   Screen,
+  SkillSelection,
   ToolApproval,
   Workspace,
 } from "./src/contracts";
 import { gatewayCommand, gatewayWorkspaces } from "./src/gateway-transport";
+import {
+  listRemoteSkills,
+  type MobileSkillScope,
+  supportsSkills,
+  updateRemoteSkills,
+} from "./src/skills";
+import { SkillsView } from "./src/skills-view";
 import {
   allApprovalModes,
   parsePairing,
@@ -147,6 +156,10 @@ export default function App() {
   const [agentPrompt, setAgentPrompt] = useState("");
   const [agentApproval, setAgentApproval] = useState<AgentToolApproval>();
   const [agentsLoading, setAgentsLoading] = useState(false);
+  const [skillState, setSkillState] = useState<RemoteSkillState>();
+  const [skillScope, setSkillScope] = useState<MobileSkillScope>("workspace");
+  const [skillsBusy, setSkillsBusy] = useState(false);
+  const [skillError, setSkillError] = useState<string>();
   const [cameraPermission, requestCameraPermission] = useCameraPermissions();
   const eventController = useRef<MobileGatewayEventController | undefined>(
     undefined,
@@ -316,6 +329,7 @@ export default function App() {
   const selectedAgent = agentProfiles.find(
     (profile) => profile.id === selectedAgentId,
   );
+  const skillsSupported = supportsSkills(selectedWorkspace);
   const supportsManagedAgents = Boolean(
     selectedWorkspace?.capabilities.supportsAgents &&
       selectedWorkspace.capabilities.protocolVersions?.includes(2),
@@ -391,6 +405,64 @@ export default function App() {
       );
     }
   }, [refreshAgents, supportsManagedAgents]);
+
+  const skillAction = useCallback(
+    async (action: () => Promise<RemoteSkillState>) => {
+      setSkillsBusy(true);
+      try {
+        setSkillState(await action());
+        setSkillError(undefined);
+      } catch (error) {
+        setSkillError(
+          error instanceof Error ? error.message : "Unable to update skills.",
+        );
+      } finally {
+        setSkillsBusy(false);
+      }
+    },
+    [],
+  );
+
+  const loadSkills = useCallback(
+    (scope: MobileSkillScope) => {
+      if (!workspaceId) return;
+      setSkillScope(scope);
+      void skillAction(() =>
+        listRemoteSkills(
+          command,
+          workspaceId,
+          scope === "session" ? sessionId : undefined,
+        ),
+      );
+    },
+    [command, sessionId, skillAction, workspaceId],
+  );
+
+  const saveSkills = useCallback(
+    (selection: Partial<SkillSelection> | null) => {
+      if (!workspaceId) return;
+      void skillAction(() =>
+        updateRemoteSkills(
+          command,
+          workspaceId,
+          skillScope,
+          skillScope === "session" ? sessionId : undefined,
+          selection,
+        ),
+      );
+    },
+    [command, sessionId, skillAction, skillScope, workspaceId],
+  );
+
+  const openSkills = useCallback(() => {
+    if (!skillsSupported) {
+      setStatus("This paired host does not offer skills yet.");
+      return;
+    }
+    setSkillState(undefined);
+    setScreen("skills");
+    loadSkills(sessionId ? "session" : "workspace");
+  }, [loadSkills, sessionId, skillsSupported]);
 
   const startAgent = useCallback(async () => {
     if (!canStartManagedAgents) {
@@ -616,7 +688,7 @@ export default function App() {
   }, [running]);
 
   const goBack = useCallback(() => {
-    if (screen === "settings" || screen === "agents") {
+    if (screen === "settings" || screen === "agents" || screen === "skills") {
       setScreen(sessionId ? "session" : "home");
       return;
     }
@@ -718,6 +790,15 @@ export default function App() {
             onPress={() => void openAgents()}
           >
             <Text style={styles.agentIconButtonText}>◎</Text>
+          </Pressable>
+        )}
+        {skillsSupported && screen !== "skills" && (
+          <Pressable
+            accessibilityLabel="Open skills"
+            style={styles.iconButton}
+            onPress={openSkills}
+          >
+            <Text style={styles.agentIconButtonText}>✦</Text>
           </Pressable>
         )}
         {screen !== "settings" && (
@@ -1259,6 +1340,23 @@ export default function App() {
                 </View>
               )}
             </View>
+          </ScrollView>
+        )}
+
+        {screen === "skills" && (
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+          >
+            <SkillsView
+              state={skillState}
+              scope={skillScope}
+              hasSession={Boolean(sessionId)}
+              busy={skillsBusy}
+              error={skillError}
+              onScope={loadSkills}
+              onSave={saveSkills}
+            />
           </ScrollView>
         )}
 

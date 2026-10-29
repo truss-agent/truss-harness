@@ -6,7 +6,13 @@ export type ChatItem = {
 
 export type AgentMode = "chat" | "plan" | "edit";
 export type ApprovalMode = "ask" | "auto-read" | "auto-all";
-export type Screen = "home" | "settings" | "session" | "scanner" | "agents";
+export type Screen =
+  | "home"
+  | "settings"
+  | "session"
+  | "scanner"
+  | "agents"
+  | "skills";
 
 export type SavedGateway = {
   readonly id: string;
@@ -37,6 +43,7 @@ export type Workspace = {
     readonly supportsAgents?: boolean;
     readonly agentActions?: readonly ("start" | "stop" | "approve")[];
     readonly supportsMcpStatus?: boolean;
+    readonly supportsSkills?: boolean;
   };
   readonly mcpServers?: readonly McpServerStatus[];
 };
@@ -99,6 +106,29 @@ export type AgentToolApproval = ToolApproval & {
   readonly workspaceId: string;
 };
 
+export type SkillMode = "automatic" | "manual" | "off";
+
+export type SkillSelection = {
+  readonly mode: SkillMode;
+  readonly superpowersEnabled: boolean;
+  readonly skillIds: readonly string[];
+};
+
+/** Paired hosts share skill names and descriptions, never file paths. */
+export type RemoteSkill = {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly source: "bundled" | "user" | "workspace";
+  readonly bundle?: string;
+  readonly trusted: boolean;
+};
+
+export type RemoteSkillState = {
+  readonly skills: readonly RemoteSkill[];
+  readonly selection: SkillSelection;
+};
+
 export type GatewayCommandResult = {
   readonly type: string;
   readonly sessionId?: string;
@@ -106,4 +136,6 @@ export type GatewayCommandResult = {
   readonly profiles?: readonly AgentProfile[];
   readonly runs?: readonly AgentRun[];
   readonly run?: AgentRun;
+  readonly skills?: readonly RemoteSkill[];
+  readonly selection?: SkillSelection;
 };
