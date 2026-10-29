@@ -4,10 +4,9 @@ Truss is a local-first coding-agent side panel for VS Code. It connects to Ollam
 
 ## Bring your own key
 
-Version 0.1.26 includes the native Anthropic Messages API adapter in its bundled
-runtime service, preserving streaming text, tool calls and results, and
-attachments. Anthropic uses its native endpoint automatically when selected as
-the provider.
+The bundled runtime service includes the native Anthropic Messages API
+adapter, preserving streaming text, tool calls and results, and attachments.
+Anthropic uses its native endpoint automatically when selected as the provider.
 
 Run **Truss: Configure BYOK Provider** from the Command Palette. Choose OpenAI, Anthropic, OpenRouter, Groq, Together AI, Gemini, xAI, Mistral AI, DeepSeek, Perplexity, Fireworks AI, NVIDIA NIM, Xiaomi MiMo, Sakana Fugu, or Ollama Cloud, then enter a model ID and API key. The extension stores the key in VS Code Secret Storage—not workspace settings, conversations, or Truss configuration files. Use **Truss: Remove BYOK Provider Key** to remove a stored key. Local Ollama remains key-free.
 
@@ -52,6 +51,12 @@ Permissions apply after the selected mode:
 | Auto-allow all       | Allow every registered tool. Use only in a trusted workspace.                |
 
 Internet research adds bounded `web_search` and `web_fetch` tools. It is disabled by default and still prompts under Ask and Auto-allow read-only.
+
+## Skills
+
+Version 0.1.27 adds **Truss: Manage Skills**. Use it to choose the skills mode
+(Automatic, Manual, or Off), turn the bundled Superpowers skills on or off, and
+import or remove personal and workspace skills.
 
 ## Workspace commands
 

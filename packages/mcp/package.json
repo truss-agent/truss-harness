@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/mcp",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Model Context Protocol client adapter for Truss.",
   "type": "module",
   "main": "./dist/bundled/index.js",
@@ -37,7 +37,7 @@
     "access": "public"
   },
   "dependencies": {
-    "@truss-harness/runtime": "^0.1.11"
+    "@truss-harness/runtime": "^0.1.15"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

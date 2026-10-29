@@ -2,6 +2,32 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.52] - 2026-10-29
+
+### Added
+
+- Added skills across every client. The bundled Superpowers skills are on by
+  default and can be turned off separately. Skills run in Automatic (default),
+  Manual, or Off mode, and personal or workspace skills can be imported,
+  selected, and removed from Desktop settings, VS Code, the CLI, the TUI,
+  Neovim, and Truss Go.
+- Added a transcript-first interactive CLI chat with streamed replies, a slash
+  command menu, diff previews for approvals, and resumable conversations.
+
+### Fixed
+
+- Hardened workspace path containment, approval enforcement, gateway network
+  and process limits, model trust boundaries, and Git path handling.
+- Made run cancellation, coordinator startup, and transaction ownership
+  reliable across interruptions.
+- Upgraded vulnerable dependencies and repaired documentation routes and the
+  sitemap.
+
+### Changed
+
+- Coordinated the runtime, provider, MCP, gateway, agent-host, CLI, TUI,
+  VS Code, Desktop, Neovim, and Truss Go versions for this release.
+
 ## [0.1.51] - 2026-10-08
 
 ### Changed
