@@ -266,7 +266,7 @@ export class AgentCoordinator {
     return next;
   }
 
-  private async startReadyRuns(): Promise<void> {
+  private startReadyRuns(): void {
     for (const run of this.runs.values()) {
       if (
         run.state !== "queued" || run.cancellationRequested ||
@@ -277,20 +277,25 @@ export class AgentCoordinator {
       if (run.profile.mode === "edit") {
         if (!this.writeLease.tryAcquire(run.id)) continue;
         run.ownsWriteLease = true;
-        await this.publishLifecycle(run, "write_lease_acquired");
       }
       run.state = "running";
       run.startedAt = now();
-      await this.publishRun(run);
-      await this.publishLifecycle(run, "started");
       run.controller = new AbortController();
-      run.execution = this.launch(run);
+      // Register the whole lifecycle before any observer can await startup.
+      // Publications run outside the scheduler pump, so an awaited Stop cannot join itself.
+      run.execution = Promise.resolve().then(() => this.launch(run));
     }
   }
 
   private async launch(run: ActiveRun): Promise<void> {
     let error: AgentRunError | undefined;
     try {
+      if (run.ownsWriteLease) await this.publishLifecycle(run, "write_lease_acquired");
+      if (run.cancellationRequested) return;
+      await this.publishRun(run);
+      if (run.cancellationRequested) return;
+      await this.publishLifecycle(run, "started");
+      if (run.cancellationRequested) return;
       await this.options.runtimeFactory.validate(run.profile);
       if (run.cancellationRequested) return;
       const created = await this.options.runtimeFactory.create(run.profile);
@@ -375,11 +380,13 @@ export class AgentCoordinator {
       run.ownsWriteLease = false;
     }
     this.runsByAgent.delete(run.agentId);
-    run.state = state;
-    run.error = error;
+    // Stop remains valid during disposal; choose the outcome only after cleanup settles.
+    const finalState = run.cancellationRequested ? "cancelled" : state;
+    run.state = finalState;
+    run.error = run.cancellationRequested ? { code: "aborted", message: "Stopped by user." } : error;
     run.completedAt = now();
     await this.publishRun(run);
-    await this.publishLifecycle(run, state);
+    await this.publishLifecycle(run, finalState);
     this.history.remember(this.summary(run));
     await this.history.persist();
     this.pruneTerminalRunCache();
