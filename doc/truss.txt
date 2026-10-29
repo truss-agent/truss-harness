@@ -10,7 +10,7 @@ credentials, and workspace policy stay in the local truss-cli service.
 Requirements:
 
 - Neovim 0.10 or newer
-- Node.js 20 or newer
+- Node.js 22.15.1 or newer (Node 24 LTS recommended)
 - truss-cli 0.1.14 or newer, installed and configured
 
 After installation, run:
