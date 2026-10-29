@@ -1,68 +1,72 @@
 #!/usr/bin/env node
-import { runCliTurn } from "./cli-approval.js";
-import { withCliChatResources } from "./cli-chat.js";
-import { cwd } from "node:process";
 import { readFile } from "node:fs/promises";
-import { basename, resolve as resolvePath } from "node:path";
+import { basename, dirname, join, resolve as resolvePath } from "node:path";
+import { cwd } from "node:process";
 import { createInterface } from "node:readline/promises";
+import { brand } from "@truss-harness/branding";
+import {
+  createGatewayAgentController,
+  startRemoteGateway,
+} from "@truss-harness/gateway";
+import type { McpServerStatus } from "@truss-harness/mcp";
 import {
   cloudProviderDefinitions,
   detectLocalEndpoints,
-  listLocalModels,
   type LocalEndpointKind,
   type LocalModelEndpoint,
+  listLocalModels,
 } from "@truss-harness/provider-openai-compatible";
-import { brand } from "@truss-harness/branding";
 import {
   executeWorkspaceCommand,
   workspaceCommandHelp,
 } from "@truss-harness/runtime";
-import {
-  createClientRuntime,
-  testClientProviderConnection,
-  type ClientRuntime,
-} from "./runtime.js";
-import {
-  gatewaySkillController,
-  runSkillsCommand,
-  skillServiceHost,
-} from "./skills.js";
-import {
-  resolveSkills,
-  configurationPaths,
-  initializeWorkspaceConfiguration,
-  listConfigurationProfiles,
-  parseConfigurationOverrides,
-  providerAccountEnvironmentVariable,
-  resolveConfiguration,
-  saveUserProfile,
-  trustWorkspaceConfiguration,
-  type ResolvedConfiguration,
-} from "./config.js";
-import {
-  ProtocolToolApproval,
-  installRuntimeHostArtifact,
-  parseRuntimeHostManifest,
-  readRuntimeHostActivation,
-  rollbackRuntimeHost,
-  runService,
-  runtimeHostStorePath,
-  type PermissionMode,
-} from "./protocol.js";
+import qrcode from "qrcode-terminal";
 import {
   createCliAgentCoordinator,
   FileAgentProfileStore,
   profileFromConfiguration,
   waitForAgentRun,
 } from "./agents.js";
+import { runCliTurn } from "./cli-approval.js";
+import { withCliChatResources } from "./cli-chat.js";
 import {
-  createGatewayAgentController,
-  startRemoteGateway,
-} from "@truss-harness/gateway";
-import type { McpServerStatus } from "@truss-harness/mcp";
+  configurationPaths,
+  initializeWorkspaceConfiguration,
+  listConfigurationProfiles,
+  parseConfigurationOverrides,
+  providerAccountEnvironmentVariable,
+  type ResolvedConfiguration,
+  resolveConfiguration,
+  resolveSkills,
+  saveUserProfile,
+  trustWorkspaceConfiguration,
+} from "./config.js";
+import { InteractiveChat } from "./interactive/controller.js";
+import { FileConversationStore } from "./interactive/conversations.js";
+import { colorEnabled, createStyle } from "./interactive/renderer.js";
+import { openTerminal } from "./interactive/terminal.js";
 import { formatMcpStatuses } from "./mcp.js";
+import {
+  installRuntimeHostArtifact,
+  type PermissionMode,
+  ProtocolToolApproval,
+  parseRuntimeHostManifest,
+  readRuntimeHostActivation,
+  rollbackRuntimeHost,
+  runService,
+  runtimeHostStorePath,
+} from "./protocol.js";
+import {
+  type ClientRuntime,
+  createClientRuntime,
+  testClientProviderConnection,
+} from "./runtime.js";
+import {
+  gatewaySkillController,
+  runSkillsCommand,
+  skillServiceHost,
+} from "./skills.js";
 import { CLI_VERSION, formatCliVersion } from "./version.js";
-import qrcode from "qrcode-terminal";
 
 const help = `${brand.productName} CLI
 
@@ -374,6 +378,42 @@ async function runInteractiveChat(
   );
 }
 
+/** Transcript chat with composer and slash menu, for a real terminal. */
+async function runTerminalChat(
+  configuration: ResolvedConfiguration,
+  resolveProfile: (profile: string) => Promise<ResolvedConfiguration>,
+): Promise<void> {
+  const style = createStyle(colorEnabled(process.env, true));
+  let chat: InteractiveChat | undefined;
+  const terminal = openTerminal(process.stdin, process.stdout, {
+    onData: (chunk) => chat?.handleData(chunk),
+    onResize: () => chat?.handleResize(),
+  });
+  const stop = () => void chat?.close();
+  process.once("SIGTERM", stop);
+  try {
+    chat = new InteractiveChat({
+      configuration,
+      workspaceRoot: cwd(),
+      write: terminal.write,
+      columns: terminal.columns,
+      style,
+      createRuntime: createClientRuntime,
+      resolveProfile,
+      conversations: new FileConversationStore(
+        join(dirname(configuration.paths.user), "conversations"),
+        cwd(),
+      ),
+    });
+    await chat.start();
+    await chat.closed;
+  } finally {
+    await chat?.close();
+    process.removeListener("SIGTERM", stop);
+    terminal.restore();
+  }
+}
+
 function selectedIndex(input: string, count: number, fallback: number): number {
   const index = Number.parseInt(input, 10);
   return Number.isInteger(index) && index >= 1 && index <= count
@@ -544,7 +584,11 @@ async function runSetup(): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  const [command = "help", ...rawArgs] = process.argv.slice(2);
+  const interactiveTerminal =
+    process.stdin.isTTY === true && process.stdout.isTTY === true;
+  // A bare command in a terminal opens chat; in scripts it prints help.
+  const [command = interactiveTerminal ? "chat" : "help", ...rawArgs] =
+    process.argv.slice(2);
   if (command === "help" || command === "--help" || command === "-h") {
     process.stdout.write(help);
     return;
@@ -1031,7 +1075,14 @@ async function main(): Promise<void> {
   }
 
   if (command === "chat" && !args.join(" ").trim()) {
-    await runInteractiveChat(configuration);
+    if (interactiveTerminal)
+      await runTerminalChat(configuration, (profile) =>
+        resolveConfiguration({
+          workspaceRoot: cwd(),
+          overrides: { ...overrides, profile },
+        }),
+      );
+    else await runInteractiveChat(configuration);
     return;
   }
 

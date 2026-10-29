@@ -1,16 +1,20 @@
+import type { Interface } from "node:readline/promises";
 import type {
   AgentRuntime,
   Session,
   ToolApproval,
   ToolCall,
 } from "@truss-harness/runtime";
-import type { Interface } from "node:readline/promises";
 import type { PermissionMode } from "./protocol.js";
 
 export interface CliApprovalPrompt {
   question(
     label: string,
-    options: { readonly signal: AbortSignal },
+    options: {
+      readonly signal: AbortSignal;
+      /** The call being approved, for prompts that render their own preview. */
+      readonly call?: ToolCall;
+    },
   ): Promise<string>;
 }
 const readOnlyTools = new Set([
@@ -51,7 +55,10 @@ export class CliToolApproval implements ToolApproval {
       const label = `\nApprove tool request?\n${detail.slice(0, 4000)}${detail.length > 4000 ? "\n[preview truncated]" : ""}\nAllow once [y/N]: `;
       return /^(?:y|yes)$/i.test(
         (
-          await this.prompt.question(label, { signal: controller.signal })
+          await this.prompt.question(label, {
+            signal: controller.signal,
+            call,
+          })
         ).trim(),
       );
     } finally {

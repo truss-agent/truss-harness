@@ -1,0 +1,791 @@
+import { basename } from "node:path";
+import {
+  executeWorkspaceCommand,
+  type RuntimeEvent,
+  type SkillMode,
+  type SkillSelection,
+  type ToolCall,
+  type WorkspacePlan,
+} from "@truss-harness/runtime";
+import { FileAgentProfileStore } from "../agents.js";
+import type { ResolvedConfiguration } from "../config.js";
+import type { PermissionMode } from "../protocol.js";
+import type { ClientConfiguration, ClientRuntime } from "../runtime.js";
+import { skillServiceHost } from "../skills.js";
+import { approvalPreview, SwitchableApproval } from "./approval.js";
+import { interactiveCommands, parseInput } from "./commands.js";
+import {
+  type ComposerState,
+  emptyComposer,
+  menuCommands,
+  reduceComposer,
+} from "./composer.js";
+import {
+  type ConversationStore,
+  conversationTitle,
+  newConversationId,
+  repairForResume,
+} from "./conversations.js";
+import { InputDecoder, type KeyEvent } from "./input.js";
+import {
+  AssistantFormatter,
+  formatHelp,
+  formatToolCall,
+  formatToolResult,
+  formatUserMessage,
+  renderComposer,
+  type Style,
+} from "./renderer.js";
+import { LiveScreen } from "./terminal.js";
+import { sanitize } from "./text.js";
+
+type AgentMode = "chat" | "plan" | "edit";
+const modes: readonly AgentMode[] = ["chat", "plan", "edit"];
+const permissions: readonly PermissionMode[] = ["ask", "auto-read", "auto-all"];
+const skillModes: readonly SkillMode[] = ["automatic", "manual", "off"];
+const spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const exitWindowMilliseconds = 2_000;
+const escapeDelayMilliseconds = 30;
+
+export interface InteractiveChatOptions {
+  readonly configuration: ResolvedConfiguration;
+  readonly workspaceRoot: string;
+  readonly write: (text: string) => void;
+  readonly columns: () => number;
+  readonly style: Style;
+  /** Creates a runtime; the controller owns and disposes it. */
+  readonly createRuntime: (
+    configuration: ClientConfiguration,
+  ) => Promise<ClientRuntime>;
+  /** Resolves a named profile for /model. */
+  readonly resolveProfile?: (profile: string) => Promise<ResolvedConfiguration>;
+  readonly conversations?: ConversationStore;
+  readonly now?: () => number;
+}
+
+interface PendingApproval {
+  readonly resolve: (approved: boolean) => void;
+}
+
+/**
+ * Interactive transcript chat. Owns the single stdin reader, the active run
+ * and the runtime; rendering stays in the renderer and LiveScreen.
+ */
+export class InteractiveChat {
+  private readonly screen: LiveScreen;
+  private readonly decoder = new InputDecoder();
+  private readonly formatter: AssistantFormatter;
+  private readonly approval: SwitchableApproval;
+  private configuration: ResolvedConfiguration;
+  private composer: ComposerState = emptyComposer();
+  private client: ClientRuntime | undefined;
+  private unsubscribe: (() => void) | undefined;
+  private sessionId = "";
+  private conversationId = newConversationId();
+  private createdAt = new Date().toISOString();
+  /** Skill choices made with /skills or /skill for this conversation. */
+  private sessionSkills: Partial<SkillSelection> = {};
+  private skillSelection: SkillSelection | undefined;
+  private active:
+    | { controller: AbortController; done: Promise<void> }
+    | undefined;
+  private pendingApproval: PendingApproval | undefined;
+  private assistantBuffer = "";
+  private usage = { input: 0, output: 0 };
+  private spinnerFrame = 0;
+  private spinnerTimer: NodeJS.Timeout | undefined;
+  private escapeTimer: NodeJS.Timeout | undefined;
+  private exitArmedAt: number | undefined;
+  private notice: string | undefined;
+  private closing = false;
+  private resolveClosed!: () => void;
+  readonly closed = new Promise<void>((resolve) => {
+    this.resolveClosed = resolve;
+  });
+
+  constructor(private readonly options: InteractiveChatOptions) {
+    this.configuration = options.configuration;
+    this.screen = new LiveScreen(options.write, options.columns);
+    this.formatter = new AssistantFormatter(options.style);
+    this.approval = new SwitchableApproval(
+      options.configuration.permission,
+      (call, signal) => this.askApproval(call, signal),
+    );
+  }
+
+  async start(): Promise<void> {
+    await this.replaceRuntime(this.configuration, []);
+    const { style } = this.options;
+    this.print(
+      `${style.bold(basename(this.options.workspaceRoot))} ${style.dim(
+        `· ${this.configuration.provider}/${this.configuration.model}`,
+      )}\n${style.dim("Type a message, / for commands, Ctrl+C twice to exit.")}\n`,
+    );
+    await this.refreshSkills();
+    this.render();
+  }
+
+  /** Raw terminal input. */
+  handleData(chunk: string): void {
+    clearTimeout(this.escapeTimer);
+    for (const key of this.decoder.push(chunk)) this.handleKey(key);
+    if (this.decoder.pending)
+      this.escapeTimer = setTimeout(() => {
+        for (const key of this.decoder.flush()) this.handleKey(key);
+      }, escapeDelayMilliseconds);
+  }
+
+  handleResize(): void {
+    this.render();
+  }
+
+  /** Stops work, saves and releases the runtime. Safe to call twice. */
+  async close(): Promise<void> {
+    if (this.closing) return this.closed;
+    this.closing = true;
+    clearTimeout(this.escapeTimer);
+    this.stopSpinner();
+    this.pendingApproval?.resolve(false);
+    this.approval.denyAll();
+    this.active?.controller.abort();
+    await this.active?.done.catch(() => undefined);
+    await this.saveConversation().catch(() => undefined);
+    this.unsubscribe?.();
+    await this.client?.dispose().catch(() => undefined);
+    this.client = undefined;
+    this.screen.clear();
+    this.resolveClosed();
+    return this.closed;
+  }
+
+  private handleKey(key: KeyEvent): void {
+    if (this.closing) return;
+    if (this.pendingApproval) {
+      this.handleApprovalKey(key);
+      return;
+    }
+    const result = reduceComposer(this.composer, key);
+    this.composer = result.state;
+    if (key.type !== "interrupt") this.exitArmedAt = undefined;
+    const action = result.action;
+    if (action?.type === "submit")
+      // Commands run in order: a typed-ahead /resume must see /new finish.
+      this.submissions = this.submissions.then(() => this.submit(action.text));
+    else if (action?.type === "interrupt") this.interrupt();
+    else if (action?.type === "eof") void this.close();
+    this.render();
+  }
+
+  private handleApprovalKey(key: KeyEvent): void {
+    const pending = this.pendingApproval;
+    if (!pending) return;
+    const answer =
+      key.type === "text"
+        ? key.text.trim().toLowerCase()
+        : key.type === "escape"
+          ? "n"
+          : key.type === "interrupt"
+            ? "stop"
+            : "";
+    if (answer === "y" || answer === "n" || answer === "stop") {
+      this.pendingApproval = undefined;
+      pending.resolve(answer === "y");
+      this.print(
+        answer === "y"
+          ? `  ${this.options.style.success("allowed")}\n`
+          : `  ${this.options.style.warning("denied")}\n`,
+      );
+      if (answer === "stop") this.active?.controller.abort();
+      this.render();
+    }
+  }
+
+  private interrupt(): void {
+    if (this.active) {
+      this.active.controller.abort();
+      this.notice = "Stopping…";
+      return;
+    }
+    if (this.composer.text) {
+      this.composer = emptyComposer(this.composer.history);
+      return;
+    }
+    const now = this.options.now?.() ?? Date.now();
+    if (
+      this.exitArmedAt !== undefined &&
+      now - this.exitArmedAt <= exitWindowMilliseconds
+    ) {
+      void this.close();
+      return;
+    }
+    this.exitArmedAt = now;
+    this.notice = "Press Ctrl+C again to exit.";
+  }
+
+  private submissions: Promise<void> = Promise.resolve();
+
+  private async submit(text: string): Promise<void> {
+    // Kept from the line-mode chat: "--mode edit fix it" switches, then sends.
+    const prefixed = text.match(/^--mode\s+(chat|plan|edit)(?:\s+([\s\S]*))?$/);
+    if (prefixed) {
+      await this.submit(`/mode ${prefixed[1]}`);
+      if (prefixed[2]?.trim()) await this.submit(prefixed[2]);
+      return;
+    }
+    const parsed = parseInput(text);
+    if (parsed.kind === "unknown") {
+      this.print(
+        `${this.options.style.error(`Unknown command /${sanitize(parsed.name)}.`)} Type /help for commands.\n`,
+      );
+      return;
+    }
+    if (parsed.kind === "command") {
+      try {
+        await this.runCommand(parsed.command.name, parsed.args);
+      } catch (error) {
+        this.print(
+          `${this.options.style.error(error instanceof Error ? error.message : String(error))}\n`,
+        );
+      }
+      this.render();
+      return;
+    }
+    if (this.active) {
+      // The draft is gone from the composer; put it back rather than lose it.
+      this.composer = { ...this.composer, text, cursor: text.length };
+      this.notice =
+        "A response is still running. Wait, or press Ctrl+C to stop it.";
+      this.render();
+      return;
+    }
+    // Started, not awaited: commands and keys stay live while it streams.
+    void this.runPrompt(parsed.text);
+  }
+
+  private async runPrompt(prompt: string): Promise<void> {
+    const client = this.client;
+    if (!client) return;
+    const { style } = this.options;
+    this.print(
+      `\n${formatUserMessage(prompt, this.options.columns(), style)}\n\n`,
+    );
+    const controller = new AbortController();
+    this.usage = { input: 0, output: 0 };
+    this.formatter.reset();
+    const done = (async () => {
+      try {
+        await client.runtime.run(this.sessionId, prompt, controller.signal);
+      } catch (error) {
+        this.flushAssistant();
+        if (controller.signal.aborted)
+          this.print(`${style.warning("Stopped.")}\n`);
+        else
+          this.print(
+            `${style.error(sanitize(error instanceof Error ? error.message : String(error)))}\n`,
+          );
+      }
+    })();
+    this.active = { controller, done };
+    this.startSpinner();
+    try {
+      await done;
+    } finally {
+      this.flushAssistant();
+      this.active = undefined;
+      this.stopSpinner();
+      this.notice = undefined;
+      await this.saveConversation().catch((error: unknown) =>
+        this.print(
+          `${style.dim(`Could not save this conversation: ${error instanceof Error ? error.message : String(error)}`)}\n`,
+        ),
+      );
+      this.render();
+    }
+  }
+
+  private handleEvent(event: RuntimeEvent): void {
+    if (event.sessionId !== this.sessionId) return;
+    const { style } = this.options;
+    const width = this.options.columns();
+    switch (event.type) {
+      case "text_delta":
+        this.appendAssistant(event.text);
+        return;
+      case "progress_delta":
+        this.flushAssistant();
+        this.print(`${style.dim(`  ${sanitize(event.text)}`)}\n`);
+        return;
+      case "tool_call_requested":
+        this.flushAssistant();
+        this.print(
+          `${formatToolCall(event.tool, event.input, width, style)}\n`,
+        );
+        return;
+      case "tool_completed":
+        this.print(`${formatToolResult(event.result, width, style)}\n`);
+        return;
+      case "plan_updated":
+        this.flushAssistant();
+        this.print(`${this.formatPlan(event.plan)}\n`);
+        return;
+      case "usage":
+        this.usage.input += event.usage.inputTokens;
+        this.usage.output += event.usage.outputTokens;
+        return;
+      case "run_completed": {
+        this.flushAssistant();
+        const parts: string[] = [];
+        if (event.modifiedFiles.length)
+          parts.push(
+            `changed ${event.modifiedFiles.map((path) => sanitize(path)).join(", ")}`,
+          );
+        if (this.usage.input || this.usage.output)
+          parts.push(
+            `${this.usage.input} in · ${this.usage.output} out tokens`,
+          );
+        if (parts.length) this.print(`\n${style.dim(parts.join(" · "))}\n`);
+        return;
+      }
+      default:
+        return;
+    }
+  }
+
+  private formatPlan(plan: WorkspacePlan): string {
+    const { style } = this.options;
+    return [
+      style.bold(sanitize(plan.title)),
+      ...plan.steps.map(
+        (step) =>
+          `  ${
+            step.status === "completed"
+              ? style.success("✓")
+              : step.status === "in_progress"
+                ? style.accent("›")
+                : "·"
+          } ${sanitize(step.content)}`,
+      ),
+    ].join("\n");
+  }
+
+  private appendAssistant(text: string): void {
+    this.assistantBuffer += text;
+    const end = this.assistantBuffer.lastIndexOf("\n");
+    if (end >= 0) {
+      const complete = this.assistantBuffer.slice(0, end).split("\n");
+      this.assistantBuffer = this.assistantBuffer.slice(end + 1);
+      this.screen.setPending("");
+      this.screen.print(
+        `${complete.map((line) => this.formatter.line(line)).join("\n")}\n`,
+      );
+    }
+    this.screen.setPending(sanitize(this.assistantBuffer));
+  }
+
+  private flushAssistant(): void {
+    if (!this.assistantBuffer) return;
+    const line = this.formatter.line(this.assistantBuffer);
+    this.assistantBuffer = "";
+    this.screen.setPending("");
+    this.screen.print(`${line}\n`);
+  }
+
+  private print(text: string): void {
+    this.screen.print(text);
+  }
+
+  private async askApproval(
+    call: ToolCall,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    this.flushAssistant();
+    const { style } = this.options;
+    const preview = await approvalPreview(
+      call,
+      this.options.workspaceRoot,
+      this.options.columns(),
+      style,
+    );
+    if (signal.aborted) return false;
+    this.print(
+      `${style.warning("?")} ${style.bold("Allow")} ${formatToolCall(call.name, call.input, this.options.columns(), style).slice(2)}\n${preview.join("\n")}\n`,
+    );
+    return new Promise<boolean>((resolve) => {
+      const abort = () => {
+        if (this.pendingApproval?.resolve === finish)
+          this.pendingApproval = undefined;
+        resolve(false);
+        this.render();
+      };
+      const finish = (approved: boolean) => {
+        signal.removeEventListener("abort", abort);
+        resolve(approved);
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      this.pendingApproval = { resolve: finish };
+      this.render();
+    });
+  }
+
+  private async runCommand(name: string, args: string): Promise<void> {
+    const { style } = this.options;
+    const busy = () => {
+      if (this.active)
+        throw new Error(
+          "Wait for the current response, or press Ctrl+C to stop it.",
+        );
+    };
+    switch (name) {
+      case "help":
+        this.print(`${formatHelp(interactiveCommands, style)}\n`);
+        return;
+      case "quit":
+        await this.close();
+        return;
+      case "new":
+        busy();
+        await this.saveConversation();
+        await this.startConversation([]);
+        this.print(`${style.dim("Started a new conversation.")}\n`);
+        return;
+      case "mode": {
+        busy();
+        const mode = args as AgentMode;
+        if (!modes.includes(mode)) {
+          this.print(
+            `Mode is ${this.configuration.mode}. Use /mode chat, plan or edit.\n`,
+          );
+          return;
+        }
+        await this.switchConfiguration({ ...this.configuration, mode });
+        this.print(
+          `${style.dim(`Mode: ${mode}. The conversation continues.`)}\n`,
+        );
+        return;
+      }
+      case "permissions": {
+        const permission = args as PermissionMode;
+        if (!permissions.includes(permission)) {
+          this.print(
+            `Permissions are ${this.approval.mode}. Use /permissions ask, auto-read or auto-all.\n`,
+          );
+          return;
+        }
+        this.approval.mode = permission;
+        this.configuration = { ...this.configuration, permission };
+        this.print(`${style.dim(`Tool permissions: ${permission}.`)}\n`);
+        return;
+      }
+      case "model": {
+        if (!args) {
+          this.print(
+            `${this.configuration.provider}/${this.configuration.model}${this.configuration.profile ? ` (profile ${this.configuration.profile})` : ""}. Use /model <profile> to switch.\n`,
+          );
+          return;
+        }
+        busy();
+        if (!this.options.resolveProfile)
+          throw new Error("Profiles are not available here.");
+        const next = await this.options.resolveProfile(args);
+        await this.switchConfiguration({
+          ...next,
+          mode: this.configuration.mode,
+          permission: this.approval.mode,
+        });
+        this.print(
+          `${style.dim(`Model: ${next.provider}/${next.model}. The conversation continues.`)}\n`,
+        );
+        return;
+      }
+      case "status": {
+        const lines = [
+          `Mode ${this.configuration.mode} · ${this.configuration.provider}/${this.configuration.model} · permissions ${this.approval.mode}`,
+          `Conversation ${this.conversationId.slice(0, 8)} · ${(await this.messages()).length} messages`,
+          this.skillSelection
+            ? `Skills ${this.skillSelection.mode} · Superpowers ${this.skillSelection.superpowersEnabled ? "on" : "off"} · always active: ${this.skillSelection.skillIds.join(", ") || "none"}`
+            : "",
+        ].filter(Boolean);
+        const workspace = await executeWorkspaceCommand({
+          workspaceRoot: this.options.workspaceRoot,
+          input: "/status",
+        });
+        this.print(`${lines.join("\n")}\n\n${sanitize(workspace.message)}\n`);
+        return;
+      }
+      case "init":
+      case "update":
+      case "clear-memory": {
+        const result = await executeWorkspaceCommand({
+          workspaceRoot: this.options.workspaceRoot,
+          input: `/${name}${args ? ` ${args}` : ""}`,
+        });
+        this.print(`${sanitize(result.message)}\n`);
+        return;
+      }
+      case "skills":
+        await this.skillsCommand(args);
+        return;
+      case "skill":
+        await this.toggleSkill(args);
+        return;
+      case "agents": {
+        const profiles = await new FileAgentProfileStore(
+          this.options.workspaceRoot,
+        ).list();
+        this.print(
+          profiles.length
+            ? `${profiles.map((profile) => `  ${sanitize(profile.displayName)} ${style.dim(`${profile.provider.providerId}/${profile.provider.modelId} · ${profile.mode}`)}`).join("\n")}\n`
+            : `No managed agent profiles. Add one with \`truss-cli agents add <name>\`.\n`,
+        );
+        return;
+      }
+      case "mcp": {
+        const servers = this.client?.mcpServers ?? [];
+        this.print(
+          servers.length
+            ? `${servers.map((server) => `  ${sanitize(server.name)} ${server.state}${server.error ? ` ${style.error(sanitize(server.error))}` : ` · ${server.toolCount} tools`}`).join("\n")}\n`
+            : "No MCP servers configured.\n",
+        );
+        return;
+      }
+      case "resume":
+        busy();
+        await this.resume(args);
+        return;
+    }
+  }
+
+  private async skillsCommand(args: string): Promise<void> {
+    const service = skillServiceHost(
+      this.configuration.skills,
+      this.options.workspaceRoot,
+    );
+    if (args) {
+      const mode = args as SkillMode;
+      if (!skillModes.includes(mode))
+        throw new Error(
+          "Use /skills automatic, /skills manual or /skills off.",
+        );
+      await this.setSessionSkills({ mode });
+      this.print(
+        `${this.options.style.dim(`Skills: ${mode} for this conversation. Use \`truss-cli skills mode\` to change the default.`)}\n`,
+      );
+      return;
+    }
+    const state = await service.list(this.sessionId);
+    this.skillSelection = state.selection;
+    const selected = new Set(state.selection.skillIds);
+    const { style } = this.options;
+    this.print(
+      `${[
+        `Skills ${state.selection.mode} · Superpowers ${state.selection.superpowersEnabled ? "on" : "off"}`,
+        ...state.skills.map(
+          (skill) =>
+            `  ${selected.has(skill.id) ? style.success("●") : "○"} ${skill.id}${skill.trusted ? "" : style.dim(" (untrusted: import to use)")} ${style.dim(truncateDescription(skill.description))}`,
+        ),
+        style.dim(
+          "/skill <id> toggles an always-active skill for this conversation.",
+        ),
+      ].join("\n")}\n`,
+    );
+  }
+
+  private async toggleSkill(id: string): Promise<void> {
+    if (!id)
+      throw new Error(
+        "Use /skill <id>, for example /skill superpowers:brainstorming.",
+      );
+    const current = this.skillSelection?.skillIds ?? [];
+    const skillIds = current.includes(id)
+      ? current.filter((skillId) => skillId !== id)
+      : [...current, id];
+    await this.setSessionSkills({ skillIds });
+    this.print(
+      `${this.options.style.dim(`${skillIds.includes(id) ? "Always active" : "No longer always active"}: ${id}. Applies from the next message.`)}\n`,
+    );
+  }
+
+  private async setSessionSkills(
+    change: Partial<SkillSelection>,
+  ): Promise<void> {
+    const service = skillServiceHost(
+      this.configuration.skills,
+      this.options.workspaceRoot,
+    );
+    const state = await service.setSettings("session", this.sessionId, change);
+    this.sessionSkills = { ...this.sessionSkills, ...change };
+    this.skillSelection = state.selection;
+  }
+
+  private async refreshSkills(): Promise<void> {
+    try {
+      this.skillSelection = (
+        await skillServiceHost(
+          this.configuration.skills,
+          this.options.workspaceRoot,
+        ).list(this.sessionId)
+      ).selection;
+    } catch {
+      this.skillSelection = undefined;
+    }
+  }
+
+  private async resume(args: string): Promise<void> {
+    const store = this.options.conversations;
+    if (!store) throw new Error("Saved conversations are not available here.");
+    const saved = (await store.list()).filter(
+      (conversation) => conversation.id !== this.conversationId,
+    );
+    const { style } = this.options;
+    if (!args) {
+      this.print(
+        saved.length
+          ? `${saved
+              .slice(0, 20)
+              .map(
+                (conversation, index) =>
+                  `  ${String(index + 1).padStart(2)} ${sanitize(conversation.title)} ${style.dim(`· ${conversation.messageCount} messages · ${conversation.updatedAt.slice(0, 16).replace("T", " ")}`)}`,
+              )
+              .join("\n")}\n${style.dim("/resume <number> continues one.")}\n`
+          : "No saved conversations for this workspace yet.\n",
+      );
+      return;
+    }
+    const index = Number.parseInt(args, 10) - 1;
+    const summary = saved[index];
+    if (!summary)
+      throw new Error(
+        `No saved conversation ${args}. Use /resume to list them.`,
+      );
+    const conversation = await store.load(summary.id);
+    if (!conversation) throw new Error("That conversation could not be read.");
+    await this.saveConversation();
+    await this.startConversation(repairForResume(conversation.messages));
+    this.conversationId = conversation.id;
+    this.createdAt = conversation.createdAt;
+    this.print(
+      `${style.dim(`Resumed "${sanitize(conversation.title)}" (${conversation.messages.length} messages). Unfinished tool calls are marked as unknown and are not run again.`)}\n`,
+    );
+  }
+
+  private async messages() {
+    return (
+      (await this.client?.runtime.getSession(this.sessionId))?.messages ?? []
+    );
+  }
+
+  private async saveConversation(): Promise<void> {
+    const store = this.options.conversations;
+    if (!store || !this.client) return;
+    const messages = await this.messages();
+    if (!messages.some((message) => message.role === "user")) return;
+    await store.save({
+      id: this.conversationId,
+      title: conversationTitle(messages),
+      workspaceRoot: this.options.workspaceRoot,
+      provider: this.configuration.provider,
+      model: this.configuration.model,
+      mode: this.configuration.mode ?? "chat",
+      createdAt: this.createdAt,
+      updatedAt: new Date().toISOString(),
+      messages,
+    });
+  }
+
+  private async startConversation(
+    messages: Parameters<ClientRuntime["runtime"]["createSession"]>[0],
+  ): Promise<void> {
+    const client = this.client;
+    if (!client) return;
+    this.sessionId = (await client.runtime.createSession(messages)).id;
+    this.conversationId = newConversationId();
+    this.createdAt = new Date().toISOString();
+    this.sessionSkills = {};
+    await this.refreshSkills();
+  }
+
+  /** Mode or model change: new runtime, same conversation. */
+  private async switchConfiguration(
+    next: ResolvedConfiguration,
+  ): Promise<void> {
+    const messages = await this.messages();
+    await this.replaceRuntime(next, messages);
+    // Skill choices for this conversation follow it to the new session.
+    if (Object.keys(this.sessionSkills).length)
+      await skillServiceHost(
+        next.skills,
+        this.options.workspaceRoot,
+      ).setSettings("session", this.sessionId, this.sessionSkills);
+    await this.refreshSkills();
+  }
+
+  private async replaceRuntime(
+    next: ResolvedConfiguration,
+    messages: Parameters<ClientRuntime["runtime"]["createSession"]>[0],
+  ): Promise<void> {
+    const client = await this.options.createRuntime({
+      ...next,
+      approval: this.approval,
+    });
+    const previous = this.client;
+    this.unsubscribe?.();
+    this.client = client;
+    this.configuration = next;
+    this.unsubscribe = client.events.subscribe((event) =>
+      this.handleEvent(event),
+    );
+    this.sessionId = (await client.runtime.createSession(messages)).id;
+    await previous?.dispose();
+  }
+
+  private startSpinner(): void {
+    this.stopSpinner();
+    this.spinnerTimer = setInterval(() => {
+      this.spinnerFrame = (this.spinnerFrame + 1) % spinner.length;
+      this.render();
+    }, 120);
+    this.spinnerTimer.unref?.();
+  }
+
+  private stopSpinner(): void {
+    clearInterval(this.spinnerTimer);
+    this.spinnerTimer = undefined;
+  }
+
+  private status(): string {
+    if (this.pendingApproval)
+      return "Allow this? y yes · n no · Esc deny · Ctrl+C stop";
+    const parts = [
+      this.configuration.mode ?? "chat",
+      this.configuration.model,
+      this.approval.mode,
+      ...(this.skillSelection ? [`skills ${this.skillSelection.mode}`] : []),
+    ];
+    const base = parts.join(" · ");
+    if (this.notice) return `${this.notice}  ${base}`;
+    if (this.active)
+      return `${spinner[this.spinnerFrame]} working · Ctrl+C stops · ${base}`;
+    return base;
+  }
+
+  private render(): void {
+    if (this.closing) return;
+    this.screen.render(
+      renderComposer({
+        state: this.composer,
+        width: this.options.columns(),
+        status: this.status(),
+        menu: this.pendingApproval ? [] : menuCommands(this.composer),
+        style: this.options.style,
+        placeholder: this.pendingApproval
+          ? "Type y or n"
+          : "Ask anything, or / for commands",
+      }),
+    );
+  }
+}
+
+function truncateDescription(text: string): string {
+  const line = sanitize(text).split("\n")[0] ?? "";
+  return line.length > 70 ? `${line.slice(0, 69)}…` : line;
+}

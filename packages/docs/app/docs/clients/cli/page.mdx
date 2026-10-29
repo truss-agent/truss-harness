@@ -55,7 +55,7 @@ Run <CliCommand /> `init` to create or refresh generated repository context in `
 
 ## Chat
 
-`chat` with a prompt creates an in-memory one-shot session, streams output to standard output, and prints tool requests to standard error. Run `truss-cli chat` without a prompt to keep one conversation open in the terminal.
+`chat` with a prompt creates an in-memory one-shot session, streams output to standard output, and prints tool requests to standard error. Run `truss-cli` (or `truss-cli chat`) without a prompt in a terminal to open interactive chat.
 
 ```sh
 truss-cli chat --profile ollama-coder --mode plan "Find the files that define the agent loop"
@@ -65,7 +65,25 @@ Direct CLI chat honors `--permission ask|auto-read|auto-all`. Ask is the default
 
 Review workspace configuration and run `truss-cli config trust` before using its authority-bearing settings. `truss-cli config status` shows the effective policy and provenance. Existing or manually edited managed-agent profiles require `truss-cli agents trust <id>` after review; locally created profiles receive individual receipts, and subsequent manual edits invalidate them.
 
-Persistent chat retains conversation history and the starting configuration until you exit. Use `:mode chat`, `:mode plan`, or `:mode edit` to switch modes, or prefix a message with `--mode edit` to switch and send it at once. Use `:clear` for a fresh conversation, `:help` for controls, and `:exit` to close the session.
+### Interactive chat
+
+Interactive chat keeps a transcript in your terminal's scrollback and a composer at the bottom. Replies stream as they arrive, with a status line showing the mode, model, permissions and skills mode. File edits show a diff and terminal commands show the command before you approve them with `y` or deny them with `n` (Esc also denies).
+
+| Key | Action |
+| --- | --- |
+| Enter | Send the message, or run the highlighted command |
+| Alt+Enter | New line (pasted text keeps its line breaks) |
+| `/` | Open the command menu; Up/Down choose, Tab completes, Esc closes |
+| Up/Down | Move between lines, then browse earlier messages |
+| Ctrl+U / Ctrl+K / Ctrl+W | Clear to line start, clear to line end, delete a word |
+| Ctrl+C | Stop the response, clear the draft, or press twice to exit |
+| Ctrl+D | Exit on an empty draft |
+
+Type `/help` for every command. Useful ones are `/mode chat|plan|edit`, `/permissions ask|auto-read|auto-all`, `/model`, `/new`, `/status`, `/skills` and `/quit`. The older `:mode`, `:clear`, `:help` and `:exit` forms still work, and prefixing a message with `--mode edit` switches mode and sends it. Start a message with `//` to send text that begins with a slash.
+
+Conversations are saved after each reply in your user configuration directory, separately for each workspace. `/resume` lists them and `/resume <number>` continues one. If a saved conversation stopped partway through a tool call, that call is marked as having an unknown outcome instead of being run again.
+
+When standard input or output is not a terminal, `truss-cli chat` falls back to a simple line-based loop with the same history and `:` controls.
 
 Add `--internet-access` to expose `web_search` and `web_fetch` for that run. Web tool calls still follow the selected approval policy. Use `--no-internet-access` to override an enabled profile.
 
