@@ -30,6 +30,7 @@ import { ProviderAccountStore } from "./provider-accounts.js";
 import { ProviderCommandController } from "./provider-commands.js";
 import { ProviderController } from "./provider-controller.js";
 import { TrussGoController } from "./truss-go-controller.js";
+import { SkillCommands } from "./skill-commands.js";
 import { UpdateController } from "./update-controller.js";
 import { webviewHtml } from "./webview-html.js";
 import { WorkspaceCommandController } from "./workspace-commands.js";
@@ -139,6 +140,9 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(chat);
   const post = (message: unknown): void => chat.post(message);
   const startService = () => chat.service();
+  context.subscriptions.push(
+    ...new SkillCommands(startService).registerCommands(),
+  );
 
   const sendState = async (
     selectedConfiguration?: ModelConfiguration,

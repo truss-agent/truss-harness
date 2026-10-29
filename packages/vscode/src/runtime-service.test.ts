@@ -7,7 +7,7 @@ vi.mock("node:child_process", async (original) => ({
   spawn: () => fake.child,
 }));
 import { RuntimeService } from "./runtime-service.js";
-function fixture(textOnly = true) {
+function fixture(textOnly = true, capabilities: Record<string, boolean> = {}) {
   const child = Object.assign(new EventEmitter(), {
     stdin: new PassThrough(),
     stdout: new PassThrough(),
@@ -40,7 +40,7 @@ function fixture(textOnly = true) {
           protocolVersions: [1],
         },
       },
-      capabilities: { textOnlyGeneration: textOnly },
+      capabilities: { textOnlyGeneration: textOnly, ...capabilities },
     },
   });
   return { service, child, sent, send };
@@ -116,5 +116,35 @@ it("sends the negotiated text-only flag", async () => {
   });
   h.send({ type: "response", requestId: run.requestId, result: {} });
   await run.result;
+  h.service.dispose();
+});
+it("gates skill requests on the negotiated capabilities", async () => {
+  const old = fixture();
+  await expect(old.service.listSkills()).rejects.toThrow(
+    /does not support skills/,
+  );
+  expect(old.sent.some((m) => String(m.type).startsWith("skills_"))).toBe(
+    false,
+  );
+  old.service.dispose();
+
+  const h = fixture(true, { skills: true });
+  const selection = { mode: "off", superpowersEnabled: true, skillIds: [] };
+  const updated = h.service.updateSkillSettings("workspace", { mode: "off" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const request = h.sent.find((m) => m.type === "skills_settings");
+  expect(request).toMatchObject({
+    scope: "workspace",
+    selection: { mode: "off" },
+  });
+  h.send({
+    type: "response",
+    requestId: request?.requestId,
+    result: { skills: { skills: [], diagnostics: [], selection } },
+  });
+  expect((await updated).selection).toEqual(selection);
+  await expect(h.service.importSkill("/skills/notes")).rejects.toThrow(
+    /does not support skills/,
+  );
   h.service.dispose();
 });

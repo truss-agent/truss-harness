@@ -4,8 +4,13 @@ import {
   LOCAL_SERVICE_PROTOCOL_VERSIONS,
   validateRuntimeServiceHandshake,
 } from "@truss-harness/cli/protocol";
-import type { ChatAttachment, ContextBlock } from "@truss-harness/runtime";
+import type {
+  ChatAttachment,
+  ContextBlock,
+  SkillSelection,
+} from "@truss-harness/runtime";
 import type { Disposable } from "vscode";
+import type { RuntimeServiceSkillState } from "@truss-harness/cli/protocol";
 import type {
   ConversationMessage,
   RunHandle,
@@ -25,6 +30,7 @@ export class RuntimeService implements Disposable {
   private readonly ready: Promise<void>;
   private failure: Error | undefined;
   private textOnlyGeneration = false;
+  private skillSupport = { skills: false, skillManagement: false };
   get isClosed(): boolean {
     return Boolean(this.failure);
   }
@@ -102,6 +108,39 @@ export class RuntimeService implements Disposable {
     return response.result.sessionId;
   }
 
+  /** Skill capabilities; an older external truss-cli advertises neither. */
+  async skillCapabilities(): Promise<{
+    readonly skills: boolean;
+    readonly skillManagement: boolean;
+  }> {
+    await this.ready;
+    return this.skillSupport;
+  }
+
+  async listSkills(): Promise<RuntimeServiceSkillState> {
+    return skillState(await this.skillRequest({ type: "skills_list" }));
+  }
+
+  async updateSkillSettings(
+    scope: "user" | "workspace",
+    selection: Partial<SkillSelection> | null,
+  ): Promise<RuntimeServiceSkillState> {
+    return skillState(
+      await this.skillRequest({ type: "skills_settings", scope, selection }),
+    );
+  }
+
+  /** `path` must come from a trusted VS Code folder picker. */
+  async importSkill(path: string): Promise<RuntimeServiceSkillState> {
+    await this.skillRequest({ type: "skills_import", path }, true);
+    return this.listSkills();
+  }
+
+  async removeSkill(id: string): Promise<RuntimeServiceSkillState> {
+    await this.skillRequest({ type: "skills_remove", id }, true);
+    return this.listSkills();
+  }
+
   abort(requestId: string): void {
     void this.ready.then(
       () => this.write({ type: "abort", requestId }),
@@ -137,10 +176,26 @@ export class RuntimeService implements Disposable {
     );
     this.textOnlyGeneration =
       response.result.capabilities?.textOnlyGeneration === true;
+    this.skillSupport = {
+      skills: response.result.capabilities?.skills === true,
+      skillManagement: response.result.capabilities?.skillManagement === true,
+    };
     if (!handshake.compatible)
       throw new Error(
         `${handshake.reason} Update truss-cli or clear trussHarness.command to use the bundled service.`,
       );
+  }
+
+  private async skillRequest(
+    payload: Record<string, unknown>,
+    manage = false,
+  ): Promise<ServiceResponse["result"]> {
+    const support = await this.skillCapabilities();
+    if (!(manage ? support.skillManagement : support.skills))
+      throw new Error(
+        "This Truss service does not support skills. Update truss-cli or clear trussHarness.command to use the bundled service.",
+      );
+    return (await this.request(payload).result).result;
   }
 
   private request(
@@ -225,4 +280,11 @@ export class RuntimeService implements Disposable {
     for (const request of this.requests.values()) request.reject(error);
     this.requests.clear();
   }
+}
+
+function skillState(
+  result: ServiceResponse["result"],
+): RuntimeServiceSkillState {
+  if (!result.skills) throw new Error("The Truss service returned no skills.");
+  return result.skills;
 }

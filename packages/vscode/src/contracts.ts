@@ -1,4 +1,7 @@
-import type { RuntimeServiceCapabilities } from "@truss-harness/cli/protocol";
+import type {
+  RuntimeServiceCapabilities,
+  RuntimeServiceSkillState,
+} from "@truss-harness/cli/protocol";
 import type { McpServerConfigurations } from "@truss-harness/mcp";
 import type {
   LocalModelEndpoint,
@@ -68,6 +71,7 @@ export interface ServiceResponse {
     };
     readonly sessionId?: string;
     readonly aborted?: boolean;
+    readonly skills?: RuntimeServiceSkillState;
   };
 }
 

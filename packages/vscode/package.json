@@ -34,7 +34,8 @@
     "onCommand:trussHarness.initializeWorkspace",
     "onCommand:trussHarness.updateWorkspaceMemory",
     "onCommand:trussHarness.showWorkspaceStatus",
-    "onCommand:trussHarness.clearWorkspaceMemory"
+    "onCommand:trussHarness.clearWorkspaceMemory",
+    "onCommand:trussHarness.manageSkills"
   ],
   "main": "./dist/extension.cjs",
   "contributes": {
@@ -75,6 +76,10 @@
       {
         "command": "trussHarness.manageAgents",
         "title": "Truss: Manage Agent Profiles"
+      },
+      {
+        "command": "trussHarness.manageSkills",
+        "title": "Truss: Manage Skills"
       },
       {
         "command": "trussHarness.configureByokProvider",

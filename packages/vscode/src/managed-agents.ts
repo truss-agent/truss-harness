@@ -5,6 +5,7 @@ import {
   FileAgentRunHistoryStore,
   profileFromConfiguration,
 } from "@truss-harness/cli/agents";
+import { resolveSkills } from "@truss-harness/cli/config";
 import type { ClientConfiguration } from "@truss-harness/cli/runtime";
 import type { ModelProviderKind } from "@truss-harness/provider-openai-compatible";
 import { AgentCoordinator, ApiKeyCredential } from "@truss-harness/runtime";
@@ -235,6 +236,9 @@ export class ManagedAgentController implements vscode.Disposable {
     const host = new AgentHost({
       workspaceRoot: this.options.workspaceRoot(),
       mcpServers: configuration.mcpServers,
+      skills: await resolveSkills({
+        workspaceRoot: this.options.workspaceRoot(),
+      }),
       credentialResolver: {
         resolve: async (reference, binding) => {
           const accountReference =
