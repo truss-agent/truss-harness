@@ -563,6 +563,8 @@ type SettingsRecords = Record<string, Partial<SkillSelection>>;
 export interface FileSkillSettingsStoreOptions {
   /** User-owned file, e.g. `<config root>/skill-settings.json`. */
   readonly path: string;
+  /** Configured defaults beneath every stored layer, e.g. from config.json. */
+  readonly defaults?: Partial<SkillSelection>;
   readonly ownership?: WorkspaceStorageOwnership;
 }
 
@@ -577,7 +579,10 @@ export class FileSkillSettingsStore implements SkillSettingsStore {
   async getSettings(scope: SkillSettingsScope): Promise<SkillSelection> {
     const keys = await this.keys(scope);
     const records = await this.records();
-    return resolveSkillSelection(keys.map((key) => records[key]));
+    return resolveSkillSelection([
+      this.options.defaults,
+      ...keys.map((key) => records[key]),
+    ]);
   }
 
   async setSettings(
@@ -590,7 +595,7 @@ export class FileSkillSettingsStore implements SkillSettingsStore {
     await this.ownership.run(this.options.path, async () => {
       const records = await this.records();
       if (!value || !Object.keys(value).length) delete records[key];
-      else records[key] = value;
+      else records[key] = { ...records[key], ...value };
       await mkdir(dirname(this.options.path), { recursive: true });
       const temporary = `${this.options.path}.${randomUUID()}.tmp`;
       try {

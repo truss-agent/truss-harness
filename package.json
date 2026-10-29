@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run brand:sync && tsc -b && npm --workspace truss-harness-vscode run bundle",
+    "build": "npm run brand:sync && tsc -b && node --experimental-strip-types scripts/bundle-published-package.mts && npm --workspace truss-harness-vscode run bundle",
     "build:fresh": "tsc -b --clean && npm run build",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -243,7 +243,7 @@ export class AgentHost {
       registry: skills.registry,
       policy: skills.policy,
       selection: (run) =>
-        skills.selection({ profile, sessionId: run.sessionId }),
+        skills.selection({ agentId: profile.id, sessionId: run.sessionId }),
     });
   }
 

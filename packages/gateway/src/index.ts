@@ -17,12 +17,17 @@ import type {
   RemoteCommandResult,
   RemoteHostCapabilities,
   RemoteMcpServerStatus,
+  RemoteSkillState,
   RemoteToolApprovalMode,
   RemoteWorkspace,
   RuntimeEvent,
+  SkillSelection,
   ToolApproval,
 } from "@truss-harness/runtime";
-import { toRemoteSessionEvent } from "@truss-harness/runtime";
+import {
+  normalizeSkillSelection,
+  toRemoteSessionEvent,
+} from "@truss-harness/runtime";
 export { createPairingUri, detectLanAddress } from "./pairing.js";
 
 export interface GatewayRuntime {
@@ -191,6 +196,16 @@ function agentActions(
   ];
 }
 
+/** Host-owned skill settings exposed to paired clients; import/remove stay local. */
+export interface GatewaySkillController {
+  list(sessionId?: string): Promise<RemoteSkillState>;
+  setSettings(
+    scope: "workspace" | "session",
+    sessionId: string | undefined,
+    selection: Partial<SkillSelection> | undefined,
+  ): Promise<RemoteSkillState>;
+}
+
 /** A host-configured workspace. The root path remains private to the host. */
 export interface GatewayWorkspace {
   readonly id: string;
@@ -198,6 +213,7 @@ export interface GatewayWorkspace {
   readonly capabilities?: RemoteHostCapabilities;
   readonly agents?: GatewayAgentController;
   readonly mcp?: GatewayMcpController;
+  readonly skills?: GatewaySkillController;
   readonly createRuntime: (
     mode: "chat" | "plan" | "edit",
     toolApprovalMode?: RemoteToolApprovalMode,
@@ -229,6 +245,7 @@ interface ConfiguredWorkspace {
   readonly remote: RemoteWorkspace;
   readonly agents?: GatewayAgentController;
   readonly mcp?: GatewayMcpController;
+  readonly skills?: GatewaySkillController;
   readonly createRuntime: GatewayWorkspace["createRuntime"];
 }
 
@@ -311,6 +328,7 @@ export async function startRemoteGateway(
         ? { supportsAgents: true, agentActions: agentActions(workspace.agents) }
         : {}),
       ...(workspace.mcp ? { supportsMcpStatus: true } : {}),
+      ...(workspace.skills ? { supportsSkills: true } : {}),
     };
     workspaces.set(workspace.id, {
       remote: {
@@ -320,6 +338,7 @@ export async function startRemoteGateway(
       },
       ...(workspace.agents ? { agents: workspace.agents } : {}),
       ...(workspace.mcp ? { mcp: workspace.mcp } : {}),
+      ...(workspace.skills ? { skills: workspace.skills } : {}),
       createRuntime: workspace.createRuntime,
     });
   }
@@ -601,6 +620,65 @@ export async function startRemoteGateway(
           "No pending approval matches that call.",
         );
       return { requestId, type: "accepted" };
+    }
+
+    if (
+      input.type === "list_skills" ||
+      input.type === "update_skill_settings"
+    ) {
+      const workspace =
+        typeof input.workspaceId === "string"
+          ? workspaces.get(input.workspaceId)
+          : undefined;
+      const skills = workspace?.skills;
+      if (!workspace || !skills || input.version === 1)
+        return reject(
+          requestId,
+          "not_authorized",
+          "Skills are unavailable for this workspace.",
+        );
+      let sessionId: string | undefined;
+      if (input.sessionId !== undefined) {
+        if (
+          typeof input.sessionId !== "string" ||
+          sessions.get(input.sessionId)?.workspace !== workspace
+        )
+          return reject(requestId, "not_found", "Unknown remote session.");
+        sessionId = input.sessionId;
+      }
+      if (input.type === "list_skills")
+        return {
+          requestId,
+          type: "skills_listed",
+          ...(await skills.list(sessionId)),
+        };
+      if (
+        (input.scope !== "workspace" && input.scope !== "session") ||
+        (input.scope === "session" && !sessionId)
+      )
+        return reject(
+          requestId,
+          "invalid_command",
+          "Skill settings need a workspace scope, or a session scope with a sessionId.",
+        );
+      let selection: Partial<SkillSelection> | undefined;
+      try {
+        selection =
+          input.selection === null
+            ? undefined
+            : normalizeSkillSelection(input.selection);
+      } catch (error) {
+        return reject(
+          requestId,
+          "invalid_command",
+          error instanceof Error ? error.message : "Invalid skill settings.",
+        );
+      }
+      return {
+        requestId,
+        type: "skills_listed",
+        ...(await skills.setSettings(input.scope, sessionId, selection)),
+      };
     }
 
     if (input.type === "create_session") {

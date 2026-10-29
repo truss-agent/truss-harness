@@ -11,6 +11,10 @@ export function serviceCapabilities(options: {
     readonly testProviderConnection?: unknown;
     readonly listProfiles?: unknown;
     readonly listMcpServers?: unknown;
+    readonly skills?: {
+      readonly import?: unknown;
+      readonly remove?: unknown;
+    };
   };
   readonly capabilities?: Partial<RuntimeServiceCapabilities>;
 }): RuntimeServiceCapabilities {
@@ -28,6 +32,10 @@ export function serviceCapabilities(options: {
     configurationProfiles: Boolean(options.host?.listProfiles),
     agentProfiles: false,
     mcpStatus: Boolean(options.host?.listMcpServers),
+    skills: Boolean(options.host?.skills),
+    skillManagement: Boolean(
+      options.host?.skills?.import && options.host.skills.remove,
+    ),
     ...options.capabilities,
   };
 }

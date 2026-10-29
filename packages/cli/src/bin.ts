@@ -23,6 +23,12 @@ import {
   type ClientRuntime,
 } from "./runtime.js";
 import {
+  gatewaySkillController,
+  runSkillsCommand,
+  skillServiceHost,
+} from "./skills.js";
+import {
+  resolveSkills,
   configurationPaths,
   initializeWorkspaceConfiguration,
   listConfigurationProfiles,
@@ -102,6 +108,12 @@ Commands:
   agents add <name>     Add a profile using the selected configuration
   agents remove <id>    Remove an idle profile
   agents run <id> <task> Run a profile and stream its status
+  skills [list]         Show skills and the active skill selection
+  skills add <dir>      Import a skill directory into your skills
+  skills remove <id>    Remove an imported skill
+  skills mode <mode>    automatic (default), manual, or off
+  skills superpowers <on|off>  Enable or disable the bundled Superpowers pack
+  skills select [<id>...]      Choose always-active skills
   help                  Show this reference
 
 Options:
@@ -114,6 +126,8 @@ Options:
   --permission <name>    ask, auto-read, or auto-all
   --internet-access      Enable public web search and page fetching
   --no-internet-access   Disable internet tools
+  --skills-mode <mode>   automatic, manual, or off for this run
+  --superpowers <on|off> Enable or disable Superpowers for this run
   --gateway-token <token>  Required 24+ character token for gateway clients
   --gateway-port <port>    Gateway port (default: 4787)
   --gateway-host <host>    Bind address (default: 127.0.0.1; use a trusted LAN only)
@@ -145,6 +159,8 @@ Environment:
   TRUSS_HARNESS_AGENT_MODE  chat (default), plan, or edit
   TRUSS_HARNESS_PERMISSION_MODE ask (default), auto-read, or auto-all
   TRUSS_HARNESS_INTERNET_ACCESS true or 1 to enable public web tools
+  TRUSS_HARNESS_SKILLS_MODE automatic (default), manual, or off
+  TRUSS_HARNESS_SUPERPOWERS_ENABLED on (default) or off
   TRUSS_HARNESS_API_KEY     Optional generic bearer token
   OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, GROQ_API_KEY,
   TOGETHER_API_KEY, GEMINI_API_KEY, XAI_API_KEY, MISTRAL_API_KEY,
@@ -642,6 +658,7 @@ async function main(): Promise<void> {
           agents: createGatewayAgentController(coordinator, {
             allowStart: true,
           }),
+          skills: gatewaySkillController(configuration.skills, workspaceRoot),
           ...(mcpStatuses.size
             ? {
                 mcp: {
@@ -890,6 +907,16 @@ async function main(): Promise<void> {
     return;
   }
 
+  if (command === "skills") {
+    process.exitCode = await runSkillsCommand(
+      args,
+      await resolveSkills({ workspaceRoot: cwd(), overrides }),
+      cwd(),
+      (text) => process.stdout.write(text),
+    );
+    return;
+  }
+
   if (command === "chat" && args.length) {
     const prompt = args.join(" ").trim();
     if (!prompt)
@@ -972,6 +999,10 @@ async function main(): Promise<void> {
           textRuntime: textClient,
           serverVersion: CLI_VERSION,
           host: {
+            skills: skillServiceHost(
+              configuration.skills,
+              configuration.workspaceRoot,
+            ),
             testProviderConnection: () =>
               testClientProviderConnection(configuration),
             listProfiles: () =>

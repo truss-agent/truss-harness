@@ -130,7 +130,7 @@ export interface SkillSettingsScope {
 export interface SkillSettingsStore {
   /** Effective selection after layering user, workspace, agent and session values. */
   getSettings(scope: SkillSettingsScope): Promise<SkillSelection>;
-  /** Writes exactly the most specific level named by `scope`; undefined clears it. */
+  /** Merges into the most specific level named by `scope`; undefined clears that level. */
   setSettings(
     scope: SkillSettingsScope,
     selection: Partial<SkillSelection> | undefined,

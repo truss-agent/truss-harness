@@ -33,6 +33,9 @@ export interface HostedRuntimeOptions {
   readonly skills?: AgentHostSkills;
 }
 
+/** Profile ID of the primary conversation created by createHostedRuntime. */
+export const singleAgentProfileId = "single-agent";
+
 /**
  * Compatibility constructor used by existing CLI, Desktop, and TUI flows.
  * New multi-agent clients should create an AgentHost and use its factory.
@@ -47,7 +50,7 @@ export async function createHostedRuntime(
       ? new ApiKeyCredential(`${options.provider}-api-key`, options.apiKey)
       : undefined);
   const profile: AgentProfile = {
-    id: "single-agent",
+    id: singleAgentProfileId,
     displayName: "Default agent",
     provider: {
       providerId: options.provider,

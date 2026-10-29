@@ -1,6 +1,5 @@
 import { join } from "node:path";
 import {
-  type AgentProfile,
   CompositeSkillRegistry,
   createSuperpowersSkillSource,
   FileSkillSettingsStore,
@@ -17,10 +16,10 @@ import {
 /** Skill wiring for an AgentHost. Text-only helper runtimes never receive skills. */
 export interface AgentHostSkills {
   readonly registry: SkillRegistry;
-  /** Effective selection for one run of `profile` in `sessionId`. */
+  /** Effective selection for an agent, optionally within one session. */
   selection(target: {
-    readonly profile: AgentProfile;
-    readonly sessionId: string;
+    readonly agentId: string;
+    readonly sessionId?: string;
   }): SkillSelection | Promise<SkillSelection>;
   readonly policy?: SkillPolicy;
 }
@@ -29,6 +28,8 @@ export interface DefaultSkillsOptions {
   readonly workspaceRoot: string;
   /** User-owned product config directory; holds `skills/` and `skill-settings.json`. */
   readonly userConfigDirectory: string;
+  /** Configured defaults (config.json) beneath settings the user saved. */
+  readonly defaults?: Partial<SkillSelection>;
   /** Explicit overrides (command-line flags, environment) that outrank stored settings. */
   readonly overrides?: Partial<SkillSelection>;
   readonly policy?: SkillPolicy;
@@ -75,18 +76,19 @@ export function createDefaultSkills(
   }
   const settings = new FileSkillSettingsStore({
     path: join(options.userConfigDirectory, "skill-settings.json"),
+    ...(options.defaults ? { defaults: options.defaults } : {}),
   });
   return {
     registry: new CompositeSkillRegistry(sources),
     store: new FileSkillStore({ root: userSkills, policy: options.policy }),
     settings,
     ...(options.policy ? { policy: options.policy } : {}),
-    selection: async ({ profile, sessionId }) =>
+    selection: async ({ agentId, sessionId }) =>
       resolveSkillSelection([
         await settings.getSettings({
           workspaceRoot: options.workspaceRoot,
-          agentId: profile.id,
-          sessionId,
+          agentId,
+          ...(sessionId === undefined ? {} : { sessionId }),
         }),
         options.overrides,
       ]),

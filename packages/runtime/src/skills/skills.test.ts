@@ -570,6 +570,14 @@ describe("FileSkillSettingsStore", () => {
       superpowersEnabled: false,
       skillIds: [],
     });
+    // Saving one field keeps the other fields saved at the same scope.
+    await settings.setSettings({}, { skillIds: ["user:kept"] });
+    expect(await settings.getSettings({})).toEqual({
+      mode: "automatic",
+      superpowersEnabled: false,
+      skillIds: ["user:kept"],
+    });
+    await settings.setSettings({}, { skillIds: [] });
     await settings.setSettings({ workspaceRoot: one }, undefined);
     expect(await settings.getSettings({ workspaceRoot: one })).toEqual({
       mode: "automatic",

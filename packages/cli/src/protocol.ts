@@ -4,6 +4,7 @@ import {
   serviceCapabilities,
 } from "./protocol/capabilities.js";
 import { RunRegistry } from "./protocol/run-registry.js";
+import { skillRequest } from "./protocol/skills.js";
 import { jsonRpcMessage } from "./protocol/wire.js";
 import { RUNTIME_PACKAGE_NAME, RUNTIME_VERSION } from "@truss-harness/runtime";
 import {
@@ -276,6 +277,20 @@ export class RuntimeService {
         }));
         return "continue";
       }
+      if (
+        request.type === "skills_list" ||
+        request.type === "skills_settings" ||
+        request.type === "skills_import" ||
+        request.type === "skills_remove"
+      ) {
+        const skills = this.options.host?.skills;
+        if (!skills) return this.unavailableCapability(requestId, "Skills");
+        const operation = skillRequest(request.type, request, skills);
+        if (operation === "unavailable")
+          return this.unavailableCapability(requestId, "Skill management");
+        await this.hostResponse(requestId, operation);
+        return "continue";
+      }
     } catch (error) {
       this.sendError("invalid_request", requestError(error), requestId);
       return "continue";
@@ -392,6 +407,14 @@ export class RuntimeService {
       return { ...common, type: "list_profiles" };
     if (request.method === "mcp/status")
       return { ...common, type: "mcp_status" };
+    if (request.method === "skills/list")
+      return { ...common, type: "skills_list" };
+    if (request.method === "skills/settings")
+      return { ...common, type: "skills_settings" };
+    if (request.method === "skills/import")
+      return { ...common, type: "skills_import" };
+    if (request.method === "skills/remove")
+      return { ...common, type: "skills_remove" };
     if (request.method === "service/ping") return { ...common, type: "ping" };
     if (request.method === "service/shutdown")
       return { ...common, type: "shutdown" };

@@ -6,6 +6,7 @@ import type {
   ToolResult,
 } from "./contracts.js";
 import type { WorkspacePlan } from "./plans.js";
+import type { SkillSelection, SkillSourceKind } from "./skills/contracts.js";
 
 /** The first version of the provider-neutral protocol used by remote Truss clients. */
 export const REMOTE_SESSION_PROTOCOL_VERSION = 1 as const;
@@ -67,6 +68,23 @@ export interface RemoteHostCapabilities {
   readonly agentActions: readonly RemoteAgentAction[];
   /** Whether the host exposes read-only, credential-safe MCP status. */
   readonly supportsMcpStatus?: boolean;
+  /** Whether the paired client may list skills and change workspace/session skill settings. */
+  readonly supportsSkills?: boolean;
+}
+
+/** Skill metadata safe to show on a paired device; no paths or content. */
+export interface RemoteSkillSummary {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly source: SkillSourceKind;
+  readonly bundle?: string;
+  readonly trusted: boolean;
+}
+
+export interface RemoteSkillState {
+  readonly skills: readonly RemoteSkillSummary[];
+  readonly selection: SkillSelection;
 }
 
 /** Metadata used by a transport during pairing and connection setup. Authentication remains transport-owned. */
@@ -163,6 +181,17 @@ export type RemoteClientCommand =
       readonly runId: string;
     })
   | (RemoteAgentCommandEnvelope & {
+      readonly type: "list_skills";
+      readonly sessionId?: string;
+    })
+  | (RemoteAgentCommandEnvelope & {
+      readonly type: "update_skill_settings";
+      /** Remote clients never change user-wide defaults. */
+      readonly scope: "workspace" | "session";
+      readonly sessionId?: string;
+      readonly selection: Partial<SkillSelection> | null;
+    })
+  | (RemoteAgentCommandEnvelope & {
       readonly type: "resolve_agent_approval";
       readonly runId: string;
       readonly callId: string;
@@ -187,6 +216,10 @@ export type RemoteCommandResult =
       readonly type: "agent_run";
       readonly run: RemoteAgentRunSummary;
     }
+  | ({
+      readonly requestId: string;
+      readonly type: "skills_listed";
+    } & RemoteSkillState)
   | {
       readonly requestId: string;
       readonly type: "rejected";

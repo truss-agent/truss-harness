@@ -186,7 +186,7 @@ function applyExtensionIdentity(manifest) {
 await Promise.all([
   updatePackageJson("package.json", (manifest) => {
     manifest.name = brand.productSlug;
-    manifest.scripts.build = `npm run brand:sync && tsc -b && npm --workspace ${brand.productSlug}-vscode run bundle`;
+    manifest.scripts.build = `npm run brand:sync && tsc -b && node --experimental-strip-types scripts/bundle-published-package.mts && npm --workspace ${brand.productSlug}-vscode run bundle`;
     manifest.scripts["docs:dev"] =
       `npm run brand:sync && npm --workspace ${packageScope}/branding run build && npm --workspace ${packageScope}/docs run dev`;
     manifest.scripts["docs:build"] =

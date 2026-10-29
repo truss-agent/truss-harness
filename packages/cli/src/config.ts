@@ -2,6 +2,10 @@ import { FileWorkspaceTrustStore, contentHash } from "./workspace-trust.js";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import {
+  createDefaultSkills,
+  type DefaultSkills,
+} from "@truss-harness/agent-host";
 import { brand } from "@truss-harness/branding";
 import {
   parseMcpServerConfigurations,
@@ -15,8 +19,11 @@ import {
   type ModelProviderKind,
 } from "@truss-harness/provider-openai-compatible";
 import {
+  normalizeSkillSelection,
   resolveWorkspacePath,
   type MasterPromptConfiguration,
+  type SkillMode,
+  type SkillSelection,
 } from "@truss-harness/runtime";
 import type { AgentMode, ClientConfiguration } from "./runtime.js";
 import type { PermissionMode } from "./protocol.js";
@@ -40,6 +47,12 @@ export interface ProfileConfiguration {
   readonly mcpServers?: McpServerConfigurations;
   /** Visual preset used by the terminal UI. */
   readonly tuiTheme?: TuiThemeName;
+  /** Skill selection mode; Automatic by default. */
+  readonly skillMode?: SkillMode;
+  /** The bundled Superpowers pack; enabled by default. */
+  readonly superpowersEnabled?: boolean;
+  /** Qualified skill IDs that are always active, e.g. `user:release-notes`. */
+  readonly skillIds?: readonly string[];
 }
 
 export interface HarnessConfiguration extends ProfileConfiguration {
@@ -59,6 +72,7 @@ export interface ResolvedConfiguration extends ClientConfiguration {
   readonly tuiTheme?: TuiThemeName;
   readonly paths: { readonly user: string; readonly workspace: string };
   readonly provenance: Readonly<Record<string, string>>;
+  readonly skills: DefaultSkills;
   readonly workspaceTrust: {
     readonly status: "trusted" | "untrusted" | "missing";
     readonly hash?: string;
@@ -133,6 +147,38 @@ function object(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
+function skillSettings(value: {
+  readonly mode?: unknown;
+  readonly superpowersEnabled?: unknown;
+  readonly skillIds?: unknown;
+}): Pick<
+  ProfileConfiguration,
+  "skillMode" | "superpowersEnabled" | "skillIds"
+> {
+  const selection = normalizeSkillSelection(
+    Object.fromEntries(
+      Object.entries(value).filter(([, entry]) => entry !== undefined),
+    ),
+  );
+  return {
+    ...(selection.mode ? { skillMode: selection.mode } : {}),
+    ...(selection.superpowersEnabled === undefined
+      ? {}
+      : { superpowersEnabled: selection.superpowersEnabled }),
+    ...(selection.skillIds ? { skillIds: selection.skillIds } : {}),
+  };
+}
+
+function switchValue(
+  value: string | undefined,
+  name: string,
+): boolean | undefined {
+  if (value === undefined || value === "") return undefined;
+  if (/^(?:1|true|on|yes)$/i.test(value)) return true;
+  if (/^(?:0|false|off|no)$/i.test(value)) return false;
+  throw new Error(`${name} must be on or off`);
+}
+
 function parseProfile(value: unknown): ProfileConfiguration {
   const source = object(value);
   if (!source) return {};
@@ -160,6 +206,11 @@ function parseProfile(value: unknown): ProfileConfiguration {
         ? undefined
         : parseMcpServerConfigurations(source.mcpServers),
     tuiTheme: validTuiTheme(source.tuiTheme),
+    ...skillSettings({
+      mode: source.skillMode,
+      superpowersEnabled: source.superpowersEnabled,
+      skillIds: source.skillIds,
+    }),
   };
 }
 
@@ -238,6 +289,13 @@ function environmentConfiguration(
       : undefined,
     mcpServers,
     tuiTheme: validTuiTheme(environment.TRUSS_HARNESS_TUI_THEME),
+    ...skillSettings({
+      mode: environment.TRUSS_HARNESS_SKILLS_MODE || undefined,
+      superpowersEnabled: switchValue(
+        environment.TRUSS_HARNESS_SUPERPOWERS_ENABLED,
+        "TRUSS_HARNESS_SUPERPOWERS_ENABLED",
+      ),
+    }),
   };
 }
 
@@ -254,6 +312,9 @@ const profileKeys = [
   "apiKeyEnv",
   "mcpServers",
   "tuiTheme",
+  "skillMode",
+  "superpowersEnabled",
+  "skillIds",
 ] as const satisfies readonly (keyof ProfileConfiguration)[];
 
 function mergeProfiles(
@@ -376,6 +437,70 @@ export async function trustWorkspaceConfiguration(
   return contentHash(content);
 }
 
+function skillLayer(
+  layer: ProfileConfiguration,
+): Partial<SkillSelection> | undefined {
+  const value = {
+    ...(layer.skillMode ? { mode: layer.skillMode } : {}),
+    ...(layer.superpowersEnabled === undefined
+      ? {}
+      : { superpowersEnabled: layer.superpowersEnabled }),
+    ...(layer.skillIds ? { skillIds: layer.skillIds } : {}),
+  };
+  return Object.keys(value).length ? value : undefined;
+}
+
+/**
+ * Config files supply defaults beneath settings saved with /skills;
+ * environment and flags are explicit for this process and win.
+ */
+function skillsFor(
+  workspaceRoot: string,
+  paths: ConfigurationPaths,
+  configured: readonly (ProfileConfiguration | undefined)[],
+  explicit: readonly (ProfileConfiguration | undefined)[],
+): DefaultSkills {
+  return createDefaultSkills({
+    workspaceRoot,
+    userConfigDirectory: dirname(paths.user),
+    defaults: skillLayer(mergeProfiles(...configured)),
+    overrides: skillLayer(mergeProfiles(...explicit)),
+  });
+}
+
+/** Skill wiring for a workspace without requiring a model or provider. */
+export async function resolveSkills(options: {
+  readonly workspaceRoot: string;
+  readonly overrides?: ConfigurationOverrides;
+  readonly environment?: NodeJS.ProcessEnv;
+  readonly paths?: ConfigurationPaths;
+}): Promise<DefaultSkills> {
+  const environment = options.environment ?? process.env;
+  const paths =
+    options.paths ?? configurationPaths(options.workspaceRoot, environment);
+  const [user, workspaceResult] = await Promise.all([
+    readConfiguration(paths.user),
+    workspaceConfiguration(options.workspaceRoot, paths),
+  ]);
+  const workspace = workspaceResult.configuration;
+  const profile =
+    options.overrides?.profile ??
+    environment.TRUSS_HARNESS_PROFILE ??
+    workspace.defaultProfile ??
+    user.defaultProfile;
+  return skillsFor(
+    options.workspaceRoot,
+    paths,
+    [
+      user,
+      profile ? user.profiles?.[profile] : undefined,
+      workspace,
+      profile ? workspace.profiles?.[profile] : undefined,
+    ],
+    [environmentConfiguration(environment), options.overrides],
+  );
+}
+
 export async function resolveConfiguration(options: {
   readonly workspaceRoot: string;
   readonly overrides?: ConfigurationOverrides;
@@ -409,6 +534,12 @@ export async function resolveConfiguration(options: {
     // the service silently starts another one.
     environmentProfile,
     options.overrides,
+  );
+  const skills = skillsFor(
+    options.workspaceRoot,
+    paths,
+    [user, userProfile, workspace, workspaceProfile],
+    [environmentProfile, options.overrides],
   );
   const provenance: Record<string, string> = {};
   for (const [source, layer] of [
@@ -514,6 +645,7 @@ export async function resolveConfiguration(options: {
     mcpServers,
     profile,
     tuiTheme: merged.tuiTheme,
+    skills,
     paths,
     workspaceTrust: workspaceResult.provenance,
     provenance,
@@ -660,6 +792,8 @@ export function parseConfigurationOverrides(arguments_: readonly string[]): {
     mode?: AgentMode;
     permission?: PermissionMode;
     internetAccess?: boolean;
+    skillMode?: SkillMode;
+    superpowersEnabled?: boolean;
   } = {};
   const rest: string[] = [];
   for (let index = 0; index < arguments_.length; index++) {
@@ -698,6 +832,13 @@ export function parseConfigurationOverrides(arguments_: readonly string[]): {
       overrides.internetAccess = true;
     } else if (argument === "--no-internet-access") {
       overrides.internetAccess = false;
+    } else if (argument === "--skills-mode") {
+      const mode = value();
+      if (mode !== "automatic" && mode !== "manual" && mode !== "off")
+        throw new Error("--skills-mode must be automatic, manual, or off");
+      overrides.skillMode = mode;
+    } else if (argument === "--superpowers") {
+      overrides.superpowersEnabled = switchValue(value(), "--superpowers");
     } else rest.push(argument);
   }
   return { overrides, rest };
