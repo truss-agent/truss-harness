@@ -1,9 +1,12 @@
+import { brand } from "@truss-harness/branding";
+import type { RuntimeServiceSkillState } from "@truss-harness/cli/protocol";
 import type { LocalModelEndpoint } from "@truss-harness/provider-openai-compatible";
 import type { AgentProfile, ToolCall } from "@truss-harness/runtime";
 import { workspaceCommandHelp } from "@truss-harness/runtime";
 import { Box, Text } from "ink";
 import { truncate } from "./display.js";
 import type { FileEntry } from "./file-browser.js";
+import { type SkillScope, skillPickerRows } from "./skills-controller.js";
 import type { TuiTheme, TuiThemeName } from "./theme.js";
 import type { Screen, SettingsField } from "./types.js";
 
@@ -52,6 +55,10 @@ const tuiControlHelp = [
   [
     "AGENT",
     "Enter sends; a opens saved multi-agent profiles; Up/Down scroll chat; n starts a new conversation outside the chat input.",
+  ],
+  [
+    "SKILLS",
+    "s outside chat, or /skills in chat, opens the skill picker; Space selects, M mode, P Superpowers, W scope.",
   ],
   [
     "MCP",
@@ -104,7 +111,17 @@ export interface TuiOverlaysProps {
   readonly pendingTool?: ToolCall;
   readonly agentProfiles: readonly AgentProfile[];
   readonly mcpStatuses: readonly McpServerView[];
+  readonly skills?: TuiSkillsView;
 }
+
+export interface TuiSkillsView {
+  readonly state?: RuntimeServiceSkillState;
+  readonly index: number;
+  readonly scope: SkillScope;
+  readonly error?: string;
+}
+
+const visibleSkillRows = 12;
 
 export function TuiOverlays(props: TuiOverlaysProps): React.ReactElement {
   const {
@@ -126,7 +143,16 @@ export function TuiOverlays(props: TuiOverlaysProps): React.ReactElement {
     pendingTool,
     agentProfiles,
     mcpStatuses,
+    skills,
   } = props;
+  const skillRows = skills?.state ? skillPickerRows(skills.state) : [];
+  const skillStart = Math.max(
+    0,
+    Math.min(
+      (skills?.index ?? 0) - Math.floor(visibleSkillRows / 2),
+      skillRows.length - visibleSkillRows,
+    ),
+  );
   return (
     <>
       {screen === "file-search" && (
@@ -353,6 +379,61 @@ export function TuiOverlays(props: TuiOverlaysProps): React.ReactElement {
           </Box>
           <Text color={theme.muted}>
             R tests configured servers. C or Escape closes.
+          </Text>
+        </Box>
+      )}
+      {screen === "skills" && (
+        <Box
+          position="absolute"
+          flexDirection="column"
+          borderStyle="double"
+          borderColor={theme.focus}
+          paddingX={2}
+          paddingY={1}
+          width={overlayWidth}
+          marginLeft={2}
+          marginTop={4}
+          backgroundColor={theme.overlay}
+        >
+          <Text bold color={theme.accent}>
+            SKILLS
+          </Text>
+          {skills?.state ? (
+            <Text color={theme.text}>
+              Mode {skills.state.selection.mode} · Superpowers{" "}
+              {skills.state.selection.superpowersEnabled ? "on" : "off"} ·
+              Saving for{" "}
+              {skills.scope === "user" ? "all workspaces" : "this workspace"}
+            </Text>
+          ) : (
+            <Text color={theme.muted}>Loading skills...</Text>
+          )}
+          <Box flexDirection="column" marginTop={1}>
+            {skillRows
+              .slice(skillStart, skillStart + visibleSkillRows)
+              .map((row, offset) => {
+                const active = skillStart + offset === skills?.index;
+                return (
+                  <Text
+                    key={row.id}
+                    color={
+                      active
+                        ? theme.focus
+                        : row.available
+                          ? theme.text
+                          : theme.muted
+                    }
+                    wrap="truncate-end"
+                  >
+                    {active ? "> " : "  "}[{row.selected ? "x" : " "}] {row.id}
+                    {row.note ? ` (${row.note})` : ""} {row.description}
+                  </Text>
+                );
+              })}
+          </Box>
+          {skills?.error && <Text color={theme.warning}>{skills.error}</Text>}
+          <Text color={theme.muted} wrap="wrap">
+            {`Space marks a skill always active. M cycles Automatic, Manual, Off. P toggles Superpowers. W switches all workspaces or this one. Changes apply to the next run. Import with \`${brand.cliCommand} skills add <folder>\`. S or Escape closes.`}
           </Text>
         </Box>
       )}

@@ -40,6 +40,7 @@ interface InputState {
   readonly editorLineCount: number;
   readonly chatTranscriptLength: number;
   readonly chatLineCount: number;
+  readonly chatInput: string;
 }
 
 interface InputSetters {
@@ -78,6 +79,12 @@ interface InputActions {
   readonly loadFile: (entry: FileEntry) => void;
   readonly toggleDiff: () => void;
   readonly sendPrompt: () => void;
+  readonly openSkills: () => void;
+  readonly moveSkill: (delta: number) => void;
+  readonly toggleSkill: () => void;
+  readonly cycleSkillMode: () => void;
+  readonly toggleSuperpowers: () => void;
+  readonly toggleSkillScope: () => void;
 }
 
 export interface TuiInputControllerOptions {
@@ -151,6 +158,19 @@ export function useTuiInputController({
       if (key.escape || input.toLowerCase() === "a")
         setters.setScreen("workspace");
       if (input.toLowerCase() === "r") actions.refreshAgentProfiles();
+      return;
+    }
+    if (state.screen === "skills") {
+      if (key.escape || input === "s") {
+        setters.setScreen("workspace");
+        return;
+      }
+      if (key.upArrow) actions.moveSkill(-1);
+      else if (key.downArrow) actions.moveSkill(1);
+      else if (input === " " || key.return) actions.toggleSkill();
+      else if (input.toLowerCase() === "m") actions.cycleSkillMode();
+      else if (input.toLowerCase() === "p") actions.toggleSuperpowers();
+      else if (input.toLowerCase() === "w") actions.toggleSkillScope();
       return;
     }
     if (state.screen === "mcp") {
@@ -326,6 +346,10 @@ export function useTuiInputController({
       setters.setScreen("mcp");
       return;
     }
+    if (input === "s" && state.focus !== "chat") {
+      actions.openSkills();
+      return;
+    }
     if (input === "n" && state.focus !== "chat") {
       actions.startNewConversation();
       return;
@@ -398,6 +422,11 @@ export function useTuiInputController({
       return;
     }
     if (key.return) {
+      if (state.chatInput.trim() === "/skills") {
+        setters.setChatInput("");
+        actions.openSkills();
+        return;
+      }
       actions.sendPrompt();
       return;
     }

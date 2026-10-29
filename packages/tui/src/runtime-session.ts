@@ -35,6 +35,8 @@ export interface RuntimeSessionOptions {
   readonly contextWindow: number;
   readonly appendTerminal: (output: string) => void;
   readonly showScreen: (screen: Screen) => void;
+  /** Shared skill wiring for every runtime this session creates. */
+  readonly skills: () => Promise<ResolvedConfiguration["skills"]>;
 }
 
 export function useRuntimeSessionController({
@@ -50,6 +52,7 @@ export function useRuntimeSessionController({
   contextWindow,
   appendTerminal,
   showScreen,
+  skills,
 }: RuntimeSessionOptions) {
   const [configuration, setConfiguration] = useState<
     ClientConfiguration | undefined
@@ -178,6 +181,7 @@ export function useRuntimeSessionController({
       mode: agentMode,
       internetAccess,
       mcpServers: initialConfiguration?.mcpServers,
+      skills: await skills(),
       approval: {
         approve: async (call) => {
           const readOnly = [
