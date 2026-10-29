@@ -29,7 +29,7 @@ jobs:
       - run: npm ci
       - name: Validate CLI and plugin release metadata
         run: |
-          npm --workspace @truss-harness/cli run build
+          npm run build
           node packages/cli/dist/bin.js --version
           npm --workspace truss.nvim run validate:release
       - name: Confirm the required CLI release is published
