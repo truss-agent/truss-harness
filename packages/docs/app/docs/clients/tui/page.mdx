@@ -52,6 +52,7 @@ The default **forest** theme is a muted green, sage, and teal palette with soft 
 | `Enter` | Send chat input or open the selected file |
 | `Left` / `Right` | Collapse or expand a selected directory |
 | `d` | Toggle Git diff in the editor pane |
+| `s` | Open the skill picker outside chat input; `/skills` in chat does the same |
 | Type directly | Enter a command while the terminal pane has focus |
 | `?` | Open local workspace-command help |
 | `Esc` | Stop active generation |
@@ -62,6 +63,10 @@ Tool approvals use `Y` or Enter to allow and `N` or Escape to deny. The terminal
 ## Workspace commands
 
 Enter `/init`, `/update [note]`, `/status`, `/clear-memory`, or `/help` in the Agent pane. They run locally rather than through the model. This is useful for creating `AGENTS.md` context and recording a handoff before a new conversation.
+
+## Skills
+
+The skill picker lists available skills. `Space` marks a skill always active, `M` cycles Automatic, Manual, and Off, `P` turns the Superpowers pack on or off, and `W` switches between saving for all workspaces and this workspace. Import skills with the CLI. See [Skills](/docs/runtime/skills).
 
 ## MCP servers
 

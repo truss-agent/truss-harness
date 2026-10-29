@@ -1,0 +1,80 @@
+---
+title: "Skills"
+---
+
+# Skills
+
+A skill is a folder of instructions an agent can follow for a particular kind of work, such as brainstorming a design, debugging, or writing release notes. Each skill has a `SKILL.md` file and may include supporting text files. Skills change what the agent is told. They never add tools or permissions.
+
+<Brand /> includes the [Superpowers](https://github.com/obra/superpowers) skill pack by Jesse Vincent (MIT license). It is on by default.
+
+## Modes
+
+| Mode | What the agent sees |
+| --- | --- |
+| **Automatic** (default) | A short catalog of available skills. The agent loads a skill's full instructions only when it is relevant. |
+| **Manual** | Only the skills you mark as always active. No catalog. |
+| **Off** | No skills. |
+
+In Automatic and Manual mode, skills you mark as **always active** are loaded at the start of every run. The **Superpowers pack** switch turns the bundled skills on or off without affecting your own skills.
+
+Changes apply to the next run. A run that is already in progress keeps the skills it started with.
+
+## Where skills come from
+
+| Source | ID prefix | Notes |
+| --- | --- | --- |
+| Superpowers pack | `superpowers:` | Bundled with <Brand />; pinned to a reviewed upstream version |
+| Your skills | `user:` | Imported into your user configuration directory and shared by every client |
+| Repository skills | `workspace:` | Found in `.truss-harness/skills/` in the open workspace |
+
+Repository skills are listed but **untrusted**: a repository cannot give instructions to your agent by itself. To use one, review it and import its folder, which copies it into your skills as a `user:` skill.
+
+## Import a skill
+
+A skill folder needs a `SKILL.md` that starts with a name and description:
+
+```markdown
+---
+name: release-notes
+description: Use when writing release notes for a version
+---
+
+Group changes by user impact and end with upgrade steps.
+```
+
+Names use lowercase letters, numbers, and hyphens. Import the folder from any client:
+
+- CLI: `truss-cli skills add ./release-notes`
+- Desktop: **Settings → App & tools → Skills → Import folder**
+- VS Code: **Truss: Manage Skills → Import skill folder**
+- Neovim: `:TrussSkillAdd ./release-notes`
+
+Truss Go can choose skills on a paired computer but cannot import them.
+
+## Where choices are saved
+
+Settings layer from widest to narrowest; the narrowest choice that sets a value wins:
+
+1. Built-in defaults (Automatic, Superpowers on)
+2. Your configuration file (`skillMode`, `superpowersEnabled`, `skillIds`)
+3. Choices saved for all workspaces
+4. Choices saved for one workspace
+5. Choices for a managed agent or a conversation
+6. Command-line flags and environment variables for one process
+
+Your configuration file can set defaults:
+
+```json
+{
+  "skillMode": "automatic",
+  "superpowersEnabled": true,
+  "skillIds": ["user:release-notes"]
+}
+```
+
+For one process, use `--skills-mode automatic|manual|off` and `--superpowers on|off`, or the `TRUSS_HARNESS_SKILLS_MODE` and `TRUSS_HARNESS_SUPERPOWERS_ENABLED` environment variables. Workspace configuration files must be trusted with `truss-cli config trust` before their skill settings apply.
+
+## Limits
+
+A run can select at most 8 always-active skills with at most 64 KiB of instructions in total. A single `SKILL.md` can be up to 32 KiB. When a selection is over a limit, or names a skill that is missing, untrusted, or in a disabled pack, the run stops with a message that names the problem. Removing one of your skills also removes it from every saved selection.

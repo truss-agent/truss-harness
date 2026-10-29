@@ -92,6 +92,10 @@ for concurrency and Edit-run safety rules.
 
 The chat composer accepts `/init`, `/update [note]`, `/status`, `/clear-memory`, and `/help`. These run locally, so they work without a configured model. Use the **Help** button in the side panel to display them, or run the matching **<Brand />** actions from the Command Palette.
 
+## Skills
+
+Run **Truss: Manage Skills** from the Command Palette to set the mode, the Superpowers pack, and always-active skills, for all workspaces or this workspace, and to import or remove skills. If `trussHarness.command` points to an older `truss-cli` without skills, the command asks you to update it. See [Skills](/docs/runtime/skills).
+
 ## MCP servers
 
 Enter an `mcpServers` JSON object in the panel's **MCP servers (JSON)** setting. Applying settings restarts the runtime service on the next request and displays server connection diagnostics in the panel. Chat and Plan modes load only servers marked `readOnly`; Agent mode loads every enabled server. See [MCP Servers](/docs/runtime/mcp).

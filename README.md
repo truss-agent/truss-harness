@@ -168,6 +168,8 @@ You can also configure a one-off session with environment variables:
 | TRUSS_HARNESS_API_KEY | Optional token for a protected endpoint |
 | TRUSS_HARNESS_SYSTEM_PROMPT | Optional system prompt |
 | TRUSS_HARNESS_MCP_SERVERS | Optional JSON object containing local MCP servers |
+| TRUSS_HARNESS_SKILLS_MODE | Optional skill mode: automatic, manual, or off |
+| TRUSS_HARNESS_SUPERPOWERS_ENABLED | Optional on or off for the bundled Superpowers skills |
 
 The Desktop app and VS Code extension keep endpoint, model, mode, and
 permission choices in their own settings. API keys should stay in the client’s
@@ -230,6 +232,18 @@ Use `truss-cli mcp status`, `truss-cli mcp tools`, or
 the same credential-safe server/tool status with `c`. Paired Truss Go clients
 can view status, but server commands, environment values, and credentials stay
 on the host.
+
+## Skills
+
+Skills are instruction folders with a `SKILL.md` that agents follow for a kind
+of work. Truss bundles the [Superpowers](https://github.com/obra/superpowers)
+pack (MIT), on by default. In **Automatic** mode agents load relevant skills on
+their own, **Manual** uses only the skills you mark always active, and **Off**
+uses none. Import your own skills with `truss-cli skills add <folder>`, Desktop
+Settings, **Truss: Manage Skills** in VS Code, or `:TrussSkillAdd` in Neovim.
+They are shared by every client. Skills in a repository's
+`.truss-harness/skills` folder stay untrusted until you import them. See
+[Skills](https://truss-agent.com/docs/runtime/skills).
 
 ## Learn more
 

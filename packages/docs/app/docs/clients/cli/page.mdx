@@ -87,6 +87,10 @@ truss-cli models
 
 This prints detected endpoints and model IDs for local servers.
 
+## Skills
+
+<CliCommand /> `skills` lists skills and the effective selection. `skills add <folder>` imports a skill, `skills remove <id>` removes one of yours, and `skills mode automatic|manual|off`, `skills superpowers on|off`, and `skills select <id>...` change what agents use. Add `--workspace` to save a choice for the current workspace only. See [Skills](/docs/runtime/skills).
+
 ## MCP servers
 
 The CLI reads `mcpServers` from the shared configuration system and reports each connection before an Agent run. Run <CliCommand /> `config path` to locate the user and workspace files. Repository-provided MCP commands require content-bound local `config trust` authorization. See [MCP Servers](/docs/runtime/mcp) for the complete schema and safety behavior.
