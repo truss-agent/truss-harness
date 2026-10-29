@@ -1,4 +1,3 @@
-import { defaultToolOutputBytes, truncateUtf8 } from "../resource-limits.js";
 import type {
   RuntimeEvent,
   Session,
@@ -6,15 +5,18 @@ import type {
   ToolResult,
 } from "../contracts.js";
 import type { WorkspaceToolRecord } from "../memory.js";
+import { defaultToolOutputBytes, truncateUtf8 } from "../resource-limits.js";
 import type { ToolRegistry } from "../tools.js";
 import { allowAllTools, type ToolApproval } from "./contracts.js";
 import { toolFailureRecovery } from "./edit-policy.js";
 import { normalizeToolResult } from "./tool-call-normalization.js";
 
 export interface AgentToolExecutorOptions {
-  readonly tools: ToolRegistry;
+  readonly tools: Pick<ToolRegistry, "get">;
   readonly workspaceRoot: string;
   readonly approval?: ToolApproval;
+  /** Run-scoped tools whose own policy replaces ToolApproval. */
+  readonly preapproved?: ReadonlySet<string>;
   readonly maxOutputBytes?: number;
   emit(event: RuntimeEvent): Promise<void>;
 }
@@ -22,6 +24,8 @@ export interface AgentToolExecutorOptions {
 export type AgentToolExecution = WorkspaceToolRecord & {
   readonly recoveryRequired?: boolean;
   readonly failure?: string;
+  /** Text shown to the user when a preapproved tool ends the run to wait for them. */
+  readonly endTurn?: string;
 };
 
 export class AgentToolExecutor {
@@ -69,7 +73,10 @@ export class AgentToolExecutor {
         content: `Tool call was not executed because its arguments could not be parsed: ${call.parseError}\n\nRECOVERY: ${toolFailureRecovery(tool)}`,
         isError: true,
       };
-    } else if (!(await this.approve(call, session, signal))) {
+    } else if (
+      !this.options.preapproved?.has(tool) &&
+      !(await this.approve(call, session, signal))
+    ) {
       result = { content: `Tool call denied: ${tool}`, isError: true };
     } else {
       try {
@@ -121,6 +128,11 @@ export class AgentToolExecutor {
       succeeded: !result.isError,
       recoveryRequired,
       failure: result.isError ? result.content : undefined,
+      ...(result.endTurn &&
+      !result.isError &&
+      this.options.preapproved?.has(tool)
+        ? { endTurn: result.content }
+        : {}),
     };
   }
 }

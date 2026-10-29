@@ -35,7 +35,8 @@
     "docs:dev": "npm run brand:sync && npm --workspace @truss-harness/branding run build && npm --workspace @truss-harness/docs run dev",
     "docs:build": "npm run brand:sync && npm --workspace @truss-harness/branding run build && npm --workspace @truss-harness/docs run build",
     "docs:build:isolated": "npm run brand:sync && npm --workspace @truss-harness/branding run build && node scripts/build-docs-isolated.mjs",
-    "audit:dependencies": "node --experimental-strip-types scripts/check-dependencies.mts"
+    "audit:dependencies": "node --experimental-strip-types scripts/check-dependencies.mts",
+    "skills:sync": "node --experimental-strip-types scripts/generate-bundled-skills.mts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",

@@ -1,18 +1,24 @@
 import { randomUUID } from "node:crypto";
 import type { ContextBlock } from "../context.js";
 import type {
+  AgentTool,
   ChatAttachment,
   ChatMessage,
   ModelTokenUsage,
   RuntimeEvent,
   Session,
   ToolCall,
+  ToolDefinition,
 } from "../contracts.js";
 import type { WorkspaceTaskRecord, WorkspaceToolRecord } from "../memory.js";
 import { parseAgentPlan } from "../plans.js";
 import { withModelRetries } from "../retry.js";
 import { checkpoint } from "../sessions.js";
-import { type AgentRuntimeOptions, defaultAgentMaxTurns } from "./contracts.js";
+import {
+  type AgentRunContribution,
+  type AgentRuntimeOptions,
+  defaultAgentMaxTurns,
+} from "./contracts.js";
 import {
   type AgentRecoveryReason,
   hasEditIntent,
@@ -82,13 +88,6 @@ export class AgentRuntime {
       await this.emit(event);
       signal?.throwIfAborted();
     };
-    const toolExecutor = new AgentToolExecutor({
-      tools: this.options.tools,
-      workspaceRoot: this.options.workspaceRoot,
-      approval: this.options.approval,
-      emit: (event) => emit(event),
-    });
-
     await this.recordMemory({
       id: taskId,
       sessionId,
@@ -117,7 +116,48 @@ export class AgentRuntime {
         }),
     );
 
+    let contribution: AgentRunContribution = {};
+    const complete = async (): Promise<void> => {
+      await this.options.sessions.save(session);
+      await this.recordMemory({
+        id: taskId,
+        sessionId,
+        objective: prompt,
+        status: "completed",
+        startedAt,
+        completedAt: new Date().toISOString(),
+        assistantSummary: this.summary(assistantText),
+        tools: executedTools,
+        modifiedFiles: [...modifiedFiles],
+      });
+      await emit({
+        type: "run_completed",
+        sessionId,
+        modifiedFiles: [...modifiedFiles],
+      });
+    };
+
     try {
+      contribution =
+        (await this.options.runContext?.begin({
+          runId: taskId,
+          sessionId,
+          prompt,
+          workspaceRoot: this.options.workspaceRoot,
+          signal,
+          progress: (text) => emit({ type: "progress_delta", sessionId, text }),
+        })) ?? {};
+      signal?.throwIfAborted();
+      const runTools = this.runTools(contribution.tools ?? []);
+      const toolExecutor = new AgentToolExecutor({
+        tools: runTools,
+        workspaceRoot: this.options.workspaceRoot,
+        approval: this.options.approval,
+        preapproved: new Set(
+          (contribution.tools ?? []).map((tool) => tool.name),
+        ),
+        emit: (event) => emit(event),
+      });
       for (let turn = 0; turn < this.maxTurns; turn++) {
         signal?.throwIfAborted();
         const calls: ToolCall[] = [];
@@ -128,6 +168,7 @@ export class AgentRuntime {
         const systemPrompt = [
           this.options.systemPromptFactory?.(session) ??
             this.options.systemPrompt,
+          contribution.instructions,
           recoveryInstruction(
             recoveryReason,
             pendingWriteRecoveryPaths,
@@ -138,15 +179,18 @@ export class AgentRuntime {
           .filter(Boolean)
           .join("\n\n");
 
+        const history = contribution.history;
         const messages = await this.options.context.build(
-          session,
+          history
+            ? { ...session, messages: history(session.messages) }
+            : session,
           systemPrompt || undefined,
           requestContext,
         );
         signal?.throwIfAborted();
         for await (const event of provider.stream({
           messages,
-          tools: this.options.tools.definitions(),
+          tools: runTools.definitions(),
           signal,
         })) {
           signal?.throwIfAborted();
@@ -255,27 +299,12 @@ export class AgentRuntime {
               });
             }
           }
-          await this.options.sessions.save(session);
-          await this.recordMemory({
-            id: taskId,
-            sessionId,
-            objective: prompt,
-            status: "completed",
-            startedAt,
-            completedAt: new Date().toISOString(),
-            assistantSummary: this.summary(assistantText),
-            tools: executedTools,
-            modifiedFiles: [...modifiedFiles],
-          });
-          await emit({
-            type: "run_completed",
-            sessionId,
-            modifiedFiles: [...modifiedFiles],
-          });
+          await complete();
           return;
         }
 
         let failedWriteThisTurn = false;
+        let awaitingUser: string | undefined;
         for (const call of calls) {
           const command =
             call.name === "run_terminal" &&
@@ -295,6 +324,7 @@ export class AgentRuntime {
           );
           signal?.throwIfAborted();
           executedTools.push(execution);
+          awaitingUser ??= execution.endTurn;
           // Unknown/plugin tools may change workspace state too; only known reads retain cached results.
           if (
             execution.succeeded &&
@@ -357,6 +387,19 @@ export class AgentRuntime {
             }
           }
         }
+        if (awaitingUser !== undefined) {
+          // A workflow is waiting on the user: end cleanly without demanding a write.
+          const reply = [
+            this.options.deferTextUntilToolDecision ? text : "",
+            awaitingUser,
+          ]
+            .filter(Boolean)
+            .join("\n\n");
+          assistantText += reply;
+          await emit({ type: "text_delta", sessionId, text: reply });
+          await complete();
+          return;
+        }
         if (pendingWriteRecoveryPaths.size && !failedWriteThisTurn) {
           recoveryAttempts += 1;
           if (recoveryAttempts >= 2) {
@@ -393,7 +436,39 @@ export class AgentRuntime {
       });
       await this.emit({ type: "run_failed", sessionId, error: normalized });
       throw normalized;
+    } finally {
+      try {
+        await contribution.end?.();
+      } catch {
+        // Releasing run-scoped state must not replace the run outcome.
+      }
     }
+  }
+
+  /** Overlay run-scoped tools on the registry without letting them replace it. */
+  private runTools(extra: readonly AgentTool[]): {
+    get(name: string): AgentTool | undefined;
+    definitions(): ToolDefinition[];
+  } {
+    const scoped = new Map<string, AgentTool>();
+    for (const tool of extra) {
+      if (this.options.tools.get(tool.name) || scoped.has(tool.name))
+        throw new Error(
+          `Run context tool ${tool.name} conflicts with a registered tool`,
+        );
+      scoped.set(tool.name, tool);
+    }
+    return {
+      get: (name) => scoped.get(name) ?? this.options.tools.get(name),
+      definitions: () => [
+        ...this.options.tools.definitions(),
+        ...[...scoped.values()].map(({ name, description, inputSchema }) => ({
+          name,
+          description,
+          inputSchema,
+        })),
+      ],
+    };
   }
 
   private summary(text: string): string | undefined {

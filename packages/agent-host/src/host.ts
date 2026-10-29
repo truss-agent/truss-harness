@@ -28,6 +28,7 @@ import {
   renderMasterPrompt,
   type RuntimeEvent,
   readFileTool,
+  SkillRunContextProvider,
   registerCoreTools,
   registerWebTools,
   searchFilesTool,
@@ -39,6 +40,7 @@ import {
   type WorkspacePlanStore,
   type WorkspaceMemoryStore,
 } from "@truss-harness/runtime";
+import type { AgentHostSkills } from "./skills.js";
 import {
   type AgentProviderDescriptor,
   type AgentProviderRegistry,
@@ -71,6 +73,8 @@ export interface AgentHostOptions {
   readonly memoryStoreFactory?: (profile: AgentProfile) => WorkspaceMemoryStore;
   readonly planStoreFactory?: (profile: AgentProfile) => WorkspacePlanStore;
   readonly providerRegistry?: AgentProviderRegistry;
+  /** Skill discovery and selection; text-only helper runtimes never receive skills. */
+  readonly skills?: AgentHostSkills;
 }
 
 export interface HostedRuntime {
@@ -231,6 +235,18 @@ export class AgentHost {
       : undefined;
   }
 
+  private skillRunContext(
+    profile: AgentProfile,
+    skills: AgentHostSkills,
+  ): SkillRunContextProvider {
+    return new SkillRunContextProvider({
+      registry: skills.registry,
+      policy: skills.policy,
+      selection: (run) =>
+        skills.selection({ profile, sessionId: run.sessionId }),
+    });
+  }
+
   private async createRuntimeWithProvider(
     profile: AgentProfile,
     provider: ModelProvider,
@@ -327,6 +343,9 @@ export class AgentHost {
             : promptForSession(session.id),
         approval,
         ...(textOnly ? {} : { memory, plans }),
+        ...(!textOnly && this.options.skills
+          ? { runContext: this.skillRunContext(profile, this.options.skills) }
+          : {}),
         savePlanOnCompletion: !textOnly && profile.mode === "plan",
         requireWriteForEditIntent: !textOnly && profile.mode === "edit",
         deferTextUntilToolDecision: !textOnly && profile.mode === "edit",

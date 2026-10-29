@@ -124,16 +124,62 @@ function completeUtf8(buffer: Buffer): Buffer {
   return buffer;
 }
 
+/** Validate a requested resource range, capping the limit at the policy chunk size. */
+export function resourceRange(
+  range: SkillResourceRange,
+  policy: SkillPolicy,
+): { readonly offset: number; readonly limit: number } {
+  const offset = range.offset ?? 0;
+  const limit = Math.min(
+    range.limit ?? policy.maxResourceReadBytes,
+    policy.maxResourceReadBytes,
+  );
+  if (!Number.isSafeInteger(offset) || offset < 0)
+    throw new Error("Resource offset must be a non-negative integer");
+  if (!Number.isSafeInteger(limit) || limit < 4)
+    throw new Error("Resource limit must be an integer of at least 4");
+  return { offset, limit };
+}
+
+export interface Utf8Chunk {
+  readonly content: string;
+  readonly offset: number;
+  readonly totalBytes: number;
+  readonly end: number;
+}
+
+/**
+ * Cut whole characters from `window`, which starts at byte `offset` and holds
+ * up to `limit + 3` bytes, so a start inside a code point can advance.
+ */
+export function utf8Chunk(
+  window: Buffer,
+  offset: number,
+  limit: number,
+  totalBytes: number,
+): Utf8Chunk {
+  let skip = 0;
+  while (
+    skip < Math.min(3, window.length) &&
+    ((window[skip] ?? 0) & 0xc0) === 0x80
+  )
+    skip++;
+  const bytes = window.subarray(skip, Math.min(window.length, skip + limit));
+  const atEnd = offset + skip + bytes.length >= totalBytes;
+  const complete = atEnd ? bytes : completeUtf8(bytes);
+  return {
+    content: complete.toString("utf8"),
+    offset: offset + skip,
+    totalBytes,
+    end: offset + skip + complete.length,
+  };
+}
+
 async function readChunk(
   path: string,
   offset: number,
   limit: number,
-): Promise<{
-  content: string;
-  offset: number;
-  totalBytes: number;
-  end: number;
-}> {
+): Promise<Utf8Chunk> {
   // POSIX FIFO open must not block before the regular-file check.
   const flags =
     process.platform === "win32"
@@ -162,18 +208,7 @@ async function readChunk(
       if (!bytesRead) break;
       read += bytesRead;
     }
-    let skip = 0;
-    while (skip < Math.min(3, read) && ((buffer[skip] ?? 0) & 0xc0) === 0x80)
-      skip++;
-    const window = buffer.subarray(skip, Math.min(read, skip + limit));
-    const atEnd = offset + skip + window.length >= totalBytes;
-    const complete = atEnd ? window : completeUtf8(window);
-    return {
-      content: complete.toString("utf8"),
-      offset: offset + skip,
-      totalBytes,
-      end: offset + skip + complete.length,
-    };
+    return utf8Chunk(buffer.subarray(0, read), offset, limit, totalBytes);
   } finally {
     await file.close();
   }
@@ -255,15 +290,7 @@ export class FileSkillSource implements SkillSource {
       throw new Error(
         `Skill ${result.skill.id} has no resource ${relativePath}`,
       );
-    const offset = range.offset ?? 0;
-    const limit = Math.min(
-      range.limit ?? this.policy.maxResourceReadBytes,
-      this.policy.maxResourceReadBytes,
-    );
-    if (!Number.isSafeInteger(offset) || offset < 0)
-      throw new Error("Resource offset must be a non-negative integer");
-    if (!Number.isSafeInteger(limit) || limit < 4)
-      throw new Error("Resource limit must be an integer of at least 4");
+    const { offset, limit } = resourceRange(range, this.policy);
     const target = join(result.directory, ...relativePath.split("/"));
     // Recheck canonically at read time; listing excluded symlinks already.
     if (!contained(result.directory, await realpath(target)))

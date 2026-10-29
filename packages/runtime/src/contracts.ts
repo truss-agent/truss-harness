@@ -101,6 +101,8 @@ export interface ToolExecutionContext {
 export interface ToolResult {
   readonly content: string;
   readonly isError?: boolean;
+  /** Honored only for run-scoped contributed tools: ends the run awaiting the user. */
+  readonly endTurn?: boolean;
 }
 
 export interface AgentTool extends ToolDefinition {

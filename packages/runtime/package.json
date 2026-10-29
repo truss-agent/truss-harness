@@ -11,7 +11,10 @@
   "files": [
     "dist",
     "README.md",
-    "logo.png"
+    "logo.png",
+    "skills/superpowers/LICENSE",
+    "skills/superpowers/UPSTREAM.json",
+    "skills/superpowers/TRUSS-COMPATIBILITY.md"
   ],
   "scripts": {
     "build": "tsc -b && node --experimental-strip-types ../../scripts/bundle-published-package.mts runtime",

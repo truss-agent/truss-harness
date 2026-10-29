@@ -1,0 +1,14 @@
+{
+  "name": "superpowers",
+  "origin": "https://github.com/obra/superpowers",
+  "revision": "2ce8aa15d05bd57213e6f746f953aafb7ded7a8b",
+  "revisionDate": "2026-10-21T21:00:49Z",
+  "license": {
+    "spdx": "MIT",
+    "copyright": "Copyright (c) 2025 Jesse Vincent",
+    "file": "LICENSE",
+    "sha256": "a37e0e9697144819e1d965176ac4ae5bc3fa02d11e7812036bbcadf6dafe2400"
+  },
+  "sourceArchiveSha256": "a56496f477ec50e29153f0187017f3c4b6c2b79a17f0b7d0c3453ab872d644da",
+  "note": "Unmodified upstream skills/ directory. Truss adaptations live only in TRUSS-COMPATIBILITY.md and are never mixed into upstream files."
+}

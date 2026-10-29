@@ -9,6 +9,7 @@ import {
 } from "@truss-harness/runtime";
 import { AgentHost, type AgentMode, type HostedRuntime } from "./host.js";
 import type { AgentProviderRegistry } from "./providers.js";
+import type { AgentHostSkills } from "./skills.js";
 
 /** Compatibility options for existing single-agent clients. */
 export interface HostedRuntimeOptions {
@@ -29,6 +30,7 @@ export interface HostedRuntimeOptions {
   readonly internetAccess?: boolean;
   readonly mcpServers?: McpServerConfigurations;
   readonly providerRegistry?: AgentProviderRegistry;
+  readonly skills?: AgentHostSkills;
 }
 
 /**
@@ -69,6 +71,7 @@ export async function createHostedRuntime(
     approvalFactory: () => options.approval,
     providerRegistry: options.providerRegistry,
     credentialResolver: { resolve: async () => credential },
+    ...(options.skills ? { skills: options.skills } : {}),
   });
   return host.createRuntime(profile, { textOnly: options.textOnly });
 }
