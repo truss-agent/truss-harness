@@ -22,12 +22,8 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#101522"
       },
-      "permissions": [
-        "CAMERA"
-      ],
-      "blockedPermissions": [
-        "android.permission.RECORD_AUDIO"
-      ]
+      "permissions": ["CAMERA"],
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
     },
     "plugins": [
       [

@@ -9,9 +9,15 @@ const repositoryRoot = resolve(scriptDirectory, "..");
 const releaseDirectory = resolve(repositoryRoot, "release", "runtime-host");
 const artifactFileName = "truss-runtime-host.cjs";
 const artifactPath = resolve(releaseDirectory, artifactFileName);
-const manifestPath = resolve(releaseDirectory, "truss-runtime-host.manifest.json");
+const manifestPath = resolve(
+  releaseDirectory,
+  "truss-runtime-host.manifest.json",
+);
 const runtimePackage = JSON.parse(
-  await readFile(resolve(repositoryRoot, "packages/runtime/package.json"), "utf8"),
+  await readFile(
+    resolve(repositoryRoot, "packages/runtime/package.json"),
+    "utf8",
+  ),
 );
 
 await rm(releaseDirectory, { recursive: true, force: true });
@@ -23,7 +29,9 @@ await build({
   bundle: true,
   format: "cjs",
   platform: "node",
-  target: "node20",
+  target: "node22.15",
+  // ESM dependency bundles use createRequire; the host is a standalone CJS file.
+  define: { "import.meta.url": "__filename" },
 });
 
 const artifact = await readFile(artifactPath);

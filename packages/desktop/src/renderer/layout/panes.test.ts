@@ -33,8 +33,9 @@ describe("renderer pane layout", () => {
     expect(
       resizeSidebarTracks({ git: 200, files: 700 }, 1006, 6, false),
     ).toEqual({ git: 200, files: 800 });
-    expect(
-      resizeSidebarTracks({ git: 38, files: 862 }, 906, 6, true),
-    ).toEqual({ git: 38, files: 862 });
+    expect(resizeSidebarTracks({ git: 38, files: 862 }, 906, 6, true)).toEqual({
+      git: 38,
+      files: 862,
+    });
   });
 });

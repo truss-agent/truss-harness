@@ -1,9 +1,16 @@
 import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execFileSync } from "node:child_process";
+import { createRequire } from "node:module";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const brandSource = await readFile(resolve(root, "packages/branding/src/index.ts"), "utf8");
+const require = createRequire(import.meta.url);
+const biome = require.resolve("@biomejs/biome/bin/biome");
+const brandSource = await readFile(
+  resolve(root, "packages/branding/src/index.ts"),
+  "utf8",
+);
 
 function readBrandValue(key) {
   const match = brandSource.match(new RegExp(`${key}:\\s*["']([^"']+)["']`));
@@ -21,33 +28,66 @@ const brand = Object.freeze({
   tuiCommand: readBrandValue("tuiCommand"),
   assetDirectory: readBrandValue("assetDirectory"),
   vscodeActivityBarIcon: readBrandValue("vscodeActivityBarIcon"),
-  repositoryUrl: readBrandValue("repositoryUrl").replace(/\/$/, "")
+  repositoryUrl: readBrandValue("repositoryUrl").replace(/\/$/, ""),
 });
 
 const npmRepositoryUrl = `git+${brand.repositoryUrl}.git`;
 const packageScope = `@${brand.productSlug}`;
-const extensionNamespace = brand.productSlug.replace(/-([a-z0-9])/g, (_, character) => character.toUpperCase());
-const workspacePackageNames = new Set(["branding", "runtime", "mcp", "provider-openai-compatible", "cli", "tui", "desktop", "docs"]);
-const publishablePackageNames = ["branding", "runtime", "mcp", "provider-openai-compatible", "cli", "tui"];
+const extensionNamespace = brand.productSlug.replace(
+  /-([a-z0-9])/g,
+  (_, character) => character.toUpperCase(),
+);
+const workspacePackageNames = new Set([
+  "branding",
+  "runtime",
+  "mcp",
+  "provider-openai-compatible",
+  "cli",
+  "tui",
+  "desktop",
+  "docs",
+]);
+const publishablePackageNames = [
+  "branding",
+  "runtime",
+  "mcp",
+  "provider-openai-compatible",
+  "cli",
+  "tui",
+];
 
 async function updatePackageJson(relativePath, update) {
   const filePath = resolve(root, relativePath);
   const manifest = JSON.parse(await readFile(filePath, "utf8"));
   update(manifest);
-  await writeFile(filePath, `${JSON.stringify(manifest, null, 2)}\n`);
+  const formatted = execFileSync(
+    process.execPath,
+    [biome, "format", "--stdin-file-path", filePath],
+    {
+      input: JSON.stringify(manifest),
+      cwd: root,
+      encoding: "utf8",
+    },
+  );
+  await writeFile(filePath, formatted);
 }
 
 function applyRepositoryMetadata(manifest, useNpmUrl = true) {
   manifest.repository = {
     type: "git",
-    url: useNpmUrl ? npmRepositoryUrl : brand.repositoryUrl
+    url: useNpmUrl ? npmRepositoryUrl : brand.repositoryUrl,
   };
   manifest.bugs = { url: `${brand.repositoryUrl}/issues` };
   manifest.homepage = `${brand.repositoryUrl}#readme`;
 }
 
 function applyWorkspaceDependencies(manifest) {
-  for (const section of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
+  for (const section of [
+    "dependencies",
+    "devDependencies",
+    "peerDependencies",
+    "optionalDependencies",
+  ]) {
     const dependencies = manifest[section];
     if (!dependencies) continue;
 
@@ -61,7 +101,12 @@ function applyWorkspaceDependencies(manifest) {
 }
 
 function includeLogoInPackage(manifest) {
-  manifest.files = [...new Set([...(manifest.files ?? []).filter((file) => file !== "logo.svg"), "logo.png"])];
+  manifest.files = [
+    ...new Set([
+      ...(manifest.files ?? []).filter((file) => file !== "logo.svg"),
+      "logo.png",
+    ]),
+  ];
 }
 
 function createWindowsIcon(png) {
@@ -95,28 +140,45 @@ function applyExtensionIdentity(manifest) {
   manifest.publisher = brand.productSlug;
   manifest.icon = `media/${brand.productSlug}.png`;
   manifest.main = "./dist/extension.cjs";
-  manifest.scripts.bundle = "node ../../scripts/prepare-vscode-bundle.mjs && esbuild ./src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs && esbuild ../cli/src/bin.ts --bundle --platform=node --format=cjs --outfile=dist/truss-service.cjs";
-  manifest.scripts.package = "node ../../scripts/sync-brand-assets.mjs && npm run build && vsce package --no-dependencies";
-  manifest.activationEvents = manifest.activationEvents.map((event) => replaceExtensionNamespace(event, previousNamespace));
+  manifest.scripts.bundle =
+    "node ../../scripts/prepare-vscode-bundle.mjs && esbuild ./src/extension.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/extension.cjs && esbuild ../cli/src/bin.ts --bundle --platform=node --format=cjs --outfile=dist/truss-service.cjs";
+  manifest.scripts.package =
+    "node ../../scripts/sync-brand-assets.mjs && npm run build && vsce package --no-dependencies";
+  manifest.activationEvents = manifest.activationEvents.map((event) =>
+    replaceExtensionNamespace(event, previousNamespace),
+  );
 
-  const views = manifest.contributes.views[previousNamespace] ?? manifest.contributes.views[extensionNamespace] ?? [];
+  const views =
+    manifest.contributes.views[previousNamespace] ??
+    manifest.contributes.views[extensionNamespace] ??
+    [];
   manifest.contributes.views = {
-    [extensionNamespace]: views.map((view) => ({ ...view, id: replaceExtensionNamespace(view.id, previousNamespace) }))
+    [extensionNamespace]: views.map((view) => ({
+      ...view,
+      id: replaceExtensionNamespace(view.id, previousNamespace),
+    })),
   };
-  manifest.contributes.commands = manifest.contributes.commands.map((command) => ({
-    ...command,
-    command: replaceExtensionNamespace(command.command, previousNamespace),
-    title: command.title.replace(/^[^:]+:/, `${brand.productName}:`)
-  }));
+  manifest.contributes.commands = manifest.contributes.commands.map(
+    (command) => ({
+      ...command,
+      command: replaceExtensionNamespace(command.command, previousNamespace),
+      title: command.title.replace(/^[^:]+:/, `${brand.productName}:`),
+    }),
+  );
 
   manifest.contributes.configuration.title = brand.productName;
   manifest.contributes.configuration.properties = Object.fromEntries(
-    Object.entries(manifest.contributes.configuration.properties).map(([key, setting]) => [
-      replaceExtensionNamespace(key, previousNamespace),
-      setting
-    ])
+    Object.entries(manifest.contributes.configuration.properties).map(
+      ([key, setting]) => [
+        replaceExtensionNamespace(key, previousNamespace),
+        setting,
+      ],
+    ),
   );
-  const commandSetting = manifest.contributes.configuration.properties[`${extensionNamespace}.command`];
+  const commandSetting =
+    manifest.contributes.configuration.properties[
+      `${extensionNamespace}.command`
+    ];
   commandSetting.default = "";
   commandSetting.description = `Optional path to an external ${brand.productName} CLI executable. Leave empty to use the service bundled with the extension.`;
 }
@@ -125,8 +187,10 @@ await Promise.all([
   updatePackageJson("package.json", (manifest) => {
     manifest.name = brand.productSlug;
     manifest.scripts.build = `npm run brand:sync && tsc -b && npm --workspace ${brand.productSlug}-vscode run bundle`;
-    manifest.scripts["docs:dev"] = `npm run brand:sync && npm --workspace ${packageScope}/branding run build && npm --workspace ${packageScope}/docs run dev`;
-    manifest.scripts["docs:build"] = `npm run brand:sync && npm --workspace ${packageScope}/branding run build && npm --workspace ${packageScope}/docs run build`;
+    manifest.scripts["docs:dev"] =
+      `npm run brand:sync && npm --workspace ${packageScope}/branding run build && npm --workspace ${packageScope}/docs run dev`;
+    manifest.scripts["docs:build"] =
+      `npm run brand:sync && npm --workspace ${packageScope}/branding run build && npm --workspace ${packageScope}/docs run build`;
   }),
   updatePackageJson("packages/branding/package.json", (manifest) => {
     manifest.name = `${packageScope}/branding`;
@@ -147,13 +211,16 @@ await Promise.all([
     includeLogoInPackage(manifest);
     applyRepositoryMetadata(manifest);
   }),
-  updatePackageJson("packages/provider-openai-compatible/package.json", (manifest) => {
-    manifest.name = `${packageScope}/provider-openai-compatible`;
-    manifest.description = `OpenAI-compatible streaming model provider for ${brand.productName}.`;
-    applyWorkspaceDependencies(manifest);
-    includeLogoInPackage(manifest);
-    applyRepositoryMetadata(manifest);
-  }),
+  updatePackageJson(
+    "packages/provider-openai-compatible/package.json",
+    (manifest) => {
+      manifest.name = `${packageScope}/provider-openai-compatible`;
+      manifest.description = `OpenAI-compatible streaming model provider for ${brand.productName}.`;
+      applyWorkspaceDependencies(manifest);
+      includeLogoInPackage(manifest);
+      applyRepositoryMetadata(manifest);
+    },
+  ),
   updatePackageJson("packages/cli/package.json", (manifest) => {
     manifest.name = `${packageScope}/cli`;
     manifest.description = `Command-line client and runtime service for ${brand.productName}.`;
@@ -189,33 +256,53 @@ await Promise.all([
     applyWorkspaceDependencies(manifest);
     applyRepositoryMetadata(manifest, false);
     applyExtensionIdentity(manifest);
-  })
+  }),
 ]);
 
 const logoSourcePath = resolve(root, brand.assetDirectory, "logo.svg");
-const logoSvg = await readFile(logoSourcePath, "utf8");
 const logoPng = await readFile(resolve(root, brand.assetDirectory, "logo.png"));
 
 await copyFile(
   resolve(root, brand.assetDirectory, brand.vscodeActivityBarIcon),
-  resolve(root, "packages/vscode/media/truss-harness.svg")
+  resolve(root, "packages/vscode/media/truss-harness.svg"),
 );
 await mkdir(resolve(root, "packages/docs/public"), { recursive: true });
 await mkdir(resolve(root, "packages/desktop/assets"), { recursive: true });
 await mkdir(resolve(root, "packages/mobile/assets"), { recursive: true });
 await Promise.all([
-  copyFile(logoSourcePath, resolve(root, "packages/docs/public/brand-logo.svg")),
+  copyFile(
+    logoSourcePath,
+    resolve(root, "packages/docs/public/brand-logo.svg"),
+  ),
   writeFile(resolve(root, "packages/docs/public/brand-logo.png"), logoPng),
   writeFile(resolve(root, "packages/docs/app/icon.png"), logoPng),
   writeFile(resolve(root, "packages/mobile/assets/icon.png"), logoPng),
   writeFile(resolve(root, "packages/vscode/media/truss-harness.png"), logoPng),
   writeFile(resolve(root, "packages/desktop/assets/brand-logo.png"), logoPng),
-  writeFile(resolve(root, "packages/desktop/assets/brand-logo.ico"), createWindowsIcon(logoPng)),
+  writeFile(
+    resolve(root, "packages/desktop/assets/brand-logo.ico"),
+    createWindowsIcon(logoPng),
+  ),
   ...publishablePackageNames.map((packageName) =>
-    writeFile(resolve(root, `packages/${packageName}/logo.png`), logoPng)
-  )
+    writeFile(resolve(root, `packages/${packageName}/logo.png`), logoPng),
+  ),
 ]);
-await Promise.all(["branding", "runtime", "mcp", "provider-openai-compatible", "cli", "tui", "vscode"].map((packageName) =>
-  copyFile(resolve(root, "LICENSE"), resolve(root, `packages/${packageName}/LICENSE`))
-));
-process.stdout.write("Synchronized brand display metadata, logo assets, and package licenses.\n");
+await Promise.all(
+  [
+    "branding",
+    "runtime",
+    "mcp",
+    "provider-openai-compatible",
+    "cli",
+    "tui",
+    "vscode",
+  ].map((packageName) =>
+    copyFile(
+      resolve(root, "LICENSE"),
+      resolve(root, `packages/${packageName}/LICENSE`),
+    ),
+  ),
+);
+process.stdout.write(
+  "Synchronized brand display metadata, logo assets, and package licenses.\n",
+);

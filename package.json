@@ -31,15 +31,54 @@
     "package:npm": "npm pack --workspace @truss-harness/branding --workspace @truss-harness/runtime --workspace @truss-harness/mcp --workspace @truss-harness/provider-openai-compatible --workspace @truss-harness/agent-host --workspace @truss-harness/gateway --workspace @truss-harness/cli --workspace @truss-harness/tui",
     "package:runtime-host": "node scripts/package-runtime-host.mjs",
     "package:vscode": "npm --workspace truss-harness-vscode run package",
-    "release:check": "npm run build:fresh && npm test && npm run docs:build:isolated && npm run package:npm && npm run package:runtime-host && npm run package:vscode",
+    "release:check": "npm run format:check && npm run lint && npm run build:fresh && npm test && npm run docs:build:isolated && npm run package:npm && npm run package:runtime-host && npm run package:vscode",
     "docs:dev": "npm run brand:sync && npm --workspace @truss-harness/branding run build && npm --workspace @truss-harness/docs run dev",
     "docs:build": "npm run brand:sync && npm --workspace @truss-harness/branding run build && npm --workspace @truss-harness/docs run build",
-    "docs:build:isolated": "npm run brand:sync && npm --workspace @truss-harness/branding run build && node scripts/build-docs-isolated.mjs"
+    "docs:build:isolated": "npm run brand:sync && npm --workspace @truss-harness/branding run build && node scripts/build-docs-isolated.mjs",
+    "audit:dependencies": "node --experimental-strip-types scripts/check-dependencies.mts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",
     "@types/node": "^22.10.1",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.8"
+    "vitest": "4.1.12",
+    "vite": "6.4.5",
+    "esbuild": "0.25.12"
+  },
+  "engines": {
+    "node": ">=22.15.1"
+  },
+  "overrides": {
+    "brace-expansion@^1": "1.1.21",
+    "brace-expansion@^2": "2.1.7",
+    "brace-expansion@^5": "5.0.12",
+    "js-yaml@^3": "3.15.2",
+    "js-yaml@^4": "4.3.2",
+    "undici@^6": "6.29.1",
+    "undici@^7": "7.30.1",
+    "@xmldom/xmldom@^0.8": "0.8.15",
+    "@xmldom/xmldom@^0.9": "0.9.12",
+    "postcss": "8.5.32",
+    "katex": "0.18.2",
+    "next": {
+      "sharp": "0.35.5"
+    },
+    "@azure/identity": {
+      "@azure/msal-node": "7.1.2"
+    },
+    "metro": "0.83.8",
+    "metro-babel-transformer": "0.83.8",
+    "metro-cache": "0.83.8",
+    "metro-cache-key": "0.83.8",
+    "metro-config": "0.83.8",
+    "metro-core": "0.83.8",
+    "metro-file-map": "0.83.8",
+    "metro-minify-terser": "0.83.8",
+    "metro-resolver": "0.83.8",
+    "metro-runtime": "0.83.8",
+    "metro-source-map": "0.83.8",
+    "metro-symbolicate": "0.83.8",
+    "metro-transform-plugins": "0.83.8",
+    "metro-transform-worker": "0.83.8"
   }
 }

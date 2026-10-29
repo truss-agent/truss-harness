@@ -57,9 +57,7 @@ export function SiteFooter() {
           <span className="site-footer-kicker">
             Provider-flexible coding agent
           </span>
-          <p>
-            One runtime for the models, tools, and clients you choose.
-          </p>
+          <p>One runtime for the models, tools, and clients you choose.</p>
         </div>
         <div className="site-footer-links">
           <span className="site-footer-label">Explore</span>

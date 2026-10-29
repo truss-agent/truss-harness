@@ -352,9 +352,7 @@ async function workspaceConfiguration(
   // Untrusted files may style the UI, but cannot choose a model or even a named
   // user profile: that would indirectly select its credentials and authority.
   return {
-    configuration: trusted
-      ? parsed
-      : { tuiTheme: parsed.tuiTheme },
+    configuration: trusted ? parsed : { tuiTheme: parsed.tuiTheme },
     provenance: {
       status: trusted ? "trusted" : "untrusted",
       hash: contentHash(content),

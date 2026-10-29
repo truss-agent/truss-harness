@@ -112,7 +112,10 @@ export function withModelRetries(
               error instanceof ModelRequestError && error.status === 429
                 ? "rate_limited"
                 : "transient",
-            message: error instanceof Error ? error.message : "Provider request failed.",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Provider request failed.",
           });
           await wait(delayMs, request.signal);
         }

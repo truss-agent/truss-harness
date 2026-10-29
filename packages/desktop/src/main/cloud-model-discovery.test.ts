@@ -75,9 +75,11 @@ describe("desktop cloud model discovery", () => {
       "test-key",
       requestFetch,
     );
-    expect(new Headers(requestFetch.mock.calls[1]?.[1]?.headers).get("authorization")).toBe(
-      "Bearer test-key",
-    );
+    expect(
+      new Headers(requestFetch.mock.calls[1]?.[1]?.headers).get(
+        "authorization",
+      ),
+    ).toBe("Bearer test-key");
   });
 
   it.each([
@@ -197,5 +199,4 @@ describe("desktop cloud model discovery", () => {
       ),
     ).rejects.toThrow("Invalid API key [redacted]");
   });
-
 });

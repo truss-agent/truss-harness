@@ -9,26 +9,26 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="runtime-lockup"><div class="app-brand"><img src="./assets/brand-logo.png" alt=""><span>Truss</span><span id="appVersion" class="app-version" aria-label="Desktop version"></span></div><span class="status-dot" id="statusDot"></span><span id="runtimeStatus">No model selected</span></div>
-    <div class="header-editor-actions"><div class="center-tabs" aria-label="Center view"><button class="active" data-center-view="editor">Editor</button><button data-center-view="preview">Preview</button><button data-center-view="agents">Agents</button></div><button id="formatFileButton" title="Format current file with Prettier">Format</button><button id="fileDiffToggle" title="Show the current file's diff">Diff</button></div>
-    <details class="top-menu"><summary aria-label="Application menu">Menu</summary><div class="top-menu-panel"><button id="chooseWorkspace">Open workspace</button><button id="settingsButton">Settings</button><button id="connectTrussGo" title="Connect this workspace to Truss Go on the same Wi-Fi">Connect Truss Go</button></div></details>
+    <div class="runtime-lockup"><div class="app-brand"><img src="./assets/brand-logo.png" alt=""><span>Truss</span><span id="appVersion" class="app-version"></span></div><span class="status-dot" id="statusDot"></span><span id="runtimeStatus">No model selected</span></div>
+    <div class="header-editor-actions"><div class="center-tabs"><button type="button" class="active" data-center-view="editor">Editor</button><button type="button" data-center-view="preview">Preview</button><button type="button" data-center-view="agents">Agents</button></div><button type="button" id="formatFileButton" title="Format current file with Prettier">Format</button><button type="button" id="fileDiffToggle" title="Show the current file's diff">Diff</button></div>
+    <details class="top-menu"><summary aria-label="Application menu">Menu</summary><div class="top-menu-panel"><button type="button" id="chooseWorkspace">Open workspace</button><button type="button" id="settingsButton">Settings</button><button type="button" id="connectTrussGo" title="Connect this workspace to Truss Go on the same Wi-Fi">Connect Truss Go</button></div></details>
   </header>
   <main class="workbench">
     <aside class="sidebar">
-      <section class="side-section files-section"><div class="section-heading"><span>Files</span><button id="refreshFiles" title="Refresh files">Refresh</button></div><div class="file-filter"><input id="fileSearch" type="search" autocomplete="off" spellcheck="false" placeholder="Filter files" aria-label="Filter files"><button id="clearFileSearch" type="button" title="Clear file filter" aria-label="Clear file filter" hidden>Clear</button></div><div id="fileTree" class="file-tree"></div></section>
-      <div id="gitSplitter" class="pane-splitter horizontal" role="separator" aria-label="Resize Git panel"></div>
+      <section class="side-section files-section"><div class="section-heading"><span>Files</span><button type="button" id="refreshFiles" title="Refresh files">Refresh</button></div><div class="file-filter"><input id="fileSearch" type="search" autocomplete="off" spellcheck="false" placeholder="Filter files" aria-label="Filter files"><button id="clearFileSearch" type="button" title="Clear file filter" aria-label="Clear file filter" hidden>Clear</button></div><div id="fileTree" class="file-tree"></div></section>
+      <hr id="gitSplitter" class="pane-splitter horizontal" aria-label="Resize Git panel">
       <section id="gitPanel" class="git-panel">
-        <div class="section-heading"><span>Git</span><div><button id="refreshGit" title="Refresh Git status">Refresh</button><button id="toggleGit" title="Expand or collapse Git" aria-expanded="true">Hide</button></div></div>
+        <div class="section-heading"><span>Git</span><div><button type="button" id="refreshGit" title="Refresh Git status">Refresh</button><button type="button" id="toggleGit" title="Expand or collapse Git" aria-expanded="true">Hide</button></div></div>
         <div id="gitBody" class="git-body">
           <div class="git-summary"><span id="gitBranch">Checking repository...</span><span id="gitCounts"></span></div>
-          <div class="git-actions"><button id="stageAll" title="Stage all changed files">Stage all</button><button id="discardAll" title="Discard all uncommitted file changes">Discard all</button><button id="pullGit" title="Pull from the configured remote">Pull</button><button id="pushGit" title="Push to the configured remote">Push</button></div>
-          <div id="gitGraph" class="git-graph" aria-label="Git commit graph"></div>
+          <div class="git-actions"><button type="button" id="stageAll" title="Stage all changed files">Stage all</button><button type="button" id="discardAll" title="Discard all uncommitted file changes">Discard all</button><button type="button" id="pullGit" title="Pull from the configured remote">Pull</button><button type="button" id="pushGit" title="Push to the configured remote">Push</button></div>
+          <div id="gitGraph" class="git-graph"></div>
           <div id="gitFiles" class="git-files"></div>
           <form id="commitForm" class="commit-form"><input id="commitMessage" autocomplete="off" placeholder="Commit message"><button id="generateCommitMessage" type="button" title="Generate a commit message from your changes">Generate</button><button id="commitButton" class="primary" type="submit" title="Commit staged changes">Commit</button></form>
         </div>
       </section>
     </aside>
-    <div id="sidebarSplitter" class="pane-splitter vertical" role="separator" aria-label="Resize sidebar"></div>
+    <hr id="sidebarSplitter" class="pane-splitter vertical" aria-label="Resize sidebar">
     <section class="editor-area">
       <div class="editor-toolbar"><div id="editorTabs" class="editor-tabs" role="tablist" aria-label="Open files"><span id="editorTitle" class="editor-empty-title">Workspace</span></div></div>
       <div id="centerSurface" class="center-surface">
@@ -43,18 +43,18 @@
         </section>
         <section id="agentsPanel" class="agents-panel" hidden aria-label="Agents control center"></section>
       </div>
-      <div id="terminalSplitter" class="pane-splitter horizontal" role="separator" aria-label="Resize terminal"></div>
-      <section class="terminal"><div class="terminal-heading">Terminal</div><pre id="terminalOutput" class="terminal-output">Terminal ready.</pre><form id="terminalForm" class="terminal-form"><div id="terminalPrompt" class="terminal-prompt" aria-label="Terminal context"></div><input id="terminalInput" autocomplete="off" placeholder="Run a command in the workspace"><button type="submit">Run</button></form></section>
+      <hr id="terminalSplitter" class="pane-splitter horizontal" aria-label="Resize terminal">
+      <section class="terminal"><div class="terminal-heading">Terminal</div><pre id="terminalOutput" class="terminal-output">Terminal ready.</pre><form id="terminalForm" class="terminal-form"><div id="terminalPrompt" class="terminal-prompt"></div><input id="terminalInput" autocomplete="off" placeholder="Run a command in the workspace"><button type="submit">Run</button></form></section>
       <button id="showChatPanel" class="show-chat-panel" type="button" title="Show chat panel" aria-label="Show chat panel" hidden>Chat</button>
     </section>
-    <div id="chatSplitter" class="pane-splitter vertical" role="separator" aria-label="Resize agent panel"></div>
+    <hr id="chatSplitter" class="pane-splitter vertical" aria-label="Resize agent panel">
     <section class="chat-area">
       <div class="chat-heading"><div><strong>Agent</strong></div><div class="chat-heading-actions"><button id="openConversationDialog" type="button" title="Open chats">Chats</button><button id="toggleChat" type="button" aria-expanded="true" aria-controls="chatContent" title="Hide chat panel">Hide</button><button id="toggleChatDock" type="button" title="Move chat panel into the editor area" aria-pressed="false">Full size</button></div></div>
       <div id="chatContent" class="chat-content">
         <section id="planPanel" class="plan-panel" hidden></section>
         <div id="chatMessages" class="chat-messages"></div>
         <form id="chatForm" class="composer"><div id="slashMenu" class="slash-menu" role="listbox" hidden></div><div id="attachmentList" class="attachment-list" hidden></div><textarea id="chatInput" rows="3" placeholder="Ask about this workspace. Type / to attach a file."></textarea><input id="attachmentInput" type="file" multiple hidden><div class="composer-actions"><button id="addAttachment" type="button" title="Attach images or text files">Attach</button><button id="sendChat" class="primary" type="submit">Send</button><button id="cancelChat" type="button" hidden>Cancel</button></div></form>
-        <div class="agent-controls"><div class="runtime-metrics"><span id="contextMeter">Context 0 / 8k est.</span><span id="modelMeter">Pricing unavailable</span><span id="usageMeter">Usage --</span><span id="rateMeter" title="Estimated from aggregate streamed response text. It excludes time spent waiting on tools.">Output -- tok/s</span></div><div class="agent-control-row"><div class="mode-control" aria-label="Agent mode"><button data-mode="chat">Chat</button><button data-mode="plan">Plan</button><button data-mode="edit">Agent</button></div><label class="model-control"><span>Model</span><select id="quickModel"></select></label></div></div>
+        <div class="agent-controls"><div class="runtime-metrics"><span id="contextMeter">Context 0 / 8k est.</span><span id="modelMeter">Pricing unavailable</span><span id="usageMeter">Usage --</span><span id="rateMeter" title="Estimated from aggregate streamed response text. It excludes time spent waiting on tools.">Output -- tok/s</span></div><div class="agent-control-row"><div class="mode-control"><button type="button" data-mode="chat">Chat</button><button type="button" data-mode="plan">Plan</button><button type="button" data-mode="edit">Agent</button></div><label class="model-control"><span>Model</span><select id="quickModel"></select></label></div></div>
       </div>
     </section>
   </main>
@@ -101,7 +101,7 @@
         <label>Tool permissions<select id="permissionSelect"><option value="ask">Ask every time</option><option value="auto-read">Auto-allow read-only</option><option value="auto-all">Auto-allow all tools</option></select></label>
         <label class="checkbox-setting settings-wide"><input id="internetAccessInput" type="checkbox"><span>Allow public internet research</span></label>
         <label class="checkbox-setting settings-wide"><input id="masterPromptEnabled" type="checkbox"><span>Apply a master prompt to every agent run</span></label>
-        <label class="mcp-setting settings-wide">Master prompt template<textarea id="masterPromptTemplate" rows="6" spellcheck="false" placeholder="&lt;project&gt;&#10;Work in {{agent.mode}} mode on {{workspace.name}}.&#10;&lt;/project&gt;"></textarea><span>XML stays literal. Available: {{workspace.name}}, {{workspace.root}}, {{repository.branch}}, {{repository.changedFiles}}, {{agent.mode}}, {{session.id}}, {{date.iso}}.</span></label>
+        <label class="mcp-setting settings-wide">Master prompt template<textarea id="masterPromptTemplate" rows="6" spellcheck="false" placeholder="&lt;project&gt;&#10;Work in &#123;&#123;agent.mode&#125;&#125; mode on &#123;&#123;workspace.name&#125;&#125;.&#10;&lt;/project&gt;"></textarea><span>XML stays literal. Available: &#123;&#123;workspace.name&#125;&#125;, &#123;&#123;workspace.root&#125;&#125;, &#123;&#123;repository.branch&#125;&#125;, &#123;&#123;repository.changedFiles&#125;&#125;, &#123;&#123;agent.mode&#125;&#125;, &#123;&#123;session.id&#125;&#125;, &#123;&#123;date.iso&#125;&#125;.</span></label>
         <label class="checkbox-setting settings-wide"><input id="autocompleteEnabled" type="checkbox"><span>Enable inline Tab autocomplete</span></label>
         <label class="settings-wide">Autocomplete model <input id="autocompleteModel" list="modelOptions" placeholder="Use chat model"></label>
         <label class="checkbox-setting settings-wide"><input id="formatOnSave" type="checkbox"><span>Format supported files when saving</span></label>
@@ -118,7 +118,7 @@
             <label class="checkbox-setting"><input id="mcpReadOnlyInput" type="checkbox"><span>Read-only server</span></label>
             <div class="settings-panel-actions"><button id="cancelMcpServer" type="button">Cancel</button><button id="saveMcpServer" class="primary" type="button">Save server</button></div>
           </section>
-          <details class="mcp-advanced"><summary>Advanced JSON import/export</summary><p>Reference secrets with ${env:VARIABLE_NAME}; never paste API keys directly into configuration.</p><label class="mcp-setting">MCP servers (JSON)<textarea id="mcpServersInput" rows="8" spellcheck="false" placeholder='{"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]}}'></textarea></label></details>
+          <details class="mcp-advanced"><summary>Advanced JSON import/export</summary><p>Reference secrets with ${env:VARIABLE_NAME}; never paste API keys directly into configuration.</p><label class="mcp-setting">MCP servers (JSON)<textarea id="mcpServersInput" rows="8" spellcheck="false" placeholder='{"filesystem":{"command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","."]&#125;&#125;'></textarea></label></details>
           <div id="mcpStatus" class="mcp-status">No MCP servers configured.</div>
         </section>
         <section class="update-settings" aria-label="Desktop updates">
@@ -143,7 +143,7 @@
       <div class="dialog-actions"><button id="dismissUpdateAvailable" value="cancel" type="submit">Later</button><button id="openUpdateSettings" class="primary" type="button">View update</button></div>
     </form>
   </dialog>
-  <dialog id="trussGoDialog"><div class="dialog-heading"><div><strong>Connect Truss Go</strong><span>Scan this QR in the Truss Go phone app while on the same Wi-Fi.</span></div><button id="closeTrussGo" value="cancel" aria-label="Close">x</button></div><div class="qr-pairing"><img id="trussGoQr" alt="Truss Go pairing QR code"><strong id="trussGoWorkspace"></strong><button id="disconnectTrussGo" type="button">Disconnect</button></div></dialog>
+  <dialog id="trussGoDialog"><div class="dialog-heading"><div><strong>Connect Truss Go</strong><span>Scan this QR in the Truss Go phone app while on the same Wi-Fi.</span></div><button type="button" id="closeTrussGo" value="cancel" aria-label="Close">x</button></div><div class="qr-pairing"><img id="trussGoQr" alt="Truss Go pairing QR code"><strong id="trussGoWorkspace"></strong><button id="disconnectTrussGo" type="button">Disconnect</button></div></dialog>
   <dialog id="fileEntryDialog">
     <form id="fileEntryForm" method="dialog" class="file-entry-form">
       <div class="dialog-heading"><div><strong id="fileEntryTitle">New file</strong><span id="fileEntryDescription">Enter a relative path inside the workspace.</span></div><button id="closeFileEntry" type="button" aria-label="Close">x</button></div>

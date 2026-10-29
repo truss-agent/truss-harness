@@ -19,7 +19,11 @@ export * from "./remote.js";
 export * from "./version.js";
 export * from "./master-prompt.js";
 
-export { CanonicalWorkspaceFilesystemPolicy, resolveWorkspacePath, type WorkspaceFilesystemPolicy } from "./workspace.js";
+export {
+  CanonicalWorkspaceFilesystemPolicy,
+  resolveWorkspacePath,
+  type WorkspaceFilesystemPolicy,
+} from "./workspace.js";
 
 export * from "./web-transport.js";
 export * from "./process-runner.js";

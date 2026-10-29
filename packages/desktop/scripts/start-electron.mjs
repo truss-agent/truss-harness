@@ -10,7 +10,7 @@ delete environment.ELECTRON_RUN_AS_NODE;
 const child = spawn(electronBinary, ["."], {
   cwd: process.cwd(),
   env: environment,
-  stdio: "inherit"
+  stdio: "inherit",
 });
 
 child.once("exit", (code) => process.exit(code ?? 0));

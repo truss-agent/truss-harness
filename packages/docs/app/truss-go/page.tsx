@@ -8,8 +8,9 @@ import { TrussGoDownloadClient } from "./truss-go-download-client";
 
 export const metadata = createPageMetadata({
   title: "Truss Go",
-  description: "Use Truss Go to pair your Android phone with Truss Desktop or VS Code on the same Wi-Fi network.",
-  path: "/truss-go"
+  description:
+    "Use Truss Go to pair your Android phone with Truss Desktop or VS Code on the same Wi-Fi network.",
+  path: "/truss-go",
 });
 
 export const revalidate = 3600;
@@ -26,55 +27,177 @@ export default async function TrussGoPage() {
           <div>
             <p className="site-eyebrow">Truss Go for Android</p>
             <h1>Your Truss workspace, in your pocket.</h1>
-            <p>Start a trusted pairing from Truss Desktop or VS Code, scan its QR code, and keep working with the agent from your Android phone on the same Wi-Fi network.</p>
+            <p>
+              Start a trusted pairing from Truss Desktop or VS Code, scan its QR
+              code, and keep working with the agent from your Android phone on
+              the same Wi-Fi network.
+            </p>
             <div className="site-actions">
-              <TrussGoDownloadClient releases={releases} releasesUrl={releasesUrl} />
-              <Link className="site-button site-button-secondary" href="/docs/clients/truss-go">Read setup guide</Link>
+              <TrussGoDownloadClient
+                releases={releases}
+                releasesUrl={releasesUrl}
+              />
+              <Link
+                className="site-button site-button-secondary"
+                href="/docs/clients/truss-go"
+              >
+                Read setup guide
+              </Link>
             </div>
           </div>
-          <div className="truss-go-pairing" aria-label="Desktop to phone pairing flow">
-            <div className="truss-go-desktop"><span>TRUSS</span><strong>Connect Truss Go</strong><i>QR pairing ready</i></div>
-            <div className="truss-go-connector" aria-hidden="true">→</div>
-            <div className="truss-go-phone"><span>TRUSS GO</span><strong>Connected</strong><i>Workspace chat</i></div>
+          <div className="truss-go-pairing">
+            <div className="truss-go-desktop">
+              <span>TRUSS</span>
+              <strong>Connect Truss Go</strong>
+              <i>QR pairing ready</i>
+            </div>
+            <div className="truss-go-connector" aria-hidden="true">
+              →
+            </div>
+            <div className="truss-go-phone">
+              <span>TRUSS GO</span>
+              <strong>Connected</strong>
+              <i>Workspace chat</i>
+            </div>
           </div>
         </section>
 
-        <section className="truss-go-showcase" aria-labelledby="truss-go-showcase-heading">
+        <section
+          className="truss-go-showcase"
+          aria-labelledby="truss-go-showcase-heading"
+        >
           <header>
             <p className="site-eyebrow">Truss Go in action</p>
-            <h2 id="truss-go-showcase-heading">Your trusted workspace, designed for your phone.</h2>
-            <p>Pair with the computer running Truss, then choose exactly how the remote agent may use workspace tools.</p>
+            <h2 id="truss-go-showcase-heading">
+              Your trusted workspace, designed for your phone.
+            </h2>
+            <p>
+              Pair with the computer running Truss, then choose exactly how the
+              remote agent may use workspace tools.
+            </p>
           </header>
           <div className="truss-go-screenshots">
             <figure>
-              <Image src="/screenshots/truss-go-home.png" alt="Truss Go home screen with QR pairing and manual gateway connection controls" width={1080} height={2400} sizes="(max-width: 780px) 78vw, 340px" />
-              <figcaption><strong>Pair with your workspace</strong><span>Scan the trusted QR from Truss Desktop or VS Code, with manual connection controls available for development.</span></figcaption>
+              <Image
+                src="/screenshots/truss-go-home.png"
+                alt="Truss Go home screen with QR pairing and manual gateway connection controls"
+                width={1080}
+                height={2400}
+                sizes="(max-width: 780px) 78vw, 340px"
+              />
+              <figcaption>
+                <strong>Pair with your workspace</strong>
+                <span>
+                  Scan the trusted QR from Truss Desktop or VS Code, with manual
+                  connection controls available for development.
+                </span>
+              </figcaption>
             </figure>
             <figure>
-              <Image src="/screenshots/truss-go-settings.png" alt="Truss Go settings screen showing agent tool approval options and connection details" width={1080} height={2400} sizes="(max-width: 780px) 78vw, 340px" />
-              <figcaption><strong>Keep approvals in your hands</strong><span>Review every tool, automatically allow reads, or enable all registered tools for the current trusted gateway.</span></figcaption>
+              <Image
+                src="/screenshots/truss-go-settings.png"
+                alt="Truss Go settings screen showing agent tool approval options and connection details"
+                width={1080}
+                height={2400}
+                sizes="(max-width: 780px) 78vw, 340px"
+              />
+              <figcaption>
+                <strong>Keep approvals in your hands</strong>
+                <span>
+                  Review every tool, automatically allow reads, or enable all
+                  registered tools for the current trusted gateway.
+                </span>
+              </figcaption>
             </figure>
           </div>
         </section>
 
         <section className="truss-go-steps">
-          <header><p className="site-eyebrow">How it works</p><h2>Three steps. No IP address or token to type.</h2></header>
+          <header>
+            <p className="site-eyebrow">How it works</p>
+            <h2>Three steps. No IP address or token to type.</h2>
+          </header>
           <ol>
-            <li><span>01</span><h3>Open your workspace</h3><p>Open the workspace you already trust in Truss Desktop or the Truss VS Code extension.</p></li>
-            <li><span>02</span><h3>Choose Connect Truss Go</h3><p>Truss opens a temporary same-Wi-Fi connection and displays a pairing QR code.</p></li>
-            <li><span>03</span><h3>Scan and work</h3><p>Scan with Truss Go. Use Chat, Plan, or Edit and choose the approval policy on your phone.</p></li>
+            <li>
+              <span>01</span>
+              <h3>Open your workspace</h3>
+              <p>
+                Open the workspace you already trust in Truss Desktop or the
+                Truss VS Code extension.
+              </p>
+            </li>
+            <li>
+              <span>02</span>
+              <h3>Choose Connect Truss Go</h3>
+              <p>
+                Truss opens a temporary same-Wi-Fi connection and displays a
+                pairing QR code.
+              </p>
+            </li>
+            <li>
+              <span>03</span>
+              <h3>Scan and work</h3>
+              <p>
+                Scan with Truss Go. Use Chat, Plan, or Edit and choose the
+                approval policy on your phone.
+              </p>
+            </li>
           </ol>
         </section>
 
         <section className="truss-go-distribution">
-          <div><p className="site-eyebrow">Download options</p><h2>Choose the distribution that fits you.</h2><p>Google Play is the normal installation path. GitHub APKs are useful for testers and early access before the Play listing is available.</p></div>
+          <div>
+            <p className="site-eyebrow">Download options</p>
+            <h2>Choose the distribution that fits you.</h2>
+            <p>
+              Google Play is the normal installation path. GitHub APKs are
+              useful for testers and early access before the Play listing is
+              available.
+            </p>
+          </div>
           <div className="truss-go-distribution-cards">
-            <article><span>Google Play</span><h3>Public release</h3><p>Coming soon. This will be the recommended option for everyday Android users.</p><span className="site-button download-button-unavailable" aria-disabled="true">Coming soon</span></article>
-            <article><span>GitHub Releases</span><h3>Direct APK</h3><p>Install the signed APK manually. Android will ask you to allow installs from the browser or file manager you use.</p><TrussGoDownloadClient releases={releases} releasesUrl={releasesUrl} /></article>
+            <article>
+              <span>Google Play</span>
+              <h3>Public release</h3>
+              <p>
+                Coming soon. This will be the recommended option for everyday
+                Android users.
+              </p>
+              <span
+                className="site-button download-button-unavailable"
+                aria-disabled="true"
+              >
+                Coming soon
+              </span>
+            </article>
+            <article>
+              <span>GitHub Releases</span>
+              <h3>Direct APK</h3>
+              <p>
+                Install the signed APK manually. Android will ask you to allow
+                installs from the browser or file manager you use.
+              </p>
+              <TrussGoDownloadClient
+                releases={releases}
+                releasesUrl={releasesUrl}
+              />
+            </article>
           </div>
         </section>
 
-        <section className="truss-go-safety"><p className="site-eyebrow">Designed for your network</p><h2>Your phone connects to the computer where Truss is already open.</h2><p>The connection is started explicitly with <strong>Connect Truss Go</strong>, uses the computer&apos;s automatically detected LAN address, and stays active until you disconnect or close the host client. The phone does not receive your model-provider credentials or independent access to the workspace.</p></section>
+        <section className="truss-go-safety">
+          <p className="site-eyebrow">Designed for your network</p>
+          <h2>
+            Your phone connects to the computer where Truss is already open.
+          </h2>
+          <p>
+            The connection is started explicitly with{" "}
+            <strong>Connect Truss Go</strong>, uses the computer&apos;s
+            automatically detected LAN address, and stays active until you
+            disconnect or close the host client. The phone does not receive your
+            model-provider credentials or independent access to the workspace.
+          </p>
+        </section>
       </main>
       <SiteFooter />
     </div>

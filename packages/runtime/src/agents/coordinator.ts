@@ -219,7 +219,10 @@ export class AgentCoordinator {
     run.controller?.abort();
     run.created?.approval?.denyAll();
     if (run.state === "queued") {
-      await this.finish(run, "cancelled", { code: "aborted", message: "Stopped by user." });
+      await this.finish(run, "cancelled", {
+        code: "aborted",
+        message: "Stopped by user.",
+      });
     } else {
       // A stop request is observable immediately; ownership remains until launch drains.
       run.state = "running";
@@ -235,7 +238,7 @@ export class AgentCoordinator {
       (run) => !isTerminalAgentRunState(run.state),
     );
     await Promise.all(active.map((run) => this.stop(run.id)));
-    await Promise.all(active.map(run => run.execution));
+    await Promise.all(active.map((run) => run.execution));
     return this.listRuns();
   }
 
@@ -257,7 +260,7 @@ export class AgentCoordinator {
 
   async dispose(): Promise<void> {
     await this.stopAll();
-    await Promise.all([...this.runs.values()].map(run => run.execution));
+    await Promise.all([...this.runs.values()].map((run) => run.execution));
   }
 
   private pump(): Promise<void> {
@@ -269,7 +272,8 @@ export class AgentCoordinator {
   private startReadyRuns(): void {
     for (const run of this.runs.values()) {
       if (
-        run.state !== "queued" || run.cancellationRequested ||
+        run.state !== "queued" ||
+        run.cancellationRequested ||
         this.runningCount() >= this.maxConcurrentRuns
       ) {
         continue;
@@ -290,7 +294,8 @@ export class AgentCoordinator {
   private async launch(run: ActiveRun): Promise<void> {
     let error: AgentRunError | undefined;
     try {
-      if (run.ownsWriteLease) await this.publishLifecycle(run, "write_lease_acquired");
+      if (run.ownsWriteLease)
+        await this.publishLifecycle(run, "write_lease_acquired");
       if (run.cancellationRequested) return;
       await this.publishRun(run);
       if (run.cancellationRequested) return;
@@ -301,20 +306,40 @@ export class AgentCoordinator {
       const created = await this.options.runtimeFactory.create(run.profile);
       run.created = created;
       if (run.cancellationRequested) return;
-      run.unsubscribe = created.events.subscribe((event) => this.handleRuntimeEvent(run, event));
+      run.unsubscribe = created.events.subscribe((event) =>
+        this.handleRuntimeEvent(run, event),
+      );
       const session = await created.runtime.createSession();
       if (run.cancellationRequested) return;
       run.sessionId = session.id;
       await this.publishRun(run);
       if (run.cancellationRequested) return;
-      await created.runtime.run(session.id, run.prompt, run.controller?.signal, [], run.attachments);
+      await created.runtime.run(
+        session.id,
+        run.prompt,
+        run.controller?.signal,
+        [],
+        run.attachments,
+      );
       error = run.runtimeError;
     } catch (cause) {
-      error = { code: "runtime_error", message: cause instanceof Error ? cause.message : String(cause) };
+      error = {
+        code: "runtime_error",
+        message: cause instanceof Error ? cause.message : String(cause),
+      };
     } finally {
       // Runtime event handlers only record outcomes. Awaited handlers must never await their own run.
-      await this.finish(run, run.cancellationRequested ? "cancelled" : error ? "failed" : "completed",
-        run.cancellationRequested ? { code: "aborted", message: "Stopped by user." } : error);
+      await this.finish(
+        run,
+        run.cancellationRequested
+          ? "cancelled"
+          : error
+            ? "failed"
+            : "completed",
+        run.cancellationRequested
+          ? { code: "aborted", message: "Stopped by user." }
+          : error,
+      );
     }
   }
 
@@ -352,7 +377,10 @@ export class AgentCoordinator {
       return;
     }
     if (event.type === "run_failed") {
-      run.runtimeError = { code: "runtime_error", message: event.error.message };
+      run.runtimeError = {
+        code: "runtime_error",
+        message: event.error.message,
+      };
       return;
     }
     await this.publishRun(run);
@@ -383,7 +411,9 @@ export class AgentCoordinator {
     // Stop remains valid during disposal; choose the outcome only after cleanup settles.
     const finalState = run.cancellationRequested ? "cancelled" : state;
     run.state = finalState;
-    run.error = run.cancellationRequested ? { code: "aborted", message: "Stopped by user." } : error;
+    run.error = run.cancellationRequested
+      ? { code: "aborted", message: "Stopped by user." }
+      : error;
     run.completedAt = now();
     await this.publishRun(run);
     await this.publishLifecycle(run, finalState);

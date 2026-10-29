@@ -385,7 +385,7 @@ async function runSetup(): Promise<void> {
       setupKind.toLowerCase() === "byok"
     ) {
       process.stdout.write(brand.productName + " cloud BYOK setup\n\n");
-      cloudProviderDefinitions.forEach((provider, index) =>
+      cloudProviderDefinitions.forEach((provider, index) => {
         process.stdout.write(
           String(index + 1) +
             ". " +
@@ -393,8 +393,8 @@ async function runSetup(): Promise<void> {
             " (" +
             provider.id +
             ")\n",
-        ),
-      );
+        );
+      });
       const provider =
         cloudProviderDefinitions[
           selectedIndex(
@@ -440,7 +440,7 @@ async function runSetup(): Promise<void> {
     process.stdout.write(
       "Choose a local model server. Values in brackets are defaults.\n\n",
     );
-    endpoints.forEach((endpoint, index) =>
+    endpoints.forEach((endpoint, index) => {
       process.stdout.write(
         String(index + 1) +
           ". " +
@@ -448,8 +448,8 @@ async function runSetup(): Promise<void> {
           " (" +
           endpoint.baseUrl +
           ")\n",
-      ),
-    );
+      );
+    });
     process.stdout.write(String(endpoints.length + 1) + ". Custom endpoint\n");
     const endpointChoice = selectedIndex(
       await ask("Server", "1"),
@@ -480,9 +480,9 @@ async function runSetup(): Promise<void> {
     }
 
     const models = await listLocalModels(endpoint).catch(() => []);
-    models.forEach((model, index) =>
-      process.stdout.write(String(index + 1) + ". " + model.name + "\n"),
-    );
+    models.forEach((model, index) => {
+      process.stdout.write(String(index + 1) + ". " + model.name + "\n");
+    });
     const model = models.length
       ? models[selectedIndex(await ask("Model", "1"), models.length, 0)].name
       : await ask("Model ID", "local-model");

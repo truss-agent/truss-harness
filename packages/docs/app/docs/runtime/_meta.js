@@ -4,5 +4,5 @@ export default {
   mcp: "MCP Servers",
   plans: "Implementation Plans",
   "workspace-commands": "Workspace Commands",
-  "workspace-memory": "Workspace Memory"
+  "workspace-memory": "Workspace Memory",
 };

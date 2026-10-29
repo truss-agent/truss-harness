@@ -10,5 +10,7 @@ await mkdir(output, { recursive: true });
 await Promise.all([
   cp(resolve(source, "index.html"), resolve(output, "index.html")),
   cp(resolve(source, "styles.css"), resolve(output, "styles.css")),
-  cp(resolve(packageRoot, "assets"), resolve(output, "assets"), { recursive: true })
+  cp(resolve(packageRoot, "assets"), resolve(output, "assets"), {
+    recursive: true,
+  }),
 ]);

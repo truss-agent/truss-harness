@@ -38,7 +38,8 @@ for run policy, safety behavior, and CLI commands.
 
 ![Truss CLI running in a terminal](packages/docs/public/screenshots/cli.png)
 
-Use the CLI for direct tasks, scripts, and automations.
+Use the CLI for direct tasks, scripts, and automations. The CLI, TUI, and
+Neovim service require Node.js 22.15.1 or newer; Node 24 LTS is recommended.
 
 ~~~sh
 npm install --global @truss-harness/cli
@@ -61,6 +62,8 @@ truss-tui
 ### VS Code
 
 ![Truss running inside VS Code](packages/docs/public/screenshots/vscode.png)
+
+VS Code 1.101 or newer is required for its bundled Node runtime.
 
 Download the [Truss VS Code extension](https://truss-agent.com/download), install the signed `.vsix`, and open the Truss Activity Bar view. Then select a detected local server or enter your endpoint and model. The extension supports streaming chat, focused file context, inline completions, agent modes, Git-aware actions, and tool approvals.
 

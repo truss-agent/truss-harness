@@ -6,7 +6,7 @@ Truss is a local-first coding-agent runtime. The CLI runs one-shot agent tasks a
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 22.15.1 or newer (Node 24 LTS recommended)
 - Ollama, LM Studio, llama.cpp, another compatible local server, or a supported cloud-provider API key
 - A model with native tool calling for Agent and Plan workflows
 

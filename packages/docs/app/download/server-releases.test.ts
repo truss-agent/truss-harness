@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -12,10 +13,9 @@ describe("server release cache integration", () => {
   it("serves stale good releases when an expired catalog cannot refresh", async () => {
     vi.stubGlobal("AsyncLocalStorage", AsyncLocalStorage);
     const { workAsyncStorage } = await import(
-      new URL(
-        "../../node_modules/next/dist/server/app-render/work-async-storage.external.js",
-        import.meta.url,
-      ).href
+      createRequire(import.meta.url).resolve(
+        "next/dist/server/app-render/work-async-storage.external.js",
+      )
     );
     const { getReleases } = await import("./server-releases");
     const good = [
@@ -34,7 +34,7 @@ describe("server release cache integration", () => {
     let offline = false;
     const cache = {
       isOnDemandRevalidate: false,
-      generateCacheKey: async (key: string) => key,
+      generateSimpleCacheKey: async (key: string) => key,
       get: async () => (stored ? { value: stored, isStale: stale } : null),
       set: async (_key: string, value: typeof stored) => {
         stored = value;

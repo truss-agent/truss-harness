@@ -27,9 +27,17 @@ export type AgentToolExecution = WorkspaceToolRecord & {
 export class AgentToolExecutor {
   constructor(private readonly options: AgentToolExecutorOptions) {}
 
-  private async approve(call: ToolCall, session: Session, signal?: AbortSignal): Promise<boolean> {
+  private async approve(
+    call: ToolCall,
+    session: Session,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
     signal?.throwIfAborted();
-    const approved = await (this.options.approval ?? allowAllTools).approve(call, session, { signal });
+    const approved = await (this.options.approval ?? allowAllTools).approve(
+      call,
+      session,
+      { signal },
+    );
     signal?.throwIfAborted();
     return approved;
   }
@@ -61,9 +69,7 @@ export class AgentToolExecutor {
         content: `Tool call was not executed because its arguments could not be parsed: ${call.parseError}\n\nRECOVERY: ${toolFailureRecovery(tool)}`,
         isError: true,
       };
-    } else if (
-      !(await this.approve(call, session, signal))
-    ) {
+    } else if (!(await this.approve(call, session, signal))) {
       result = { content: `Tool call denied: ${tool}`, isError: true };
     } else {
       try {
@@ -84,7 +90,13 @@ export class AgentToolExecutor {
       }
     }
     signal?.throwIfAborted();
-    result = { ...result, content: truncateUtf8(result.content, this.options.maxOutputBytes ?? defaultToolOutputBytes) };
+    result = {
+      ...result,
+      content: truncateUtf8(
+        result.content,
+        this.options.maxOutputBytes ?? defaultToolOutputBytes,
+      ),
+    };
     session.messages.push({
       role: "tool",
       name: tool,

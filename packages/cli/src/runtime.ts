@@ -43,9 +43,7 @@ export async function testClientProviderConnection(
     providerId: options.provider,
     endpointUrl: options.baseUrl,
     modelId: options.model,
-    ...(credential
-      ? { credentialRef: options.credentialRef ?? "direct" }
-      : {}),
+    ...(credential ? { credentialRef: options.credentialRef ?? "direct" } : {}),
   });
 }
 

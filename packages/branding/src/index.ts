@@ -12,7 +12,7 @@ export const brand = Object.freeze({
   assetDirectory: "assets/brand",
   vscodeActivityBarIcon: "logo_vs.svg",
   repositoryUrl: "https://github.com/truss-agent/truss-harness",
-  repositoryBranch: "master"
+  repositoryBranch: "master",
 });
 
 export type Brand = typeof brand;

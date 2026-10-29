@@ -1,3 +1,4 @@
+import { build } from "esbuild";
 import { once } from "node:events";
 import { execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
@@ -27,6 +28,22 @@ async function workspace() {
   const root = await mkdtemp(join(tmpdir(), "truss-audit-test-"));
   roots.push(root);
   return root;
+}
+async function memoryWorker(root: string): Promise<string> {
+  const outfile = join(root, "memory-worker.mjs");
+  await build({
+    entryPoints: [
+      fileURLToPath(
+        new URL("../test-fixtures/memory-worker.ts", import.meta.url),
+      ),
+    ],
+    outfile,
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    target: "node22.15",
+  });
+  return outfile;
 }
 afterEach(async () => {
   await Promise.all(
@@ -99,14 +116,10 @@ describe("audit runtime regressions", () => {
 
   it("recovers a storage lock whose owning process was killed", async () => {
     const root = await workspace();
-    const worker = fileURLToPath(
-      new URL("../test-fixtures/memory-worker.ts", import.meta.url),
-    );
-    const child = spawn(
-      process.execPath,
-      ["node_modules/vite-node/vite-node.mjs", worker, root, "hold"],
-      { stdio: ["ignore", "pipe", "pipe"] },
-    );
+    const worker = await memoryWorker(root);
+    const child = spawn(process.execPath, [worker, root, "hold"], {
+      stdio: ["ignore", "pipe", "pipe"],
+    });
     try {
       await new Promise<void>((resolve, reject) => {
         child.stdout.on("data", (chunk) => {
@@ -131,17 +144,10 @@ describe("audit runtime regressions", () => {
   it("preserves concurrent memory updates from separate processes", async () => {
     const root = await workspace();
     const execute = promisify(execFile);
-    const worker = fileURLToPath(
-      new URL("../test-fixtures/memory-worker.ts", import.meta.url),
-    );
+    const worker = await memoryWorker(root);
     await Promise.all(
       Array.from({ length: 4 }, (_, i) =>
-        execute(process.execPath, [
-          "node_modules/vite-node/vite-node.mjs",
-          worker,
-          root,
-          String(i),
-        ]),
+        execute(process.execPath, [worker, root, String(i)]),
       ),
     );
     const memory = await new FileWorkspaceMemoryStore(root).load();

@@ -3311,7 +3311,10 @@ async function sendChat(): Promise<void> {
   if (
     configuration().mode === "chat" &&
     (isDirectWorkspaceChangeRequest(prompt) ||
-      isWorkspaceChangeContinuation(prompt, activeConversation()?.messages ?? []))
+      isWorkspaceChangeContinuation(
+        prompt,
+        activeConversation()?.messages ?? [],
+      ))
   ) {
     try {
       await applyConfiguration({ ...configuration(), mode: "edit" });

@@ -119,6 +119,7 @@ export class FileWorkspaceStorageOwnership
         await rm(claim, { force: true });
       } catch (error) {
         if (acquired) await rm(path, { force: true });
+        // biome-ignore lint/correctness/noUnsafeFinally: Cleanup failure must reject acquisition and release any acquired lock.
         throw error;
       }
     }

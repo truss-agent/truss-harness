@@ -62,6 +62,7 @@ describe("withModelRetries", () => {
     const error = new ModelRequestError("invalid", { status: 400 });
     const provider: ModelProvider = {
       id: "fake",
+      // biome-ignore lint/correctness/useYield: A failing provider throws before producing its first stream event.
       async *stream() {
         attempts += 1;
         throw error;

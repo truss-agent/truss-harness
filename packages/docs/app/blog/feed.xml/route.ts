@@ -3,7 +3,7 @@ import { siteUrl } from "../../site-metadata";
 
 function escapeXml(value: string): string {
   return value.replace(
-    /[<>&'\"]/g,
+    /[<>&'"]/g,
     (character) =>
       ({
         "<": "&lt;",

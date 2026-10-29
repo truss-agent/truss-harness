@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AgentCoordinator,
-  AgentCoordinatorError,
+  type AgentCoordinatorError,
   EventBus,
   InMemoryAgentProfileStore,
   InMemoryWorkspaceWriteLease,
@@ -75,8 +75,16 @@ class FakeRuntime {
         }),
       ),
     ]);
-    await this.events.emit({ type: "text_delta", sessionId, text: "A completed " });
-    await this.events.emit({ type: "text_delta", sessionId, text: "response." });
+    await this.events.emit({
+      type: "text_delta",
+      sessionId,
+      text: "A completed ",
+    });
+    await this.events.emit({
+      type: "text_delta",
+      sessionId,
+      text: "response.",
+    });
     await this.events.emit({
       type: "run_completed",
       sessionId,
@@ -122,7 +130,11 @@ class FakeFactory implements AgentRuntimeFactory {
     this.created.push(profile.id);
     const events = new EventBus<RuntimeEvent>();
     const gate = new Deferred();
-    const runtime = new FakeRuntime(events, gate, this.sessionGates.get(profile.id));
+    const runtime = new FakeRuntime(
+      events,
+      gate,
+      this.sessionGates.get(profile.id),
+    );
     const approval = new FakeApproval();
     this.gates.set(profile.id, gate);
     this.runtimes.set(profile.id, runtime);
@@ -321,7 +333,10 @@ describe("AgentCoordinator", () => {
     expect(factory.created).toEqual([first.id]);
 
     await coordinator.stop(firstRun.id);
-    await waitFor(() => coordinator.getRun(firstRun.id)?.state === "cancelled", "cancelled run should drain");
+    await waitFor(
+      () => coordinator.getRun(firstRun.id)?.state === "cancelled",
+      "cancelled run should drain",
+    );
     expect(lease.holder()).toBeUndefined();
     await expect(coordinator.deleteProfile(first.id)).resolves.toBe(true);
   });
@@ -438,7 +453,10 @@ describe("AgentCoordinator", () => {
     );
 
     await coordinator.stop(run.id);
-    await waitFor(() => coordinator.getRun(run.id)?.state === "cancelled", "cancelled approval should drain");
+    await waitFor(
+      () => coordinator.getRun(run.id)?.state === "cancelled",
+      "cancelled approval should drain",
+    );
 
     expect(coordinator.getRun(run.id)?.state).toBe("cancelled");
     expect(lease.holder()).toBeUndefined();
@@ -535,9 +553,9 @@ describe("AgentCoordinator", () => {
     );
     await coordinator.dispose();
 
-    expect(restartedRuns.map((run) => coordinator.getRun(run.id)?.state)).toEqual(
-      Array.from({ length: agents.length }, () => "cancelled"),
-    );
+    expect(
+      restartedRuns.map((run) => coordinator.getRun(run.id)?.state),
+    ).toEqual(Array.from({ length: agents.length }, () => "cancelled"));
     expect(agents.map((agent) => factory.disposed.get(agent.id))).toEqual(
       Array.from({ length: agents.length }, () => 2),
     );

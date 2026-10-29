@@ -13,8 +13,9 @@ export function balancedSidebarTracks(
   gitCollapsed: boolean,
 ): SidebarTracks {
   const availableHeight = sidebarHeight - splitterHeight;
-  if (gitCollapsed) return { git: 38, files: Math.max(110, availableHeight - 38) };
-  const git = Math.max(160, Math.floor(availableHeight * .38));
+  if (gitCollapsed)
+    return { git: 38, files: Math.max(110, availableHeight - 38) };
+  const git = Math.max(160, Math.floor(availableHeight * 0.38));
   return { git, files: Math.max(110, availableHeight - git) };
 }
 
@@ -27,7 +28,10 @@ export function expandedSidebarTracks(
   tracks: SidebarTracks,
   previousGitHeight: number,
 ): SidebarTracks {
-  const restoredGit = Math.min(previousGitHeight, Math.max(38, tracks.files - 110 + 38));
+  const restoredGit = Math.min(
+    previousGitHeight,
+    Math.max(38, tracks.files - 110 + 38),
+  );
   const neededHeight = Math.max(0, restoredGit - 38);
   return { git: restoredGit, files: tracks.files - neededHeight };
 }
@@ -39,7 +43,8 @@ export function resizeSidebarTracks(
   gitCollapsed: boolean,
 ): SidebarTracks {
   const availableHeight = Math.max(220, sidebarHeight - splitterHeight);
-  if (gitCollapsed) return { git: 38, files: Math.max(110, availableHeight - 38) };
+  if (gitCollapsed)
+    return { git: 38, files: Math.max(110, availableHeight - 38) };
   const git = Math.max(160, Math.min(tracks.git, availableHeight - 110));
   return { git, files: Math.max(110, availableHeight - git) };
 }

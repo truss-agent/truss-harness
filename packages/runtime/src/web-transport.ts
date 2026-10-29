@@ -56,7 +56,9 @@ export class NodePublicWebTransport implements PublicWebTransport {
                 const headers = new Headers();
                 for (const [name, value] of Object.entries(response.headers)) {
                   if (Array.isArray(value))
-                    value.forEach((entry) => headers.append(name, entry));
+                    value.forEach((entry) => {
+                      headers.append(name, entry);
+                    });
                   else if (value !== undefined) headers.set(name, value);
                 }
                 const status = response.statusCode ?? 500;

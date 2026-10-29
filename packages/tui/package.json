@@ -17,7 +17,7 @@
     "logo.png"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22.15.1"
   },
   "license": "SEE LICENSE IN LICENSE",
   "repository": {

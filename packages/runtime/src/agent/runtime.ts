@@ -178,8 +178,14 @@ export class AgentRuntime {
           }
         }
         signal?.throwIfAborted();
-        if (!finishReason) throw new Error("Model stream ended before its semantic finish; output is incomplete.");
-        if (finishReason === "length") throw new Error("Model output is incomplete: token length limit reached. Resume with a new request.");
+        if (!finishReason)
+          throw new Error(
+            "Model stream ended before its semantic finish; output is incomplete.",
+          );
+        if (finishReason === "length")
+          throw new Error(
+            "Model output is incomplete: token length limit reached. Resume with a new request.",
+          );
         if (usage) await emit({ type: "usage", sessionId, usage });
         const finalProgress = progressParser.finish();
         if (finalProgress.progress) {
@@ -290,7 +296,16 @@ export class AgentRuntime {
           signal?.throwIfAborted();
           executedTools.push(execution);
           // Unknown/plugin tools may change workspace state too; only known reads retain cached results.
-          if (execution.succeeded && !["read_file", "list_directory", "search_files", "grep", "update_plan"].includes(call.name)) {
+          if (
+            execution.succeeded &&
+            ![
+              "read_file",
+              "list_directory",
+              "search_files",
+              "grep",
+              "update_plan",
+            ].includes(call.name)
+          ) {
             completedTerminalCommands.clear();
           }
           if (command && execution.succeeded) {

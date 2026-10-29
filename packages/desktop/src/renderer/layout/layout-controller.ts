@@ -191,7 +191,8 @@ export class DesktopLayoutController {
   }
 
   resetSidebarTracks(): void {
-    const splitterHeight = this.elements.gitSplitter.getBoundingClientRect().height;
+    const splitterHeight =
+      this.elements.gitSplitter.getBoundingClientRect().height;
     const tracks = balancedSidebarTracks(
       this.elements.sidebar.getBoundingClientRect().height,
       splitterHeight,
@@ -211,10 +212,7 @@ export class DesktopLayoutController {
     };
   }
 
-  private applySidebarTracks(
-    git: number,
-    files: number,
-  ): void {
+  private applySidebarTracks(git: number, files: number): void {
     this.elements.sidebar.style.setProperty("--git-height", `${git}px`);
     this.elements.sidebar.style.setProperty("--files-height", `${files}px`);
   }
@@ -225,7 +223,8 @@ export class DesktopLayoutController {
     );
     if (!sidebarHeight || sidebarHeight === this.observedSidebarHeight) return;
     this.observedSidebarHeight = sidebarHeight;
-    const splitterHeight = this.elements.gitSplitter.getBoundingClientRect().height;
+    const splitterHeight =
+      this.elements.gitSplitter.getBoundingClientRect().height;
     const tracks = resizeSidebarTracks(
       this.sidebarTracks(),
       sidebarHeight,

@@ -5,5 +5,5 @@ export default {
   configuration: "Configuration",
   troubleshooting: "Troubleshooting",
   clients: "Clients",
-  runtime: "Runtime"
+  runtime: "Runtime",
 };

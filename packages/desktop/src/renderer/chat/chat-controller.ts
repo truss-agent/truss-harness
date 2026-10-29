@@ -281,7 +281,8 @@ export function isWorkspaceChangeContinuation(
     confirmation.test(prompt.trim()) &&
     messages.some(
       (message) =>
-        message.role === "user" && isDirectWorkspaceChangeRequest(message.content),
+        message.role === "user" &&
+        isDirectWorkspaceChangeRequest(message.content),
     )
   );
 }

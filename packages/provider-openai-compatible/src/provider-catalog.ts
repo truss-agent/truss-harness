@@ -18,7 +18,8 @@ export const cloudProviderDefinitions: readonly CloudProviderDefinition[] = [
     baseUrl: "https://api.anthropic.com/v1",
     apiKeyEnvironmentVariable: "ANTHROPIC_API_KEY",
     compatibility: "anthropic-messages",
-    productionNote: "Uses Anthropic's native Messages API and streaming protocol.",
+    productionNote:
+      "Uses Anthropic's native Messages API and streaming protocol.",
   },
   {
     id: "openrouter",

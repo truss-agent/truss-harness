@@ -22,20 +22,20 @@ config.resolver.nodeModulesPaths = [mobileModules, workspaceModules];
 config.resolver.extraNodeModules = {
   ...config.resolver.extraNodeModules,
   react: path.join(mobileModules, "react"),
-  "react-native": path.join(mobileModules, "react-native")
+  "react-native": path.join(mobileModules, "react-native"),
 };
 config.resolver.resolveRequest = (context, moduleName, platform) => {
   if (moduleName === "react" || moduleName.startsWith("react/")) {
     return {
       type: "sourceFile",
-      filePath: require.resolve(moduleName, { paths: [mobileModules] })
+      filePath: require.resolve(moduleName, { paths: [mobileModules] }),
     };
   }
 
   if (moduleName === "react-native" || moduleName.startsWith("react-native/")) {
     return {
       type: "sourceFile",
-      filePath: require.resolve(moduleName, { paths: [mobileModules] })
+      filePath: require.resolve(moduleName, { paths: [mobileModules] }),
     };
   }
 
