@@ -90,7 +90,7 @@ export function gitStatusSummary(status: DesktopGitStatus): string {
     status.ahead ? `up ${status.ahead}` : "",
     status.behind ? `down ${status.behind}` : "",
     `${status.files.length} changed`,
-    staged.length ? `${staged.length} staged` : "commit will stage changes",
+    staged.length ? `${staged.length} staged` : "stage files to commit",
     status.pushRemote ? `remote ${status.pushRemote}` : "no push remote",
   ]
     .filter(Boolean)

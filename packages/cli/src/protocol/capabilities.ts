@@ -6,6 +6,7 @@ import type {
 
 export function serviceCapabilities(options: {
   readonly approval?: unknown;
+  readonly textRuntime?: unknown;
   readonly host?: {
     readonly testProviderConnection?: unknown;
     readonly listProfiles?: unknown;
@@ -15,6 +16,7 @@ export function serviceCapabilities(options: {
 }): RuntimeServiceCapabilities {
   return {
     streaming: true,
+    textOnlyGeneration: Boolean(options.textRuntime),
     sessions: true,
     cancellation: true,
     approvals: Boolean(options.approval),

@@ -16,7 +16,7 @@ describe("GitService", () => {
         if (args[0] === "status")
           return {
             stdout:
-              "## feature...origin/feature [ahead 2, behind 1]\n M src/a.ts\n",
+              "## feature...origin/feature [ahead 2, behind 1]\0 M src/a.ts\0",
             stderr: "",
           };
         if (args[0] === "remote" && args.length === 1)

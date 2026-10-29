@@ -87,12 +87,17 @@ export type RemoteEvent = {
 };
 
 export type ToolApproval = {
+  readonly sessionId?: string;
+  readonly workspaceId?: string;
   readonly callId: string;
   readonly tool: string;
   readonly input: Record<string, unknown>;
 };
 
-export type AgentToolApproval = ToolApproval & { readonly runId: string };
+export type AgentToolApproval = ToolApproval & {
+  readonly runId: string;
+  readonly workspaceId: string;
+};
 
 export type GatewayCommandResult = {
   readonly type: string;

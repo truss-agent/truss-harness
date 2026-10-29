@@ -44,14 +44,24 @@ export class InlineCompletionController {
     const suffix = document.getText(new vscode.Range(position, suffixEnd));
     const prompt = `Complete the code at <cursor>. Return only code to insert, with no markdown or explanation.\n\n${prefix}<cursor>${suffix}`;
     let requestId: string | undefined;
+    let cancellation: vscode.Disposable | undefined;
     try {
       const current = await this.options.service();
-      const run = current.run(prompt);
+      if (cancellationToken.isCancellationRequested) return undefined;
+      const run = current.generateText(prompt);
       requestId = run.requestId;
       this.options.responses.begin(run.requestId);
+      let aborted = false;
+      const abort = () => {
+        if (!aborted) {
+          aborted = true;
+          current.abort(run.requestId);
+        }
+      };
+      cancellation = cancellationToken.onCancellationRequested(abort);
+      if (cancellationToken.isCancellationRequested) abort();
       await run.result;
       const completion = this.options.responses.value(run.requestId)?.trim();
-      this.options.responses.end(run.requestId);
       if (!completion || cancellationToken.isCancellationRequested)
         return undefined;
       return [
@@ -61,8 +71,10 @@ export class InlineCompletionController {
         ),
       ];
     } catch {
-      if (requestId) this.options.responses.end(requestId);
       return undefined;
+    } finally {
+      cancellation?.dispose();
+      if (requestId) this.options.responses.end(requestId);
     }
   }
 }

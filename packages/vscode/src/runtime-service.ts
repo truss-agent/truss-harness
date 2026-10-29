@@ -23,6 +23,11 @@ export class RuntimeService implements Disposable {
   private readonly reader;
   private requestSequence = 0;
   private readonly ready: Promise<void>;
+  private failure: Error | undefined;
+  private textOnlyGeneration = false;
+  get isClosed(): boolean {
+    return Boolean(this.failure);
+  }
 
   constructor(
     command: string,
@@ -31,6 +36,8 @@ export class RuntimeService implements Disposable {
     environment: NodeJS.ProcessEnv,
     private readonly onEvent: (event: ServiceEvent) => void,
     onDiagnostic: (text: string) => void,
+    private readonly onClosed: () => void = () => {},
+    handshakeTimeoutMs = 8_000,
   ) {
     this.process = spawn(command, [...commandArguments, "serve"], {
       cwd,
@@ -51,7 +58,13 @@ export class RuntimeService implements Disposable {
         new Error(`Truss service exited with code ${code ?? "unknown"}.`),
       ),
     );
-    this.ready = this.initialize();
+    const timeout = setTimeout(
+      () => this.failAll(new Error("Truss service initialization timed out.")),
+      handshakeTimeoutMs,
+    );
+    this.ready = this.initialize().finally(() => clearTimeout(timeout));
+    void this.ready.catch(() => undefined);
+    this.process.stdin.on("error", (error) => this.failAll(error));
   }
 
   run(
@@ -67,6 +80,10 @@ export class RuntimeService implements Disposable {
       context,
       attachments,
     });
+  }
+
+  generateText(prompt: string): RunHandle {
+    return this.request({ type: "run", prompt, textOnly: true });
   }
 
   async waitUntilReady(): Promise<void> {
@@ -118,6 +135,8 @@ export class RuntimeService implements Disposable {
       response.result,
       LOCAL_SERVICE_PROTOCOL_VERSIONS,
     );
+    this.textOnlyGeneration =
+      response.result.capabilities?.textOnlyGeneration === true;
     if (!handshake.compatible)
       throw new Error(
         `${handshake.reason} Update truss-cli or clear trussHarness.command to use the bundled service.`,
@@ -139,7 +158,22 @@ export class RuntimeService implements Disposable {
       resolve: resolveRequest!,
       reject: rejectRequest!,
     });
-    const send = () => this.write({ ...payload, requestId });
+    const send = () => {
+      if (
+        this.failure ||
+        (payload.textOnly === true && !this.textOnlyGeneration)
+      ) {
+        this.requests.delete(requestId);
+        rejectRequest!(
+          this.failure ??
+            new Error(
+              "The host does not support text-only generation. Update truss-cli.",
+            ),
+        );
+        return;
+      }
+      this.write({ ...payload, requestId });
+    };
     if (waitForReady) {
       void this.ready.then(send, (error: unknown) => {
         this.requests.delete(requestId);
@@ -152,7 +186,14 @@ export class RuntimeService implements Disposable {
   }
 
   private write(payload: Record<string, unknown>): void {
-    this.process.stdin.write(`${JSON.stringify(payload)}\n`);
+    if (this.failure) return;
+    try {
+      this.process.stdin.write(`${JSON.stringify(payload)}\n`, (error) => {
+        if (error) this.failAll(error);
+      });
+    } catch (error) {
+      this.failAll(error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   private handleMessage(line: string): void {
@@ -166,7 +207,7 @@ export class RuntimeService implements Disposable {
       this.onEvent(message);
       return;
     }
-    if (message.type === "lifecycle") return;
+    if (message.type !== "response" && message.type !== "error") return;
     const request = message.requestId
       ? this.requests.get(message.requestId)
       : undefined;
@@ -177,6 +218,10 @@ export class RuntimeService implements Disposable {
   }
 
   private failAll(error: Error): void {
+    if (!this.failure) {
+      this.failure = error;
+      this.onClosed();
+    }
     for (const request of this.requests.values()) request.reject(error);
     this.requests.clear();
   }

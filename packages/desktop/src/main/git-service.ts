@@ -74,17 +74,19 @@ export class GitService {
 
   async status(): Promise<DesktopGitStatus> {
     try {
-      const output = await this.command([
-        "status",
-        "--porcelain=v1",
-        "--branch",
-      ]);
+      const { stdout: output } = await this.execFile(
+        "git",
+        ["status", "--porcelain=v1", "--branch", "-z"],
+        { cwd: this.workspaceRoot(), maxBuffer: 1_000_000 },
+      );
       const pushRemote = await this.pushRemoteName();
       let branch: string | undefined;
       let ahead = 0;
       let behind = 0;
       const files: DesktopGitStatus["files"][number][] = [];
-      for (const line of output.split(/\r?\n/)) {
+      const records = output.split("\0");
+      for (let index = 0; index < records.length; index++) {
+        const line = records[index]!;
         if (line.startsWith("## ")) {
           const details = line.slice(3);
           branch = details.split("...")[0].trim();
@@ -106,6 +108,9 @@ export class GitService {
         if (line.length < 4) continue;
         files.push({
           path: line.slice(3),
+          ...(/[RC]/.test(line.slice(0, 2))
+            ? { originalPath: records[++index] }
+            : {}),
           indexStatus: line[0],
           workTreeStatus: line[1],
         });
@@ -248,8 +253,22 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
     return this.command(["add", "--", ...this.paths(paths)]);
   }
 
-  async unstage(paths: readonly string[]): Promise<string> {
+  private async renamePaths(paths: readonly string[]): Promise<string[]> {
     const selected = this.paths(paths);
+    const status = await this.status();
+    const originals = status.files
+      .filter(
+        (file) =>
+          selected.includes(file.path) &&
+          file.originalPath &&
+          file.indexStatus === "R",
+      )
+      .map((file) => file.originalPath!);
+    return [...new Set([...selected, ...originals])];
+  }
+
+  async unstage(paths: readonly string[]): Promise<string> {
+    const selected = await this.renamePaths(paths);
     try {
       return await this.command(["restore", "--staged", "--", ...selected]);
     } catch {
@@ -258,7 +277,7 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
   }
 
   async discard(paths: readonly string[]): Promise<string> {
-    const selected = this.paths(paths);
+    const selected = await this.renamePaths(paths);
     const tracked: string[] = [];
     const stagedNew: string[] = [];
     const untracked: string[] = [];
@@ -304,7 +323,6 @@ ${compactCommitDiff(diff, configuration.contextWindow)}`;
   async commit(message: string): Promise<string> {
     if (typeof message !== "string" || !message.trim())
       throw new Error("Enter a commit message.");
-    await this.command(["add", "-A", "--"]);
     return this.command(["commit", "-m", message.trim()]);
   }
 

@@ -13,6 +13,8 @@ import type { AgentProviderRegistry } from "./providers.js";
 /** Compatibility options for existing single-agent clients. */
 export interface HostedRuntimeOptions {
   readonly workspaceRoot: string;
+  /** Host-enforced helper generation without workspace tools or MCP. */
+  readonly textOnly?: boolean;
   readonly provider: ModelProviderKind;
   readonly baseUrl: string;
   readonly model: string;
@@ -68,5 +70,5 @@ export async function createHostedRuntime(
     providerRegistry: options.providerRegistry,
     credentialResolver: { resolve: async () => credential },
   });
-  return host.createRuntime(profile);
+  return host.createRuntime(profile, { textOnly: options.textOnly });
 }

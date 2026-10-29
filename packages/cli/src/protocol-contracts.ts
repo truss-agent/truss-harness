@@ -16,6 +16,8 @@ export const LOCAL_SERVICE_PROTOCOL_VERSIONS = [
 
 export interface RuntimeServiceCapabilities {
   readonly streaming: true;
+  /** Additive capability; absent on older hosts. */
+  readonly textOnlyGeneration?: boolean;
   readonly sessions: true;
   readonly cancellation: true;
   readonly approvals: boolean;
@@ -88,6 +90,7 @@ export type RuntimeServiceRequest =
       readonly type: "run";
       readonly requestId: string;
       readonly prompt: string;
+      readonly textOnly?: boolean;
       readonly sessionId?: string;
       readonly context?: readonly ContextBlock[];
       readonly attachments?: readonly ChatAttachment[];

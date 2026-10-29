@@ -1,3 +1,4 @@
+import { textOnlyProvider } from "./text-only.js";
 import {
   type McpConnections,
   type McpServerConfigurations,
@@ -183,7 +184,10 @@ export class AgentHost {
     );
   }
 
-  async createRuntime(profile: AgentProfile): Promise<HostedRuntime> {
+  async createRuntime(
+    profile: AgentProfile,
+    options: { readonly textOnly?: boolean } = {},
+  ): Promise<HostedRuntime> {
     const masterPromptValidation = validateMasterPrompt(
       this.options.masterPrompt,
     );
@@ -197,7 +201,8 @@ export class AgentHost {
     return this.createRuntimeWithProvider(
       profile,
       provider,
-      this.options.approvalFactory?.(profile),
+      options.textOnly ? undefined : this.options.approvalFactory?.(profile),
+      options.textOnly,
     );
   }
 
@@ -230,6 +235,7 @@ export class AgentHost {
     profile: AgentProfile,
     provider: ModelProvider,
     approval?: ToolApproval,
+    textOnly = false,
   ): Promise<HostedRuntime> {
     const repository = await masterPromptRepositoryContext(
       this.options.workspaceRoot,
@@ -261,13 +267,15 @@ export class AgentHost {
     };
     const events = new EventBus<RuntimeEvent>();
     const tools = new ToolRegistry();
-    const memory = this.options.memoryStoreFactory?.(profile) ?? new FileWorkspaceMemoryStore(this.options.workspaceRoot);
+    const memory =
+      this.options.memoryStoreFactory?.(profile) ??
+      new FileWorkspaceMemoryStore(this.options.workspaceRoot);
     const plans =
       this.options.planStoreFactory?.(profile) ??
       new FileWorkspacePlanStore(this.options.workspaceRoot);
     const usesReadOnlyWorkspaceTools =
-      profile.mode === "chat" || profile.mode === "plan";
-    if (profile.mode === "edit") {
+      !textOnly && (profile.mode === "chat" || profile.mode === "plan");
+    if (!textOnly && profile.mode === "edit") {
       registerCoreTools(tools);
       tools.register(createUpdatePlanTool(plans));
     }
@@ -277,9 +285,9 @@ export class AgentHost {
       tools.register(searchFilesTool);
       tools.register(grepTool);
     }
-    if (profile.internetAccess) registerWebTools(tools);
+    if (!textOnly && profile.internetAccess) registerWebTools(tools);
     const enabledMcpServers =
-      profile.mode === "edit"
+      !textOnly && profile.mode === "edit"
         ? this.options.mcpServers
         : usesReadOnlyWorkspaceTools
           ? Object.fromEntries(
@@ -300,22 +308,28 @@ export class AgentHost {
       ...(approval ? { approval } : {}),
       dispose: () => mcp.close(),
       runtime: new AgentRuntime({
-        provider,
+        provider: textOnly ? textOnlyProvider(provider) : provider,
         tools,
         sessions: new InMemorySessionStore(),
-        context: new CompositeContextManager([
-          new WorkspacePlanContextProvider(plans),
-          new WorkspaceMemoryContextProvider(memory),
-        ]),
+        context: new CompositeContextManager(
+          textOnly
+            ? []
+            : [
+                new WorkspacePlanContextProvider(plans),
+                new WorkspaceMemoryContextProvider(memory),
+              ],
+        ),
         events,
         workspaceRoot: this.options.workspaceRoot,
-        systemPromptFactory: (session) => promptForSession(session.id),
+        systemPromptFactory: (session) =>
+          textOnly
+            ? (this.options.systemPrompt ?? "")
+            : promptForSession(session.id),
         approval,
-        memory,
-        plans,
-        savePlanOnCompletion: profile.mode === "plan",
-        requireWriteForEditIntent: profile.mode === "edit",
-        deferTextUntilToolDecision: profile.mode === "edit",
+        ...(textOnly ? {} : { memory, plans }),
+        savePlanOnCompletion: !textOnly && profile.mode === "plan",
+        requireWriteForEditIntent: !textOnly && profile.mode === "edit",
+        deferTextUntilToolDecision: !textOnly && profile.mode === "edit",
       }),
     };
   }

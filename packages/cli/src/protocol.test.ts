@@ -680,3 +680,99 @@ describe("RuntimeService", () => {
     await service.close();
   });
 });
+
+it("negotiates and routes text-only requests to an isolated runtime", async () => {
+  const runtime = new FakeRuntime();
+  const textRuntime = new FakeRuntime();
+  const messages: RuntimeServiceMessage[] = [];
+  const service = new RuntimeService({
+    runtime,
+    events: new EventBus<RuntimeEvent>(),
+    textRuntime: { runtime: textRuntime, events: new EventBus<RuntimeEvent>() },
+    write: (m) => messages.push(m as RuntimeServiceMessage),
+  });
+  await service.handleLine(
+    JSON.stringify({
+      type: "initialize",
+      requestId: "init",
+      protocolVersions: [1],
+    }),
+  );
+  expect(messages).toContainEqual(
+    expect.objectContaining({
+      result: expect.objectContaining({
+        capabilities: expect.objectContaining({ textOnlyGeneration: true }),
+      }),
+    }),
+  );
+  await service.handleLine(
+    JSON.stringify({
+      type: "run",
+      requestId: "helper",
+      prompt: "complete",
+      textOnly: true,
+    }),
+  );
+  await waitFor(
+    () =>
+      messages.some((m) => m.type === "response" && m.requestId === "helper"),
+    "helper finished",
+  );
+  expect(runtime.sessions.size).toBe(0);
+  expect(textRuntime.sessions.size).toBe(1);
+  await service.close();
+});
+it("fails closed if text-only capability is unavailable", async () => {
+  const h = harness();
+  await h.service.handleLine(
+    JSON.stringify({
+      type: "run",
+      requestId: "helper",
+      prompt: "complete",
+      textOnly: true,
+    }),
+  );
+  await new Promise((r) => setTimeout(r, 5));
+  expect(h.runtime.sessions.size).toBe(0);
+  expect(h.messages).toContainEqual(
+    expect.objectContaining({ type: "error", requestId: "helper" }),
+  );
+  await h.service.close();
+});
+it("retains cancellation received while a helper session is still being created", async () => {
+  const runtime = new FakeRuntime();
+  let release: () => void = () => {};
+  const original = runtime.createSession.bind(runtime);
+  runtime.createSession = async (messages) => {
+    await new Promise<void>((r) => {
+      release = r;
+    });
+    return original(messages);
+  };
+  let aborted: boolean | undefined;
+  runtime.runImplementation = async (_id, _prompt, signal) => {
+    aborted = signal?.aborted;
+  };
+  const h = harness({ runtime });
+  await h.service.handleLine(
+    JSON.stringify({ type: "run", requestId: "early", prompt: "complete" }),
+  );
+  await h.service.handleLine(
+    JSON.stringify({ type: "abort", requestId: "early" }),
+  );
+  release();
+  await waitFor(
+    () =>
+      h.messages.some((m) => m.type === "response" && m.requestId === "early"),
+    "cancel response",
+  );
+  expect(aborted).toBe(true);
+  expect(h.messages).toContainEqual(
+    expect.objectContaining({
+      type: "response",
+      requestId: "early",
+      result: expect.objectContaining({ aborted: true }),
+    }),
+  );
+  await h.service.close();
+});

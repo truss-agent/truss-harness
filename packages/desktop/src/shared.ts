@@ -146,6 +146,7 @@ export interface DesktopWorkspaceUiState {
 
 export interface DesktopGitFile {
   readonly path: string;
+  readonly originalPath?: string;
   readonly indexStatus: string;
   readonly workTreeStatus: string;
 }

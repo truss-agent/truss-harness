@@ -1,3 +1,5 @@
+import { guardedDesktopIpc } from "./main/ipc-boundary.js";
+import { pathToFileURL } from "node:url";
 import { execFile as execFileCallback } from "node:child_process";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -270,8 +272,17 @@ app.on("before-quit", () => {
   void runtimeService.dispose();
 });
 
-registerSettingsIpc(ipcMain, settingsService, () => persisted);
-ipcMain.handle("truss:app-version", () => app.getVersion());
+const trustedIpc = guardedDesktopIpc(ipcMain, () => {
+  const window = windowService.current;
+  return window
+    ? {
+        contents: window.webContents,
+        url: pathToFileURL(join(distDirectory(), "index.html")).href,
+      }
+    : undefined;
+});
+registerSettingsIpc(trustedIpc, settingsService, () => persisted);
+trustedIpc.handle("truss:app-version", () => app.getVersion());
 
 async function complete(input: {
   readonly prefix?: unknown;
@@ -344,7 +355,7 @@ async function checkSyntax(
 }
 
 registerOperationalIpc({
-  ipc: ipcMain,
+  ipc: trustedIpc,
   runtime: runtimeService,
   agents: managedAgents,
   workspace: workspaceService,

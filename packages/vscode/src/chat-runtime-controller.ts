@@ -162,7 +162,12 @@ export class ChatRuntimeController implements vscode.Disposable {
   }
 
   async service(): Promise<RuntimeService> {
-    if (this.serviceValue) return this.serviceValue;
+    if (this.serviceValue && !this.serviceValue.isClosed) {
+      await this.serviceValue.waitUntilReady();
+      return this.serviceValue;
+    }
+    this.serviceValue = undefined;
+    this.liveSessionIds.clear();
     const configuration = this.options.configuration();
     if (!configuration.model) {
       throw new Error("Choose a local model before starting the agent.");
@@ -194,6 +199,12 @@ export class ChatRuntimeController implements vscode.Disposable {
       },
       (message) => this.handleEvent(message),
       (text) => this.options.output.append(text),
+      () => {
+        if (this.serviceValue === service) {
+          this.serviceValue = undefined;
+          this.liveSessionIds.clear();
+        }
+      },
     );
     this.serviceValue = service;
     context.subscriptions.push(service);

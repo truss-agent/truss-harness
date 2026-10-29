@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' truss-media: data: blob:; media-src 'self' truss-media: data: blob:; font-src 'self' data:; connect-src 'none'; frame-src http: https: about:; object-src 'none'; base-uri 'none'; form-action 'none'">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Truss</title>
   <link rel="stylesheet" href="./styles.css">
@@ -23,7 +24,7 @@
           <div class="git-actions"><button id="stageAll" title="Stage all changed files">Stage all</button><button id="discardAll" title="Discard all uncommitted file changes">Discard all</button><button id="pullGit" title="Pull from the configured remote">Pull</button><button id="pushGit" title="Push to the configured remote">Push</button></div>
           <div id="gitGraph" class="git-graph" aria-label="Git commit graph"></div>
           <div id="gitFiles" class="git-files"></div>
-          <form id="commitForm" class="commit-form"><input id="commitMessage" autocomplete="off" placeholder="Commit message"><button id="generateCommitMessage" type="button" title="Generate a commit message from your changes">Generate</button><button id="commitButton" class="primary" type="submit" title="Stage changes before committing">Commit</button></form>
+          <form id="commitForm" class="commit-form"><input id="commitMessage" autocomplete="off" placeholder="Commit message"><button id="generateCommitMessage" type="button" title="Generate a commit message from your changes">Generate</button><button id="commitButton" class="primary" type="submit" title="Commit staged changes">Commit</button></form>
         </div>
       </section>
     </aside>

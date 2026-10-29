@@ -963,20 +963,29 @@ async function main(): Promise<void> {
       );
     }
     try {
-      await runService(client.runtime, client.events, approval, {
-        serverVersion: CLI_VERSION,
-        host: {
-          testProviderConnection: () =>
-            testClientProviderConnection(configuration),
-          listProfiles: () =>
-            listConfigurationProfiles({
-              workspaceRoot: configuration.workspaceRoot,
-              selectedProfile: configuration.profile,
-              paths: configuration.paths,
-            }),
-          listMcpServers: () => client.mcp.statuses,
-        },
+      const textClient = await createClientRuntime({
+        ...configuration,
+        textOnly: true,
       });
+      try {
+        await runService(client.runtime, client.events, approval, {
+          textRuntime: textClient,
+          serverVersion: CLI_VERSION,
+          host: {
+            testProviderConnection: () =>
+              testClientProviderConnection(configuration),
+            listProfiles: () =>
+              listConfigurationProfiles({
+                workspaceRoot: configuration.workspaceRoot,
+                selectedProfile: configuration.profile,
+                paths: configuration.paths,
+              }),
+            listMcpServers: () => client.mcp.statuses,
+          },
+        });
+      } finally {
+        await textClient.dispose();
+      }
     } finally {
       await client.dispose();
     }

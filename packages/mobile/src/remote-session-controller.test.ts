@@ -126,3 +126,35 @@ describe("mobile remote session controller", () => {
     );
   });
 });
+
+it("updates callbacks while reusing a connection and reconnects for a different identity", async () => {
+  const sockets: FakeSocket[] = [];
+  const controller = new MobileGatewayEventController(() => {
+    const socket = new FakeSocket();
+    sockets.push(socket);
+    return socket;
+  });
+  const seen: string[] = [];
+  const input = {
+    gatewayUrl: "http://localhost:1234",
+    token: "one",
+    onConnectionChange: () => {},
+    onDisconnected: () => {},
+    onEvent: () => seen.push("old"),
+  };
+  const connecting = controller.connect(input);
+  sockets[0]!.readyState = 1;
+  sockets[0]!.onmessage?.({ data: '{"type":"connected"}' });
+  await connecting;
+  await controller.ensureConnected({
+    ...input,
+    onEvent: () => seen.push("current"),
+  });
+  sockets[0]!.onmessage?.({ data: '{"type":"text_delta"}' });
+  expect(seen).toEqual(["current"]);
+  const reconnecting = controller.ensureConnected({ ...input, token: "two" });
+  expect(sockets).toHaveLength(2);
+  sockets[1]!.onmessage?.({ data: '{"type":"connected"}' });
+  await reconnecting;
+  controller.close();
+});

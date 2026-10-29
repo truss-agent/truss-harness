@@ -1,3 +1,4 @@
+import { routeMobileEvent } from "./src/event-routing";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -132,50 +133,19 @@ export default function App() {
     });
   }, []);
 
-  const handleEvent = useCallback((event: RemoteEvent) => {
-    if (event.type === "agent_run_updated" && event.workspaceId === workspaceId && event.run) {
-      updateAgentRun(event.run);
-      if (event.run.state === "completed") setStatus("Agent run completed.");
-      if (event.run.state === "failed") setStatus(`Agent run failed${event.run.errorCode ? ` (${event.run.errorCode})` : ""}.`);
-      return;
-    }
-    if (event.type === "agent_runtime" && event.workspaceId === workspaceId && event.event) {
-      const nested = event.event;
-      if (nested.type === "tool_call_requested" && nested.callId && nested.tool && nested.input && event.runId) {
-        setAgentApproval({ runId: event.runId, callId: nested.callId, tool: nested.tool, input: nested.input });
-        setStatus("An agent tool needs your approval.");
-      }
-      return;
-    }
-    if (event.type === "text_delta" && event.text) appendAssistant(event.text);
-    if (event.type === "run_started") { setRunning(true); setStatus("Truss is working in your workspace."); }
-    if (event.type === "run_completed") {
-      setRunning(false);
-      setStatus("Run completed.");
-      if (modeRef.current === "edit") appendSystem(event.modifiedFiles?.length ? `Verified workspace changes: ${event.modifiedFiles.join(", ")}` : "Run completed. No workspace files were changed.");
-    }
-    if (event.type === "run_failed") { setRunning(false); setStatus(event.message ?? "Run failed."); }
-    const activeApprovalMode = approvalModeRef.current;
-    const requestedApproval = approvalForRemoteEvent(event, activeApprovalMode, readOnlyTools);
-    if (event.type === "tool_call_requested" && event.tool && !requestedApproval) {
-      setStatus(`Running ${event.tool.replaceAll("_", " ")}...`);
-    } else if (requestedApproval) {
-      setApproval(requestedApproval);
-      setStatus("A tool needs your approval.");
-    }
-    const toolFailure = describeToolFailure(event);
-    if (toolFailure && event.tool) {
-      setStatus(`${event.tool.replaceAll("_", " ")} failed.`);
-      appendSystem(toolFailure);
-    }
-  }, [appendAssistant, appendSystem, updateAgentRun, workspaceId]);
+  const handleEvent = useCallback((event: RemoteEvent) => routeMobileEvent(event, {
+    workspaceId, sessionId, mode: modeRef.current, approvalMode: approvalModeRef.current, readOnlyTools,
+    appendAssistant, appendSystem, updateAgentRun, setStatus, setRunning, setApproval, setAgentApproval, agentApproval,
+  }), [appendAssistant, appendSystem, updateAgentRun, workspaceId, sessionId, agentApproval]);
+  const currentEventHandler = useRef(handleEvent);
+  currentEventHandler.current = handleEvent;
 
   const ensureEventConnection = useCallback(async () => {
     await eventController.current!.ensureConnected({
       gatewayUrl,
       token,
       onConnectionChange: setEventConnected,
-      onEvent: handleEvent,
+      onEvent: (event) => currentEventHandler.current(event),
       onDisconnected: setStatus,
     });
   }, [gatewayUrl, handleEvent, token]);
@@ -222,6 +192,9 @@ export default function App() {
 
   const chooseWorkspace = useCallback((workspace: Workspace) => {
     setWorkspaceId(workspace.id);
+    setSessionId(undefined);
+    setApproval(undefined);
+    setRunning(false);
     setAgentProfiles([]);
     setAgentRuns([]);
     setSelectedAgentId(undefined);
@@ -297,8 +270,8 @@ export default function App() {
       setStatus("Agent tool approvals are controlled by the paired host.");
       return;
     }
-    if (!workspaceId || !agentApproval) return;
-    await command({ type: "resolve_agent_approval", workspaceId, runId: agentApproval.runId, callId: agentApproval.callId, approved }, 2);
+    if (!agentApproval) return;
+    await command({ type: "resolve_agent_approval", workspaceId: agentApproval.workspaceId, runId: agentApproval.runId, callId: agentApproval.callId, approved }, 2);
     setAgentApproval(undefined);
     setStatus(approved ? "Agent tool approved." : "Agent tool denied.");
   }, [agentApproval, canApproveManagedAgents, command, workspaceId]);
@@ -365,8 +338,8 @@ export default function App() {
   }, [approvalMode, changeMode, mode, sessionId]);
 
   const decideTool = useCallback(async (approved: boolean) => {
-    if (!sessionId || !approval) return;
-    await command({ type: "approve_tool", sessionId, callId: approval.callId, approved });
+    if (!approval?.sessionId) return;
+    await command({ type: "approve_tool", sessionId: approval.sessionId, callId: approval.callId, approved });
     setApproval(undefined);
     setStatus(approved ? "Tool approved." : "Tool denied.");
   }, [approval, command, sessionId]);
