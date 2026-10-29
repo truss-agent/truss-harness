@@ -1,3 +1,4 @@
+import { resolveWorkspacePath } from "./workspace.js";
 import { randomUUID } from "node:crypto";
 import { execFile as execFileCallback } from "node:child_process";
 import { readdir, readFile, writeFile } from "node:fs/promises";
@@ -69,7 +70,7 @@ export async function executeWorkspaceCommand(options: ExecuteWorkspaceCommandOp
 
 async function initializeWorkspace(workspaceRoot: string): Promise<WorkspaceCommandResult> {
   const scan = await scanWorkspace(workspaceRoot);
-  const path = join(workspaceRoot, brand.agentInstructionsFile);
+  const path = resolveWorkspacePath(workspaceRoot, brand.agentInstructionsFile);
   const block = renderAgentWorkspaceBlock(scan);
   let current = "";
   try { current = await readFile(path, "utf8"); } catch (error) {
@@ -136,7 +137,7 @@ async function scanWorkspace(workspaceRoot: string): Promise<WorkspaceScan> {
   const scripts: string[] = [];
   for (const manifest of manifests) {
     try {
-      const value = JSON.parse(await readFile(join(workspaceRoot, manifest), "utf8")) as { name?: unknown; scripts?: unknown };
+      const value = JSON.parse(await readFile(resolveWorkspacePath(workspaceRoot, manifest), "utf8")) as { name?: unknown; scripts?: unknown };
       if (typeof value.name === "string") packageNames.push(value.name);
       if (value.scripts && typeof value.scripts === "object") scripts.push(...Object.keys(value.scripts as Record<string, unknown>).map((name) => `${manifest}: ${name}`));
     } catch { /* A malformed package manifest should not make init unusable. */ }

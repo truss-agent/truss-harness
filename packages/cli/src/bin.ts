@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { CliToolApproval, runCliTurn } from "./cli-approval.js";
 import { cwd } from "node:process";
 import { readFile } from "node:fs/promises";
 import { basename, resolve as resolvePath } from "node:path";
@@ -28,6 +29,7 @@ import {
   providerAccountEnvironmentVariable,
   resolveConfiguration,
   saveUserProfile,
+  trustWorkspaceConfiguration,
   type ResolvedConfiguration,
 } from "./config.js";
 import {
@@ -92,6 +94,9 @@ Commands:
   runtime install <artifact> <manifest>
                         Verify and activate a downloaded runtime-host asset
   runtime rollback       Restore the prior verified runtime-host asset
+  config trust          Authorize reviewed workspace config until its content changes
+  config status         Show effective policy and trust provenance
+  agents trust <id>     Authorize one reviewed migrated/manual profile
   agents list           List workspace-local multi-agent profiles
   agents add <name>     Add a profile using the selected configuration
   agents remove <id>    Remove an idle profile
@@ -123,8 +128,8 @@ Permissions:
   auto-read              Auto-allow workspace reads; ask for writes, commands, and web
   auto-all               Auto-allow every registered tool
 
-  Direct '${brand.cliCommand} chat' runs non-interactively and auto-allows tools.
-  Use it only in a trusted workspace. Internet tools remain off unless enabled.
+  Direct chat honors permission policy. Noninteractive approval requests fail closed.
+  Internet tools remain off unless enabled.
 
 Environment:
   TRUSS_HARNESS_MODEL       Required model identifier
@@ -258,15 +263,21 @@ async function runInteractiveChat(
   initialConfiguration: ResolvedConfiguration,
 ): Promise<void> {
   let configuration = initialConfiguration;
-  let client = await createClientRuntime(configuration);
-  let session = await client.runtime.createSession();
-  let messages = session.messages;
-  subscribeToRuntimeEvents(client.events);
   const readline = createInterface({
     input: process.stdin,
     output: process.stdout,
     terminal: process.stdin.isTTY === true,
   });
+  const approval = new CliToolApproval(
+    configuration.permission,
+    process.stdin.isTTY === true && process.stdout.isTTY === true
+      ? readline
+      : undefined,
+  );
+  let client = await createClientRuntime({ ...configuration, approval });
+  let session = await client.runtime.createSession();
+  let messages = session.messages;
+  subscribeToRuntimeEvents(client.events);
   process.stdout.write(
     brand.productName +
       " interactive chat. :help for controls. Mode: " +
@@ -281,7 +292,7 @@ async function runInteractiveChat(
     messages = current?.messages ?? messages;
     await client.dispose();
     configuration = { ...configuration, mode };
-    client = await createClientRuntime(configuration);
+    client = await createClientRuntime({ ...configuration, approval });
     session = await client.runtime.createSession(messages);
     subscribeToRuntimeEvents(client.events);
     process.stdout.write("\n[mode: " + mode + "]\n");
@@ -331,7 +342,7 @@ async function runInteractiveChat(
         continue;
       }
       try {
-        await client.runtime.run(session.id, next.prompt);
+        await runCliTurn(client.runtime, session.id, next.prompt, readline);
         process.stdout.write("\n");
       } catch (error) {
         process.stderr.write(
@@ -342,6 +353,7 @@ async function runInteractiveChat(
       }
     }
   } finally {
+    approval.denyAll();
     readline.close();
     await client.dispose();
   }
@@ -552,6 +564,23 @@ async function main(): Promise<void> {
       process.stdout.write(`${JSON.stringify(paths, null, 2)}\n`);
       return;
     }
+    if (action === "trust") {
+      const hash = await trustWorkspaceConfiguration(cwd(), paths);
+      process.stdout.write(
+        `Trusted workspace configuration ${paths.workspace}\nSHA-256 ${hash}\nAuthorization is stored in your user configuration directory and expires when the file changes.\n`,
+      );
+      return;
+    }
+    if (action === "status") {
+      const config = await resolveConfiguration({
+        workspaceRoot: cwd(),
+        paths,
+      });
+      process.stdout.write(
+        `${JSON.stringify({ workspaceTrust: config.workspaceTrust, provenance: config.provenance, effective: { provider: config.provider, model: config.model, mode: config.mode, permission: config.permission, internetAccess: config.internetAccess }, precedence: "flags > environment > trusted workspace > user > defaults" }, null, 2)}\n`,
+      );
+      return;
+    }
     if (action === "init") {
       process.stdout.write(
         `Created ${await initializeWorkspaceConfiguration(cwd(), paths)}\n`,
@@ -559,7 +588,7 @@ async function main(): Promise<void> {
       return;
     }
     throw new Error(
-      `Use ${brand.cliCommand} config path or ${brand.cliCommand} config init`,
+      `Use ${brand.cliCommand} config path, init, status, or trust`,
     );
   }
 
@@ -688,10 +717,27 @@ async function main(): Promise<void> {
     const profiles = new FileAgentProfileStore(cwd());
     if (action === "list") {
       const values = await profiles.list();
+      const rows = await Promise.all(
+        values.map(
+          async (profile) =>
+            `${profile.id}\t${profile.displayName}\t${profile.provider.providerId}\t${profile.provider.modelId}\t${profile.mode}\t${profile.approvalPolicy}\t${(await profiles.isTrusted(profile)) ? "trusted" : "untrusted"}`,
+        ),
+      );
       process.stdout.write(
         values.length
-          ? `${values.map((profile) => `${profile.id}\t${profile.displayName}\t${profile.provider.providerId}\t${profile.provider.modelId}\t${profile.mode}\t${profile.approvalPolicy}`).join("\n")}\n`
+          ? `${rows.join("\n")}\n`
           : "No agent profiles. Add one with `truss agents add <name>`.\n",
+      );
+      return;
+    }
+    if (action === "trust") {
+      if (!identifier)
+        throw new Error(
+          "Use truss agents trust <id> after reviewing the profile binding and policy.",
+        );
+      await profiles.trust(identifier);
+      process.stdout.write(
+        `Trusted exact current content of agent ${identifier}.\n`,
       );
       return;
     }
@@ -772,7 +818,7 @@ async function main(): Promise<void> {
       return;
     }
     throw new Error(
-      `Use ${brand.cliCommand} agents list, add, remove, or run.`,
+      `Use ${brand.cliCommand} agents list, add, trust, remove, or run.`,
     );
   }
 
@@ -865,6 +911,15 @@ async function main(): Promise<void> {
     overrides,
   });
 
+  if (configuration.workspaceTrust.status === "untrusted")
+    process.stderr.write(
+      "[config] Workspace authority ignored until reviewed and authorized with truss config trust.\n",
+    );
+  if (configuration.workspaceTrust.diagnostic)
+    process.stderr.write(
+      `[config] ${configuration.workspaceTrust.diagnostic}\n`,
+    );
+
   if (command === "mcp") {
     const positional = args.filter((argument) => argument !== "--json");
     const [action = "status", name] = positional;
@@ -941,7 +996,16 @@ async function main(): Promise<void> {
     return;
   }
 
-  const client = await createClientRuntime(configuration);
+  const readline =
+    process.stdin.isTTY === true && process.stdout.isTTY === true
+      ? createInterface({
+          input: process.stdin,
+          output: process.stdout,
+          terminal: true,
+        })
+      : undefined;
+  const approval = new CliToolApproval(configuration.permission, readline);
+  const client = await createClientRuntime({ ...configuration, approval });
   const { runtime, events } = client;
   for (const server of client.mcpServers) {
     process.stderr.write(
@@ -963,9 +1027,11 @@ async function main(): Promise<void> {
     });
     try {
       const session = await runtime.createSession();
-      await runtime.run(session.id, prompt);
+      await runCliTurn(runtime, session.id, prompt, readline);
       process.stdout.write("\n");
     } finally {
+      approval.denyAll();
+      readline?.close();
       await client.dispose();
     }
     return;

@@ -1,6 +1,7 @@
+import { FileWorkspaceTrustStore, contentHash } from "./workspace-trust.js";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { brand } from "@truss-harness/branding";
 import {
   parseMcpServerConfigurations,
@@ -13,7 +14,10 @@ import {
   isLocalEndpointKind,
   type ModelProviderKind,
 } from "@truss-harness/provider-openai-compatible";
-import type { MasterPromptConfiguration } from "@truss-harness/runtime";
+import {
+  resolveWorkspacePath,
+  type MasterPromptConfiguration,
+} from "@truss-harness/runtime";
 import type { AgentMode, ClientConfiguration } from "./runtime.js";
 import type { PermissionMode } from "./protocol.js";
 
@@ -41,7 +45,7 @@ export interface ProfileConfiguration {
 export interface HarnessConfiguration extends ProfileConfiguration {
   readonly defaultProfile?: string;
   readonly profiles?: Readonly<Record<string, ProfileConfiguration>>;
-  /** User-level opt-in for executable MCP definitions from workspace configuration. */
+  /** Legacy field; workspace MCP now requires content-bound local config trust. */
   readonly allowWorkspaceMcpServers?: boolean;
 }
 
@@ -54,6 +58,13 @@ export interface ResolvedConfiguration extends ClientConfiguration {
   readonly permission: PermissionMode;
   readonly tuiTheme?: TuiThemeName;
   readonly paths: { readonly user: string; readonly workspace: string };
+  readonly provenance: Readonly<Record<string, string>>;
+  readonly workspaceTrust: {
+    readonly status: "trusted" | "untrusted" | "missing";
+    readonly hash?: string;
+    readonly store: string;
+    readonly diagnostic?: string;
+  };
 }
 
 export interface ConfigurationPaths {
@@ -269,8 +280,103 @@ export function configurationPaths(
       : (environment.XDG_CONFIG_HOME ?? join(homedir(), ".config"));
   return {
     user: join(userRoot, brand.productSlug, "config.json"),
-    workspace: join(workspaceRoot, brand.workspaceDirectory, "config.json"),
+    workspace: resolveWorkspacePath(
+      workspaceRoot,
+      `${brand.workspaceDirectory}/config.json`,
+    ),
   };
+}
+
+export function workspaceTrustStore(
+  workspaceRoot: string,
+  paths = configurationPaths(workspaceRoot),
+): FileWorkspaceTrustStore {
+  return new FileWorkspaceTrustStore(
+    workspaceRoot,
+    join(dirname(paths.user), "workspace-trust.json"),
+  );
+}
+
+/** Explicit external config locations are caller authority; workspace paths are rechecked. */
+function checkedWorkspaceConfigurationPath(
+  workspaceRoot: string,
+  path: string,
+): string {
+  const candidate = relative(workspaceRoot, path);
+  return candidate === ".." ||
+    candidate.startsWith(`..${sep}`) ||
+    isAbsolute(candidate)
+    ? path
+    : resolveWorkspacePath(workspaceRoot, candidate);
+}
+
+async function workspaceConfiguration(
+  workspaceRoot: string,
+  paths: ConfigurationPaths,
+): Promise<{
+  configuration: HarnessConfiguration;
+  provenance: ResolvedConfiguration["workspaceTrust"];
+}> {
+  const store = workspaceTrustStore(workspaceRoot, paths);
+  let content: string;
+  try {
+    content = await readFile(
+      checkedWorkspaceConfigurationPath(workspaceRoot, paths.workspace),
+      "utf8",
+    );
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT")
+      return {
+        configuration: {},
+        provenance: { status: "missing", store: store.path },
+      };
+    throw error;
+  }
+  const trusted = await store.isTrusted("config", content);
+  let parsed: HarnessConfiguration;
+  let diagnostic: string | undefined;
+  try {
+    const source = JSON.parse(content) as unknown;
+    const safe = object(source);
+    parsed = trusted
+      ? parseConfiguration(source)
+      : {
+          model: typeof safe?.model === "string" ? safe.model : undefined,
+          tuiTheme: validTuiTheme(safe?.tuiTheme),
+        };
+  } catch (error) {
+    if (trusted) throw error;
+    parsed = {};
+    diagnostic =
+      "Ignored malformed untrusted workspace config. Review or remove it before using config trust.";
+  }
+  // Untrusted files may suggest a model/theme, but cannot choose even a named
+  // user profile: that would indirectly select its credentials and authority.
+  return {
+    configuration: trusted
+      ? parsed
+      : { model: parsed.model, tuiTheme: parsed.tuiTheme },
+    provenance: {
+      status: trusted ? "trusted" : "untrusted",
+      hash: contentHash(content),
+      store: store.path,
+      ...(diagnostic ? { diagnostic } : {}),
+    },
+  };
+}
+
+/** Explicit local authorization of exactly the current configuration bytes. */
+export async function trustWorkspaceConfiguration(
+  workspaceRoot: string,
+  paths = configurationPaths(workspaceRoot),
+): Promise<string> {
+  const content = await readFile(
+    checkedWorkspaceConfigurationPath(workspaceRoot, paths.workspace),
+    "utf8",
+  );
+  parseConfiguration(JSON.parse(content) as unknown);
+  await workspaceTrustStore(workspaceRoot, paths).trust("config", content);
+  return contentHash(content);
 }
 
 export async function resolveConfiguration(options: {
@@ -282,15 +388,16 @@ export async function resolveConfiguration(options: {
   const environment = options.environment ?? process.env;
   const paths =
     options.paths ?? configurationPaths(options.workspaceRoot, environment);
-  const [user, workspace] = await Promise.all([
+  const [user, workspaceResult] = await Promise.all([
     readConfiguration(paths.user),
-    readConfiguration(paths.workspace),
+    workspaceConfiguration(options.workspaceRoot, paths),
   ]);
+  const workspace = workspaceResult.configuration;
   const profile =
     options.overrides?.profile ??
+    environment.TRUSS_HARNESS_PROFILE ??
     workspace.defaultProfile ??
-    user.defaultProfile ??
-    environment.TRUSS_HARNESS_PROFILE;
+    user.defaultProfile;
   const userProfile = profile ? user.profiles?.[profile] : undefined;
   const workspaceProfile = profile ? workspace.profiles?.[profile] : undefined;
   const environmentProfile = environmentConfiguration(environment);
@@ -306,9 +413,31 @@ export async function resolveConfiguration(options: {
     environmentProfile,
     options.overrides,
   );
-  const workspaceMcpServers = user.allowWorkspaceMcpServers
-    ? (workspaceProfile?.mcpServers ?? workspace.mcpServers)
-    : undefined;
+  const provenance: Record<string, string> = {};
+  for (const [source, layer] of [
+    ["user", user],
+    ["user profile", userProfile],
+    ["workspace", workspace],
+    ["workspace profile", workspaceProfile],
+    ["environment", environmentProfile],
+    ["flags", options.overrides],
+  ] as const) {
+    for (const [key, value] of Object.entries(layer ?? {}))
+      if (value !== undefined) provenance[key] = source;
+  }
+  for (const key of [
+    "provider",
+    "baseUrl",
+    "model",
+    "permission",
+    "mode",
+    "internetAccess",
+  ])
+    provenance[key] ??= "default/detection";
+  const workspaceMcpServers =
+    workspaceResult.provenance.status === "trusted"
+      ? (workspaceProfile?.mcpServers ?? workspace.mcpServers)
+      : undefined;
   const mcpServers =
     options.overrides?.mcpServers ??
     environmentProfile.mcpServers ??
@@ -389,6 +518,8 @@ export async function resolveConfiguration(options: {
     profile,
     tuiTheme: merged.tuiTheme,
     paths,
+    workspaceTrust: workspaceResult.provenance,
+    provenance,
   };
 }
 
@@ -406,15 +537,16 @@ export async function listConfigurationProfiles(options: {
   const environment = options.environment ?? process.env;
   const paths =
     options.paths ?? configurationPaths(options.workspaceRoot, environment);
-  const [user, workspace] = await Promise.all([
+  const [user, workspaceResult] = await Promise.all([
     readConfiguration(paths.user),
-    readConfiguration(paths.workspace),
+    workspaceConfiguration(options.workspaceRoot, paths),
   ]);
+  const workspace = workspaceResult.configuration;
   const selected =
     options.selectedProfile ??
+    environment.TRUSS_HARNESS_PROFILE ??
     workspace.defaultProfile ??
-    user.defaultProfile ??
-    environment.TRUSS_HARNESS_PROFILE;
+    user.defaultProfile;
   const names = new Set([
     ...Object.keys(user.profiles ?? {}),
     ...Object.keys(workspace.profiles ?? {}),
@@ -449,6 +581,7 @@ export async function initializeWorkspaceConfiguration(
     if (!(error instanceof Error && "code" in error && error.code === "ENOENT"))
       throw error;
   }
+  checkedWorkspaceConfigurationPath(workspaceRoot, paths.workspace);
   await mkdir(dirname(paths.workspace), { recursive: true });
   await writeFile(
     paths.workspace,

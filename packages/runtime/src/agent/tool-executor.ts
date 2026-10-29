@@ -27,7 +27,7 @@ export class AgentToolExecutor {
 
   private async approve(call: ToolCall, session: Session, signal?: AbortSignal): Promise<boolean> {
     signal?.throwIfAborted();
-    const approved = await (this.options.approval ?? allowAllTools).approve(call, session);
+    const approved = await (this.options.approval ?? allowAllTools).approve(call, session, { signal });
     signal?.throwIfAborted();
     return approved;
   }

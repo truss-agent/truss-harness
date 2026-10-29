@@ -8,7 +8,7 @@ import type { SessionStore } from "../sessions.js";
 import type { ToolRegistry } from "../tools.js";
 
 export interface ToolApproval {
-  approve(call: ToolCall, session: Session): Promise<boolean>;
+  approve(call: ToolCall, session: Session, context?: { readonly signal?: AbortSignal }): Promise<boolean>;
 }
 
 export const allowAllTools: ToolApproval = { approve: async () => true };

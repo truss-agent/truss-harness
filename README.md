@@ -132,6 +132,20 @@ Example .truss-harness/config.json:
 }
 ~~~
 
+Review the workspace configuration, then authorize that exact file locally:
+
+~~~sh
+truss-cli config trust
+truss-cli config status
+~~~
+
+Trust is stored beside your user configuration, bound to the canonical workspace
+and file contents. Editing the file requires trust again. Existing repositories
+and `config init` templates start untrusted: they cannot select endpoints,
+credentials, permission policy, editing mode, or executable MCP commands.
+User settings, environment variables, and explicit flags continue to work.
+Only top-level model and theme suggestions are read from untrusted files.
+
 Use a profile for a task:
 
 ~~~sh
@@ -167,7 +181,18 @@ Choose the mode that fits the task:
 
 Tool permissions are independent from mode. Use **Ask every time** to approve
 each action, **Auto-allow read-only** to approve safe inspection automatically,
-or **Auto-allow all tools** only in a workspace you trust.
+or **Auto-allow all tools** only in a workspace you trust. Direct CLI chat honors
+`--permission` too. Ask is the default; without a TTY, a tool needing approval
+fails promptly. For authorized automation, explicitly choose `--permission auto-all`.
+Ctrl+C cancels generation and pending approvals.
+
+Existing workspace managed-agent profiles need review and `truss-cli agents trust <id>`.
+Profiles created or updated through a trusted local client retain their own
+content-bound receipts. Adding a profile does not trust other profiles.
+
+Workspace file operations check canonical paths, including symlink targets and
+parents of new files. Safe internal symlinks work. These pathname checks cannot
+prevent hostile concurrent symlink swaps; terminal commands retain OS access.
 
 ## MCP servers
 
@@ -192,8 +217,8 @@ CLI/TUI users can add the same definitions to their shared configuration:
 Chat and Plan modes load only servers marked readOnly; Edit mode loads every
 enabled server. Workspace MCP definitions are
 ignored by default because they can start local processes; explicitly trust
-them with "allowWorkspaceMcpServers": true in your user configuration when
-appropriate.
+the reviewed workspace configuration with `truss-cli config trust`. The legacy
+`allowWorkspaceMcpServers` flag no longer authorizes repository commands.
 
 Use `truss-cli mcp status`, `truss-cli mcp tools`, or
 `truss-cli mcp reconnect <name>` for safe terminal diagnostics. The TUI opens

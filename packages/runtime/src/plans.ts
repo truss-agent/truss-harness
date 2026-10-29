@@ -1,7 +1,8 @@
+import { resolveWorkspacePath } from "./workspace.js";
 import { FileWorkspaceStorageOwnership, type WorkspaceStorageOwnership } from "./storage-ownership.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { brand } from "@truss-harness/branding";
 
 export type PlanStepStatus = "pending" | "in_progress" | "completed";
@@ -52,11 +53,9 @@ export function parseAgentPlan(text: string, objective: string): { readonly titl
 
 /** Durable active plan stored separately from source files and intended to be Git-ignored. */
 export class FileWorkspacePlanStore implements WorkspacePlanStore {
-  readonly path: string;
+  get path(): string { return this.explicitPath ?? resolveWorkspacePath(this.workspaceRoot, `${brand.workspaceDirectory}/plans/active.json`); }
 
-  constructor(workspaceRoot: string, path = join(workspaceRoot, brand.workspaceDirectory, "plans", "active.json"), private readonly ownership: WorkspaceStorageOwnership = new FileWorkspaceStorageOwnership()) {
-    this.path = path;
-  }
+  constructor(private readonly workspaceRoot: string, private readonly explicitPath?: string, private readonly ownership: WorkspaceStorageOwnership = new FileWorkspaceStorageOwnership()) {}
 
   async load(): Promise<WorkspacePlan | undefined> {
     try {

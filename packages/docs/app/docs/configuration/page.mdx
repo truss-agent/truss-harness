@@ -11,7 +11,11 @@ truss-cli config init
 
 On Windows, the user configuration file is <UserConfigPath />. Each workspace can also define <WorkspaceConfigPath />.
 
-`config init` creates a workspace template and refuses to overwrite an existing file.
+`config init` creates a workspace template and refuses to overwrite an existing file. It does not authorize the file.
+
+Review `.truss-harness/config.json`, then run `truss-cli config trust`. Authorization is stored beside your user configuration and binds the exact contents to the canonical workspace. Changes invalidate trust. Run `truss-cli config status` to inspect effective policy, setting provenance and trust status without displaying credentials.
+
+Untrusted workspace files can suggest a top-level model or theme, but cannot select providers, endpoints, credentials, named profiles, editing mode, approval policy, internet access or MCP commands. User configuration, environment variables and explicit flags remain available. Existing workspace configurations require this local review once; the legacy `allowWorkspaceMcpServers` switch is no longer sufficient. Malformed untrusted JSON is ignored with a diagnostic; repair or remove the file before trusting it.
 
 ## Interactive setup
 
@@ -62,7 +66,7 @@ This guided user-level setup can discover a local endpoint or create a cloud BYO
 | `apiKeyEnv`                | Name of an environment variable that contains a token                                                                                                                                                     |
 | `mcpServers`               | Named local stdio MCP server definitions                                                                                                                                                                  |
 | `tuiTheme`                 | Terminal UI palette: `forest` (default), `sage`, or `dusk`                                                                                                                                                |
-| `allowWorkspaceMcpServers` | User-level opt-in for MCP commands defined by a workspace                                                                                                                                                 |
+| `allowWorkspaceMcpServers` | Legacy; use content-bound `config trust` authorization for workspace MCP commands                                                                                                                                                 |
 
 Keep tokens out of JSON files. Use `apiKeyEnv` to reference an environment variable instead.
 
@@ -149,7 +153,7 @@ MCP servers can expose additional tools to Agent and Plan modes:
 }
 ```
 
-User-level MCP definitions load normally. Workspace MCP definitions are ignored unless the user configuration sets `"allowWorkspaceMcpServers": true`, because opening a workspace must not silently authorize it to launch a local command. See [MCP Servers](/docs/runtime/mcp) for the complete schema, UI setup, mode rules, and security behavior.
+User-level MCP definitions load normally. Workspace MCP definitions are ignored until the exact reviewed configuration is authorized locally with `truss-cli config trust`, because opening a workspace must not silently authorize it to launch a local command. See [MCP Servers](/docs/runtime/mcp) for the complete schema, UI setup, mode rules, and security behavior.
 
 ## Precedence
 

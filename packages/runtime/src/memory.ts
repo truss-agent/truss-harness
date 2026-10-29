@@ -1,7 +1,8 @@
+import { resolveWorkspacePath } from "./workspace.js";
 import { randomUUID } from "node:crypto";
 import { FileWorkspaceStorageOwnership, type WorkspaceStorageOwnership } from "./storage-ownership.js";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { brand } from "@truss-harness/branding";
 
 export type WorkspaceTaskStatus = "running" | "completed" | "failed";
@@ -84,10 +85,11 @@ function normalizeSnapshot(value: unknown): WorkspaceMemorySnapshot {
 /** Durable, workspace-local memory stored outside normal source directories. */
 export class FileWorkspaceMemoryStore implements WorkspaceMemoryStore {
   private readonly ownership: WorkspaceStorageOwnership;
-  readonly path: string;
+  private readonly explicitPath?: string;
+  get path(): string { return this.explicitPath ?? resolveWorkspacePath(this.workspaceRoot, `${brand.workspaceDirectory}/agent-state.json`); }
 
-  constructor(workspaceRoot: string, options: { readonly path?: string; readonly maxTasks?: number; readonly maxFiles?: number; readonly ownership?: WorkspaceStorageOwnership } = {}) {
-    this.path = options.path ?? join(workspaceRoot, brand.workspaceDirectory, "agent-state.json");
+  constructor(private readonly workspaceRoot: string, options: { readonly path?: string; readonly maxTasks?: number; readonly maxFiles?: number; readonly ownership?: WorkspaceStorageOwnership } = {}) {
+    this.explicitPath = options.path;
     this.maxTasks = options.maxTasks ?? 30;
     this.maxFiles = options.maxFiles ?? 80;
     this.ownership = options.ownership ?? new FileWorkspaceStorageOwnership();
