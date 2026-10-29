@@ -592,10 +592,33 @@ export class FileSkillSettingsStore implements SkillSettingsStore {
     const value =
       selection === undefined ? undefined : normalizeSkillSelection(selection);
     const key = (await this.keys(scope)).at(-1) ?? "user";
-    await this.ownership.run(this.options.path, async () => {
-      const records = await this.records();
+    await this.update((records) => {
       if (!value || !Object.keys(value).length) delete records[key];
       else records[key] = { ...records[key], ...value };
+    });
+  }
+
+  /**
+   * Drops a skill from every saved selection, so removing an installed skill
+   * does not leave runs failing on a selection that names it.
+   */
+  async forget(id: string): Promise<void> {
+    await this.update((records) => {
+      for (const [key, record] of Object.entries(records))
+        if (record.skillIds?.includes(id))
+          records[key] = {
+            ...record,
+            skillIds: record.skillIds.filter((skillId) => skillId !== id),
+          };
+    });
+  }
+
+  private async update(
+    change: (records: SettingsRecords) => void,
+  ): Promise<void> {
+    await this.ownership.run(this.options.path, async () => {
+      const records = await this.records();
+      change(records);
       await mkdir(dirname(this.options.path), { recursive: true });
       const temporary = `${this.options.path}.${randomUUID()}.tmp`;
       try {

@@ -586,6 +586,25 @@ describe("FileSkillSettingsStore", () => {
     });
   });
 
+  it("forgets a removed skill at every scope", async () => {
+    const base = await temporary();
+    const settings = new FileSkillSettingsStore({
+      path: join(base, "skill-settings.json"),
+    });
+    await settings.setSettings({}, { skillIds: ["user:gone", "user:kept"] });
+    await settings.setSettings(
+      { workspaceRoot: base, sessionId: "s" },
+      { mode: "manual", skillIds: ["user:gone"] },
+    );
+    await settings.forget("user:gone");
+    expect(await settings.getSettings({})).toMatchObject({
+      skillIds: ["user:kept"],
+    });
+    expect(
+      await settings.getSettings({ workspaceRoot: base, sessionId: "s" }),
+    ).toEqual({ mode: "manual", superpowersEnabled: true, skillIds: [] });
+  });
+
   it("rejects invalid values and scopes", async () => {
     const base = await temporary();
     const settings = new FileSkillSettingsStore({

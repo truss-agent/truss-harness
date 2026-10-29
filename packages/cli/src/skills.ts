@@ -47,7 +47,10 @@ export function skillServiceHost(
       ? {}
       : {
           import: (input) => skills.store.import(input),
-          remove: (id) => skills.store.remove(id),
+          remove: async (id) => {
+            await skills.store.remove(id);
+            await skills.settings.forget(id);
+          },
         }),
   };
 }
@@ -110,7 +113,7 @@ export async function runSkillsCommand(
     return 0;
   }
   if (action === "remove" && values.length === 1) {
-    await skills.store.remove(values[0] ?? "");
+    await service.remove?.(values[0] ?? "");
     write(`Removed ${values[0]}\n`);
     return 0;
   }
