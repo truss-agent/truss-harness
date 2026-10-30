@@ -39,6 +39,7 @@ import {
   saveUserProfile,
   trustWorkspaceConfiguration,
 } from "./config.js";
+import { herdrAgentStatus } from "./interactive/agent-status.js";
 import { InteractiveChat } from "./interactive/controller.js";
 import { FileConversationStore } from "./interactive/conversations.js";
 import { colorEnabled, createStyle } from "./interactive/renderer.js";
@@ -124,6 +125,7 @@ Commands:
 
 Options:
   --profile <name>       Select a named configuration profile
+  --resume <id>          Reopen a saved conversation in interactive chat
   --provider <name>      Local or BYOK cloud provider (see Environment)
   --provider-account <id> Select a named provider account
   --base-url <url>       Local server endpoint
@@ -378,12 +380,28 @@ async function runInteractiveChat(
   );
 }
 
+/** The command a workspace manager runs to reopen a conversation. */
+function resumeCommand(
+  conversationId: string | undefined,
+  configuration: ResolvedConfiguration,
+): readonly string[] {
+  return [
+    brand.cliCommand,
+    ...(conversationId ? ["--resume", conversationId] : []),
+    ...(configuration.profile ? ["--profile", configuration.profile] : []),
+    "--mode",
+    configuration.mode ?? "chat",
+  ];
+}
+
 /** Transcript chat with composer and slash menu, for a real terminal. */
 async function runTerminalChat(
   configuration: ResolvedConfiguration,
+  resumeConversationId: string | undefined,
   resolveProfile: (profile: string) => Promise<ResolvedConfiguration>,
 ): Promise<void> {
   const style = createStyle(colorEnabled(process.env, true));
+  const agentStatus = herdrAgentStatus(process.env);
   let chat: InteractiveChat | undefined;
   const terminal = openTerminal(process.stdin, process.stdout, {
     onData: (chunk) => chat?.handleData(chunk),
@@ -404,6 +422,8 @@ async function runTerminalChat(
         join(dirname(configuration.paths.user), "conversations"),
         cwd(),
       ),
+      ...(agentStatus ? { agentStatus, resumeCommand } : {}),
+      ...(resumeConversationId ? { resumeConversationId } : {}),
     });
     await chat.start();
     await chat.closed;
@@ -433,9 +453,18 @@ async function setupInteractively(): Promise<string> {
 async function main(): Promise<void> {
   const interactiveTerminal =
     process.stdin.isTTY === true && process.stdout.isTTY === true;
-  // A bare command in a terminal opens chat; in scripts it prints help.
-  const [command = interactiveTerminal ? "chat" : "help", ...rawArgs] =
-    process.argv.slice(2);
+  // A bare command, or options alone, in a terminal opens chat; in scripts
+  // a bare command prints help.
+  const argv = process.argv.slice(2);
+  const implicitChat =
+    interactiveTerminal &&
+    (!argv.length ||
+      (argv[0]?.startsWith("--") === true &&
+        argv[0] !== "--help" &&
+        argv[0] !== "--version"));
+  const [command = "help", ...rawArgs] = implicitChat
+    ? ["chat", ...argv]
+    : argv;
   if (command === "help" || command === "--help" || command === "-h") {
     process.stdout.write(help);
     return;
@@ -782,7 +811,25 @@ async function main(): Promise<void> {
     );
   }
 
-  const { overrides, rest: args } = parseConfigurationOverrides(rawArgs);
+  const { overrides, rest } = parseConfigurationOverrides(rawArgs);
+  const resumeAt = rest.indexOf("--resume");
+  const resumeConversationId = resumeAt >= 0 ? rest[resumeAt + 1] : undefined;
+  if (
+    resumeAt >= 0 &&
+    (!resumeConversationId || resumeConversationId.startsWith("--"))
+  )
+    throw new Error("Missing value for --resume");
+  const args =
+    resumeAt >= 0
+      ? rest.filter((_, index) => index !== resumeAt && index !== resumeAt + 1)
+      : rest;
+  if (
+    resumeConversationId &&
+    (command !== "chat" || args.length || !interactiveTerminal)
+  )
+    throw new Error(
+      `--resume reopens a saved conversation in interactive chat: ${brand.cliCommand} --resume <id>`,
+    );
   const workspaceCommand =
     command === "init"
       ? "/init"
@@ -942,7 +989,7 @@ async function main(): Promise<void> {
 
   if (command === "chat" && !args.join(" ").trim()) {
     if (interactiveTerminal)
-      await runTerminalChat(configuration, (profile) =>
+      await runTerminalChat(configuration, resumeConversationId, (profile) =>
         resolveConfiguration({
           secrets,
           workspaceRoot: cwd(),

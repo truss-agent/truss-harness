@@ -9,7 +9,8 @@ import type { ModelRequest, ModelStreamEvent } from "@truss-harness/runtime";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ResolvedConfiguration } from "../config.js";
 import { createClientRuntime } from "../runtime.js";
-import { InteractiveChat } from "./controller.js";
+import type { AgentState, AgentStatusReporter } from "./agent-status.js";
+import { InteractiveChat, type InteractiveChatOptions } from "./controller.js";
 import { FileConversationStore, unknownOutcome } from "./conversations.js";
 import { createStyle } from "./renderer.js";
 
@@ -26,6 +27,9 @@ async function harness(
   turns: Turn[],
   permission: "ask" | "auto-all" = "ask",
   mode: "chat" | "edit" = "edit",
+  extra: (
+    store: FileConversationStore,
+  ) => Partial<InteractiveChatOptions> = () => ({}),
 ) {
   const base = await mkdtemp(join(tmpdir(), "truss-interactive-"));
   roots.push(base);
@@ -78,6 +82,7 @@ async function harness(
     createRuntime: createClientRuntime,
     conversations,
     now: () => now,
+    ...extra(conversations),
   });
   await chat.start();
   const plain = () =>
@@ -282,4 +287,92 @@ it("saves conversations and resumes with unfinished tools marked unknown", async
   const history = JSON.stringify(test.requests.at(-1)?.messages);
   expect(history).toContain(unknownOutcome);
   await test.chat.close();
+});
+
+function recordingStatus() {
+  const events: string[] = [];
+  const reporter: AgentStatusReporter = {
+    state: (state: AgentState, message?: string) => {
+      events.push(message ? `${state}: ${message}` : state);
+    },
+    resumeCommand: (id, argv) => {
+      events.push(`resume ${id ?? "-"} ${argv.join(" ")}`);
+    },
+    release: async () => {
+      events.push("release");
+    },
+  };
+  return { events, reporter };
+}
+
+it("reports working, blocked and idle, the resume command and release", async () => {
+  const status = recordingStatus();
+  const test = await harness(
+    [
+      async function* () {
+        yield {
+          type: "tool_call",
+          id: "r1",
+          name: "run_terminal",
+          input: { command: "echo hi" },
+        };
+        yield { type: "finish", reason: "tool_calls" };
+      },
+      async function* () {
+        yield { type: "text_delta", text: "Done." };
+        yield finish;
+      },
+    ],
+    "ask",
+    "edit",
+    () => ({
+      agentStatus: status.reporter,
+      resumeCommand: (id) => ["truss-cli", ...(id ? ["--resume", id] : [])],
+    }),
+  );
+  expect(status.events).toEqual(["idle", "resume - truss-cli"]);
+  test.type("run it\r");
+  await vi.waitFor(() => expect(test.plain()).toContain("Allow this?"));
+  test.type("n");
+  await vi.waitFor(() => expect(test.plain()).toContain("Done."));
+  await vi.waitFor(() => expect(status.events.at(-1)).toBe("idle"));
+  const saved = (await test.conversations.list())[0]?.id;
+  expect(status.events.slice(2)).toEqual([
+    "working",
+    "blocked: Allow run_terminal?",
+    "working",
+    `resume ${saved} truss-cli --resume ${saved}`,
+    "idle",
+  ]);
+  await test.chat.close();
+  expect(status.events.at(-1)).toBe("release");
+});
+
+it("resumes a saved conversation at start by its short ID", async () => {
+  const first = await harness(
+    [
+      async function* () {
+        yield { type: "text_delta", text: "First answer" };
+        yield finish;
+      },
+    ],
+    "auto-all",
+  );
+  first.type("first question\r");
+  await vi.waitFor(async () =>
+    expect(await first.conversations.list()).toHaveLength(1),
+  );
+  const id = (await first.conversations.list())[0]?.id ?? "";
+  await first.chat.close();
+  const resumed = await harness([], "auto-all", "edit", () => ({
+    conversations: first.conversations,
+    resumeConversationId: id.slice(0, 8),
+  }));
+  expect(resumed.plain()).toContain('Resumed "first question"');
+  await resumed.chat.close();
+  const missing = await harness([], "auto-all", "edit", () => ({
+    resumeConversationId: "nope-nope-nope",
+  }));
+  expect(missing.plain()).toContain("Starting a new conversation.");
+  await missing.chat.close();
 });

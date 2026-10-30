@@ -2,6 +2,19 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.54] - 2026-10-30
+
+### Added
+
+- The CLI reports its state to Herdr when it runs in a Herdr pane: working,
+  blocked on an approval, or idle, plus the command that reopens the
+  conversation after a Herdr restart.
+- `truss-cli --resume <id>` reopens a saved conversation at startup.
+
+### Changed
+
+- Bundled CLI 0.1.26 in Desktop and VS Code.
+
 ## [0.1.53] - 2026-10-29
 
 ### Added

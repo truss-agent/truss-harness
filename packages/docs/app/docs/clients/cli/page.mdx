@@ -90,6 +90,12 @@ Type `/help` for every command. Useful ones are `/mode chat|plan|edit`, `/permis
 
 Conversations are saved after each reply in your user configuration directory, separately for each workspace. `/resume` lists them and `/resume <number>` continues one. If a saved conversation stopped partway through a tool call, that call is marked as having an unknown outcome instead of being run again.
 
+Start with `truss-cli --resume <id>` to reopen a saved conversation directly. The first eight characters of the ID, as shown by `/status`, are enough.
+
+### Herdr
+
+When the CLI runs in a [Herdr](https://herdr.dev) pane, it reports its state there. Herdr shows Truss as working while a reply runs, blocked while a tool approval waits for you, and idle otherwise, so its notifications and `herdr agent wait` work with Truss. Truss also gives Herdr the command that reopens the current conversation, so the same conversation comes back in the same pane after a Herdr restart. Nothing needs configuring: this turns on only inside a Herdr pane, and a Herdr that does not respond never slows the chat down.
+
 When standard input or output is not a terminal, `truss-cli chat` falls back to a simple line-based loop with the same history and `:` controls.
 
 Add `--internet-access` to expose `web_search` and `web_fetch` for that run. Web tool calls still follow the selected approval policy. Use `--no-internet-access` to override an enabled profile.
