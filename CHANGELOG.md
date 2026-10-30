@@ -2,6 +2,20 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.53] - 2026-10-29
+
+### Added
+
+- `truss-cli` now starts guided setup the first time it runs without a
+  model. Setup lists cloud providers, takes the API key with hidden input,
+  checks it by loading the provider's models, lets you pick a model, and
+  stores the key in the system keyring instead of a configuration file.
+
+### Changed
+
+- Moved cloud model discovery into the shared provider package so Desktop and
+  the CLI list provider models the same way.
+
 ## [0.1.52] - 2026-10-29
 
 ### Added

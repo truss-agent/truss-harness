@@ -54,7 +54,7 @@ Internet research adds bounded `web_search` and `web_fetch` tools. It is disable
 
 ## Skills
 
-Version 0.1.27 adds **Truss: Manage Skills**. Use it to choose the skills mode
+Version 0.1.27 added **Truss: Manage Skills**. Use it to choose the skills mode
 (Automatic, Manual, or Off), turn the bundled Superpowers skills on or off, and
 import or remove personal and workspace skills.
 
