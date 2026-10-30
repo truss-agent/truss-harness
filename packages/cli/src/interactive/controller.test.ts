@@ -376,3 +376,103 @@ it("resumes a saved conversation at start by its short ID", async () => {
   expect(missing.plain()).toContain("Starting a new conversation.");
   await missing.chat.close();
 });
+
+it("opens numbered menus for /mode and /permissions", async () => {
+  const test = await harness([]);
+  test.type("/permissions\r");
+  await vi.waitFor(() => expect(test.plain()).toContain("Tool approval"));
+  expect(test.plain()).toContain("1. ask");
+  test.type("3");
+  await vi.waitFor(() =>
+    expect(test.plain()).toContain("Tool permissions: auto-all"),
+  );
+  test.type("/mode\r");
+  await vi.waitFor(() =>
+    expect(test.plain()).toContain("Change files and run commands"),
+  );
+  test.type("\x1b[A");
+  test.type("\r");
+  await vi.waitFor(() => expect(test.plain()).toContain("Mode: plan"));
+  test.type("/mode\r");
+  await vi.waitFor(() =>
+    expect(test.plain().split("Change files and run commands")).toHaveLength(3),
+  );
+  test.type("\x1b");
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  test.type("/status\r");
+  await vi.waitFor(() => expect(test.plain()).toContain("Mode plan"));
+  await test.chat.close();
+});
+
+it("lists provider models in /model and switches without losing the conversation", async () => {
+  const listModels = vi.fn(async () =>
+    Array.from({ length: 12 }, (_, index) => `fixture-${index}`),
+  );
+  const test = await harness([], "ask", "edit", () => ({ listModels }));
+  test.type("/model\r");
+  await vi.waitFor(() =>
+    expect(test.plain()).toContain("Model · openai-compatible"),
+  );
+  test.type("11");
+  test.type("\r");
+  await vi.waitFor(() =>
+    expect(test.plain()).toContain("Model: fixture-11 for this session."),
+  );
+  test.type("/status\r");
+  await vi.waitFor(() =>
+    expect(test.plain()).toContain("openai-compatible/fixture-11"),
+  );
+  await test.chat.close();
+});
+
+it("attaches a pasted image path and a clipboard image to the next message", async () => {
+  const seen: ModelRequest[] = [];
+  const test = await harness(
+    [
+      async function* (request) {
+        seen.push(request);
+        yield { type: "text_delta", text: "Nice picture." };
+        yield finish;
+      },
+    ],
+    "ask",
+    "chat",
+    () => ({
+      readClipboardImage: async () => ({
+        name: "clipboard image",
+        mediaType: "image/png",
+        bytes: Buffer.from([1, 2, 3]),
+      }),
+    }),
+  );
+  await writeFile(join(test.base, "shot.png"), Buffer.from([137, 80, 78, 71]));
+  test.type("look at ");
+  test.type(`\x1b[200~${join(test.base, "shot.png")}\x1b[201~`);
+  await vi.waitFor(() => expect(test.plain()).toContain("[image 1]"));
+  test.type("\x16");
+  await vi.waitFor(() => expect(test.plain()).toContain("[image 2]"));
+  test.type("\r");
+  await vi.waitFor(() => expect(test.plain()).toContain("Nice picture."));
+  const user = [...(seen[0]?.messages ?? [])]
+    .reverse()
+    .find((message) => message.role === "user");
+  expect(user?.attachments?.map((attachment) => attachment.name)).toEqual([
+    "shot.png",
+    "clipboard image",
+  ]);
+  expect(user?.attachments?.[1]?.data).toBe("data:image/png;base64,AQID");
+  // Saved conversations keep image names but not their bytes.
+  const id = (await test.conversations.list())[0]?.id ?? "";
+  const saved = await test.conversations.load(id);
+  expect(JSON.stringify(saved)).toContain("shot.png");
+  expect(JSON.stringify(saved)).not.toContain("AQID");
+  await test.chat.close();
+});
+
+it("pastes a path to a missing image as ordinary text", async () => {
+  const test = await harness([]);
+  test.type("\x1b[200~/nope/missing.png\x1b[201~");
+  await vi.waitFor(() => expect(test.plain()).toContain("/nope/missing.png"));
+  expect(test.plain()).not.toContain("[image");
+  await test.chat.close();
+});

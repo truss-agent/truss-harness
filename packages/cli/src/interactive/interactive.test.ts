@@ -81,6 +81,7 @@ describe("commands", () => {
 
   it("filters by prefix and closes once arguments start", () => {
     expect(filterCommands("/s").map((command) => command.name)).toEqual([
+      "setup",
       "status",
       "skills",
       "skill",
@@ -154,11 +155,12 @@ describe("composer", () => {
   it("navigates, completes and dismisses the slash menu", () => {
     let result = type([text("/s")]);
     expect(menuCommands(result.state).map((command) => command.name)).toEqual([
+      "setup",
       "status",
       "skills",
       "skill",
     ]);
-    result = type([key("down"), key("tab")], result.state);
+    result = type([key("down"), key("down"), key("tab")], result.state);
     expect(result.state.text).toBe("/skills ");
     expect(menuCommands(result.state)).toEqual([]);
 
@@ -205,7 +207,7 @@ describe("renderer", () => {
     expect(view.lines).toEqual([
       "chat · model",
       "› /mo",
-      "  /model  Show the model or switch to …",
+      "  /model  Choose a model, or switch to…",
       "  /mode   Switch agent mode and keep t…",
     ]);
     expect([view.cursorRow, view.cursorColumn]).toEqual([1, 5]);

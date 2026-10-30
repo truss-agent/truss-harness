@@ -247,6 +247,7 @@ export function formatHelp(
     style.bold("Keys"),
     "  Enter send · Alt+Enter new line · / commands · Tab complete",
     "  Up/Down history · Esc close menu or clear · Ctrl+C stop, twice to exit",
+    "  Ctrl+V attach a clipboard image · paste an image path to attach the file",
     "  Start a message with // to send text that begins with a slash.",
   ].join("\n");
 }

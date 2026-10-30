@@ -22,7 +22,9 @@ export type KeyEvent =
         | "tab"
         | "escape"
         | "interrupt"
-        | "eof";
+        | "eof"
+        /** Ctrl+V: attach an image from the clipboard. */
+        | "paste-image";
     };
 
 const pasteStart = "\x1b[200~";
@@ -72,6 +74,7 @@ const controls: Record<string, KeyEvent["type"]> = {
   "\x15": "clear-line",
   "\x0b": "kill-to-end",
   "\x17": "delete-word",
+  "\x16": "paste-image",
 };
 
 /**

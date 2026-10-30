@@ -85,10 +85,13 @@ Interactive chat keeps a transcript in your terminal's scrollback and a composer
 | Ctrl+U / Ctrl+K / Ctrl+W | Clear to line start, clear to line end, delete a word |
 | Ctrl+C | Stop the response, clear the draft, or press twice to exit |
 | Ctrl+D | Exit on an empty draft |
+| Ctrl+V | Attach an image from the clipboard |
 
-Type `/help` for every command. Useful ones are `/mode chat|plan|edit`, `/permissions ask|auto-read|auto-all`, `/model`, `/new`, `/status`, `/skills` and `/quit`. The older `:mode`, `:clear`, `:help` and `:exit` forms still work, and prefixing a message with `--mode edit` switches mode and sends it. Start a message with `//` to send text that begins with a slash.
+Type `/help` for every command. `/mode`, `/permissions`, `/skills` and `/model` open a menu: press a number, or use Up/Down and Enter, and Esc to cancel. `/model` lists your provider's models (type to narrow long lists) and switches for this session. `/setup` changes provider, API key or default model without leaving the chat. You can still type the choice directly, as in `/mode edit` or `/model <profile>`. Other useful commands are `/new`, `/status` and `/quit`. The older `:mode`, `:clear`, `:help` and `:exit` forms still work, and prefixing a message with `--mode edit` switches mode and sends it. Start a message with `//` to send text that begins with a slash.
 
 Conversations are saved after each reply in your user configuration directory, separately for each workspace. `/resume` lists them and `/resume <number>` continues one. If a saved conversation stopped partway through a tool call, that call is marked as having an unknown outcome instead of being run again.
+
+To include images, press Ctrl+V to attach the image on your clipboard (this uses `wl-paste` on Wayland, `xclip` on X11, and the system clipboard on macOS), or paste or drop an image file's path. Each image appears as `[image 1]`, `[image 2]` and so on in your message, and is sent along with it when the model accepts images. Up to four images of 5 MB each go with one message. Saved conversations keep the image names but not the images themselves.
 
 Start with `truss-cli --resume <id>` to reopen a saved conversation directly. The first eight characters of the ID, as shown by `/status`, are enough.
 

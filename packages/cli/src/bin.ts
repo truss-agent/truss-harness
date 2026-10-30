@@ -10,8 +10,10 @@ import {
 } from "@truss-harness/gateway";
 import type { McpServerStatus } from "@truss-harness/mcp";
 import {
+  cloudProviderDefinition,
   detectLocalEndpoints,
   discoverCloudModels,
+  isLocalEndpointKind,
   listLocalModels,
 } from "@truss-harness/provider-openai-compatible";
 import {
@@ -40,6 +42,7 @@ import {
   trustWorkspaceConfiguration,
 } from "./config.js";
 import { herdrAgentStatus } from "./interactive/agent-status.js";
+import { readClipboardImage } from "./interactive/clipboard.js";
 import { InteractiveChat } from "./interactive/controller.js";
 import { FileConversationStore } from "./interactive/conversations.js";
 import { colorEnabled, createStyle } from "./interactive/renderer.js";
@@ -61,7 +64,7 @@ import {
   testClientProviderConnection,
 } from "./runtime.js";
 import { systemSecretStore } from "./secrets.js";
-import { runSetup, terminalSetupIO } from "./setup.js";
+import { runSetup, SetupCancelledError, terminalSetupIO } from "./setup.js";
 import {
   gatewaySkillController,
   runSkillsCommand,
@@ -380,6 +383,31 @@ async function runInteractiveChat(
   );
 }
 
+/** Model IDs the configured provider offers, for the in-chat menu. */
+async function listConfiguredModels(
+  configuration: ResolvedConfiguration,
+): Promise<readonly string[]> {
+  const { provider, baseUrl, apiKey } = configuration;
+  if (isLocalEndpointKind(provider))
+    return (
+      await listLocalModels({
+        id: "configured",
+        label: "Configured endpoint",
+        kind: provider,
+        baseUrl,
+      })
+    ).map((model) => model.name);
+  if (!apiKey)
+    throw new Error(`No API key is set for ${provider}. Run /setup.`);
+  return (
+    await discoverCloudModels(
+      cloudProviderDefinition(provider),
+      baseUrl,
+      apiKey,
+    )
+  ).map((model) => model.id);
+}
+
 /** The command a workspace manager runs to reopen a conversation. */
 function resumeCommand(
   conversationId: string | undefined,
@@ -423,6 +451,22 @@ async function runTerminalChat(
         cwd(),
       ),
       ...(agentStatus ? { agentStatus, resumeCommand } : {}),
+      listModels: listConfiguredModels,
+      readClipboardImage: () => readClipboardImage(process.env),
+      setup: async () => {
+        terminal.suspend();
+        let profile: string;
+        try {
+          process.stdout.write("\n");
+          profile = await setupInteractively();
+        } catch (error) {
+          if (error instanceof SetupCancelledError) return undefined;
+          throw error;
+        } finally {
+          terminal.resume();
+        }
+        return resolveProfile(profile);
+      },
       ...(resumeConversationId ? { resumeConversationId } : {}),
     });
     await chat.start();

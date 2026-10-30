@@ -246,6 +246,9 @@ export function reduceComposer(
       };
     case "interrupt":
       return { state, action: { type: "interrupt" } };
+    case "paste-image":
+      // The controller reads the clipboard; the draft itself is unchanged.
+      return { state };
     case "eof":
       return text ? { state } : { state, action: { type: "eof" } };
   }
