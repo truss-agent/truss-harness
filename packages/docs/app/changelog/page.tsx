@@ -4,6 +4,59 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Desktop 0.1.55 · VS Code 0.1.30 · CLI 0.1.27",
+    label: "CLI chat menus, in-chat setup, images, and Herdr status",
+    changes: [
+      "Made /mode, /permissions, /skills, and /model open a numbered menu when given no argument, with /model listing the configured provider's models and filtering long lists as you type.",
+      "Added /setup to CLI chat so you can change provider, API key, or model without leaving the conversation.",
+      "Added images to CLI chat: Ctrl+V attaches a clipboard image, and pasting or dropping an image file's path attaches the file.",
+      "Reported CLI state to Herdr when running in a Herdr pane (working, blocked on an approval, or idle) along with the command that reopens the conversation, and added truss-cli --resume <id>.",
+    ],
+  },
+  {
+    version: "Desktop 0.1.53 · VS Code 0.1.28 · CLI 0.1.25 · TUI 0.1.22",
+    label: "Guided setup with keyring storage",
+    changes: [
+      "Started guided setup the first time truss-cli runs without a model: choose a cloud provider or local server, enter an API key with hidden input, and pick from the provider's model list.",
+      "Stored API keys in the system keyring instead of configuration files, with environment variables still taking priority.",
+      "Moved cloud model discovery into the shared provider package so Desktop and the CLI list provider models the same way.",
+    ],
+  },
+  {
+    version:
+      "Runtime 0.1.15 · Desktop 0.1.52 · VS Code 0.1.27 · CLI 0.1.24 · TUI 0.1.21 · truss.nvim 0.2.4 · Truss Go 0.1.7",
+    label: "Skills everywhere and a chat-first CLI",
+    changes: [
+      "Added skills to every client, with the bundled Superpowers pack on by default, Automatic, Manual, and Off modes, and personal or workspace skills you can import, select, and remove.",
+      "Added a transcript-first interactive CLI chat with streamed replies, a slash-command menu, diff previews for approvals, and resumable conversations.",
+      "Hardened workspace path containment, approval enforcement, gateway network and process limits, model trust boundaries, and Git path handling.",
+      "Made run cancellation, coordinator startup, and transaction ownership reliable across interruptions, and upgraded vulnerable dependencies.",
+    ],
+  },
+  {
+    version: "Runtime 0.1.14 · Desktop 0.1.50 · VS Code 0.1.26",
+    label: "Native Anthropic Messages API",
+    changes: [
+      "Routed Anthropic chat through the native Messages API, preserving streaming text, tool calls, tool results, and credential-safe errors.",
+    ],
+  },
+  {
+    version: "Desktop 0.1.49",
+    label: "Reliable new-project builds",
+    changes: [
+      "Recovered Edit-mode agents from a missing workspace-file read by creating the file, and stopped repeated empty-workspace listing after bounded recovery attempts.",
+      "Switched Chat to Agent mode for direct build requests and confirmations, so those requests can create workspace files.",
+      "Supported both Anthropic API-key and OAuth bearer authentication during model discovery.",
+    ],
+  },
+  {
+    version: "Desktop 0.1.48",
+    label: "Anthropic model discovery fix",
+    changes: [
+      "Fixed Anthropic model discovery returning HTTP 400 by sending the required API key and version headers and loading every page of models.",
+    ],
+  },
+  {
     version: "Desktop 0.1.47",
     label: "Focused workspace sidebar",
     changes: [
