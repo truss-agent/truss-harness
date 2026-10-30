@@ -2,6 +2,20 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.61] - 2026-10-30
+
+### Added
+
+- CLI chat draws mermaid diagrams as text in any terminal. Flowcharts and
+  state diagrams get boxes and routed arrows, top-down or left-right, and
+  switch direction or fall back to a list of edges when the terminal is too
+  narrow. Sequence diagrams get lifelines and messages, and pie charts become
+  bar charts. Other diagram types show their source.
+
+### Changed
+
+- Bundled CLI 0.1.33 in Desktop and VS Code.
+
 ## [0.1.60] - 2026-10-30
 
 ### Added
