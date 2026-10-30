@@ -176,12 +176,22 @@ export function formatToolCall(
   width: number,
   style: Style,
 ): string {
+  return `${style.accent("•")} ${formatToolSummary(tool, input, width - 2, style)}`;
+}
+
+/** Tool label and subject without the leading bullet. */
+export function formatToolSummary(
+  tool: string,
+  input: Record<string, unknown> | undefined,
+  width: number,
+  style: Style,
+): string {
   const label = toolLabels[tool] ?? tool;
   const subject = truncate(
     sanitize(toolSubject(input)).replace(/\n/g, " "),
-    Math.max(8, width - displayWidth(label) - 4),
+    Math.max(8, width - displayWidth(label) - 2),
   );
-  return `${style.accent("•")} ${style.bold(label)}${subject ? ` ${subject}` : ""}`;
+  return `${style.bold(label)}${subject ? ` ${subject}` : ""}`;
 }
 
 /** Short outcome line under a tool call. */
