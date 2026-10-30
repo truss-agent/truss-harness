@@ -44,8 +44,8 @@ export const interactiveCommands: readonly InteractiveCommand[] = [
   },
   {
     name: "permissions",
-    usage: "/permissions [ask|auto-read|auto-all]",
-    summary: "Choose how tool requests are approved",
+    usage: "/permissions [ask|auto-read|auto-all|rules|clear]",
+    summary: "Choose how tool requests are approved, or list saved approvals",
   },
   { name: "new", usage: "/new", summary: "Start a new conversation" },
   {

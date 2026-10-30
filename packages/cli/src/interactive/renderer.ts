@@ -133,7 +133,7 @@ export function formatUserMessage(
     .join("\n");
 }
 
-const toolLabels: Record<string, string> = {
+export const toolLabels: Readonly<Record<string, string>> = {
   read_file: "Read",
   write_file: "Write",
   replace_in_file: "Edit",

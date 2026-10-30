@@ -10,6 +10,7 @@ import {
 } from "node:fs/promises";
 import { join } from "node:path";
 import type { ChatMessage } from "@truss-harness/runtime";
+import type { ApprovalRule } from "./approval-rules.js";
 
 export interface SavedConversation {
   readonly id: string;
@@ -18,6 +19,10 @@ export interface SavedConversation {
   readonly provider: string;
   readonly model: string;
   readonly mode: string;
+  /** Tool permission mode, restored on resume. */
+  readonly permission?: string;
+  /** "Always allow" answers given in this conversation. */
+  readonly approvals?: readonly ApprovalRule[];
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly messages: readonly ChatMessage[];

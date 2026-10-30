@@ -418,6 +418,97 @@ it("saves conversations and resumes with unfinished tools marked unknown", async
   await test.chat.close();
 });
 
+function writeTurns(count: number): Turn[] {
+  return Array.from({ length: count }, (_, index) => [
+    async function* () {
+      yield {
+        type: "tool_call",
+        id: `w${index}`,
+        name: "write_file",
+        input: { path: `f${index}.txt`, content: "x\n" },
+      } satisfies ModelStreamEvent;
+      yield { type: "finish", reason: "tool_calls" } satisfies ModelStreamEvent;
+    },
+    async function* () {
+      yield {
+        type: "text_delta",
+        text: `done ${index}`,
+      } satisfies ModelStreamEvent;
+      yield finish;
+    },
+  ]).flat();
+}
+
+const prompts = (text: string) => text.split("? Allow Write").length - 1;
+
+it("remembers an always-allow answer for the rest of the conversation", async () => {
+  const test = await harness(writeTurns(2));
+  test.type("one\r");
+  await vi.waitFor(() => expect(test.plain()).toContain("Allow this?"));
+  test.type("a");
+  await vi.waitFor(() => expect(test.plain()).toContain("done 0"));
+  expect(test.plain()).toContain("always: Write in this conversation");
+  test.type("two\r");
+  await vi.waitFor(() => expect(test.plain()).toContain("done 1"));
+  expect(prompts(test.plain())).toBe(1);
+  await test.chat.close();
+});
+
+it("saves workspace approvals outside the workspace and clears them", async () => {
+  const test = await harness(writeTurns(3));
+  test.type("one\r");
+  await vi.waitFor(() => expect(test.plain()).toContain("Allow this?"));
+  test.type("w");
+  await vi.waitFor(() => expect(test.plain()).toContain("done 0"));
+  const saved = JSON.parse(
+    await readFile(join(test.base, "config", "approvals.json"), "utf8"),
+  );
+  expect(Object.values(saved.workspaces)).toEqual([[{ tool: "write_file" }]]);
+  test.type("/new\r");
+  await vi.waitFor(() =>
+    expect(test.plain()).toContain("Started a new conversation."),
+  );
+  test.type("two\r");
+  await vi.waitFor(() => expect(test.plain()).toContain("done 1"));
+  expect(prompts(test.plain())).toBe(1);
+  test.type("/permissions rules\r");
+  await vi.waitFor(() =>
+    expect(test.plain()).toContain("This workspace: Write"),
+  );
+  test.type("/permissions clear workspace\r");
+  await vi.waitFor(() =>
+    expect(test.plain()).toContain("Forgot workspace approvals."),
+  );
+  test.type("three\r");
+  await vi.waitFor(() => expect(prompts(test.plain())).toBe(2));
+  test.type("n");
+  await test.chat.close();
+});
+
+it("restores a conversation's approvals and permission mode on resume", async () => {
+  const test = await harness(writeTurns(2));
+  test.type("one\r");
+  await vi.waitFor(() => expect(test.plain()).toContain("Allow this?"));
+  test.type("a");
+  await vi.waitFor(() => expect(test.plain()).toContain("done 0"));
+  test.type("/permissions auto-read\r");
+  await vi.waitFor(() =>
+    expect(test.plain()).toContain("Tool permissions: auto-read"),
+  );
+  test.type("/new\r");
+  test.type("/permissions ask\r");
+  await vi.waitFor(() =>
+    expect(test.plain()).toContain("Tool permissions: ask"),
+  );
+  test.type("/resume 1\r");
+  await vi.waitFor(() => expect(test.plain()).toContain('Resumed "one'));
+  expect(test.plain()).toContain("run again. Tool permissions: auto-read.");
+  test.type("two\r");
+  await vi.waitFor(() => expect(test.plain()).toContain("done 1"));
+  expect(prompts(test.plain())).toBe(1);
+  await test.chat.close();
+});
+
 function recordingStatus() {
   const events: string[] = [];
   const reporter: AgentStatusReporter = {
