@@ -10,10 +10,8 @@ import {
 } from "@truss-harness/gateway";
 import type { McpServerStatus } from "@truss-harness/mcp";
 import {
-  cloudProviderDefinitions,
   detectLocalEndpoints,
-  type LocalEndpointKind,
-  type LocalModelEndpoint,
+  discoverCloudModels,
   listLocalModels,
 } from "@truss-harness/provider-openai-compatible";
 import {
@@ -33,8 +31,8 @@ import {
   configurationPaths,
   initializeWorkspaceConfiguration,
   listConfigurationProfiles,
+  MissingModelError,
   parseConfigurationOverrides,
-  providerAccountEnvironmentVariable,
   type ResolvedConfiguration,
   resolveConfiguration,
   resolveSkills,
@@ -61,12 +59,16 @@ import {
   createClientRuntime,
   testClientProviderConnection,
 } from "./runtime.js";
+import { systemSecretStore } from "./secrets.js";
+import { runSetup, terminalSetupIO } from "./setup.js";
 import {
   gatewaySkillController,
   runSkillsCommand,
   skillServiceHost,
 } from "./skills.js";
 import { CLI_VERSION, formatCliVersion } from "./version.js";
+
+const secrets = systemSecretStore();
 
 const help = `${brand.productName} CLI
 
@@ -188,9 +190,9 @@ function subscribeToRuntimeEvents(events: ClientRuntime["events"]): void {
   events.subscribe((event) => {
     if (event.type === "text_delta") process.stdout.write(event.text);
     if (event.type === "progress_delta")
-      process.stderr.write("\n[thinking] " + event.text + "\n");
+      process.stderr.write(`\n[thinking] ${event.text}\n`);
     if (event.type === "tool_call_requested")
-      process.stderr.write("\n[tool] " + event.tool + "\n");
+      process.stderr.write(`\n[tool] ${event.tool}\n`);
     if (event.type === "plan_updated") {
       const steps = event.plan.steps
         .map(
@@ -205,9 +207,7 @@ function subscribeToRuntimeEvents(events: ClientRuntime["events"]): void {
             step.content,
         )
         .join("\n");
-      process.stderr.write(
-        "\n[plan] " + event.plan.title + "\n" + steps + "\n",
-      );
+      process.stderr.write(`\n[plan] ${event.plan.title}\n${steps}\n`);
     }
   });
 }
@@ -318,12 +318,12 @@ async function runInteractiveChat(
         client = await resources.createRuntime(configuration);
         session = await client.runtime.createSession(messages);
         subscribeToRuntimeEvents(client.events);
-        process.stdout.write("\n[mode: " + mode + "]\n");
+        process.stdout.write(`\n[mode: ${mode}]\n`);
       };
 
       while (true) {
         const line = await readline
-          .question(brand.cliCommand + " (" + configuration.mode + ") > ")
+          .question(`${brand.cliCommand} (${configuration.mode}) > `)
           .catch(() => undefined);
         if (line === undefined) break;
         const input = line.trim();
@@ -360,7 +360,7 @@ async function runInteractiveChat(
           input: next.prompt,
         });
         if (workspaceCommand.handled) {
-          process.stdout.write(workspaceCommand.message + "\n");
+          process.stdout.write(`${workspaceCommand.message}\n`);
           continue;
         }
         try {
@@ -414,172 +414,19 @@ async function runTerminalChat(
   }
 }
 
-function selectedIndex(input: string, count: number, fallback: number): number {
-  const index = Number.parseInt(input, 10);
-  return Number.isInteger(index) && index >= 1 && index <= count
-    ? index - 1
-    : fallback;
-}
-
-async function runSetup(): Promise<void> {
-  const readline = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-    terminal: process.stdin.isTTY === true,
-  });
-  const ask = async (label: string, fallback: string): Promise<string> => {
-    const answer = (
-      await readline.question(label + " [" + fallback + "]: ")
-    ).trim();
-    return answer || fallback;
-  };
-
+async function setupInteractively(): Promise<string> {
+  const io = terminalSetupIO();
   try {
-    const setupKind = await ask("Setup: local server or cloud BYOK", "local");
-    if (
-      setupKind.toLowerCase() === "cloud" ||
-      setupKind.toLowerCase() === "byok"
-    ) {
-      process.stdout.write(brand.productName + " cloud BYOK setup\n\n");
-      cloudProviderDefinitions.forEach((provider, index) => {
-        process.stdout.write(
-          String(index + 1) +
-            ". " +
-            provider.label +
-            " (" +
-            provider.id +
-            ")\n",
-        );
-      });
-      const provider =
-        cloudProviderDefinitions[
-          selectedIndex(
-            await ask("Provider", "1"),
-            cloudProviderDefinitions.length,
-            0,
-          )
-        ];
-      const model = await ask("Model ID", "your-tool-capable-model");
-      const profileName = await ask("Profile name", provider.id);
-      const accountRef = await ask("Provider account reference", "default");
-      const mode = await ask("Default mode: chat, plan, or edit", "edit");
-      if (mode !== "chat" && mode !== "plan" && mode !== "edit")
-        throw new Error("Mode must be chat, plan, or edit.");
-      const permission = await ask(
-        "Default permission: ask, auto-read, or auto-all",
-        "auto-read",
-      );
-      if (
-        permission !== "ask" &&
-        permission !== "auto-read" &&
-        permission !== "auto-all"
-      )
-        throw new Error("Permission must be ask, auto-read, or auto-all.");
-      const internet = await ask("Enable internet research: yes or no", "no");
-      const path = await saveUserProfile(cwd(), profileName, {
-        provider: provider.id,
-        baseUrl: provider.baseUrl,
-        model,
-        credentialRef: accountRef,
-        mode,
-        permission,
-        internetAccess: /^(y|yes|true|1)$/i.test(internet),
-      });
-      process.stdout.write(`\nSaved profile '${profileName}' to ${path}\n`);
-      process.stdout.write(
-        `Set ${providerAccountEnvironmentVariable(accountRef)} (or ${provider.apiKeyEnvironmentVariable} for the fallback) outside configuration, then run: ${brand.cliCommand} chat --profile ${profileName}\n`,
-      );
-      return;
-    }
-    const endpoints = await detectLocalEndpoints();
-    process.stdout.write(brand.productName + " setup\n");
-    process.stdout.write(
-      "Choose a local model server. Values in brackets are defaults.\n\n",
-    );
-    endpoints.forEach((endpoint, index) => {
-      process.stdout.write(
-        String(index + 1) +
-          ". " +
-          endpoint.label +
-          " (" +
-          endpoint.baseUrl +
-          ")\n",
-      );
+    return await runSetup(io, {
+      environment: process.env,
+      ...(secrets ? { secrets } : {}),
+      detectLocalEndpoints,
+      listLocalModels,
+      discoverCloudModels,
+      saveProfile: (name, profile) => saveUserProfile(cwd(), name, profile),
     });
-    process.stdout.write(String(endpoints.length + 1) + ". Custom endpoint\n");
-    const endpointChoice = selectedIndex(
-      await ask("Server", "1"),
-      endpoints.length + 1,
-      0,
-    );
-
-    let endpoint: LocalModelEndpoint;
-    if (endpointChoice < endpoints.length) {
-      endpoint = endpoints[endpointChoice];
-    } else {
-      const provider = (await ask(
-        "Provider: ollama or openai-compatible",
-        "openai-compatible",
-      )) as LocalEndpointKind;
-      if (provider !== "ollama" && provider !== "openai-compatible")
-        throw new Error("Provider must be ollama or openai-compatible.");
-      const fallbackUrl =
-        provider === "ollama"
-          ? "http://127.0.0.1:11434"
-          : "http://127.0.0.1:1234/v1";
-      endpoint = {
-        id: "custom",
-        label: "Custom endpoint",
-        kind: provider,
-        baseUrl: await ask("Endpoint URL", fallbackUrl),
-      };
-    }
-
-    const models = await listLocalModels(endpoint).catch(() => []);
-    models.forEach((model, index) => {
-      process.stdout.write(String(index + 1) + ". " + model.name + "\n");
-    });
-    const model = models.length
-      ? models[selectedIndex(await ask("Model", "1"), models.length, 0)].name
-      : await ask("Model ID", "local-model");
-    const profileName = await ask(
-      "Profile name",
-      endpoint.id === "custom" ? "local" : endpoint.id,
-    );
-    const mode = await ask("Default mode: chat, plan, or edit", "edit");
-    if (mode !== "chat" && mode !== "plan" && mode !== "edit")
-      throw new Error("Mode must be chat, plan, or edit.");
-    const permission = await ask(
-      "Default permission: ask, auto-read, or auto-all",
-      "auto-read",
-    );
-    if (
-      permission !== "ask" &&
-      permission !== "auto-read" &&
-      permission !== "auto-all"
-    )
-      throw new Error("Permission must be ask, auto-read, or auto-all.");
-    const internet = await ask("Enable internet research: yes or no", "no");
-    const path = await saveUserProfile(cwd(), profileName, {
-      provider: endpoint.kind,
-      baseUrl: endpoint.baseUrl,
-      model,
-      mode,
-      permission,
-      internetAccess: /^(y|yes|true|1)$/i.test(internet),
-    });
-    process.stdout.write(
-      "\nSaved profile '" + profileName + "' to " + path + "\n",
-    );
-    process.stdout.write(
-      "Start a persistent session with: " +
-        brand.cliCommand +
-        " chat --profile " +
-        profileName +
-        "\n",
-    );
   } finally {
-    readline.close();
+    io.close();
   }
 }
 
@@ -612,7 +459,10 @@ async function main(): Promise<void> {
   }
 
   if (command === "setup") {
-    await runSetup();
+    await setupInteractively();
+    process.stdout.write(
+      `Run ${brand.cliCommand} in a project folder to start chatting.\n`,
+    );
     return;
   }
 
@@ -632,6 +482,7 @@ async function main(): Promise<void> {
     }
     if (action === "status") {
       const config = await resolveConfiguration({
+        secrets,
         workspaceRoot: cwd(),
         paths,
       });
@@ -674,6 +525,7 @@ async function main(): Promise<void> {
     const workspaces = await Promise.all(
       workspaceRoots.map(async (workspaceRoot, index) => {
         const configuration = await resolveConfiguration({
+          secrets,
           workspaceRoot,
           overrides,
         });
@@ -807,6 +659,7 @@ async function main(): Promise<void> {
           `Provide a profile name: ${brand.cliCommand} agents add <name>`,
         );
       const configuration = await resolveConfiguration({
+        secrets,
         workspaceRoot: cwd(),
         overrides,
       });
@@ -832,6 +685,7 @@ async function main(): Promise<void> {
       if (!identifier?.trim() || !promptParts.join(" ").trim())
         throw new Error(`Use: ${brand.cliCommand} agents run <id> <task>`);
       const configuration = await resolveConfiguration({
+        secrets,
         workspaceRoot: cwd(),
         overrides,
       });
@@ -976,9 +830,21 @@ async function main(): Promise<void> {
     }
   }
 
-  const configuration = await resolveConfiguration({
-    workspaceRoot: cwd(),
-    overrides,
+  const resolve = () =>
+    resolveConfiguration({ secrets, workspaceRoot: cwd(), overrides });
+  const configuration = await resolve().catch(async (error: unknown) => {
+    // First run in a terminal: connect a model instead of failing.
+    if (
+      !(error instanceof MissingModelError) ||
+      !interactiveTerminal ||
+      command !== "chat" ||
+      args.join(" ").trim()
+    )
+      throw error;
+    process.stdout.write("No model is configured yet. Let's connect one.\n\n");
+    await setupInteractively();
+    process.stdout.write("\n");
+    return resolve();
   });
 
   if (configuration.workspaceTrust.status === "untrusted")
@@ -1078,6 +944,7 @@ async function main(): Promise<void> {
     if (interactiveTerminal)
       await runTerminalChat(configuration, (profile) =>
         resolveConfiguration({
+          secrets,
           workspaceRoot: cwd(),
           overrides: { ...overrides, profile },
         }),
