@@ -16,6 +16,10 @@ export interface Style {
   strike(text: string): string;
   /** Code keywords. */
   highlight(text: string): string;
+  /** Background tint for added diff lines. */
+  added(text: string): string;
+  /** Background tint for removed diff lines. */
+  removed(text: string): string;
 }
 
 const sgr =
@@ -39,6 +43,8 @@ export function createStyle(color: boolean): Style {
         underline: sgr("4", "24"),
         strike: sgr("9", "29"),
         highlight: sgr("35", "39"),
+        added: sgr("48;5;22", "49"),
+        removed: sgr("48;5;52", "49"),
       }
     : {
         color,
@@ -53,6 +59,8 @@ export function createStyle(color: boolean): Style {
         underline: plain,
         strike: plain,
         highlight: plain,
+        added: plain,
+        removed: plain,
       };
 }
 
@@ -182,14 +190,19 @@ function toolSubject(input: Record<string, unknown> | undefined): string {
   return "";
 }
 
-/** One-line summary of a requested tool call. */
+/** One-line summary of a requested tool call, like `● Write(notes.txt)`. */
 export function formatToolCall(
   tool: string,
   input: Record<string, unknown> | undefined,
   width: number,
   style: Style,
 ): string {
-  return `${style.accent("•")} ${formatToolSummary(tool, input, width - 2, style)}`;
+  const label = toolLabels[tool] ?? tool;
+  const subject = truncate(
+    sanitize(toolSubject(input)).replace(/\n/g, " "),
+    Math.max(8, width - displayWidth(label) - 4),
+  );
+  return `${style.accent("●")} ${style.bold(label)}${subject ? `(${subject})` : ""}`;
 }
 
 /** Tool label and subject without the leading bullet. */
@@ -223,8 +236,9 @@ export function formatToolResult(
     : lines > 1
       ? `${lines} lines`
       : first || "done";
-  const marker = result.isError ? style.error("✗") : style.success("✓");
-  return `  ${marker} ${style.dim(truncate(detail, width - 6))}`;
+  return result.isError
+    ? `  ⎿ ${style.error(`✗ ${truncate(detail, width - 6)}`)}`
+    : `  ⎿ ${style.dim(truncate(detail, width - 4))}`;
 }
 
 /** Help text listing commands and keys. */

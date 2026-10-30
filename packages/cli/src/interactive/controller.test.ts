@@ -157,14 +157,73 @@ it("previews an edit as a diff and applies it only when allowed", async () => {
   test.type("edit it\r");
   await vi.waitFor(() => expect(test.plain()).toContain("Allow this?"));
   expect(test.plain()).toContain("? Allow Write notes.txt");
-  expect(test.plain()).toContain("-two");
-  expect(test.plain()).toContain("+TWO");
+  expect(test.plain()).toContain("2 - two");
+  expect(test.plain()).toContain("2 + TWO");
   test.type("y");
   await vi.waitFor(() => expect(test.plain()).toContain("Updated."));
   expect(await readFile(join(test.base, "notes.txt"), "utf8")).toBe(
     "one\nTWO\n",
   );
   await vi.waitFor(() => expect(test.plain()).toContain("changed notes.txt"));
+  expect(test.plain()).toContain(
+    "⎿ Updated notes.txt with 1 addition and 1 removal",
+  );
+  // Already shown at the prompt, so the result doesn't repeat the diff.
+  expect(test.plain().split("2 + TWO").length - 1).toBe(1);
+  await test.chat.close();
+});
+
+it("shows written files as numbered code and edits as numbered diffs", async () => {
+  const lines = Array.from(
+    { length: 12 },
+    (_, index) => `const v${index + 1} = ${index};`,
+  );
+  const test = await harness(
+    [
+      async function* (): AsyncGenerator<ModelStreamEvent> {
+        yield {
+          type: "tool_call",
+          id: "w1",
+          name: "write_file",
+          input: { path: "src/new.ts", content: `${lines.join("\n")}\n` },
+        };
+        yield {
+          type: "tool_call",
+          id: "e1",
+          name: "replace_in_file",
+          input: { path: "notes.txt", oldText: "four", newText: "4\nfour" },
+        };
+        yield { type: "finish", reason: "tool_calls" };
+      },
+      async function* () {
+        yield { type: "text_delta", text: "Done." };
+        yield finish;
+      },
+    ],
+    "auto-all",
+    "edit",
+  );
+  await writeFile(
+    join(test.base, "notes.txt"),
+    "one\ntwo\nthree\nfour\nfive\nsix\nseven\n",
+  );
+  test.type("go\r");
+  await vi.waitFor(() => expect(test.plain()).toContain("Done."));
+  const output = test.plain();
+  expect(output).toContain("● Write(src/new.ts)");
+  expect(output).toContain("⎿ Wrote 12 lines to src/new.ts");
+  expect(output).toMatch(/ {4} 1 const v1 = 0;/);
+  expect(output).toMatch(/ {4}10 const v10 = 9;/);
+  expect(output).not.toContain("const v11");
+  expect(output).toContain("… +2 lines");
+  expect(output).toContain("● Edit(notes.txt)");
+  expect(output).toContain(
+    "⎿ Updated notes.txt with 1 addition and 0 removals",
+  );
+  expect(output).toMatch(
+    /2 {3}two\s+3 {3}three\s+4 \+ 4\s+5 {3}four\s+6 {3}five/,
+  );
+  expect(output).not.toContain("1   one");
   await test.chat.close();
 });
 

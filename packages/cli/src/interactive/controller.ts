@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import {
   type ChatAttachment,
@@ -17,7 +18,11 @@ import type { PermissionMode } from "../protocol.js";
 import type { ClientConfiguration, ClientRuntime } from "../runtime.js";
 import { skillServiceHost } from "../skills.js";
 import { type AgentStatusReporter, silentAgentStatus } from "./agent-status.js";
-import { approvalPreview, SwitchableApproval } from "./approval.js";
+import {
+  approvalPreview,
+  resolvePath,
+  SwitchableApproval,
+} from "./approval.js";
 import {
   type ApprovalRule,
   type ApprovalRuleStore,
@@ -64,6 +69,13 @@ import {
   renderComposer,
   type Style,
 } from "./renderer.js";
+import {
+  diffRows,
+  editedContent,
+  editSummary,
+  formatCode,
+  formatDiff,
+} from "./code-preview.js";
 import { MarkdownRenderer } from "./markdown.js";
 import { inlineMath, mathFenceRenderer } from "./math.js";
 import { mermaidFenceRenderer } from "./mermaid.js";
@@ -78,6 +90,7 @@ const shellOutputBytes = 256 * 1024;
 /** Output of one ! command sent to the model; the rest stays on screen. */
 const shellContextCharacters = 16_000;
 const skillModes: readonly SkillMode[] = ["automatic", "manual", "off"];
+const editTools = new Set(["write_file", "replace_in_file"]);
 const spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const exitWindowMilliseconds = 2_000;
 const escapeDelayMilliseconds = 30;
@@ -180,6 +193,13 @@ export class InteractiveChat {
     | { controller: AbortController; done: Promise<void> }
     | undefined;
   private pendingApproval: PendingApproval | undefined;
+  /** File edits in flight: input by call id, contents before the edit, and calls already previewed at approval. */
+  private readonly edits = new Map<
+    string,
+    { readonly tool: string; readonly input: Record<string, unknown> }
+  >();
+  private readonly editsBefore = new Map<string, string>();
+  private readonly previewed = new Set<string>();
   private picker:
     | {
         state: PickerState;
@@ -227,6 +247,7 @@ export class InteractiveChat {
       options.configuration.permission,
       (call, signal) => this.askApproval(call, signal),
       (call) => this.remembered(call),
+      (call) => this.recordBefore(call),
     );
   }
 
@@ -738,12 +759,19 @@ export class InteractiveChat {
         return;
       case "tool_call_requested":
         this.flushAssistant();
+        if (editTools.has(event.tool))
+          this.edits.set(event.callId, {
+            tool: event.tool,
+            input: event.input,
+          });
         this.print(
           `${formatToolCall(event.tool, event.input, width, style)}\n`,
         );
         return;
       case "tool_completed":
-        this.print(`${formatToolResult(event.result, width, style)}\n`);
+        this.print(
+          `${this.formatEdit(event.callId, event.result) ?? formatToolResult(event.result, width, style)}\n`,
+        );
         return;
       case "plan_updated":
         this.flushAssistant();
@@ -847,6 +875,46 @@ export class InteractiveChat {
     this.screen.print(text);
   }
 
+  /** Reads a file right before an approved edit runs, for the result diff. */
+  private async recordBefore(call: ToolCall): Promise<void> {
+    const input = call.input as Record<string, unknown>;
+    if (!editTools.has(call.name) || typeof input.path !== "string") return;
+    this.editsBefore.set(
+      call.id,
+      await readFile(
+        resolvePath(this.options.workspaceRoot, input.path),
+        "utf8",
+      ).catch(() => ""),
+    );
+  }
+
+  /** `⎿ Wrote…`/`⎿ Updated…` with a code preview or numbered diff. */
+  private formatEdit(
+    callId: string,
+    result: { readonly isError?: boolean },
+  ): string | undefined {
+    const edit = this.edits.get(callId);
+    const before = this.editsBefore.get(callId);
+    const previewed = this.previewed.delete(callId);
+    this.edits.delete(callId);
+    this.editsBefore.delete(callId);
+    const path = edit?.input.path;
+    if (!edit || result.isError || typeof path !== "string") return undefined;
+    if (before === undefined && edit.tool !== "write_file") return undefined;
+    const after = editedContent(edit.tool, edit.input, before ?? "");
+    if (after === undefined) return undefined;
+    const { style } = this.options;
+    const width = this.options.columns();
+    const summary = `  ⎿ ${editSummary(path, before, after, style)}`;
+    if (previewed) return summary;
+    return [
+      summary,
+      ...(before
+        ? formatDiff(diffRows(before, after), path, width, style)
+        : formatCode(after, path, width, style)),
+    ].join("\n");
+  }
+
   private async askApproval(
     call: ToolCall,
     signal: AbortSignal,
@@ -860,6 +928,7 @@ export class InteractiveChat {
       style,
     );
     if (signal.aborted) return false;
+    if (editTools.has(call.name)) this.previewed.add(call.id);
     this.print(
       `${style.warning("?")} ${style.bold("Allow")} ${formatToolSummary(call.name, call.input, this.options.columns() - 8, style)}\n${preview.join("\n")}\n`,
     );

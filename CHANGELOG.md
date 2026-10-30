@@ -2,6 +2,21 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.62] - 2026-10-30
+
+### Added
+
+- CLI chat shows file writes and edits the way you'd review them. Tool calls
+  read like `● Write(src/app.ts)`. A new file gets `⎿ Wrote N lines to …` and
+  its first lines, numbered and syntax-colored. A change gets
+  `⎿ Updated … with A additions and R removals` and numbered diff hunks.
+  Approval prompts use the same numbered diff, with tinted added and removed
+  lines, and a diff already shown for approval isn't repeated.
+
+### Changed
+
+- Bundled CLI 0.1.34 in Desktop and VS Code.
+
 ## [0.1.61] - 2026-10-30
 
 ### Added
