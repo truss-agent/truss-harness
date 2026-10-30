@@ -1,4 +1,4 @@
-import { basename } from "node:path";
+import { basename, dirname, join } from "node:path";
 import {
   type ChatAttachment,
   executeWorkspaceCommand,
@@ -18,6 +18,17 @@ import type { ClientConfiguration, ClientRuntime } from "../runtime.js";
 import { skillServiceHost } from "../skills.js";
 import { type AgentStatusReporter, silentAgentStatus } from "./agent-status.js";
 import { approvalPreview, SwitchableApproval } from "./approval.js";
+import {
+  type ApprovalRule,
+  type ApprovalRuleStore,
+  type ApprovalScope,
+  describeRule,
+  FileApprovalRuleStore,
+  matchesRule,
+  ruleFor,
+  sameRule,
+  validRules,
+} from "./approval-rules.js";
 import {
   type ImageData,
   imagePathFromText,
@@ -118,11 +129,26 @@ export interface InteractiveChatOptions {
   readonly readClipboardImage?: () => Promise<ImageData | undefined>;
   /** Runs ! commands typed in chat; defaults to the local shell. */
   readonly shell?: ProcessRunner;
+  /** Workspace and global "always allow" rules; defaults to a user file. */
+  readonly approvalRules?: ApprovalRuleStore;
 }
 
 interface PendingApproval {
+  readonly call: ToolCall;
   readonly resolve: (approved: boolean) => void;
 }
+
+const scopeKeys: Readonly<Record<string, ApprovalScope>> = {
+  a: "conversation",
+  w: "workspace",
+  g: "global",
+};
+
+const scopeNames: Readonly<Record<ApprovalScope, string>> = {
+  conversation: "in this conversation",
+  workspace: "in this workspace",
+  global: "in every workspace",
+};
 
 /**
  * Interactive transcript chat. Owns the single stdin reader, the active run
@@ -133,6 +159,9 @@ export class InteractiveChat {
   private readonly decoder = new InputDecoder();
   private readonly formatter: AssistantFormatter;
   private readonly approval: SwitchableApproval;
+  private readonly approvalRules: ApprovalRuleStore;
+  /** "Always allow" answers for this conversation; saved with it. */
+  private conversationRules: ApprovalRule[] = [];
   private configuration: ResolvedConfiguration;
   private composer: ComposerState = emptyComposer();
   private client: ClientRuntime | undefined;
@@ -181,9 +210,16 @@ export class InteractiveChat {
     this.configuration = options.configuration;
     this.screen = new LiveScreen(options.write, options.columns);
     this.formatter = new AssistantFormatter(options.style);
+    this.approvalRules =
+      options.approvalRules ??
+      new FileApprovalRuleStore(
+        join(dirname(options.configuration.paths.user), "approvals.json"),
+        options.workspaceRoot,
+      );
     this.approval = new SwitchableApproval(
       options.configuration.permission,
       (call, signal) => this.askApproval(call, signal),
+      (call) => this.remembered(call),
     );
   }
 
@@ -316,6 +352,16 @@ export class InteractiveChat {
           : key.type === "interrupt"
             ? "stop"
             : "";
+    const scope = scopeKeys[answer];
+    if (scope) {
+      this.pendingApproval = undefined;
+      // Remember before resolving so a repeat call in this turn matches.
+      void this.remember(scope, ruleFor(pending.call)).finally(() => {
+        pending.resolve(true);
+        this.render();
+      });
+      return;
+    }
     if (answer === "y" || answer === "n" || answer === "stop") {
       this.pendingApproval = undefined;
       pending.resolve(answer === "y");
@@ -327,6 +373,78 @@ export class InteractiveChat {
       if (answer === "stop") this.active?.controller.abort();
       this.render();
     }
+  }
+
+  private async remember(
+    scope: ApprovalScope,
+    rule: ApprovalRule,
+  ): Promise<void> {
+    const { style } = this.options;
+    try {
+      if (scope === "conversation") {
+        if (!this.conversationRules.some((known) => sameRule(known, rule)))
+          this.conversationRules.push(rule);
+      } else await this.approvalRules.add(scope, rule);
+      this.print(
+        `  ${style.success("allowed")} ${style.dim(`· always: ${sanitize(describeRule(rule))} ${scopeNames[scope]}`)}\n`,
+      );
+    } catch (error) {
+      this.print(
+        `  ${style.success("allowed")} ${style.warning(`once · could not save: ${error instanceof Error ? error.message : String(error)}`)}\n`,
+      );
+    }
+  }
+
+  private async remembered(call: ToolCall): Promise<boolean> {
+    if (this.conversationRules.some((rule) => matchesRule(rule, call)))
+      return true;
+    const saved = await this.approvalRules.rules().catch(() => undefined);
+    return Boolean(
+      saved &&
+        [...saved.workspace, ...saved.global].some((rule) =>
+          matchesRule(rule, call),
+        ),
+    );
+  }
+
+  private async permissionRules(args: string): Promise<void> {
+    const { style } = this.options;
+    const [action, scope = "conversation"] = args.split(/\s+/);
+    if (action === "clear") {
+      if (!["conversation", "workspace", "global", "all"].includes(scope)) {
+        this.print(
+          "Use /permissions clear conversation, workspace, global or all.\n",
+        );
+        return;
+      }
+      if (scope === "conversation" || scope === "all")
+        this.conversationRules = [];
+      if (scope === "workspace" || scope === "all")
+        await this.approvalRules.clear("workspace");
+      if (scope === "global" || scope === "all")
+        await this.approvalRules.clear("global");
+      await this.saveConversation();
+      this.print(
+        `${style.dim(scope === "all" ? "Forgot all saved approvals." : `Forgot ${scope} approvals.`)}\n`,
+      );
+      return;
+    }
+    const saved = await this.approvalRules.rules();
+    const list = (rules: readonly ApprovalRule[]) =>
+      rules.length
+        ? rules.map((rule) => sanitize(describeRule(rule))).join(", ")
+        : "none";
+    this.print(
+      `${[
+        style.bold("Always allowed"),
+        `  This conversation: ${list(this.conversationRules)}`,
+        `  This workspace: ${list(saved.workspace)}`,
+        `  Every workspace: ${list(saved.global)}`,
+        style.dim(
+          "  Forget them with /permissions clear [conversation|workspace|global|all].",
+        ),
+      ].join("\n")}\n`,
+    );
   }
 
   private interrupt(): void {
@@ -745,7 +863,7 @@ export class InteractiveChat {
         resolve(approved);
       };
       signal.addEventListener("abort", abort, { once: true });
-      this.pendingApproval = { resolve: finish };
+      this.pendingApproval = { call, resolve: finish };
       this.agentStatus.state("blocked", `Allow ${call.name}?`);
       this.render();
     });
@@ -800,6 +918,10 @@ export class InteractiveChat {
         return;
       }
       case "permissions": {
+        if (/^(?:rules|clear)\b/.test(args)) {
+          await this.permissionRules(args);
+          return;
+        }
         const permission = (args ||
           (
             await this.choose(
@@ -1113,12 +1235,18 @@ export class InteractiveChat {
       );
     await this.saveConversation();
     await this.startConversation(repairForResume(conversation.messages));
+    this.conversationRules = validRules(conversation.approvals);
+    const permission = conversation.permission as PermissionMode | undefined;
+    if (permission && permissions.includes(permission)) {
+      this.approval.mode = permission;
+      this.configuration = { ...this.configuration, permission };
+    }
     this.conversationId = conversation.id;
     this.createdAt = conversation.createdAt;
     this.conversationSaved = true;
     this.reportResume();
     this.print(
-      `${this.options.style.dim(`Resumed "${sanitize(conversation.title)}" (${conversation.messages.length} messages). Unfinished tool calls are marked as unknown and are not run again.`)}\n`,
+      `${this.options.style.dim(`Resumed "${sanitize(conversation.title)}" (${conversation.messages.length} messages). Unfinished tool calls are marked as unknown and are not run again. Tool permissions: ${this.approval.mode}.`)}\n`,
     );
   }
 
@@ -1140,6 +1268,10 @@ export class InteractiveChat {
       provider: this.configuration.provider,
       model: this.configuration.model,
       mode: this.configuration.mode ?? "chat",
+      permission: this.approval.mode,
+      ...(this.conversationRules.length
+        ? { approvals: this.conversationRules }
+        : {}),
       createdAt: this.createdAt,
       updatedAt: new Date().toISOString(),
       // Image bytes would overflow the store; names and types are kept.
@@ -1172,6 +1304,7 @@ export class InteractiveChat {
     this.reportResume();
     this.sessionSkills = {};
     this.shellContext = [];
+    this.conversationRules = [];
     await this.refreshSkills();
   }
 
@@ -1227,7 +1360,7 @@ export class InteractiveChat {
 
   private status(): string {
     if (this.pendingApproval)
-      return "Allow this? y yes · n no · Esc deny · Ctrl+C stop";
+      return "Allow this? y once · a always in chat · w in workspace · g everywhere · n no";
     const parts = [
       this.configuration.mode ?? "chat",
       this.configuration.model,

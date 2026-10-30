@@ -139,6 +139,9 @@ export class SwitchableApproval implements ToolApproval {
       call: ToolCall,
       signal: AbortSignal,
     ) => Promise<boolean>,
+    /** Remembered "always allow" answers, checked before asking. */
+    private readonly remembered: (call: ToolCall) => Promise<boolean> = () =>
+      Promise.resolve(false),
   ) {
     this.current = this.create();
   }
@@ -153,11 +156,13 @@ export class SwitchableApproval implements ToolApproval {
     this.current = this.create();
   }
 
-  approve(
+  async approve(
     call: ToolCall,
     session: Session,
     context?: { readonly signal?: AbortSignal },
   ): Promise<boolean> {
+    context?.signal?.throwIfAborted();
+    if (await this.remembered(call)) return true;
     return this.current.approve(call, session, context);
   }
 

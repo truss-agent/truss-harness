@@ -2,6 +2,23 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.58] - 2026-10-30
+
+### Added
+
+- CLI chat remembers tool approvals. At an approval prompt, press `a` to
+  always allow it in this conversation, `w` in this workspace, or `g` in every
+  workspace. Terminal commands are remembered by their prefix, such as
+  `npm test`, and chained or redirected commands always ask again.
+- Resuming a saved CLI conversation restores its approvals and tool
+  permission mode.
+- `/permissions rules` lists saved approvals, and `/permissions clear` forgets
+  them.
+
+### Changed
+
+- Bundled CLI 0.1.30 in Desktop and VS Code.
+
 ## [0.1.57] - 2026-10-30
 
 ### Added
