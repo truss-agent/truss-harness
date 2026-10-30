@@ -5,9 +5,11 @@ import { fileURLToPath } from "node:url";
 import { brand } from "@truss-harness/branding";
 import { FileAgentProfileStore } from "@truss-harness/cli/agents";
 import {
+  MissingModelError,
   type ResolvedConfiguration,
   resolveConfiguration,
 } from "@truss-harness/cli/config";
+import { systemSecretStore } from "@truss-harness/cli/secrets";
 import {
   detectLocalEndpoints,
   isLocalEndpointKind,
@@ -490,11 +492,12 @@ function App({
   );
 }
 
+const secrets = systemSecretStore();
 const initialConfiguration = await resolveConfiguration({
   workspaceRoot: cwd(),
+  ...(secrets ? { secrets } : {}),
 }).catch((error: unknown) => {
-  const message = error instanceof Error ? error.message : String(error);
-  if (message.startsWith("Set a model")) return undefined;
+  if (error instanceof MissingModelError) return undefined;
   throw error;
 });
 const application = render(<App initialConfiguration={initialConfiguration} />);

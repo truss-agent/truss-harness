@@ -1,16 +1,19 @@
-import type { ModelProviderKind } from "@truss-harness/provider-openai-compatible";
 import type { ProviderConnectionResult } from "@truss-harness/agent-host";
+import type {
+  CloudModelInfo,
+  ModelProviderKind,
+} from "@truss-harness/provider-openai-compatible";
 import type {
   AgentProfile,
   AgentRunSummary,
   CreateAgentProfileInput,
-  ProviderAccount,
-  UpdateProviderAccountInput,
-  UpdateAgentProfileInput,
   MasterPromptConfiguration,
+  ProviderAccount,
   SkillDiagnostic,
   SkillMetadata,
   SkillSelection,
+  UpdateAgentProfileInput,
+  UpdateProviderAccountInput,
 } from "@truss-harness/runtime";
 
 export type DesktopProvider = ModelProviderKind;
@@ -67,22 +70,7 @@ export interface DesktopConfiguration {
   readonly formatOnSave?: boolean;
 }
 
-export interface DesktopModelInfo {
-  readonly id: string;
-  readonly contextWindow?: number;
-  /** USD per one million input tokens, when published by the provider. */
-  readonly inputCostPerMillion?: number;
-  /** USD per one million output tokens, when published by the provider. */
-  readonly outputCostPerMillion?: number;
-  readonly supportsTools?: boolean;
-  readonly kind?:
-    | "chat"
-    | "embedding"
-    | "image"
-    | "audio"
-    | "moderation"
-    | "other";
-}
+export type DesktopModelInfo = CloudModelInfo;
 
 export interface DesktopTokenUsage {
   readonly inputTokens: number;
@@ -421,9 +409,10 @@ export interface DesktopBridge {
   ): Promise<readonly { readonly line: number; readonly message: string }[]>;
   onEvent(listener: (event: DesktopEvent) => void): () => void;
 }
-import type { WorkspacePlan } from "@truss-harness/runtime";
+
 import type {
   McpServerConfigurations,
   McpServerStatus,
   McpStdioServerConfiguration,
 } from "@truss-harness/mcp";
+import type { WorkspacePlan } from "@truss-harness/runtime";

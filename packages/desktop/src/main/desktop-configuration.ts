@@ -1,12 +1,13 @@
 import { parseMcpServerConfigurations } from "@truss-harness/mcp";
-import { validateMasterPrompt } from "@truss-harness/runtime";
 import {
   type CloudProviderId,
   cloudProviderDefinition,
   isCloudProviderId,
   isLocalEndpointKind,
   type LocalModelEndpoint,
+  publishedContextWindow,
 } from "@truss-harness/provider-openai-compatible";
+import { validateMasterPrompt } from "@truss-harness/runtime";
 import {
   type DesktopConfiguration,
   type DesktopModelInfo,
@@ -16,18 +17,11 @@ import {
   desktopThemeNames,
 } from "../shared.js";
 
-export function publishedContextWindow(
-  provider: CloudProviderId,
-  modelId: string,
-): number | undefined {
-  if (provider !== "openai") return undefined;
-  const normalized = modelId.toLowerCase();
-  return ["gpt-5.6", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"].includes(
-    normalized,
-  )
-    ? 1_050_000
-    : undefined;
-}
+export {
+  modelInfoFromRecord,
+  publishedContextWindow,
+  usableChatModels,
+} from "@truss-harness/provider-openai-compatible";
 
 export function isConfiguration(value: unknown): value is DesktopConfiguration {
   if (!value || typeof value !== "object") return false;
@@ -200,112 +194,4 @@ export function localEndpoint(
     kind: configuration.provider,
     baseUrl: configuration.baseUrl,
   };
-}
-
-function finiteNumber(value: unknown): number | undefined {
-  const number = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(number) && number >= 0 ? number : undefined;
-}
-
-function modelKind(value: unknown): DesktopModelInfo["kind"] {
-  if (typeof value !== "string") return undefined;
-  const normalized = value.toLowerCase();
-  if (normalized.includes("embed")) return "embedding";
-  if (normalized.includes("moderation")) return "moderation";
-  if (normalized.includes("image")) return "image";
-  if (normalized.includes("audio") || normalized.includes("speech"))
-    return "audio";
-  if (normalized.includes("chat") || normalized.includes("language"))
-    return "chat";
-  return "other";
-}
-
-export function modelInfoFromRecord(
-  value: unknown,
-  provider: CloudProviderId,
-): DesktopModelInfo | undefined {
-  if (!value || typeof value !== "object") return undefined;
-  const source = value as Record<string, unknown>;
-  const id = [source.id, source.name, source.model]
-    .find(
-      (candidate): candidate is string =>
-        typeof candidate === "string" && Boolean(candidate.trim()),
-    )
-    ?.trim();
-  if (!id || source.archived === true) return undefined;
-  const capabilities = source.capabilities as
-    | Record<string, unknown>
-    | undefined;
-  const supportedParameters = Array.isArray(source.supported_parameters)
-    ? source.supported_parameters.filter(
-        (item): item is string => typeof item === "string",
-      )
-    : [];
-  const supportedGenerationMethods = Array.isArray(
-    source.supportedGenerationMethods,
-  )
-    ? source.supportedGenerationMethods.filter(
-        (item): item is string => typeof item === "string",
-      )
-    : [];
-  const kind =
-    modelKind(source.type) ??
-    modelKind(source.kind) ??
-    (/(?:embedding|moderation|rerank|whisper|tts|dall-e|image-generation)/i.test(
-      id,
-    )
-      ? modelKind(id)
-      : undefined);
-  const pricing = source.pricing as Record<string, unknown> | undefined;
-  const inputPrice = finiteNumber(
-    pricing?.prompt ??
-      pricing?.input ??
-      source.input_cost_per_token ??
-      source.inputCostPerToken,
-  );
-  const outputPrice = finiteNumber(
-    pricing?.completion ??
-      pricing?.output ??
-      source.output_cost_per_token ??
-      source.outputCostPerToken,
-  );
-  const pricingMultiplier = provider === "openrouter" ? 1_000_000 : 1;
-  const supportsTools =
-    supportedParameters.some((item) =>
-      ["tools", "tool_choice", "function_calling"].includes(item),
-    ) || capabilities?.function_calling === true;
-  const contextWindow =
-    finiteNumber(
-      source.context_length ??
-        source.max_context_length ??
-        source.contextWindow ??
-        source.inputTokenLimit ??
-        source.max_input_tokens,
-    ) ?? publishedContextWindow(provider, id);
-  return {
-    id,
-    ...(contextWindow ? { contextWindow } : {}),
-    ...(inputPrice !== undefined
-      ? { inputCostPerMillion: inputPrice * pricingMultiplier }
-      : {}),
-    ...(outputPrice !== undefined
-      ? { outputCostPerMillion: outputPrice * pricingMultiplier }
-      : {}),
-    ...(kind ? { kind } : {}),
-    ...(supportsTools || supportedGenerationMethods.includes("generateContent")
-      ? { supportsTools: true }
-      : {}),
-  };
-}
-
-export function usableChatModels(
-  models: readonly DesktopModelInfo[],
-): DesktopModelInfo[] {
-  return models.filter(
-    (model) =>
-      model.kind !== "embedding" &&
-      model.kind !== "image" &&
-      model.kind !== "audio" &&
-      model.kind !== "moderation",
-  );
 }

@@ -14,7 +14,14 @@ npm install -g @truss-harness/cli
 
 See the [CLI package on npm](https://www.npmjs.com/package/@truss-harness/cli) for the latest published version and package details.
 
-The global installer prints the first commands to run. `truss-cli` and `truss-cli help` display the complete built-in reference without requiring a model.
+Run `truss-cli` in a project folder. The first time, with no model configured, it walks you through setup and then opens the chat:
+
+1. Choose a cloud provider (with your API key) or a local model server.
+2. For a cloud provider, paste your API key. It is hidden as you type, checked by loading the provider's model list, and saved in your system keyring (libsecret on Linux, the Keychain on macOS), never in a configuration file.
+3. Pick a model from the list, typing part of a name to narrow long lists.
+4. Choose the default mode and tool approval.
+
+Run `truss-cli setup` any time to switch provider or model. Environment variables such as `ANTHROPIC_API_KEY` still take priority over a saved key. Where no keyring is available, setup prints the variable to set instead. `truss-cli help` shows the complete built-in reference without needing a model.
 
 ## Commands
 
@@ -22,7 +29,7 @@ The global installer prints the first commands to run. `truss-cli` and `truss-cl
 | --- | --- |
 | <CliCommand /> `chat [prompt]` | Stream one task, or open persistent chat with no prompt |
 | <CliCommand /> `models` | List detected local endpoints and models |
-| <CliCommand /> `setup` | Interactively discover and save local-model defaults |
+| <CliCommand /> `setup` | Connect a cloud provider or local server and choose a model |
 | <CliCommand /> `config path` | Print user and workspace configuration paths |
 | <CliCommand /> `config init` | Create a workspace profile template |
 | <CliCommand /> `config trust` | Authorize the exact reviewed workspace config |

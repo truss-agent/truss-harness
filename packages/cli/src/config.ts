@@ -1,4 +1,3 @@
-import { FileWorkspaceTrustStore, contentHash } from "./workspace-trust.js";
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
@@ -8,8 +7,8 @@ import {
 } from "@truss-harness/agent-host";
 import { brand } from "@truss-harness/branding";
 import {
-  parseMcpServerConfigurations,
   type McpServerConfigurations,
+  parseMcpServerConfigurations,
 } from "@truss-harness/mcp";
 import {
   cloudProviderDefinition,
@@ -19,14 +18,16 @@ import {
   type ModelProviderKind,
 } from "@truss-harness/provider-openai-compatible";
 import {
+  type MasterPromptConfiguration,
   normalizeSkillSelection,
   resolveWorkspacePath,
-  type MasterPromptConfiguration,
   type SkillMode,
   type SkillSelection,
 } from "@truss-harness/runtime";
-import type { AgentMode, ClientConfiguration } from "./runtime.js";
 import type { PermissionMode } from "./protocol.js";
+import type { AgentMode, ClientConfiguration } from "./runtime.js";
+import type { SecretStore } from "./secrets.js";
+import { contentHash, FileWorkspaceTrustStore } from "./workspace-trust.js";
 
 export type TuiThemeName = "forest" | "sage" | "dusk";
 
@@ -501,11 +502,23 @@ export async function resolveSkills(options: {
   );
 }
 
+/** No model was configured or detected; interactive clients can offer setup. */
+export class MissingModelError extends Error {
+  constructor() {
+    super(
+      `Set a model with --model, TRUSS_HARNESS_MODEL, a ${brand.productName} config profile, or start a local model server. Run ${brand.cliCommand} setup to choose one.`,
+    );
+    this.name = "MissingModelError";
+  }
+}
+
 export async function resolveConfiguration(options: {
   readonly workspaceRoot: string;
   readonly overrides?: ConfigurationOverrides;
   readonly environment?: NodeJS.ProcessEnv;
   readonly paths?: ConfigurationPaths;
+  /** Keyring consulted after environment variables for cloud API keys. */
+  readonly secrets?: Pick<SecretStore, "get">;
 }): Promise<ResolvedConfiguration> {
   const environment = options.environment ?? process.env;
   const paths =
@@ -606,10 +619,7 @@ export async function resolveConfiguration(options: {
       model = detected.model.name;
     }
   }
-  if (!model)
-    throw new Error(
-      `Set a model with --model, TRUSS_HARNESS_MODEL, a ${brand.productName} config profile, or start a local model server.`,
-    );
+  if (!model) throw new MissingModelError();
   const accountApiKey = merged.credentialRef
     ? environment[providerAccountEnvironmentVariable(merged.credentialRef)]
     : undefined;
@@ -617,9 +627,9 @@ export async function resolveConfiguration(options: {
     ? environment[merged.apiKeyEnv]
     : (accountApiKey ??
       (isCloudProviderId(provider)
-        ? environment[
+        ? (environment[
             cloudProviderDefinition(provider).apiKeyEnvironmentVariable
-          ]
+          ] ?? (await options.secrets?.get(merged.credentialRef ?? provider)))
         : undefined));
   return {
     workspaceRoot: options.workspaceRoot,
@@ -762,7 +772,7 @@ export async function saveUserProfile(
   await mkdir(dirname(paths.user), { recursive: true });
   await writeFile(
     paths.user,
-    JSON.stringify(
+    `${JSON.stringify(
       {
         ...existing,
         defaultProfile: profileName,
@@ -773,7 +783,7 @@ export async function saveUserProfile(
       },
       null,
       2,
-    ) + "\n",
+    )}\n`,
     "utf8",
   );
   return paths.user;
