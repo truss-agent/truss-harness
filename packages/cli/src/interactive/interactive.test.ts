@@ -215,9 +215,9 @@ describe("renderer", () => {
   it("summarizes tool calls and results without terminal controls", () => {
     expect(
       formatToolCall("run_terminal", { command: "npm test\x1b[2J" }, 60, plain),
-    ).toBe("• Run npm test");
+    ).toBe("● Run(npm test)");
     expect(formatToolResult({ content: "a\nb\nc" }, 60, plain)).toBe(
-      "  ✓ 3 lines",
+      "  ⎿ 3 lines",
     );
     expect(
       formatToolResult(
@@ -225,7 +225,7 @@ describe("renderer", () => {
         60,
         plain,
       ),
-    ).toBe("  ✗ ENOENT: missing");
+    ).toBe("  ⎿ ✗ ENOENT: missing");
   });
 
   it("honors NO_COLOR, TERM=dumb and non-TTY output", () => {
