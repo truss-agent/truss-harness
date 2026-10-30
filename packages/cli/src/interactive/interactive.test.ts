@@ -8,7 +8,6 @@ import {
 } from "./composer.js";
 import { InputDecoder, type KeyEvent } from "./input.js";
 import {
-  AssistantFormatter,
   colorEnabled,
   createStyle,
   formatToolCall,
@@ -227,15 +226,6 @@ describe("renderer", () => {
         plain,
       ),
     ).toBe("  ✗ ENOENT: missing");
-  });
-
-  it("formats code fences and headings line by line", () => {
-    const formatter = new AssistantFormatter(plain);
-    expect(
-      ["# Title", "```ts", "const x = 1;", "```", "done"].map((line) =>
-        formatter.line(line),
-      ),
-    ).toEqual(["Title", "  ```ts", "  │ const x = 1;", "  ```", "done"]);
   });
 
   it("honors NO_COLOR, TERM=dumb and non-TTY output", () => {

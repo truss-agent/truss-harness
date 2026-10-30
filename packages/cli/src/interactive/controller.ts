@@ -56,7 +56,6 @@ import {
   renderPicker,
 } from "./picker.js";
 import {
-  AssistantFormatter,
   formatHelp,
   formatToolCall,
   formatToolSummary,
@@ -65,6 +64,7 @@ import {
   renderComposer,
   type Style,
 } from "./renderer.js";
+import { MarkdownRenderer } from "./markdown.js";
 import { LiveScreen } from "./terminal.js";
 import { sanitize, truncate } from "./text.js";
 
@@ -157,7 +157,7 @@ const scopeNames: Readonly<Record<ApprovalScope, string>> = {
 export class InteractiveChat {
   private readonly screen: LiveScreen;
   private readonly decoder = new InputDecoder();
-  private readonly formatter: AssistantFormatter;
+  private readonly formatter: MarkdownRenderer;
   private readonly approval: SwitchableApproval;
   private readonly approvalRules: ApprovalRuleStore;
   /** "Always allow" answers for this conversation; saved with it. */
@@ -209,7 +209,10 @@ export class InteractiveChat {
   constructor(private readonly options: InteractiveChatOptions) {
     this.configuration = options.configuration;
     this.screen = new LiveScreen(options.write, options.columns);
-    this.formatter = new AssistantFormatter(options.style);
+    this.formatter = new MarkdownRenderer({
+      style: options.style,
+      width: () => options.columns(),
+    });
     this.approvalRules =
       options.approvalRules ??
       new FileApprovalRuleStore(
@@ -807,12 +810,13 @@ export class InteractiveChat {
     this.assistantBuffer += text;
     const end = this.assistantBuffer.lastIndexOf("\n");
     if (end >= 0) {
-      const complete = this.assistantBuffer.slice(0, end).split("\n");
+      const rows = this.assistantBuffer
+        .slice(0, end)
+        .split("\n")
+        .flatMap((line) => this.formatter.push(line));
       this.assistantBuffer = this.assistantBuffer.slice(end + 1);
       this.screen.setPending("");
-      this.screen.print(
-        `${complete.map((line) => this.formatter.line(line)).join("\n")}\n`,
-      );
+      if (rows.length) this.screen.print(`${rows.join("\n")}\n`);
     }
     this.screen.setPending(sanitize(this.assistantBuffer));
   }
@@ -823,11 +827,16 @@ export class InteractiveChat {
   }
 
   private flushAssistantText(): void {
-    if (!this.assistantBuffer) return;
-    const line = this.formatter.line(this.assistantBuffer);
+    // Tables and diagrams are held until they end; a pause ends them.
+    const rows = [
+      ...(this.assistantBuffer
+        ? this.formatter.push(this.assistantBuffer)
+        : []),
+      ...this.formatter.end(),
+    ];
     this.assistantBuffer = "";
     this.screen.setPending("");
-    this.screen.print(`${line}\n`);
+    if (rows.length) this.screen.print(`${rows.join("\n")}\n`);
   }
 
   private print(text: string): void {

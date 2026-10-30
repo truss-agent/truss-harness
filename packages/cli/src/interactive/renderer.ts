@@ -11,6 +11,11 @@ export interface Style {
   warning(text: string): string;
   error(text: string): string;
   inverse(text: string): string;
+  italic(text: string): string;
+  underline(text: string): string;
+  strike(text: string): string;
+  /** Code keywords. */
+  highlight(text: string): string;
 }
 
 const sgr =
@@ -30,6 +35,10 @@ export function createStyle(color: boolean): Style {
         warning: sgr("33", "39"),
         error: sgr("31", "39"),
         inverse: sgr("7", "27"),
+        italic: sgr("3", "23"),
+        underline: sgr("4", "24"),
+        strike: sgr("9", "29"),
+        highlight: sgr("35", "39"),
       }
     : {
         color,
@@ -40,6 +49,10 @@ export function createStyle(color: boolean): Style {
         warning: plain,
         error: plain,
         inverse: plain,
+        italic: plain,
+        underline: plain,
+        strike: plain,
+        highlight: plain,
       };
 }
 
@@ -212,34 +225,6 @@ export function formatToolResult(
       : first || "done";
   const marker = result.isError ? style.error("✗") : style.success("✓");
   return `  ${marker} ${style.dim(truncate(detail, width - 6))}`;
-}
-
-/**
- * Formats completed assistant lines with light Markdown: fenced code is
- * indented and dimmed, headings bold. Keeps fence state across lines.
- */
-export class AssistantFormatter {
-  private inCode = false;
-
-  constructor(private readonly style: Style) {}
-
-  line(raw: string): string {
-    const text = sanitize(raw);
-    if (/^\s*```/.test(text)) {
-      this.inCode = !this.inCode;
-      return this.style.dim(`  ${text.trim()}`);
-    }
-    if (this.inCode) return `  ${this.style.accent("│")} ${text}`;
-    const heading = text.match(/^#{1,6}\s+(.*)$/);
-    if (heading) return this.style.bold(heading[1] ?? "");
-    return text
-      .replace(/\*\*([^*]+)\*\*/g, (_, value: string) => this.style.bold(value))
-      .replace(/`([^`]+)`/g, (_, value: string) => this.style.accent(value));
-  }
-
-  reset(): void {
-    this.inCode = false;
-  }
 }
 
 /** Help text listing commands and keys. */

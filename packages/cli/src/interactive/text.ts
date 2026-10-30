@@ -102,3 +102,69 @@ export function truncate(text: string, width: number): string {
   }
   return `${result}…`;
 }
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: SGR codes our own styles add
+const styleCode = /^\x1b\[[0-9;]*m/;
+
+/** Graphemes of styled text, with SGR codes kept as zero-width tokens. */
+function styledTokens(text: string): { text: string; width: number }[] {
+  const tokens: { text: string; width: number }[] = [];
+  let rest = text;
+  while (rest) {
+    const code = rest.match(styleCode)?.[0];
+    if (code) {
+      tokens.push({ text: code, width: 0 });
+      rest = rest.slice(code.length);
+      continue;
+    }
+    const next = rest.indexOf("\x1b");
+    const plain = next > 0 ? rest.slice(0, next) : next === 0 ? rest[0] : rest;
+    for (const grapheme of graphemes(plain ?? ""))
+      tokens.push({ text: grapheme, width: graphemeWidth(grapheme) });
+    rest = rest.slice((plain ?? "").length);
+  }
+  return tokens;
+}
+
+/**
+ * Word-wraps text that may contain our own SGR style codes, measuring only
+ * visible columns. Words longer than a row are broken.
+ */
+export function wrapStyled(text: string, width: number): string[] {
+  const columns = Math.max(1, width);
+  const rows: string[] = [];
+  let row = "";
+  let used = 0;
+  let word: { text: string; width: number }[] = [];
+  const wordWidth = () => word.reduce((sum, token) => sum + token.width, 0);
+  const place = () => {
+    if (!word.length) return;
+    const size = wordWidth();
+    if (used && used + 1 + size > columns) {
+      rows.push(row);
+      row = "";
+      used = 0;
+    }
+    if (used) {
+      row += " ";
+      used += 1;
+    }
+    for (const token of word) {
+      if (token.width && used + token.width > columns) {
+        rows.push(row);
+        row = "";
+        used = 0;
+      }
+      row += token.text;
+      used += token.width;
+    }
+    word = [];
+  };
+  for (const token of styledTokens(text)) {
+    if (token.text === " ") place();
+    else word.push(token);
+  }
+  place();
+  rows.push(row);
+  return rows;
+}
