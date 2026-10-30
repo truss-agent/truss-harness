@@ -107,6 +107,9 @@ export interface OpenTerminal {
   readonly write: (text: string) => void;
   /** Restores cooked mode, disables bracketed paste and shows the cursor. */
   restore(): void;
+  /** Hands the terminal to line-based prompts until `resume`. */
+  suspend(): void;
+  resume(): void;
 }
 
 /**
@@ -122,20 +125,27 @@ export function openTerminal(
   },
 ): OpenTerminal {
   let restored = false;
-  input.setEncoding("utf8");
-  input.setRawMode?.(true);
-  input.on("data", handlers.onData);
-  output.on("resize", handlers.onResize);
-  input.resume();
-  output.write("\x1b[?2004h");
-  const restore = (): void => {
-    if (restored) return;
-    restored = true;
+  let suspended = false;
+  const attach = (): void => {
+    input.setEncoding("utf8");
+    input.setRawMode?.(true);
+    input.on("data", handlers.onData);
+    input.resume();
+    output.write("\x1b[?2004h");
+  };
+  const detach = (): void => {
     input.removeListener("data", handlers.onData);
-    output.removeListener("resize", handlers.onResize);
     output.write("\x1b[?2004l\x1b[?25h");
     input.setRawMode?.(false);
     input.pause();
+  };
+  attach();
+  output.on("resize", handlers.onResize);
+  const restore = (): void => {
+    if (restored) return;
+    restored = true;
+    if (!suspended) detach();
+    output.removeListener("resize", handlers.onResize);
     process.removeListener("exit", restore);
   };
   process.once("exit", restore);
@@ -145,5 +155,15 @@ export function openTerminal(
       output.write(text);
     },
     restore,
+    suspend: () => {
+      if (restored || suspended) return;
+      suspended = true;
+      detach();
+    },
+    resume: () => {
+      if (restored || !suspended) return;
+      suspended = false;
+      attach();
+    },
   };
 }

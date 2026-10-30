@@ -6,6 +6,7 @@ export type InteractiveCommandName =
   | "mode"
   | "permissions"
   | "new"
+  | "setup"
   | "resume"
   | "status"
   | "init"
@@ -34,19 +35,24 @@ export const interactiveCommands: readonly InteractiveCommand[] = [
   {
     name: "model",
     usage: "/model [profile]",
-    summary: "Show the model or switch to a saved profile",
+    summary: "Choose a model, or switch to a saved profile",
   },
   {
     name: "mode",
-    usage: "/mode chat|plan|edit",
+    usage: "/mode [chat|plan|edit]",
     summary: "Switch agent mode and keep the conversation",
   },
   {
     name: "permissions",
-    usage: "/permissions ask|auto-read|auto-all",
+    usage: "/permissions [ask|auto-read|auto-all]",
     summary: "Choose how tool requests are approved",
   },
   { name: "new", usage: "/new", summary: "Start a new conversation" },
+  {
+    name: "setup",
+    usage: "/setup",
+    summary: "Connect a provider, API key and model",
+  },
   {
     name: "resume",
     usage: "/resume [number]",

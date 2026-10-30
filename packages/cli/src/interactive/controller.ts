@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import {
+  type ChatAttachment,
   executeWorkspaceCommand,
   type RuntimeEvent,
   type SkillMode,
@@ -14,6 +15,11 @@ import type { ClientConfiguration, ClientRuntime } from "../runtime.js";
 import { skillServiceHost } from "../skills.js";
 import { type AgentStatusReporter, silentAgentStatus } from "./agent-status.js";
 import { approvalPreview, SwitchableApproval } from "./approval.js";
+import {
+  type ImageData,
+  imagePathFromText,
+  readImageFile,
+} from "./clipboard.js";
 import { interactiveCommands, parseInput } from "./commands.js";
 import {
   type ComposerState,
@@ -29,6 +35,13 @@ import {
 } from "./conversations.js";
 import { InputDecoder, type KeyEvent } from "./input.js";
 import {
+  openPicker,
+  type PickerItem,
+  type PickerState,
+  reducePicker,
+  renderPicker,
+} from "./picker.js";
+import {
   AssistantFormatter,
   formatHelp,
   formatToolCall,
@@ -38,7 +51,7 @@ import {
   type Style,
 } from "./renderer.js";
 import { LiveScreen } from "./terminal.js";
-import { sanitize } from "./text.js";
+import { sanitize, truncate } from "./text.js";
 
 type AgentMode = "chat" | "plan" | "edit";
 const modes: readonly AgentMode[] = ["chat", "plan", "edit"];
@@ -47,6 +60,22 @@ const skillModes: readonly SkillMode[] = ["automatic", "manual", "off"];
 const spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const exitWindowMilliseconds = 2_000;
 const escapeDelayMilliseconds = 30;
+const maxImages = 4;
+const modeDetails: Record<AgentMode, string> = {
+  chat: "Answer and explain; no file changes",
+  plan: "Read the workspace and write a plan",
+  edit: "Change files and run commands",
+};
+const permissionDetails: Record<PermissionMode, string> = {
+  ask: "Ask before every tool",
+  "auto-read": "Run read-only tools without asking",
+  "auto-all": "Run every tool without asking",
+};
+const skillModeDetails: Record<SkillMode, string> = {
+  automatic: "The agent picks skills when they fit",
+  manual: "Only skills you select are used",
+  off: "No skills",
+};
 
 export interface InteractiveChatOptions {
   readonly configuration: ResolvedConfiguration;
@@ -71,6 +100,14 @@ export interface InteractiveChatOptions {
   ) => readonly string[];
   /** A saved conversation to continue at start. */
   readonly resumeConversationId?: string;
+  /** Models the configured provider offers, for the /model menu. */
+  readonly listModels?: (
+    configuration: ResolvedConfiguration,
+  ) => Promise<readonly string[]>;
+  /** Guided provider setup for /setup; resolves the new configuration. */
+  readonly setup?: () => Promise<ResolvedConfiguration | undefined>;
+  /** Clipboard image for Ctrl+V; undefined when it holds none. */
+  readonly readClipboardImage?: () => Promise<ImageData | undefined>;
 }
 
 interface PendingApproval {
@@ -102,6 +139,18 @@ export class InteractiveChat {
     | { controller: AbortController; done: Promise<void> }
     | undefined;
   private pendingApproval: PendingApproval | undefined;
+  private picker:
+    | {
+        state: PickerState;
+        readonly resolve: (item: PickerItem | undefined) => void;
+      }
+    | undefined;
+  /** Images waiting in the draft, keyed by the token shown there. */
+  private images: {
+    readonly token: string;
+    readonly attachment: ChatAttachment;
+  }[] = [];
+  private imageCount = 0;
   private assistantBuffer = "";
   private usage = { input: 0, output: 0 };
   private spinnerFrame = 0;
@@ -177,6 +226,8 @@ export class InteractiveChat {
     clearTimeout(this.escapeTimer);
     this.stopSpinner();
     this.pendingApproval?.resolve(false);
+    this.picker?.resolve(undefined);
+    this.picker = undefined;
     this.approval.denyAll();
     this.active?.controller.abort();
     await this.active?.done.catch(() => undefined);
@@ -196,14 +247,47 @@ export class InteractiveChat {
       this.handleApprovalKey(key);
       return;
     }
+    if (this.picker) {
+      const result = reducePicker(this.picker.state, key);
+      this.picker.state = result.state;
+      if (result.picked || result.cancelled) {
+        const { resolve } = this.picker;
+        this.picker = undefined;
+        resolve(result.picked);
+      }
+      this.render();
+      return;
+    }
+    if (key.type === "paste-image") {
+      void this.attachImage(async () => {
+        const image = await this.options.readClipboardImage?.();
+        if (!this.options.readClipboardImage)
+          throw new Error("Pasting images is not available here.");
+        if (!image)
+          throw new Error(
+            "The clipboard has no image. Copy one, or paste an image file's path.",
+          );
+        return image;
+      });
+      return;
+    }
+    if (key.type === "paste") {
+      const path = imagePathFromText(key.text, this.options.workspaceRoot);
+      if (path) {
+        // A path that is not a readable image stays as ordinary text.
+        void this.attachImage(() => readImageFile(path), key.text);
+        return;
+      }
+    }
     const result = reduceComposer(this.composer, key);
     this.composer = result.state;
     if (key.type !== "interrupt") this.exitArmedAt = undefined;
     const action = result.action;
-    if (action?.type === "submit")
+    if (action?.type === "submit") {
+      this.notice = undefined;
       // Commands run in order: a typed-ahead /resume must see /new finish.
       this.submissions = this.submissions.then(() => this.submit(action.text));
-    else if (action?.type === "interrupt") this.interrupt();
+    } else if (action?.type === "interrupt") this.interrupt();
     else if (action?.type === "eof") void this.close();
     this.render();
   }
@@ -290,11 +374,75 @@ export class InteractiveChat {
       this.render();
       return;
     }
+    const sent = this.images.filter((image) =>
+      parsed.text.includes(image.token),
+    );
+    this.images = [];
     // Started, not awaited: commands and keys stay live while it streams.
-    void this.runPrompt(parsed.text);
+    void this.runPrompt(
+      parsed.text,
+      sent.map((image) => image.attachment),
+    );
   }
 
-  private async runPrompt(prompt: string): Promise<void> {
+  /** Reads an image and puts its token in the draft. */
+  private async attachImage(
+    read: () => Promise<ImageData>,
+    fallbackText?: string,
+  ): Promise<void> {
+    const { style } = this.options;
+    try {
+      if (this.images.length >= maxImages)
+        throw new Error(`Up to ${maxImages} images can go in one message.`);
+      const image = await read();
+      const token = `[image ${++this.imageCount}]`;
+      this.images.push({
+        token,
+        attachment: {
+          id: `image-${this.imageCount}`,
+          kind: "image",
+          name: image.name,
+          mediaType: image.mediaType,
+          data: `data:${image.mediaType};base64,${image.bytes.toString("base64")}`,
+          size: image.bytes.length,
+        },
+      });
+      this.composer = reduceComposer(this.composer, {
+        type: "paste",
+        text: `${token} `,
+      }).state;
+      this.notice = `Attached ${image.name} (${Math.max(1, Math.round(image.bytes.length / 1024))} KB).`;
+    } catch (error) {
+      if (fallbackText !== undefined)
+        this.composer = reduceComposer(this.composer, {
+          type: "paste",
+          text: fallbackText,
+        }).state;
+      else
+        this.print(
+          `${style.error(error instanceof Error ? error.message : String(error))}\n`,
+        );
+    }
+    this.render();
+  }
+
+  /** Opens a menu in the live region; undefined when cancelled. */
+  private choose(
+    title: string,
+    items: readonly PickerItem[],
+    filterable?: boolean,
+  ): Promise<PickerItem | undefined> {
+    this.picker?.resolve(undefined);
+    return new Promise((resolve) => {
+      this.picker = { state: openPicker(title, items, filterable), resolve };
+      this.render();
+    });
+  }
+
+  private async runPrompt(
+    prompt: string,
+    attachments: readonly ChatAttachment[] = [],
+  ): Promise<void> {
     const client = this.client;
     if (!client) return;
     const { style } = this.options;
@@ -306,7 +454,13 @@ export class InteractiveChat {
     this.formatter.reset();
     const done = (async () => {
       try {
-        await client.runtime.run(this.sessionId, prompt, controller.signal);
+        await client.runtime.run(
+          this.sessionId,
+          prompt,
+          controller.signal,
+          [],
+          attachments,
+        );
       } catch (error) {
         this.flushAssistant();
         if (controller.signal.aborted)
@@ -486,7 +640,19 @@ export class InteractiveChat {
         return;
       case "mode": {
         busy();
-        const mode = args as AgentMode;
+        const mode = (args ||
+          (
+            await this.choose(
+              "Mode",
+              modes.map((value) => ({
+                label: value,
+                value,
+                detail: modeDetails[value],
+                current: value === (this.configuration.mode ?? "chat"),
+              })),
+            )
+          )?.value) as AgentMode | undefined;
+        if (!mode) return;
         if (!modes.includes(mode)) {
           this.print(
             `Mode is ${this.configuration.mode}. Use /mode chat, plan or edit.\n`,
@@ -500,7 +666,19 @@ export class InteractiveChat {
         return;
       }
       case "permissions": {
-        const permission = args as PermissionMode;
+        const permission = (args ||
+          (
+            await this.choose(
+              "Tool approval",
+              permissions.map((value) => ({
+                label: value,
+                value,
+                detail: permissionDetails[value],
+                current: value === this.approval.mode,
+              })),
+            )
+          )?.value) as PermissionMode | undefined;
+        if (!permission) return;
         if (!permissions.includes(permission)) {
           this.print(
             `Permissions are ${this.approval.mode}. Use /permissions ask, auto-read or auto-all.\n`,
@@ -514,9 +692,7 @@ export class InteractiveChat {
       }
       case "model": {
         if (!args) {
-          this.print(
-            `${this.configuration.provider}/${this.configuration.model}${this.configuration.profile ? ` (profile ${this.configuration.profile})` : ""}. Use /model <profile> to switch.\n`,
-          );
+          await this.chooseModel();
           return;
         }
         busy();
@@ -530,6 +706,23 @@ export class InteractiveChat {
         });
         this.print(
           `${style.dim(`Model: ${next.provider}/${next.model}. The conversation continues.`)}\n`,
+        );
+        return;
+      }
+      case "setup": {
+        busy();
+        const setup = this.options.setup;
+        if (!setup) throw new Error("Setup is not available here.");
+        this.screen.clear();
+        const next = await setup();
+        if (!next) {
+          this.print(`${style.dim("Setup cancelled.")}\n`);
+          return;
+        }
+        this.approval.mode = next.permission;
+        await this.switchConfiguration(next);
+        this.print(
+          `${style.dim(`Now using ${next.provider}/${next.model}. The conversation continues.`)}\n`,
         );
         return;
       }
@@ -591,11 +784,84 @@ export class InteractiveChat {
     }
   }
 
+  /** Provider models plus a setup entry; switching keeps the conversation. */
+  private async chooseModel(): Promise<void> {
+    const { style } = this.options;
+    let models: readonly string[] = [];
+    if (this.options.listModels) {
+      this.notice = "Loading models…";
+      this.render();
+      try {
+        models = await this.options.listModels(this.configuration);
+      } catch (error) {
+        this.print(
+          `${style.dim(`Could not list models: ${error instanceof Error ? error.message : String(error)}`)}\n`,
+        );
+      } finally {
+        this.notice = undefined;
+      }
+    }
+    const setup = "\u0000setup";
+    const picked = await this.choose(
+      `Model · ${this.configuration.provider}`,
+      [
+        ...(models.includes(this.configuration.model)
+          ? models
+          : [this.configuration.model, ...models]
+        ).map((model) => ({
+          label: model,
+          value: model,
+          current: model === this.configuration.model,
+        })),
+        ...(this.options.setup
+          ? [
+              {
+                label: "Change provider or API key…",
+                value: setup,
+                detail: "/setup",
+              },
+            ]
+          : []),
+      ],
+      models.length > 8,
+    );
+    if (!picked || picked.value === this.configuration.model) return;
+    if (picked.value === setup) {
+      await this.runCommand("setup", "");
+      return;
+    }
+    if (this.active)
+      throw new Error(
+        "Wait for the current response, or press Ctrl+C to stop it.",
+      );
+    await this.switchConfiguration({
+      ...this.configuration,
+      model: picked.value,
+    });
+    this.print(
+      `${style.dim(`Model: ${picked.value} for this session. /setup saves a new default.`)}\n`,
+    );
+  }
+
   private async skillsCommand(args: string): Promise<void> {
     const service = skillServiceHost(
       this.configuration.skills,
       this.options.workspaceRoot,
     );
+    if (!args) {
+      const current = this.skillSelection?.mode;
+      const picked = await this.choose("Skills", [
+        ...skillModes.map((value) => ({
+          label: value,
+          value,
+          detail: skillModeDetails[value],
+          current: value === current,
+        })),
+        { label: "list", value: "list", detail: "Show every skill" },
+      ]);
+      if (!picked) return;
+      if (picked.value !== "list") args = picked.value;
+    }
     if (args) {
       const mode = args as SkillMode;
       if (!skillModes.includes(mode))
@@ -742,7 +1008,17 @@ export class InteractiveChat {
       mode: this.configuration.mode ?? "chat",
       createdAt: this.createdAt,
       updatedAt: new Date().toISOString(),
-      messages,
+      // Image bytes would overflow the store; names and types are kept.
+      messages: messages.map((message) =>
+        message.attachments?.length
+          ? {
+              ...message,
+              attachments: message.attachments.map(
+                ({ data: _data, ...attachment }) => attachment,
+              ),
+            }
+          : message,
+      ),
     });
     if (!this.conversationSaved) {
       this.conversationSaved = true;
@@ -832,6 +1108,19 @@ export class InteractiveChat {
 
   private render(): void {
     if (this.closing) return;
+    if (this.picker && !this.pendingApproval) {
+      const width = this.options.columns();
+      const view = renderPicker(this.picker.state, width, this.options.style);
+      this.screen.render({
+        lines: [
+          this.options.style.dim(truncate(this.status(), width - 1)),
+          ...view.lines,
+        ],
+        cursorRow: view.cursorRow + 1,
+        cursorColumn: view.cursorColumn,
+      });
+      return;
+    }
     this.screen.render(
       renderComposer({
         state: this.composer,
