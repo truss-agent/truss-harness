@@ -5,7 +5,11 @@ import {
   AgentProviderRegistry,
   createDefaultSkills,
 } from "@truss-harness/agent-host";
-import type { ModelRequest, ModelStreamEvent } from "@truss-harness/runtime";
+import type {
+  ModelRequest,
+  ModelStreamEvent,
+  ProcessRunRequest,
+} from "@truss-harness/runtime";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ResolvedConfiguration } from "../config.js";
 import { createClientRuntime } from "../runtime.js";
@@ -260,6 +264,85 @@ it("handles commands locally and never sends them to the model", async () => {
   await vi.waitFor(() => expect(test.requests).toHaveLength(1));
   // Off mode means no skill catalog reaches the provider.
   expect(JSON.stringify(test.requests[0])).not.toContain("superpowers:");
+  await test.chat.close();
+});
+
+it("runs ! shell commands locally and sends their output with the next message", async () => {
+  const runs: ProcessRunRequest[] = [];
+  const test = await harness(
+    [
+      async function* () {
+        yield { type: "text_delta", text: "Two files changed." };
+        yield finish;
+      },
+    ],
+    "ask",
+    "chat",
+    () => ({
+      shell: {
+        async run(request) {
+          runs.push(request);
+          return {
+            output: " M a.ts\n M b.ts\n",
+            exitCode: 0,
+            outcome: "exited",
+            truncated: false,
+          };
+        },
+      },
+    }),
+  );
+  test.type("!git status --short\r");
+  await vi.waitFor(() => expect(test.plain()).toContain(" M b.ts"));
+  expect(test.plain()).toContain("$ git status --short");
+  expect(runs).toMatchObject([
+    { command: "git status --short", cwd: test.base },
+  ]);
+  expect(test.requests).toHaveLength(0);
+  test.type("what changed?\r");
+  await vi.waitFor(() => expect(test.plain()).toContain("Two files changed."));
+  const sent = JSON.stringify(test.requests[0]?.messages.at(-1));
+  expect(sent).toContain("what changed?");
+  expect(sent).toContain("$ git status --short");
+  expect(sent).toContain(" M b.ts");
+  await test.chat.close();
+});
+
+it("reports a failing ! command and stops a running one with Ctrl+C", async () => {
+  let started!: () => void;
+  const running = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  const test = await harness([], "ask", "chat", () => ({
+    shell: {
+      async run(request) {
+        if (request.command === "false")
+          return {
+            output: "",
+            exitCode: 1,
+            outcome: "exited",
+            truncated: false,
+          };
+        started();
+        await new Promise((resolve) =>
+          request.signal?.addEventListener("abort", resolve),
+        );
+        return {
+          output: "partial\n",
+          exitCode: null,
+          outcome: "aborted",
+          truncated: false,
+        };
+      },
+    },
+  }));
+  test.type("!false\r");
+  await vi.waitFor(() => expect(test.plain()).toContain("exit code 1"));
+  test.type("!sleep 100\r");
+  await running;
+  test.type("\x03");
+  await vi.waitFor(() => expect(test.plain()).toContain("stopped"));
+  expect(test.requests).toHaveLength(0);
   await test.chat.close();
 });
 

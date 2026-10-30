@@ -2,6 +2,9 @@ import { basename } from "node:path";
 import {
   type ChatAttachment,
   executeWorkspaceCommand,
+  NodeProcessRunner,
+  type ProcessRunner,
+  type ProcessRunResult,
   type RuntimeEvent,
   type SkillMode,
   type SkillSelection,
@@ -57,6 +60,10 @@ import { sanitize, truncate } from "./text.js";
 type AgentMode = "chat" | "plan" | "edit";
 const modes: readonly AgentMode[] = ["chat", "plan", "edit"];
 const permissions: readonly PermissionMode[] = ["ask", "auto-read", "auto-all"];
+const shellTimeoutMilliseconds = 10 * 60_000;
+const shellOutputBytes = 256 * 1024;
+/** Output of one ! command sent to the model; the rest stays on screen. */
+const shellContextCharacters = 16_000;
 const skillModes: readonly SkillMode[] = ["automatic", "manual", "off"];
 const spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const exitWindowMilliseconds = 2_000;
@@ -109,6 +116,8 @@ export interface InteractiveChatOptions {
   readonly setup?: () => Promise<ResolvedConfiguration | undefined>;
   /** Clipboard image for Ctrl+V; undefined when it holds none. */
   readonly readClipboardImage?: () => Promise<ImageData | undefined>;
+  /** Runs ! commands typed in chat; defaults to the local shell. */
+  readonly shell?: ProcessRunner;
 }
 
 interface PendingApproval {
@@ -154,6 +163,8 @@ export class InteractiveChat {
   private imageCount = 0;
   private assistantBuffer = "";
   private progressBuffer = "";
+  /** ! command results waiting to go with the next message. */
+  private shellContext: string[] = [];
   private usage = { input: 0, output: 0 };
   private spinnerFrame = 0;
   private spinnerTimer: NodeJS.Timeout | undefined;
@@ -350,6 +361,11 @@ export class InteractiveChat {
       if (prefixed[2]?.trim()) await this.submit(prefixed[2]);
       return;
     }
+    const shell = text.match(/^!([\s\S]*)$/);
+    if (shell) {
+      await this.runShell((shell[1] ?? "").trim(), text);
+      return;
+    }
     const parsed = parseInput(text);
     if (parsed.kind === "unknown") {
       this.print(
@@ -385,6 +401,96 @@ export class InteractiveChat {
       parsed.text,
       sent.map((image) => image.attachment),
     );
+  }
+
+  /**
+   * Runs a command the user typed after !. The user typed it, so there is no
+   * approval; the result goes with the next message so the model sees it.
+   */
+  private async runShell(command: string, text: string): Promise<void> {
+    const { style } = this.options;
+    if (!command) {
+      this.print(
+        `${style.dim("Type a shell command after !, for example !git status.")}\n`,
+      );
+      return;
+    }
+    if (this.active) {
+      this.composer = { ...this.composer, text, cursor: text.length };
+      this.notice =
+        "A response is still running. Wait, or press Ctrl+C to stop it.";
+      this.render();
+      return;
+    }
+    this.print(`\n${style.accent("$")} ${style.bold(sanitize(command))}\n`);
+    const controller = new AbortController();
+    const run = (this.options.shell ?? new NodeProcessRunner())
+      .run({
+        command,
+        cwd: this.options.workspaceRoot,
+        signal: controller.signal,
+        timeoutMs: shellTimeoutMilliseconds,
+        maxOutputBytes: shellOutputBytes,
+      })
+      .catch(
+        (error: unknown): ProcessRunResult => ({
+          output: error instanceof Error ? error.message : String(error),
+          exitCode: null,
+          outcome: "error",
+          truncated: false,
+        }),
+      );
+    this.active = { controller, done: run.then(() => undefined) };
+    this.agentStatus.state("working");
+    this.startSpinner();
+    this.render();
+    let result: ProcessRunResult;
+    try {
+      result = await run;
+    } finally {
+      this.active = undefined;
+      this.stopSpinner();
+      this.notice = undefined;
+      if (!this.closing) this.agentStatus.state("idle");
+    }
+    const output = sanitize(result.output).replace(/\n+$/, "");
+    if (output)
+      this.print(
+        `${output
+          .split("\n")
+          .map((line) => `  ${line}`)
+          .join("\n")}\n`,
+      );
+    const status =
+      result.outcome === "aborted"
+        ? "stopped"
+        : result.outcome === "timeout"
+          ? `timed out after ${shellTimeoutMilliseconds / 60_000} minutes`
+          : result.outcome === "exited"
+            ? result.exitCode
+              ? `exit code ${result.exitCode}`
+              : ""
+            : "failed";
+    if (status) this.print(`  ${style.warning(status)}\n`);
+    if (result.truncated) this.print(`  ${style.dim("output truncated")}\n`);
+    const shown =
+      output.length > shellContextCharacters
+        ? `…\n${output.slice(-shellContextCharacters)}`
+        : output;
+    this.shellContext.push(
+      `$ ${command}\n${shown}${status ? `\n[${status}]` : ""}`,
+    );
+    this.render();
+  }
+
+  /** The prompt with any ! command results the model has not seen yet. */
+  private withShellContext(prompt: string): string {
+    if (!this.shellContext.length) return prompt;
+    const blocks = this.shellContext.map(
+      (block) => `\`\`\`console\n${block}\n\`\`\``,
+    );
+    this.shellContext = [];
+    return `${prompt}\n\nCommands I ran in the workspace:\n\n${blocks.join("\n\n")}`;
   }
 
   /** Reads an image and puts its token in the draft. */
@@ -452,13 +558,14 @@ export class InteractiveChat {
       `\n${formatUserMessage(prompt, this.options.columns(), style)}\n\n`,
     );
     const controller = new AbortController();
+    const sent = this.withShellContext(prompt);
     this.usage = { input: 0, output: 0 };
     this.formatter.reset();
     const done = (async () => {
       try {
         await client.runtime.run(
           this.sessionId,
-          prompt,
+          sent,
           controller.signal,
           [],
           attachments,
@@ -1064,6 +1171,7 @@ export class InteractiveChat {
     this.conversationSaved = false;
     this.reportResume();
     this.sessionSkills = {};
+    this.shellContext = [];
     await this.refreshSkills();
   }
 
