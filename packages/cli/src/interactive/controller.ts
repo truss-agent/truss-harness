@@ -65,6 +65,7 @@ import {
   type Style,
 } from "./renderer.js";
 import { MarkdownRenderer } from "./markdown.js";
+import { inlineMath, mathFenceRenderer } from "./math.js";
 import { LiveScreen } from "./terminal.js";
 import { sanitize, truncate } from "./text.js";
 
@@ -212,6 +213,8 @@ export class InteractiveChat {
     this.formatter = new MarkdownRenderer({
       style: options.style,
       width: () => options.columns(),
+      fences: [mathFenceRenderer],
+      inlineMath,
     });
     this.approvalRules =
       options.approvalRules ??

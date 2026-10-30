@@ -14,6 +14,8 @@ export interface MarkdownRendererOptions {
   readonly style: Style;
   readonly width: () => number;
   readonly fences?: readonly FenceRenderer[];
+  /** Renders inline `$…$` and `\(…\)` math; left as typed when absent. */
+  readonly inlineMath?: (tex: string) => string;
 }
 
 interface OpenFence {
@@ -21,6 +23,8 @@ interface OpenFence {
   readonly language: string;
   readonly renderer?: FenceRenderer;
   readonly lines: string[];
+  /** Exact closing line for `$$` and `\[` display math. */
+  readonly close?: string;
 }
 
 type Alignment = "left" | "right" | "center";
@@ -78,6 +82,8 @@ export class MarkdownRenderer {
       return [];
     }
     const rows = this.flushTable();
+    const display = this.displayMath(line);
+    if (display) return [...rows, ...display];
     const open = line.match(/^\s*(`{3,}|~{3,})\s*([\w+#.-]*)/);
     if (open) {
       const language = (open[2] ?? "").toLowerCase();
@@ -120,9 +126,10 @@ export class MarkdownRenderer {
   private inFence(line: string): string[] {
     const fence = this.fence as OpenFence;
     const trimmed = line.trim();
-    const closes =
-      trimmed.length >= fence.marker.length &&
-      trimmed === (fence.marker[0] ?? "`").repeat(trimmed.length);
+    const closes = fence.close
+      ? trimmed === fence.close
+      : trimmed.length >= fence.marker.length &&
+        trimmed === (fence.marker[0] ?? "`").repeat(trimmed.length);
     if (!closes) {
       if (fence.renderer) {
         fence.lines.push(line);
@@ -137,6 +144,30 @@ export class MarkdownRenderer {
       .flatMap((row) => row.split("\n"));
   }
 
+  /** `$$`/`\[` blocks and one-line `$$ … $$`, when math is registered. */
+  private displayMath(line: string): string[] | undefined {
+    const renderer = this.options.fences?.find((candidate) =>
+      candidate.languages.includes("math"),
+    );
+    if (!renderer) return undefined;
+    const trimmed = line.trim();
+    const single =
+      trimmed.match(/^\$\$(.+)\$\$$/) ?? trimmed.match(/^\\\[(.+)\\\]$/);
+    if (single)
+      return renderer
+        .render(single[1] ?? "", this.width, this.options.style)
+        .flatMap((row) => row.split("\n"));
+    if (trimmed !== "$$" && trimmed !== "\\[") return undefined;
+    this.fence = {
+      marker: trimmed,
+      language: "math",
+      renderer,
+      lines: [],
+      close: trimmed === "$$" ? "$$" : "\\]",
+    };
+    return [];
+  }
+
   private codeLine(line: string, language: string): string {
     return `  ${this.options.style.accent("│")} ${highlight(line, language, this.options.style)}`;
   }
@@ -148,7 +179,7 @@ export class MarkdownRenderer {
       return [style.dim("─".repeat(Math.min(this.width, 80)))];
     const heading = line.match(/^\s*(#{1,6})\s+(.*?)\s*#*\s*$/);
     if (heading) {
-      const text = inline(heading[2] ?? "", style);
+      const text = inline(heading[2] ?? "", style, this.options.inlineMath);
       return this.wrap(
         heading[1] === "#" ? style.bold(style.accent(text)) : style.bold(text),
         "",
@@ -158,7 +189,11 @@ export class MarkdownRenderer {
     const quote = line.match(/^\s*>\s?(.*)$/);
     if (quote) {
       const bar = style.dim("│ ");
-      return this.wrap(inline(quote[1] ?? "", style), bar, bar);
+      return this.wrap(
+        inline(quote[1] ?? "", style, this.options.inlineMath),
+        bar,
+        bar,
+      );
     }
     const item = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.*)$/);
     if (item) {
@@ -175,13 +210,17 @@ export class MarkdownRenderer {
       }
       const first = `${indent}${marker} `;
       return this.wrap(
-        inline(text, style),
+        inline(text, style, this.options.inlineMath),
         first,
         " ".repeat(displayWidth(stripStyle(first))),
       );
     }
     const indent = line.match(/^\s*/)?.[0] ?? "";
-    return this.wrap(inline(line.trim(), style), indent, indent);
+    return this.wrap(
+      inline(line.trim(), style, this.options.inlineMath),
+      indent,
+      indent,
+    );
   }
 
   private wrap(text: string, first: string, rest: string): string[] {
@@ -213,7 +252,7 @@ export class MarkdownRenderer {
     );
     const styled = (row: readonly string[], bold: boolean) =>
       Array.from({ length: count }, (_, index) => {
-        const text = inline(row[index] ?? "", style);
+        const text = inline(row[index] ?? "", style, this.options.inlineMath);
         return bold ? style.bold(text) : text;
       });
     const head = header ? styled(header, true) : undefined;
@@ -293,37 +332,53 @@ function stripStyle(text: string): string {
 }
 
 /** Inline Markdown: code spans and links first, so their text stays literal. */
-export function inline(text: string, style: Style): string {
+export function inline(
+  text: string,
+  style: Style,
+  math?: (tex: string) => string,
+): string {
   const held: string[] = [];
   const hold = (value: string) => `\uE000${held.push(value) - 1}\uE000`;
-  return text
-    .replace(/`([^`]+)`/g, (_, code: string) => hold(style.accent(code)))
-    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label: string, url: string) =>
-      hold(
-        label === url
-          ? style.underline(url)
-          : `${style.underline(label)}${style.dim(` (${url})`)}`,
-      ),
-    )
-    .replace(/<(https?:\/\/[^>\s]+)>/g, (_, url: string) =>
-      hold(style.underline(url)),
-    )
-    .replace(/\*\*(.+?)\*\*|__(.+?)__/g, (_, star?: string, under?: string) =>
-      style.bold(star ?? under ?? ""),
-    )
-    .replace(/~~(.+?)~~/g, (_, value: string) => style.strike(value))
-    .replace(
-      /(^|[^\w*])\*(?!\s)([^*]+?)\*(?!\w)/g,
-      (_, before: string, value: string) => `${before}${style.italic(value)}`,
-    )
-    .replace(
-      /(^|[^\w])_(?!\s)([^_]+?)_(?!\w)/g,
-      (_, before: string, value: string) => `${before}${style.italic(value)}`,
-    )
-    .replace(
-      /\uE000(\d+)\uE000/g,
-      (_, index: string) => held[Number(index)] ?? "",
-    );
+  const formula = (tex: string) => hold(style.accent(math?.(tex) ?? tex));
+  return (
+    text
+      .replace(/`([^`]+)`/g, (_, code: string) => hold(style.accent(code)))
+      .replace(/\\\((.+?)\\\)/g, (match, tex: string) =>
+        math ? formula(tex) : match,
+      )
+      // "$5 and $10" is not math: no space inside the dollars, no digit after.
+      .replace(
+        /(^|[^\\$\w])\$(?=\S)([^$\n]+?)(?<=\S)\$(?![\d$])/g,
+        (match, before: string, tex: string) =>
+          math ? `${before}${formula(tex)}` : match,
+      )
+      .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, label: string, url: string) =>
+        hold(
+          label === url
+            ? style.underline(url)
+            : `${style.underline(label)}${style.dim(` (${url})`)}`,
+        ),
+      )
+      .replace(/<(https?:\/\/[^>\s]+)>/g, (_, url: string) =>
+        hold(style.underline(url)),
+      )
+      .replace(/\*\*(.+?)\*\*|__(.+?)__/g, (_, star?: string, under?: string) =>
+        style.bold(star ?? under ?? ""),
+      )
+      .replace(/~~(.+?)~~/g, (_, value: string) => style.strike(value))
+      .replace(
+        /(^|[^\w*])\*(?!\s)([^*]+?)\*(?!\w)/g,
+        (_, before: string, value: string) => `${before}${style.italic(value)}`,
+      )
+      .replace(
+        /(^|[^\w])_(?!\s)([^_]+?)_(?!\w)/g,
+        (_, before: string, value: string) => `${before}${style.italic(value)}`,
+      )
+      .replace(
+        /\uE000(\d+)\uE000/g,
+        (_, index: string) => held[Number(index)] ?? "",
+      )
+  );
 }
 
 /** Light, language-agnostic coloring: comments, strings, numbers, keywords. */
