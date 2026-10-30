@@ -2,6 +2,18 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.57] - 2026-10-30
+
+### Added
+
+- In CLI chat, start a message with `!` to run a shell command in the
+  workspace. The output shows in the chat and goes with your next message so
+  the model can see it.
+
+### Changed
+
+- Bundled CLI 0.1.29 in Desktop and VS Code.
+
 ## [0.1.56] - 2026-10-30
 
 ### Fixed
