@@ -116,6 +116,8 @@ export interface InteractiveChatOptions {
   readonly workspaceRoot: string;
   readonly write: (text: string) => void;
   readonly columns: () => number;
+  /** Terminal height; when given, the composer stays on the bottom rows. */
+  readonly rows?: () => number;
   readonly style: Style;
   /** Creates a runtime; the controller owns and disposes it. */
   readonly createRuntime: (
@@ -230,7 +232,7 @@ export class InteractiveChat {
 
   constructor(private readonly options: InteractiveChatOptions) {
     this.configuration = options.configuration;
-    this.screen = new LiveScreen(options.write, options.columns);
+    this.screen = new LiveScreen(options.write, options.columns, options.rows);
     this.formatter = new MarkdownRenderer({
       style: options.style,
       width: () => options.columns(),

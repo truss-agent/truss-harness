@@ -443,6 +443,7 @@ async function runTerminalChat(
       workspaceRoot: cwd(),
       write: terminal.write,
       columns: terminal.columns,
+      rows: terminal.rows,
       style,
       createRuntime: createClientRuntime,
       resolveProfile,

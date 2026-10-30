@@ -256,4 +256,70 @@ describe("live screen", () => {
     expect(writes[1]).toBe("Hello world\r\n");
     expect(writes[2]).toContain("Next\r\nstatus");
   });
+
+  it("keeps the composer on the bottom rows as the transcript grows", () => {
+    // A tiny screen model: rows of text, a cursor, and scrolling at the bottom.
+    const height = 10;
+    let screen: string[] = Array.from({ length: height }, (_, i) =>
+      i < 6 ? `shell ${i}` : "",
+    );
+    let row = 6;
+    let column = 0;
+    const text = (chunk: string) => {
+      for (const part of chunk.split(/(\r|\n)/)) {
+        if (part === "\r") column = 0;
+        else if (part === "\n") {
+          if (row === height - 1) screen = [...screen.slice(1), ""];
+          else row++;
+        } else if (part) {
+          const line = screen[row] ?? "";
+          screen[row] = line.slice(0, column).padEnd(column) + part;
+          column += part.length;
+        }
+      }
+    };
+    const write = (value: string) => {
+      const [first = "", ...sequences] = value.split("\x1b[");
+      text(first);
+      for (const sequence of sequences) {
+        const [code = "", , count, command] =
+          /^(\??)(\d*)([A-Za-z])/.exec(sequence) ?? [];
+        if (command === "A") row = Math.max(0, row - Number(count || 1));
+        else if (command === "C") column += Number(count || 1);
+        else if (command === "J")
+          screen = screen.map((line, i) =>
+            i < row ? line : i === row ? line.slice(0, column) : "",
+          );
+        text(sequence.slice(code.length));
+      }
+    };
+    const live = new LiveScreen(
+      write,
+      () => 40,
+      () => height,
+    );
+    const composer = {
+      lines: ["status", "› hi"],
+      cursorRow: 1,
+      cursorColumn: 4,
+    };
+    live.print("banner\n");
+    live.render(composer);
+    expect(screen.slice(-2)).toEqual(["status", "› hi"]);
+    expect(screen[0]).toBe("banner");
+    expect(screen.some((line) => line.startsWith("shell"))).toBe(false);
+    expect(row).toBe(height - 1);
+    live.render({
+      lines: ["menu", "status", "› hi"],
+      cursorRow: 2,
+      cursorColumn: 4,
+    });
+    live.render(composer);
+    expect(screen.slice(-2)).toEqual(["status", "› hi"]);
+    expect(screen[0]).toBe("banner");
+    for (let i = 1; i <= 12; i++) live.print(`line ${i}\n`);
+    expect(screen.slice(-3)).toEqual(["line 12", "status", "› hi"]);
+    live.print("streaming");
+    expect(screen.slice(-3)).toEqual(["streaming", "status", "› hi"]);
+  });
 });
