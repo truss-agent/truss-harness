@@ -2,6 +2,20 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.55] - 2026-10-30
+
+### Added
+
+- CLI chat menus: `/mode`, `/permissions`, `/skills` and `/model` open a
+  numbered menu, and `/model` lists the provider's models.
+- `/setup` in CLI chat changes provider, API key or model without leaving.
+- Images in CLI chat: Ctrl+V attaches a clipboard image, and pasting an image
+  file's path attaches the file.
+
+### Changed
+
+- Bundled CLI 0.1.27 in Desktop and VS Code.
+
 ## [0.1.54] - 2026-10-30
 
 ### Added
