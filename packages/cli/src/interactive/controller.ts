@@ -12,6 +12,7 @@ import type { ResolvedConfiguration } from "../config.js";
 import type { PermissionMode } from "../protocol.js";
 import type { ClientConfiguration, ClientRuntime } from "../runtime.js";
 import { skillServiceHost } from "../skills.js";
+import { type AgentStatusReporter, silentAgentStatus } from "./agent-status.js";
 import { approvalPreview, SwitchableApproval } from "./approval.js";
 import { interactiveCommands, parseInput } from "./commands.js";
 import {
@@ -61,6 +62,15 @@ export interface InteractiveChatOptions {
   readonly resolveProfile?: (profile: string) => Promise<ResolvedConfiguration>;
   readonly conversations?: ConversationStore;
   readonly now?: () => number;
+  /** Status for a terminal workspace manager such as Herdr. */
+  readonly agentStatus?: AgentStatusReporter;
+  /** The shell command that reopens a conversation, for agentStatus. */
+  readonly resumeCommand?: (
+    conversationId: string | undefined,
+    configuration: ResolvedConfiguration,
+  ) => readonly string[];
+  /** A saved conversation to continue at start. */
+  readonly resumeConversationId?: string;
 }
 
 interface PendingApproval {
@@ -82,6 +92,8 @@ export class InteractiveChat {
   private unsubscribe: (() => void) | undefined;
   private sessionId = "";
   private conversationId = newConversationId();
+  /** True once this conversation exists in the store and can be resumed. */
+  private conversationSaved = false;
   private createdAt = new Date().toISOString();
   /** Skill choices made with /skills or /skill for this conversation. */
   private sessionSkills: Partial<SkillSelection> = {};
@@ -121,8 +133,27 @@ export class InteractiveChat {
         `· ${this.configuration.provider}/${this.configuration.model}`,
       )}\n${style.dim("Type a message, / for commands, Ctrl+C twice to exit.")}\n`,
     );
+    if (this.options.resumeConversationId)
+      await this.resumeById(this.options.resumeConversationId).catch(
+        (error: unknown) =>
+          this.print(
+            `${style.error(error instanceof Error ? error.message : String(error))} Starting a new conversation.\n`,
+          ),
+      );
     await this.refreshSkills();
+    this.agentStatus.state("idle");
+    this.reportResume();
     this.render();
+  }
+
+  private get agentStatus(): AgentStatusReporter {
+    return this.options.agentStatus ?? silentAgentStatus;
+  }
+
+  private reportResume(): void {
+    const id = this.conversationSaved ? this.conversationId : undefined;
+    const argv = this.options.resumeCommand?.(id, this.configuration);
+    if (argv) this.agentStatus.resumeCommand(id, argv);
   }
 
   /** Raw terminal input. */
@@ -154,6 +185,7 @@ export class InteractiveChat {
     await this.client?.dispose().catch(() => undefined);
     this.client = undefined;
     this.screen.clear();
+    await this.agentStatus.release();
     this.resolveClosed();
     return this.closed;
   }
@@ -286,6 +318,7 @@ export class InteractiveChat {
       }
     })();
     this.active = { controller, done };
+    this.agentStatus.state("working");
     this.startSpinner();
     try {
       await done;
@@ -299,6 +332,7 @@ export class InteractiveChat {
           `${style.dim(`Could not save this conversation: ${error instanceof Error ? error.message : String(error)}`)}\n`,
         ),
       );
+      if (!this.closing) this.agentStatus.state("idle");
       this.render();
     }
   }
@@ -419,10 +453,12 @@ export class InteractiveChat {
       };
       const finish = (approved: boolean) => {
         signal.removeEventListener("abort", abort);
+        this.agentStatus.state("working");
         resolve(approved);
       };
       signal.addEventListener("abort", abort, { once: true });
       this.pendingApproval = { resolve: finish };
+      this.agentStatus.state("blocked", `Allow ${call.name}?`);
       this.render();
     });
   }
@@ -657,14 +693,32 @@ export class InteractiveChat {
       throw new Error(
         `No saved conversation ${args}. Use /resume to list them.`,
       );
-    const conversation = await store.load(summary.id);
-    if (!conversation) throw new Error("That conversation could not be read.");
+    await this.resumeById(summary.id);
+  }
+
+  private async resumeById(id: string): Promise<void> {
+    const store = this.options.conversations;
+    // The short ID shown by /status is enough when it is unambiguous.
+    const matches = store
+      ? (await store.list()).filter((summary) => summary.id.startsWith(id))
+      : [];
+    const conversation =
+      (await store?.load(id)) ??
+      (matches.length === 1 && matches[0]
+        ? await store?.load(matches[0].id)
+        : undefined);
+    if (!conversation)
+      throw new Error(
+        `No saved conversation ${sanitize(id)} in this workspace.`,
+      );
     await this.saveConversation();
     await this.startConversation(repairForResume(conversation.messages));
     this.conversationId = conversation.id;
     this.createdAt = conversation.createdAt;
+    this.conversationSaved = true;
+    this.reportResume();
     this.print(
-      `${style.dim(`Resumed "${sanitize(conversation.title)}" (${conversation.messages.length} messages). Unfinished tool calls are marked as unknown and are not run again.`)}\n`,
+      `${this.options.style.dim(`Resumed "${sanitize(conversation.title)}" (${conversation.messages.length} messages). Unfinished tool calls are marked as unknown and are not run again.`)}\n`,
     );
   }
 
@@ -690,6 +744,10 @@ export class InteractiveChat {
       updatedAt: new Date().toISOString(),
       messages,
     });
+    if (!this.conversationSaved) {
+      this.conversationSaved = true;
+      this.reportResume();
+    }
   }
 
   private async startConversation(
@@ -700,6 +758,8 @@ export class InteractiveChat {
     this.sessionId = (await client.runtime.createSession(messages)).id;
     this.conversationId = newConversationId();
     this.createdAt = new Date().toISOString();
+    this.conversationSaved = false;
+    this.reportResume();
     this.sessionSkills = {};
     await this.refreshSkills();
   }
@@ -717,6 +777,8 @@ export class InteractiveChat {
         this.options.workspaceRoot,
       ).setSettings("session", this.sessionId, this.sessionSkills);
     await this.refreshSkills();
+    // The resume command carries the mode and profile.
+    this.reportResume();
   }
 
   private async replaceRuntime(
