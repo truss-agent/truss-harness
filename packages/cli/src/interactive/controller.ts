@@ -45,6 +45,7 @@ import {
   AssistantFormatter,
   formatHelp,
   formatToolCall,
+  formatToolSummary,
   formatToolResult,
   formatUserMessage,
   renderComposer,
@@ -152,6 +153,7 @@ export class InteractiveChat {
   }[] = [];
   private imageCount = 0;
   private assistantBuffer = "";
+  private progressBuffer = "";
   private usage = { input: 0, output: 0 };
   private spinnerFrame = 0;
   private spinnerTimer: NodeJS.Timeout | undefined;
@@ -500,8 +502,7 @@ export class InteractiveChat {
         this.appendAssistant(event.text);
         return;
       case "progress_delta":
-        this.flushAssistant();
-        this.print(`${style.dim(`  ${sanitize(event.text)}`)}\n`);
+        this.appendProgress(event.text);
         return;
       case "tool_call_requested":
         this.flushAssistant();
@@ -556,7 +557,28 @@ export class InteractiveChat {
     ].join("\n");
   }
 
+  /** Progress notes stream in fragments; show them as one growing note. */
+  private appendProgress(text: string): void {
+    this.flushAssistantText();
+    this.progressBuffer += text;
+    this.screen.setPending(this.formatProgress());
+  }
+
+  private formatProgress(): string {
+    const note = sanitize(this.progressBuffer).replace(/\s+/g, " ").trim();
+    return note ? this.options.style.dim(`  ${note}`) : "";
+  }
+
+  private flushProgress(): void {
+    if (!this.progressBuffer) return;
+    const note = this.formatProgress();
+    this.progressBuffer = "";
+    this.screen.setPending("");
+    if (note) this.screen.print(`${note}\n`);
+  }
+
   private appendAssistant(text: string): void {
+    this.flushProgress();
     this.assistantBuffer += text;
     const end = this.assistantBuffer.lastIndexOf("\n");
     if (end >= 0) {
@@ -571,6 +593,11 @@ export class InteractiveChat {
   }
 
   private flushAssistant(): void {
+    this.flushProgress();
+    this.flushAssistantText();
+  }
+
+  private flushAssistantText(): void {
     if (!this.assistantBuffer) return;
     const line = this.formatter.line(this.assistantBuffer);
     this.assistantBuffer = "";
@@ -596,7 +623,7 @@ export class InteractiveChat {
     );
     if (signal.aborted) return false;
     this.print(
-      `${style.warning("?")} ${style.bold("Allow")} ${formatToolCall(call.name, call.input, this.options.columns(), style).slice(2)}\n${preview.join("\n")}\n`,
+      `${style.warning("?")} ${style.bold("Allow")} ${formatToolSummary(call.name, call.input, this.options.columns() - 8, style)}\n${preview.join("\n")}\n`,
     );
     return new Promise<boolean>((resolve) => {
       const abort = () => {

@@ -2,6 +2,17 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.56] - 2026-10-30
+
+### Fixed
+
+- CLI chat shows streamed progress notes as one line instead of breaking them
+  into fragments, and the approval prompt no longer prints a stray `36m`.
+
+### Changed
+
+- Bundled CLI 0.1.28 in Desktop and VS Code.
+
 ## [0.1.55] - 2026-10-30
 
 ### Added

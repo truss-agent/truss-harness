@@ -164,6 +164,52 @@ it("previews an edit as a diff and applies it only when allowed", async () => {
   await test.chat.close();
 });
 
+it("names the tool in a coloured approval prompt without leaking escapes", async () => {
+  const test = await harness(
+    [
+      async function* () {
+        yield {
+          type: "tool_call",
+          id: "w1",
+          name: "write_file",
+          input: { path: "notes.txt", content: "one\n" },
+        };
+        yield { type: "finish", reason: "tool_calls" };
+      },
+    ],
+    "ask",
+    "edit",
+    () => ({ style: createStyle(true) }),
+  );
+  test.type("edit it\r");
+  await vi.waitFor(() => expect(test.plain()).toContain("Allow this?"));
+  expect(test.plain()).toContain("? Allow Write notes.txt");
+  await test.chat.close();
+});
+
+it("joins streamed progress fragments into one note", async () => {
+  const test = await harness(
+    [
+      async function* () {
+        yield { type: "text_delta", text: "<progress>Cre" };
+        yield { type: "text_delta", text: "ating PO" };
+        yield { type: "text_delta", text: "EM.md at the work" };
+        yield { type: "text_delta", text: "space root.\n I just" };
+        yield { type: "text_delta", text: " read it.</progress>Done." };
+        yield finish;
+      },
+    ],
+    "ask",
+    "chat",
+  );
+  test.type("go\r");
+  await vi.waitFor(() => expect(test.plain()).toContain("Done."));
+  expect(test.plain()).toContain(
+    "  Creating POEM.md at the workspace root. I just read it.\n",
+  );
+  await test.chat.close();
+});
+
 it("stops a run waiting for approval with Ctrl+C and denies the tool", async () => {
   const test = await harness([
     async function* () {
