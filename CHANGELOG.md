@@ -2,6 +2,15 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.63] - 2026-10-30
+
+### Changed
+
+- The CLI chat input box stays on the bottom rows of the terminal. Earlier
+  shell output scrolls into scrollback when chat starts, and the transcript
+  still goes into normal scrollback as it grows.
+- Bundled CLI 0.1.35 in Desktop and VS Code.
+
 ## [0.1.62] - 2026-10-30
 
 ### Added

@@ -1,10 +1,14 @@
 import type { ComposerView } from "./renderer.js";
-import { displayWidth, wrap } from "./text.js";
+import { displayWidth, sanitize, wrap } from "./text.js";
 
 /**
  * Transcript-preserving output. Finished transcript lines are written once
  * into normal scrollback; only the live region below them (a streaming
  * partial line plus the composer) is erased and redrawn.
+ *
+ * Given the terminal height, the composer stays on the bottom rows: blank
+ * rows fill the space between the transcript and the composer and are used
+ * up as transcript lines are printed.
  */
 export class LiveScreen {
   private partial = "";
@@ -12,10 +16,14 @@ export class LiveScreen {
   /** Rows above the cursor that belong to the live region. */
   private cursorOffset = 0;
   private drawn = false;
+  /** Screen rows from the top of the live region to the bottom. */
+  private reserved = 0;
+  private anchored = false;
 
   constructor(
     private readonly write: (text: string) => void,
     private readonly columns: () => number,
+    private readonly rows?: () => number,
   ) {}
 
   /** Appends transcript text, which may end mid-line while streaming. */
@@ -23,9 +31,12 @@ export class LiveScreen {
     if (!text) return;
     const combined = this.partial + text;
     const end = combined.lastIndexOf("\n");
+    this.anchor();
     this.erase();
     if (end >= 0) {
-      this.write(`${combined.slice(0, end).replace(/\n/g, "\r\n")}\r\n`);
+      const finished = combined.slice(0, end);
+      this.write(`${finished.replace(/\n/g, "\r\n")}\r\n`);
+      this.reserved = Math.max(0, this.reserved - this.rowsOf(finished));
       this.partial = combined.slice(end + 1);
     } else this.partial = combined;
     this.draw();
@@ -56,6 +67,31 @@ export class LiveScreen {
     this.view = { lines: [], cursorRow: 0, cursorColumn: 0 };
   }
 
+  /**
+   * Scrolls earlier shell output into scrollback, as Ctrl+L does, and starts
+   * at the top of an empty screen so the composer can sit at the bottom.
+   */
+  private anchor(): void {
+    if (this.anchored || !this.rows) return;
+    this.anchored = true;
+    const height = Math.max(1, this.rows());
+    if (height > 1)
+      this.write(`${"\r\n".repeat(height - 1)}\x1b[${height - 1}A`);
+    this.reserved = height;
+  }
+
+  /** Screen rows the finished transcript text takes once wrapped. */
+  private rowsOf(text: string): number {
+    const width = Math.max(10, this.columns());
+    return text
+      .split("\n")
+      .reduce(
+        (total, line) =>
+          total + Math.max(1, Math.ceil(displayWidth(sanitize(line)) / width)),
+        0,
+      );
+  }
+
   private erase(): void {
     if (!this.drawn) return;
     this.write(
@@ -68,10 +104,21 @@ export class LiveScreen {
   private draw(): void {
     const width = Math.max(10, this.columns());
     const partialRows = this.partial ? wrap(this.partial, width) : [];
-    const lines = [...partialRows, ...this.view.lines];
-    if (!lines.length) return;
+    if (!partialRows.length && !this.view.lines.length) return;
+    this.anchor();
+    if (this.rows)
+      this.reserved = Math.min(this.reserved, Math.max(1, this.rows()));
+    const padding = this.view.lines.length
+      ? Math.max(0, this.reserved - partialRows.length - this.view.lines.length)
+      : 0;
+    const lines = [
+      ...partialRows,
+      ...new Array<string>(padding).fill(""),
+      ...this.view.lines,
+    ];
+    this.reserved = Math.max(this.reserved, lines.length);
     const cursorRow = this.view.lines.length
-      ? partialRows.length + this.view.cursorRow
+      ? partialRows.length + padding + this.view.cursorRow
       : lines.length - 1;
     const cursorColumn = this.view.lines.length
       ? this.view.cursorColumn
@@ -97,6 +144,7 @@ export interface TerminalInput {
 
 export interface TerminalOutput {
   readonly columns?: number;
+  readonly rows?: number;
   write(text: string): unknown;
   on(event: "resize", listener: () => void): unknown;
   removeListener(event: "resize", listener: () => void): unknown;
@@ -104,6 +152,7 @@ export interface TerminalOutput {
 
 export interface OpenTerminal {
   readonly columns: () => number;
+  readonly rows: () => number;
   readonly write: (text: string) => void;
   /** Restores cooked mode, disables bracketed paste and shows the cursor. */
   restore(): void;
@@ -151,6 +200,7 @@ export function openTerminal(
   process.once("exit", restore);
   return {
     columns: () => output.columns ?? 80,
+    rows: () => output.rows ?? 24,
     write: (text) => {
       output.write(text);
     },
