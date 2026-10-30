@@ -259,5 +259,7 @@ export function formatHelp(
     "  Up/Down history · Esc close menu or clear · Ctrl+C stop, twice to exit",
     "  Ctrl+V attach a clipboard image · paste an image path to attach the file",
     "  Start a message with // to send text that begins with a slash.",
+    "  Start a message with ! to run a shell command; its output goes with",
+    "  your next message.",
   ].join("\n");
 }
