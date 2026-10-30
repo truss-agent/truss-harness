@@ -2,6 +2,19 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.59] - 2026-10-30
+
+### Added
+
+- CLI chat renders markdown: tables with borders and column alignment, bullet
+  and task lists, quotes, rules, italics, strikethrough and links, with
+  paragraphs wrapped at word boundaries. Code blocks show their language and
+  syntax colors, and diffs are colored.
+
+### Changed
+
+- Bundled CLI 0.1.31 in Desktop and VS Code.
+
 ## [0.1.58] - 2026-10-30
 
 ### Added
