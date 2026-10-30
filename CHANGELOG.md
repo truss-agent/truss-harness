@@ -2,6 +2,20 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.60] - 2026-10-30
+
+### Added
+
+- CLI chat renders LaTeX math as Unicode text in any terminal: inline `$…$`
+  and `\(…\)`, display `$$…$$` and `\[…\]`, and ` ```math ` blocks.
+  This covers Greek letters, operators, superscripts and subscripts,
+  fractions, roots, accents and matrices. Prices like "$5 and $10" are left
+  alone.
+
+### Changed
+
+- Bundled CLI 0.1.32 in Desktop and VS Code.
+
 ## [0.1.59] - 2026-10-30
 
 ### Added
