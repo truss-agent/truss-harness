@@ -25,7 +25,7 @@ truss-cli help
 
 ## Interactive setup
 
-Run truss-cli setup after installation to discover a local server or configure a cloud BYOK profile, then save it as the default user-level profile. Cloud setup stores only the provider, model, and environment-variable name; it never writes the key itself. It is a command rather than an install-time prompt, so npm installs remain safe in CI and scripts.
+Run `truss-cli` in a project folder. With no model configured, it starts setup, then opens the chat. You can also run `truss-cli setup` at any time. Choose a cloud provider or a local server. For a cloud provider, paste your API key (hidden as you type). Setup checks the key by loading the provider's models, lets you pick one, and saves the profile as your default. The key goes into your system keyring (libsecret on Linux, the Keychain on macOS), never into a configuration file; where no keyring is available, setup prints the environment variable to set. Setup is a command rather than an install-time prompt, so npm installs remain safe in CI and scripts.
 
 ## First run
 
@@ -138,7 +138,7 @@ The API-key cloud-provider rollout supports `openai`, `anthropic`, `openrouter`,
 }
 ```
 
-Set the matching credential outside the configuration file: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `TOGETHER_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `PERPLEXITY_API_KEY`, `FIREWORKS_API_KEY`, `NVIDIA_API_KEY`, `MIMO_API_KEY`, `SAKANA_API_KEY`, or `OLLAMA_API_KEY`. `TRUSS_HARNESS_API_KEY` remains available for custom OpenAI-compatible endpoints, and `apiKeyEnv` can name a different environment variable in a profile. Local `ollama` stays key-free; `ollama-cloud` is the credentialed direct API path.
+Keys saved by `truss-cli setup` are read from the system keyring. Environment variables take priority over them: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `TOGETHER_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `PERPLEXITY_API_KEY`, `FIREWORKS_API_KEY`, `NVIDIA_API_KEY`, `MIMO_API_KEY`, `SAKANA_API_KEY`, or `OLLAMA_API_KEY`. `TRUSS_HARNESS_API_KEY` remains available for custom OpenAI-compatible endpoints, and `apiKeyEnv` can name a different environment variable in a profile. Local `ollama` stays key-free; `ollama-cloud` is the credentialed direct API path.
 
 Anthropic uses the native Messages API adapter. OAuth/account sign-in, AWS IAM signing, Azure Entra, and client keychain UI are not part of this first rollout.
 
