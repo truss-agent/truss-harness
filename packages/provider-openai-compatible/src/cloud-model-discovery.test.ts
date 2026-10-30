@@ -1,8 +1,8 @@
-import { cloudProviderDefinition } from "@truss-harness/provider-openai-compatible";
 import { describe, expect, it, vi } from "vitest";
 import { discoverCloudModels } from "./cloud-model-discovery.js";
+import { cloudProviderDefinition } from "./provider-catalog.js";
 
-describe("desktop cloud model discovery", () => {
+describe("cloud model discovery", () => {
   it("authenticates Anthropic API-key model requests and follows cursor pages", async () => {
     const requestFetch = vi.fn<typeof fetch>(async (input, init) => {
       const headers = new Headers(init?.headers);

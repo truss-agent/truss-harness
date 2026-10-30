@@ -1,3 +1,4 @@
+export * from "./cloud-model-discovery.js";
 export * from "./contracts.js";
 export * from "./discovery.js";
 export * from "./factories.js";
