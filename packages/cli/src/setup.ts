@@ -332,8 +332,8 @@ export function terminalSetupIO(
     : createInterface({ input, terminal: false });
   const lines = piped?.[Symbol.asyncIterator]();
   const readLine = async (prompt: string): Promise<string> => {
-    output.write(prompt);
     if (lines) {
+      output.write(prompt);
       const next = await lines.next();
       if (next.done) throw new SetupCancelledError();
       return next.value;
@@ -342,7 +342,9 @@ export function terminalSetupIO(
     const controller = new AbortController();
     readline.once("SIGINT", () => controller.abort());
     try {
-      return await readline.question("", { signal: controller.signal });
+      // readline clears the line when it draws its prompt, so a label written
+      // beforehand would be erased; hand the label to readline instead.
+      return await readline.question(prompt, { signal: controller.signal });
     } catch (error) {
       if (controller.signal.aborted) {
         output.write("\n");

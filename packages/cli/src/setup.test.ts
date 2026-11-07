@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { configurationPaths, resolveConfiguration } from "./config.js";
 import {
@@ -15,6 +16,7 @@ import {
   runSetup,
   type SetupDependencies,
   type SetupIO,
+  terminalSetupIO,
 } from "./setup.js";
 
 const roots: string[] = [];
@@ -166,6 +168,24 @@ describe("guided setup", () => {
     // "model-3" matches model-3 and model-30..39; the 2nd is model-30.
     expect(await pickModel(io, ids)).toBe("vendor/model-30");
     expect(io.output()).toContain("25 more");
+  });
+});
+
+describe("terminal prompts", () => {
+  it("keeps the label visible after readline draws its prompt", async () => {
+    const input = Object.assign(new PassThrough(), {
+      isTTY: true,
+      setRawMode: () => input,
+    }) as unknown as NodeJS.ReadStream;
+    const output = new PassThrough() as unknown as NodeJS.WriteStream;
+    let screen = "";
+    output.on("data", (chunk: Buffer) => (screen += chunk.toString("utf8")));
+    const io = terminalSetupIO(input, output);
+    const answer = io.ask("Server", "1");
+    input.write("2\r");
+    expect(await answer).toBe("2");
+    // Everything after readline's last line clear is what stays on screen.
+    expect(screen.split("\x1b[0J").at(-1)).toContain("Server [1]: ");
   });
 });
 

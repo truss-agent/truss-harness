@@ -2,6 +2,15 @@
 
 All notable desktop release changes are documented in this file.
 
+## [0.1.64] - 2026-11-06
+
+### Fixed
+
+- CLI setup prompts show their labels and bracketed defaults again in an
+  interactive terminal. Before, readline erased each label as it drew the
+  prompt, so only the typed answer was visible.
+- Bundled CLI 0.1.36 in Desktop and VS Code.
+
 ## [0.1.63] - 2026-10-30
 
 ### Changed
