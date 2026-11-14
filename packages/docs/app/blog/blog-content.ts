@@ -1412,7 +1412,7 @@ export const blogArticles = [
         heading: "Compare the harness, not just the chat window",
         paragraphs: [
           "A coding-agent harness coordinates models, workspace context, tools, permissions, and session state. Products can look similar in a screenshot while making very different trade-offs about where that loop runs, which interfaces are first-class, and how configuration is shared.",
-          "Cline and Roo Code are editor-centered agent experiences. Continue provides configurable agent clients and model/tool configuration. OpenHands focuses on an autonomous software-development agent platform. Truss is built as a source-available, provider-neutral runtime with Desktop, VS Code, CLI, terminal, Neovim, and mobile surfaces.",
+          "Cline and Roo Code are editor-centered agent experiences. Continue provides configurable agent clients and model/tool configuration. OpenHands focuses on an autonomous software-development agent platform. Truss is built as an open-source, provider-neutral runtime with Desktop, VS Code, CLI, terminal, Neovim, and mobile surfaces.",
         ],
       },
       {

@@ -2,7 +2,7 @@
   "name": "@truss-harness/docs",
   "version": "0.1.0",
   "private": true,
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "scripts": {
     "dev": "next dev",
     "build": "node ../../scripts/prepare-docs-build.mjs && next build",
@@ -18,11 +18,13 @@
     "nextra-theme-docs": "4.6.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "three": "^0.185.0",
     "@truss-harness/branding": "0.1.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.1",
     "@types/react": "^19.2.0",
+    "@types/three": "^0.185.0",
     "pagefind": "^1.5.2",
     "typescript": "^5.7.2"
   }

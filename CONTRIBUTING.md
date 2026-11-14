@@ -2,13 +2,8 @@
 
 Thanks for helping improve Truss. This repository powers several clients over a shared, provider-agnostic runtime, so every change must clearly state the client it is intended to fix.
 
-Contributions to the official project are expressly permitted by Section 7 of
-the [Truss Collaborative Source License](LICENSE), including contribution work
-performed for an employer. You retain ownership of your contribution while
-granting the permissions needed to maintain, distribute, and license Truss.
-Commercial use, competing products or services, and redistribution without
-prominent Truss attribution remain prohibited unless the project owner gives
-separate written permission.
+Truss is open source under the [MIT License](LICENSE). By submitting a
+contribution, you agree that it is licensed under the same terms.
 
 ## Before you start
 
@@ -77,7 +72,7 @@ Closes #123
 Pull requests without a linked issue should be updated to link one before review. Do not merge your own pull request unless the repository maintainers have explicitly granted that permission.
 
 By intentionally submitting a contribution for inclusion in Truss, you agree
-to the contribution terms in Section 7 of the license. Identify any code or
+to license it under the MIT License. Identify any code or
 assets governed by separate third-party terms in the pull request.
 
 ## Maintainers

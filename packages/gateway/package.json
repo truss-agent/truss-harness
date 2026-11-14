@@ -21,7 +21,7 @@
   "engines": {
     "node": ">=22.15.1"
   },
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "dependencies": {
     "@truss-harness/runtime": "^0.1.15",
     "@types/ws": "^8.18.1",

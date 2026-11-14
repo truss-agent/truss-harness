@@ -3,7 +3,7 @@
   "version": "0.2.4",
   "private": true,
   "description": "Keyboard-first Neovim client for the Truss agent runtime.",
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/truss-agent/truss-harness",
