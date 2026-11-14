@@ -96,12 +96,5 @@ This produces a `.vsix` file for local validation and GitHub Release delivery. O
 
 ## License and contributions
 
-This extension is source-available under the [Truss Collaborative Source
-License](LICENSE). Contributions to the official project are welcome. Every
-copy, fork, or derivative must preserve the license and prominently state:
-**Based on Truss (https://github.com/truss-agent/truss-harness).** Commercial
-use and competing products or services require separate written permission.
-
-Requires VS Code 1.101 or newer (embedded Node.js 22.15.1 or newer). An external
-CLI selected in settings must also use Node.js 22.15.1 or newer. Node 24 LTS is
-recommended for a separately installed CLI.
+This project is open source under the [MIT License](LICENSE).
+Contributions are welcome; see the repository's contributing guide.

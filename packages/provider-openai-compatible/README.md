@@ -12,8 +12,5 @@ For end-user setup, use `@truss-harness/cli` or `@truss-harness/tui`.
 
 ## License and contributions
 
-This package is source-available under the [Truss Collaborative Source
-License](LICENSE). Contributions to the official project are welcome. Every
-copy, fork, or derivative must preserve the license and prominently state:
-**Based on Truss (https://github.com/truss-agent/truss-harness).** Commercial
-use and competing products or services require separate written permission.
+This project is open source under the [MIT License](LICENSE).
+Contributions are welcome; see the repository's contributing guide.

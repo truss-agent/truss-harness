@@ -39,7 +39,7 @@ feature branch. Coordinate all affected client/package releases from that
 merged commit rather than creating extra PRs that consume CI minutes without
 shipping product work.
 
-Build a source-available agent harness similar in capability to Cline, Continue, Roo Code, and OpenHands.
+Build an open-source agent harness similar in capability to Cline, Continue, Roo Code, and OpenHands.
 
 The objective is NOT to clone any existing project.
 

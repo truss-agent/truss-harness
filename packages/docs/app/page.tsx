@@ -2,56 +2,158 @@ import Link from "next/link";
 import { brand } from "@truss-harness/branding";
 import { SiteFooter, SiteHeader } from "./site-chrome";
 import { LandingMotion } from "./landing-motion";
+import { HeroScene, Spotlight } from "./hero-scene";
 import { createPageMetadata } from "./site-metadata";
 
 export const metadata = createPageMetadata({
   title: brand.productName,
   description:
-    "A provider-flexible coding agent for desktop, VS Code, terminal, and CLI workflows, with visible context, tools, and permissions.",
+    "Truss is a free, open-source AI coding agent. It reads your code, plans changes, edits files and runs commands with your approval, using any model you choose, from the terminal, VS Code, Neovim or a desktop app.",
   path: "/",
 });
+
+const steps = [
+  {
+    title: "Pick a model",
+    body: "Point Truss at a model running on your machine, such as Ollama or LM Studio, or paste your own key for OpenAI, Anthropic, Gemini, OpenRouter and others.",
+  },
+  {
+    title: "Describe the task",
+    body: "Ask a question, request a plan, or tell it to make the change. Truss reads the relevant files, searches the codebase and works out the steps.",
+  },
+  {
+    title: "Review and approve",
+    body: "Before it writes a file or runs a command, Truss shows you the diff or the command and waits for your OK. You stay in charge of what changes.",
+  },
+];
+
+const clients = [
+  {
+    tag: "CLI",
+    title: "Command line",
+    body: "Run tasks straight from your shell or in scripts.",
+    href: "/clients/cli",
+    cta: "Explore CLI",
+  },
+  {
+    tag: "TUI",
+    title: "Terminal workspace",
+    body: "Files, editor, diffs, chat and shell in one full-screen terminal app.",
+    href: "/clients/tui",
+    cta: "Explore TUI",
+  },
+  {
+    tag: "VS CODE",
+    title: "VS Code extension",
+    body: "Chat, file context, inline completions and approvals inside your editor.",
+    href: "/clients/vscode",
+    cta: "Explore VS Code",
+  },
+  {
+    tag: "DESKTOP",
+    title: "Desktop app",
+    body: "A dedicated workspace with files, diffs, terminal, Git and chat.",
+    href: "/clients/desktop",
+    cta: "Explore desktop",
+  },
+  {
+    tag: "NEOVIM",
+    title: "Neovim plugin",
+    body: "Native Chat, Plan and Edit with diff previews, without leaving Neovim.",
+    href: `${brand.repositoryUrl}/tree/master/packages/neovim`,
+    cta: "Explore Neovim",
+  },
+  {
+    tag: "ANDROID",
+    title: "Truss Go",
+    body: "Check on and continue a desktop or VS Code session from your phone.",
+    href: "/truss-go",
+    cta: "Explore Truss Go",
+  },
+];
+
+const principles = [
+  {
+    title: "Any model, your choice",
+    body: "Local models for privacy and zero cost, or cloud models with your own key. Switch any time; nothing is tied to one vendor.",
+  },
+  {
+    title: "Nothing happens behind your back",
+    body: "Choose what Truss may read, change and run. Risky steps wait for your approval, with a diff or command preview.",
+  },
+  {
+    title: "Same agent everywhere",
+    body: "Your models, settings, plans and history follow you between the terminal, editor, desktop and phone.",
+  },
+  {
+    title: "Picks up where you left off",
+    body: "Conversations, plans and project notes are saved in your workspace, so the next session starts with context.",
+  },
+  {
+    title: "Sends only what matters",
+    body: "Open files, recent edits and Git changes give the model useful context without uploading your whole repository.",
+  },
+  {
+    title: "Free and open source",
+    body: "MIT licensed. Runs on your machine with no account and no hosted service in the middle. Read it, fork it, extend it.",
+  },
+];
 
 export default function HomePage() {
   return (
     <div className="site">
       <SiteHeader />
+      <Spotlight />
       <main>
         <LandingMotion>
-          <section className="site-hero">
+          <section className="site-hero holo-hero">
+            <HeroScene />
+            <div className="holo-hero-veil" aria-hidden="true" />
             <div className="site-hero-copy">
-              <p className="site-eyebrow">Your models. Your workflow.</p>
-              <h1>One coding agent. No forced workflow.</h1>
+              <p className="site-eyebrow">
+                <span className="holo-dot" aria-hidden="true" />
+                Free · open source · runs on your machine
+              </p>
+              <h1>
+                The AI coding agent that works <em>where you do.</em>
+              </h1>
               <p className="site-lede">
-                Plan, edit, and review code with the providers you choose, from
-                local model servers to BYOK cloud accounts, across your shell,
-                terminal, VS Code, and desktop.
+                Truss reads your code, plans changes, edits files and runs
+                commands, and asks before anything risky. Use it from the
+                terminal, VS Code, Neovim or a desktop app, with a local model
+                or your own API key.
               </p>
               <div className="site-actions">
                 <Link
                   className="site-button site-button-primary"
                   href="/download"
                 >
-                  Choose your client
+                  Get Truss free
                 </Link>
                 <Link
                   className="site-button site-button-secondary"
                   href="/docs/getting-started"
                 >
-                  Read the docs
+                  See how it works
                 </Link>
               </div>
+              <ul className="holo-chips" aria-label="Highlights">
+                <li>Ollama · LM Studio · llama.cpp</li>
+                <li>OpenAI · Anthropic · Gemini · OpenRouter</li>
+                <li>MIT license</li>
+              </ul>
             </div>
-            <div className="site-terminal">
+            <div className="site-terminal" data-spotlight>
               <div className="site-terminal-bar">
-                <span>truss-harness CLI</span>
-                <span>local workspace</span>
+                <span>truss-cli</span>
+                <span>~/projects/web-app</span>
               </div>
               <div className="site-terminal-body">
                 <p>
                   <b>$</b>
                   <span data-terminal-command>
                     {" "}
-                    truss-harness chat "Review the current diff"
+                    truss-cli chat "Fix the failing login test"
                   </span>
                   <span
                     className="site-terminal-cursor"
@@ -69,176 +171,123 @@ export default function HomePage() {
                   </span>
                 </p>
                 <p className="site-terminal-muted">
-                  model: qwen3-coder | mode: edit | permissions: ask
+                  model: qwen3-coder (local) · mode: edit · approvals: ask
                 </p>
                 <p>
-                  <i>assistant</i> I found three changed files. I will inspect
-                  the diff first.
+                  <i>truss</i> Read 3 files. The test expects a redirect the
+                  handler no longer sends.
                 </p>
                 <p>
-                  <i>tool</i> git diff --stat
+                  <i>approve?</i> edit src/auth/login.ts (+4 −1)
                 </p>
                 <p className="site-terminal-success">
-                  ready for local execution
+                  ✓ approved · npm test passed
                 </p>
               </div>
             </div>
           </section>
-          <section className="site-band" data-reveal>
-            <div className="site-band-title">
-              <p className="site-eyebrow">One runtime, four ways to work</p>
-              <h2>Bring the agent to your workflow.</h2>
+
+          <section
+            className="holo-steps"
+            aria-labelledby="steps-heading"
+            data-reveal
+          >
+            <div className="site-section-heading">
+              <p className="site-eyebrow">How it works</p>
+              <h2 id="steps-heading">Ask. Review. Ship.</h2>
+              <p className="site-section-subtitle">
+                Truss is an assistant that can actually do the work in your
+                project, not just suggest it, while you approve every change.
+              </p>
             </div>
-            <p className="site-band-copy">
-              Start in a shell, stay in your terminal, work inside VS Code, or
-              open a dedicated desktop workspace without relearning the agent or
-              rebuilding your model and safety setup.
-            </p>
-            <Link className="site-button site-button-secondary" href="/clients">
-              Meet the clients
-            </Link>
+            <ol className="holo-step-grid" data-stagger>
+              {steps.map((step, index) => (
+                <li key={step.title} className="holo-card" data-spotlight>
+                  <span className="holo-step-n">0{index + 1}</span>
+                  <h3>{step.title}</h3>
+                  <p>{step.body}</p>
+                </li>
+              ))}
+            </ol>
           </section>
+
           <section
             className="site-clients"
             aria-labelledby="clients-heading"
             data-reveal
           >
             <div className="site-section-heading">
-              <p className="site-eyebrow">Client surfaces</p>
-              <h2 id="clients-heading">
-                Choose the interface, not a different agent.
-              </h2>
+              <p className="site-eyebrow">One agent, six ways to use it</p>
+              <h2 id="clients-heading">Use the tool you already like.</h2>
               <p className="site-section-subtitle">
-                One agent across your shell, terminal, editor, and desktop
-                workspace.
+                Every app runs the same Truss agent, so your models, settings
+                and history come with you.
               </p>
             </div>
-            <div className="site-client-grid" data-stagger>
-              <article>
-                <span>CLI</span>
-                <h3>Automate from your shell</h3>
-                <p>
-                  Run coding tasks, use your saved provider profiles, and reuse
-                  workspace context from scripts or your normal terminal.
-                </p>
-                <Link
-                  className="site-button site-button-secondary"
-                  href="/clients/cli"
-                >
-                  Explore CLI
-                </Link>
-              </article>
-              <article>
-                <span>TUI</span>
-                <h3>Keep your flow in the terminal</h3>
-                <p>
-                  Use a full-screen workspace with files, editor, Git diff
-                  preview, chat, shell output, approvals, and model controls.
-                </p>
-                <Link
-                  className="site-button site-button-secondary"
-                  href="/clients/tui"
-                >
-                  Explore TUI
-                </Link>
-              </article>
-              <article>
-                <span>VS CODE</span>
-                <h3>Work where you edit</h3>
-                <p>
-                  Get streaming chat, file context, inline completions, agent
-                  modes, approvals, and Git commit-message help in VS Code.
-                </p>
-                <Link
-                  className="site-button site-button-secondary"
-                  href="/clients/vscode"
-                >
-                  Explore VS Code
-                </Link>
-              </article>
-              <article>
-                <span>DESKTOP</span>
-                <h3>Open a dedicated workspace</h3>
-                <p>
-                  Use the standalone Electron app for file browsing, diffs,
-                  terminal commands, chat, approvals, and a built-in Git
-                  workflow.
-                </p>
-                <Link
-                  className="site-button site-button-secondary"
-                  href="/clients/desktop"
-                >
-                  Explore desktop
-                </Link>
-              </article>
+            <div className="site-client-grid holo-client-grid" data-stagger>
+              {clients.map((client) => (
+                <article key={client.tag} className="holo-card" data-spotlight>
+                  <span>{client.tag}</span>
+                  <h3>{client.title}</h3>
+                  <p>{client.body}</p>
+                  <Link
+                    className="site-button site-button-secondary"
+                    href={client.href}
+                  >
+                    {client.cta}
+                  </Link>
+                </article>
+              ))}
             </div>
           </section>
+
           <section className="site-foundations" data-reveal>
             <div className="site-foundations-inner">
               <header className="site-foundations-intro">
-                <p className="site-eyebrow">Built for real work</p>
-                <h2>Useful agent work. Clear control.</h2>
+                <p className="site-eyebrow">Why Truss</p>
+                <h2>Powerful help. You stay in control.</h2>
                 <p>
-                  Choose the model for the job, give the agent useful workspace
-                  context, and review what it can do before it acts.
+                  Built for developers who want a capable agent without giving
+                  up their tools, their models or their say over what changes.
                 </p>
               </header>
               <div className="site-principles" data-stagger>
-                <article>
-                  <span>01</span>
-                  <h3>Choose your model</h3>
-                  <p>
-                    Connect local servers such as Ollama, LM Studio, and
-                    llama.cpp, or use a supported cloud provider with your own
-                    account.
-                  </p>
-                </article>
-                <article>
-                  <span>02</span>
-                  <h3>Keep provider control</h3>
-                  <p>
-                    Save provider profiles that fit each workspace. Truss does
-                    not require one hosted account, a proxy model request, or a
-                    one-size-fits-all setup.
-                  </p>
-                </article>
-                <article>
-                  <span>03</span>
-                  <h3>State that carries forward</h3>
-                  <p>
-                    Conversations, implementation plans, workspace memory,
-                    Git-aware status, and deterministic commands keep work
-                    moving.
-                  </p>
-                </article>
-                <article>
-                  <span>04</span>
-                  <h3>Context with intent</h3>
-                  <p>
-                    Open files, recent edits, Git changes, plans, and workspace
-                    memory give the agent useful context without sending the
-                    whole repository.
-                  </p>
-                </article>
-                <article>
-                  <span>05</span>
-                  <h3>Approvals stay visible</h3>
-                  <p>
-                    Choose the permission policy that fits the task, then review
-                    requested reads, writes, terminal commands, and network work
-                    before it runs.
-                  </p>
-                </article>
-                <article>
-                  <span>06</span>
-                  <h3>Built to be replaced</h3>
-                  <p>
-                    Providers, tools, context sources, memory, and clients are
-                    separate interfaces, so new capabilities do not rewrite the
-                    agent runtime.
-                  </p>
-                </article>
+                {principles.map((principle, index) => (
+                  <article
+                    key={principle.title}
+                    className="holo-card"
+                    data-spotlight
+                  >
+                    <span>0{index + 1}</span>
+                    <h3>{principle.title}</h3>
+                    <p>{principle.body}</p>
+                  </article>
+                ))}
               </div>
+            </div>
+          </section>
+
+          <section className="holo-cta" data-reveal>
+            <h2>Try it on your own code in two minutes.</h2>
+            <p>
+              <code>npm install --global @truss-harness/cli</code>, or grab the
+              desktop app or VS Code extension.
+            </p>
+            <div className="site-actions">
+              <Link
+                className="site-button site-button-primary"
+                href="/download"
+              >
+                Download Truss
+              </Link>
+              <a
+                className="site-button site-button-secondary"
+                href={brand.repositoryUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Star on GitHub
+              </a>
             </div>
           </section>
         </LandingMotion>

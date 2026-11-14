@@ -10,8 +10,13 @@ body {
   background: #f4f7f1;
   color: #14231f;
   font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
   min-height: 100vh;
 }
 
@@ -2787,7 +2792,11 @@ body {
   --site-line: rgba(115, 169, 143, 0.35);
   --site-panel: rgba(19, 35, 29, 0.72);
   background:
-    radial-gradient(circle at 8% 4%, rgba(91, 174, 128, 0.1), transparent 28rem),
+    radial-gradient(
+      circle at 8% 4%,
+      rgba(91, 174, 128, 0.1),
+      transparent 28rem
+    ),
     #0c1613;
 }
 :root[data-truss-theme="dark"] .site-header {
@@ -4246,5 +4255,457 @@ body {
   }
   .blog-article-links {
     padding: 24px;
+  }
+}
+
+/* ======================================================================== */
+/* Holographic landing (three.js hero, spotlight cards)                      */
+/* ======================================================================== */
+
+.site .holo-hero {
+  --holo-bg: #06100d;
+  --holo-teal: #18c4a3;
+  --holo-mint: #a8e4cc;
+  --holo-orange: #f28a43;
+  background:
+    radial-gradient(
+      60% 70% at 78% 40%,
+      rgba(24, 196, 163, 0.16),
+      transparent 70%
+    ),
+    radial-gradient(
+      40% 50% at 15% 85%,
+      rgba(242, 138, 67, 0.1),
+      transparent 70%
+    ),
+    var(--holo-bg);
+  color: #ecf5ef;
+  isolation: isolate;
+  margin: 0;
+  max-width: none;
+  min-height: min(820px, calc(100vh - 76px));
+  width: 100%;
+  overflow: hidden;
+  padding: 96px max(28px, calc((100% - 1180px) / 2 + 32px)) 88px;
+}
+
+.site .holo-hero::before,
+.site .holo-hero::after {
+  display: none;
+}
+
+.holo-scene {
+  inset: 0;
+  opacity: 0;
+  position: absolute;
+  transition: opacity 1.4s ease;
+  z-index: -2;
+}
+
+.holo-scene[data-ready] {
+  opacity: 1;
+}
+
+.holo-scene canvas {
+  display: block;
+  height: 100% !important;
+  width: 100% !important;
+}
+
+/* Keeps the headline legible over the scene and fades into the page. */
+.holo-hero-veil {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(6, 16, 13, 0.92) 0%,
+      rgba(6, 16, 13, 0.55) 42%,
+      transparent 70%
+    ),
+    linear-gradient(180deg, transparent 72%, rgba(6, 16, 13, 0.85) 100%);
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: -1;
+}
+
+.site .holo-hero .site-eyebrow {
+  align-items: center;
+  color: var(--holo-mint);
+  display: inline-flex;
+  gap: 10px;
+  letter-spacing: 0.08em;
+}
+
+.holo-dot {
+  background: var(--holo-teal);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 4px rgba(24, 196, 163, 0.18),
+    0 0 18px var(--holo-teal);
+  height: 8px;
+  width: 8px;
+  animation: holo-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes holo-pulse {
+  50% {
+    box-shadow:
+      0 0 0 7px rgba(24, 196, 163, 0.05),
+      0 0 26px var(--holo-teal);
+  }
+}
+
+.site .holo-hero h1 {
+  color: #f4fbf7;
+  font-size: clamp(2.9rem, 5vw, 4.6rem);
+  line-height: 0.98;
+}
+
+.site .holo-hero h1 em {
+  background: linear-gradient(
+    100deg,
+    var(--holo-mint) 0%,
+    var(--holo-teal) 45%,
+    var(--holo-orange) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-style: normal;
+  animation: holo-shimmer 7s ease-in-out infinite alternate;
+}
+
+@keyframes holo-shimmer {
+  to {
+    background-position: 100% 0;
+  }
+}
+
+.site .holo-hero .site-lede {
+  color: #b9cdc3;
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.site .holo-hero .site-button-primary {
+  background: linear-gradient(135deg, #1fd1ae, #0b7965);
+  border-color: transparent;
+  box-shadow:
+    0 0 0 1px rgba(168, 228, 204, 0.25),
+    0 10px 40px -8px rgba(24, 196, 163, 0.65);
+  color: #04110d;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.site .holo-hero .site-button-primary:hover {
+  box-shadow:
+    0 0 0 1px rgba(168, 228, 204, 0.5),
+    0 14px 54px -6px rgba(24, 196, 163, 0.9);
+  transform: translateY(-2px);
+}
+
+.site .holo-hero .site-button-secondary {
+  backdrop-filter: blur(8px);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(168, 228, 204, 0.3);
+  color: #e3f3eb;
+}
+
+.site .holo-hero .site-button-secondary:hover {
+  background: rgba(168, 228, 204, 0.1);
+  border-color: var(--holo-mint);
+}
+
+.holo-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  margin: 28px 0 0;
+  padding: 0;
+}
+
+.holo-chips li {
+  backdrop-filter: blur(6px);
+  background: rgba(24, 196, 163, 0.07);
+  border: 1px solid rgba(168, 228, 204, 0.18);
+  border-radius: 999px;
+  color: #9fbcb0;
+  font-size: 12px;
+  padding: 5px 11px;
+}
+
+/* Glass terminal with a holographic rim. */
+.site .holo-hero .site-terminal {
+  backdrop-filter: blur(14px) saturate(1.2);
+  background: rgba(8, 22, 18, 0.62);
+  border: 1px solid rgba(168, 228, 204, 0.22);
+  box-shadow:
+    0 30px 80px -20px rgba(0, 0, 0, 0.7),
+    0 0 60px -10px rgba(24, 196, 163, 0.35);
+  overflow: hidden;
+  position: relative;
+  transform: perspective(1100px) rotateX(var(--rx, 0deg))
+    rotateY(var(--ry, 0deg));
+  transition: transform 0.25s ease-out;
+}
+
+.site .holo-hero .site-terminal::after {
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(168, 228, 204, 0.06) 50%,
+    transparent 100%
+  );
+  background-size: 100% 6px;
+  content: "";
+  inset: 0;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  position: absolute;
+}
+
+.site .holo-hero .site-terminal-bar {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(168, 228, 204, 0.14);
+  color: #8fb1a3;
+}
+
+.site .holo-hero .site-terminal-body i {
+  color: var(--holo-orange);
+}
+
+/* ---- Spotlight cards: pointer glow, gradient rim, gentle tilt ---------- */
+
+.holo-card {
+  isolation: isolate;
+  position: relative;
+  transform: perspective(900px) rotateX(var(--rx, 0deg))
+    rotateY(var(--ry, 0deg));
+  transition:
+    transform 0.25s ease-out,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.holo-card::before {
+  background: radial-gradient(
+    360px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(24, 196, 163, 0.16),
+    transparent 45%
+  );
+  border-radius: inherit;
+  content: "";
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  transition: opacity 0.3s ease;
+  z-index: -1;
+}
+
+.holo-card::after {
+  background: radial-gradient(
+    240px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(168, 228, 204, 0.9),
+    rgba(242, 138, 67, 0.55) 40%,
+    transparent 70%
+  );
+  border-radius: inherit;
+  content: "";
+  inset: -1px;
+  -webkit-mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0;
+  padding: 1px;
+  pointer-events: none;
+  position: absolute;
+  transition: opacity 0.3s ease;
+}
+
+.holo-card:hover::before,
+.holo-card:hover::after {
+  opacity: 1;
+}
+
+.holo-card:hover {
+  box-shadow: 0 24px 60px -28px rgba(11, 121, 101, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .holo-card,
+  .site .holo-hero .site-terminal {
+    transform: none;
+  }
+  .holo-dot,
+  .site .holo-hero h1 em {
+    animation: none;
+  }
+}
+
+/* ---- Steps ------------------------------------------------------------- */
+
+.holo-steps {
+  margin: 0 auto;
+  max-width: 1180px;
+  padding: 96px 32px 24px;
+}
+
+.holo-step-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  list-style: none;
+  margin: 36px 0 0;
+  padding: 0;
+}
+
+.holo-step-grid li {
+  background: #fbfdf9;
+  border: 1px solid #cfd9d1;
+  border-radius: 18px;
+  padding: 28px;
+}
+
+.holo-step-grid h3 {
+  font-size: 21px;
+  margin: 14px 0 8px;
+}
+
+.holo-step-grid p {
+  color: #4d6259;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.holo-step-n {
+  background: linear-gradient(135deg, #0b7965, #c45f1a);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 30px;
+  font-weight: 800;
+}
+
+.holo-client-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* ---- Closing call to action -------------------------------------------- */
+
+.holo-cta {
+  background:
+    radial-gradient(
+      50% 120% at 50% 0%,
+      rgba(24, 196, 163, 0.22),
+      transparent 70%
+    ),
+    #06100d;
+  border: 1px solid #1d3a31;
+  border-radius: 28px;
+  color: #ecf5ef;
+  margin: 24px auto 96px;
+  max-width: 1116px;
+  padding: 64px 32px;
+  text-align: center;
+}
+
+.holo-cta h2 {
+  color: #f4fbf7;
+  font-size: clamp(2rem, 3.4vw, 2.8rem);
+  margin: 0 0 12px;
+}
+
+.holo-cta p {
+  color: #b9cdc3;
+  margin: 0 0 28px;
+}
+
+.holo-cta code {
+  background: rgba(168, 228, 204, 0.1);
+  border: 1px solid rgba(168, 228, 204, 0.2);
+  border-radius: 6px;
+  color: #a8e4cc;
+  padding: 2px 7px;
+}
+
+.holo-cta .site-actions {
+  justify-content: center;
+}
+
+.site .holo-cta .site-button-secondary {
+  border-color: rgba(168, 228, 204, 0.35);
+  color: #e3f3eb;
+}
+
+/* ---- Dark theme -------------------------------------------------------- */
+
+:root[data-truss-theme="dark"] .holo-step-grid li {
+  background: #10201b;
+  border-color: #29453a;
+}
+
+:root[data-truss-theme="dark"] .holo-step-grid p {
+  color: #b6c8be;
+}
+
+:root[data-truss-theme="dark"] .holo-step-n {
+  background-image: linear-gradient(135deg, #a8e4cc, #f28a43);
+}
+
+/* ---- Responsive -------------------------------------------------------- */
+
+@media (max-width: 980px) {
+  .site .holo-hero {
+    grid-template-columns: 1fr;
+    padding-top: 64px;
+  }
+  .holo-hero-veil {
+    background: linear-gradient(
+      180deg,
+      rgba(6, 16, 13, 0.75) 0%,
+      rgba(6, 16, 13, 0.45) 55%,
+      rgba(6, 16, 13, 0.9) 100%
+    );
+  }
+  .holo-step-grid,
+  .holo-client-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 780px) {
+  .site .holo-hero .site-eyebrow {
+    justify-content: center;
+  }
+  .holo-chips {
+    justify-content: center;
+  }
+  .holo-dot {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .site .holo-hero {
+    padding-inline: 16px;
+  }
+  .holo-steps {
+    padding-inline: 16px;
+  }
+  .holo-step-grid,
+  .holo-client-grid {
+    grid-template-columns: 1fr;
+  }
+  .holo-cta {
+    border-radius: 0;
+    margin-inline: 0;
   }
 }
