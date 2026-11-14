@@ -1,6 +1,6 @@
 {
   "name": "@truss-harness/runtime",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "type": "module",
   "exports": {
     ".": {
@@ -40,7 +40,7 @@
     "local-first"
   ],
   "dependencies": {
-    "@truss-harness/branding": "0.1.1"
+    "@truss-harness/branding": "0.1.2"
   },
   "devDependencies": {
     "cheerio": "^1.2.0",
