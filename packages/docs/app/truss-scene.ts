@@ -372,7 +372,7 @@ export function createTrussScene(
           | THREE.Material
           | THREE.Material[]
           | undefined;
-        if (Array.isArray(material)) material.forEach((m) => m.dispose());
+        if (Array.isArray(material)) for (const m of material) m.dispose();
         else material?.dispose();
       });
       tex.dispose();
