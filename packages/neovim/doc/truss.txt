@@ -42,7 +42,7 @@ API keys stay in the CLI environment or user-level Truss configuration.
 ==============================================================================
 COMMANDS                                                    *truss-commands*
 
-`:TrussOpen`             Open or focus the Truss split.
+`:TrussOpen`             Open the composer and start typing.
 `:TrussChat [prompt]`    Start or continue a streaming Chat run.
 `:TrussPlan [prompt]`    Start a read-only Plan run.
 `:TrussEdit [prompt]`    Start an Edit run with host-routed approvals.
