@@ -502,6 +502,18 @@ test("composer snapshots source context and lets users exclude it", function()
   vim.api.nvim_buf_delete(source, { force = true })
 end)
 
+test("changed files open in an editor and leave the composer visible", function()
+  local truss = require("truss")
+  truss.setup({ attach_current_buffer = false })
+  truss.chat()
+  local panel = truss._state.panel
+  vim.api.nvim_set_current_win(panel.window)
+  truss.open_changed_file("README.md")
+  assert(vim.api.nvim_buf_get_name(0):match("/README%.md$"))
+  assert(panel.composer:is_open())
+  panel:close()
+end)
+
 test("streaming follows the latest response and preserves an older cursor", function()
   local panel = require("truss.panel").Panel.new()
   panel:open()
