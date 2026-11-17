@@ -2,7 +2,7 @@ import { brand } from "@truss-harness/branding";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { AgentShowcase } from "./agent-showcase";
-import { HeroScene, Spotlight } from "./hero-scene";
+import { Spotlight } from "./spotlight";
 import { LandingMotion } from "./landing-motion";
 import { SiteFooter, SiteHeader } from "./site-chrome";
 import { createPageMetadata } from "./site-metadata";
@@ -213,23 +213,16 @@ export default function HomePage() {
       <main>
         <LandingMotion>
           <section className="site-hero holo-hero">
-            <HeroScene />
-            <div className="holo-hero-veil" aria-hidden="true" />
-            <span className="hud hud-tl" aria-hidden="true" />
-            <span className="hud hud-tr" aria-hidden="true" />
             <div className="site-hero-copy">
-              <p className="site-eyebrow">
-                <span className="holo-dot" aria-hidden="true" />
-                Open-source AI coding agent
-              </p>
+              <p className="site-eyebrow">Open-source AI coding agent</p>
               <h1>
                 One coding agent.
                 <span>Every place you code.</span>
               </h1>
               <p className="site-lede">
-                Truss reads your code, makes the changes and runs the commands,
-                and asks before anything risky. Use it in the terminal, VS Code,
-                Neovim or a desktop app, with a local model or your own API key.
+                Truss reads your code, makes changes, and runs commands with
+                your approval. Use a local model or your own API key, in your
+                terminal or editor.
               </p>
               <div className="site-actions">
                 <Link
