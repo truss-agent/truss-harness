@@ -802,8 +802,8 @@ function M._register_commands()
     return
   end
   state.commands_registered = true
-  vim.api.nvim_create_user_command("TrussOpen", M.open, {
-    desc = "Open the Truss panel",
+  vim.api.nvim_create_user_command("TrussOpen", function() M.chat() end, {
+    desc = "Open the Truss composer",
   })
   vim.api.nvim_create_user_command("TrussChat", function(command)
     M.run_mode("chat", command.args, {

@@ -1,6 +1,6 @@
 {
   "name": "truss.nvim",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "description": "Keyboard-first Neovim client for the Truss agent runtime.",
   "license": "MIT",

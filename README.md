@@ -39,7 +39,7 @@ the repository root, so no monorepo runtime-path workaround is required:
 To pin a specific plugin release, replace `branch` with a release tag:
 
 ```lua
-tag = "nvim-v0.3.0"
+tag = "nvim-v0.3.1"
 ```
 
 Run `:checkhealth truss` once after installation. Then use
@@ -95,9 +95,10 @@ the service or contacting a provider. See the
 
 ## Work in the Truss split
 
-Open the split with `:TrussOpen`. Press `a` to compose a multiline prompt in
-a Neovim buffer, or pass a prompt directly to `:TrussChat`, `:TrussPlan`, or
-`:TrussEdit`. The composer shows the sources captured for the draft.
+Run `:TrussOpen` to open the split and start typing a multiline prompt.
+From the transcript, press `a` to return to the composer. You can also pass
+a prompt directly to `:TrussChat`, `:TrussPlan`, or
+`:TrussEdit`. The composer shows the sources captured for the draft and skips dotenv files.
 
 | Key | Action |
 | --- | --- |

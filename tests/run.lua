@@ -532,6 +532,23 @@ test("streaming follows the latest response and preserves an older cursor", func
   panel:close()
 end)
 
+test("TrussOpen focuses the composer without attaching dotenv context", function()
+  local truss = require("truss")
+  truss.setup({ attach_git_diff = false })
+  local source = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_set_current_buf(source)
+  vim.api.nvim_buf_set_name(source, vim.fn.tempname() .. "/.env.local")
+  vim.api.nvim_buf_set_lines(source, 0, -1, false, { "SECRET=fixture" })
+  vim.cmd.TrussOpen()
+  local panel = truss._state.panel
+  equal(vim.bo.filetype, "truss-compose")
+  equal(panel.composer.blocks, {})
+  equal(panel.composer.metadata, nil)
+  equal(truss._state.client, nil)
+  panel:close()
+  vim.api.nvim_buf_delete(source, { force = true })
+end)
+
 test("opening the panel does not start a service", function()
   local truss = require("truss")
   truss.setup()

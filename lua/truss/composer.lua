@@ -13,7 +13,7 @@ function Composer:update_header()
   if self.include_context and self.metadata and self.metadata.truncated then
     source = source .. " (truncated)"
   end
-  vim.wo[self.window].winbar = " " .. source:gsub("[\r\n]", " "):gsub("%%", "%%%%")
+  vim.wo[self.window].winbar = " Ctrl-S send · " .. source:gsub("[\r\n]", " "):gsub("%%", "%%%%")
   vim.wo[self.window].statusline = " Ctrl-S Send  ·  Ctrl-G Context  ·  Ctrl-P Preview  ·  Esc Normal"
 end
 
