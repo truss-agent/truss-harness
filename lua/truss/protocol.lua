@@ -273,7 +273,7 @@ end
 function Client:run(input, callback)
   local request_id = self:_next_id("run")
   self.active_request = request_id
-  self:_write({
+  local written = self:_write({
     jsonrpc = "2.0",
     id = request_id,
     method = "run/start",
@@ -289,7 +289,7 @@ function Client:run(input, callback)
     end
     callback(error_message, response and response.result or nil)
   end)
-  return request_id
+  return request_id, written ~= nil
 end
 
 function Client:cancel(callback)

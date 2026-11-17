@@ -39,7 +39,7 @@ the repository root, so no monorepo runtime-path workaround is required:
 To pin a specific plugin release, replace `branch` with a release tag:
 
 ```lua
-tag = "nvim-v0.2.3"
+tag = "nvim-v0.3.0"
 ```
 
 Run `:checkhealth truss` once after installation. Then use
@@ -93,15 +93,29 @@ resolution, workspace access, and optional Git integration without starting
 the service or contacting a provider. See the
 [compatibility table](COMPATIBILITY.md) for supported version pairs.
 
-Edit-mode write and replace requests remain blocked until the host asks for
-approval. Choose **Preview diff** to inspect the proposed text in a native
-`diff` split before approving it. Changed files appear in the Truss panel;
-press `gf` or Enter on one to open or focus it after a workspace-boundary
-check. The panel follows your active colorscheme and has local action keys:
-`a` or Enter opens the Chat prompt; `c`, `p`, and `e` select Chat, Plan, and
-Edit without starting a request; `n` starts a new conversation; `r` tests the
-connection; `m` shows MCP status; `P` selects a profile; `?` shows Help; and
-`q` or Escape closes. These keys apply only while the Truss panel is focused.
+## Work in the Truss split
+
+Open the split with `:TrussOpen`. Press `a` to compose a multiline prompt in
+a Neovim buffer, or pass a prompt directly to `:TrussChat`, `:TrussPlan`, or
+`:TrussEdit`. The composer shows the sources captured for the draft.
+
+| Key | Action |
+| --- | --- |
+| `Ctrl-S` | Send the draft |
+| `Ctrl-G` | Toggle the captured context |
+| `Ctrl-P` | Preview the exact attached context |
+| `Esc`, then `q` | Hide the composer and keep the draft |
+
+In the transcript, move up to read earlier output and press `G` to follow
+the stream again. Use `c`, `p`, and `e` to switch modes between runs. Each
+mode keeps its own draft, transcript, and session while Neovim is open.
+Press `n` to start a new conversation in the current mode.
+
+When the host requests approval, press `A` in the panel or run
+`:TrussApprovals`. Choose **Preview diff** for a write or replacement. Use
+`q` to exit the preview, then reopen approvals to approve or deny the request.
+Press `gf` or Enter over a changed file to open it, `Ctrl-C` to stop the run,
+and `?` for the panel's local controls.
 
 Use `:help truss` for commands and defaults.
 
@@ -110,9 +124,9 @@ Use `:help truss` for commands and defaults.
 Provider keys are resolved by the local service process from the normal Truss
 configuration and environment. Profile and MCP responses contain safe
 metadata only. Do not put API keys in Lua configuration or a project file.
-Current-buffer content with available diagnostics and the active file's Git
-diff is attached only when a command starts a run. A visual command sends the
-selection instead. Every source is bounded in Lua and again by the service
+The composer captures buffer content, diagnostics, and the active file's Git
+diff when you begin a draft. A visual command captures the selection instead.
+The content is sent when you submit the prompt. Every source is bounded in Lua and again by the service
 before reaching the runtime.
 
 ## License and contributions

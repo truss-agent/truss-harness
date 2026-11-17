@@ -35,8 +35,8 @@ SETUP                                                          *truss-setup*
   })
 <
 
-The current buffer or visual selection is attached only when the user invokes
-`:TrussChat`. Opening Neovim or the Truss panel never sends workspace content.
+The composer captures context for the draft and sends it when you submit.
+Opening Neovim or the Truss panel never sends workspace content.
 API keys stay in the CLI environment or user-level Truss configuration.
 
 ==============================================================================
@@ -47,6 +47,7 @@ COMMANDS                                                    *truss-commands*
 `:TrussPlan [prompt]`    Start a read-only Plan run.
 `:TrussEdit [prompt]`    Start an Edit run with host-routed approvals.
 `:'<,'>TrussChat`        Attach the selected lines to the prompt.
+`:TrussApprovals`        Review pending tool approval requests.
 `:TrussStop`             Cancel the active request.
 `:TrussNew`              Clear the panel and start a new session.
 `:TrussStatus`           Show connection and run status.
@@ -66,7 +67,9 @@ Inside the Truss panel:
 `<Enter>`                Prompt, or open the changed file under the cursor.
 `gf`                     Open or focus the changed file under the cursor.
 `<C-c>`                  Stop the active run.
-`a`                      Open a Chat prompt.
+`a`                      Open the multiline composer.
+`A`                      Review pending tool approvals.
+`G`                      Jump to the latest response and follow the stream.
 `c`                      Select Chat mode without starting a request.
 `p`                      Select Plan mode without starting a request.
 `e`                      Select Edit mode without starting a request.
@@ -78,10 +81,20 @@ Inside the Truss panel:
 `q`                      Close the panel without stopping the service.
 `<Esc>`                  Close the panel without stopping the service.
 
-Edit write requests prompt before execution. Write and replacement requests
-offer a native diff preview. Profile selection, provider tests, MCP state,
-approvals, and model traffic remain in the local service; Lua never stores
-credentials.
+Chat, Plan, and Edit each keep their own draft, transcript, and host session
+while Neovim is open. While a run is active, stop it or wait for it to finish
+before switching modes.
+
+Inside the composer:
+
+`<C-s>`                  Send the multiline draft.
+`<C-g>`                  Toggle the captured context.
+`<C-p>`                  Preview the captured context. Close with q.
+`q` (Normal mode)        Hide the composer and keep the draft.
+
+Edit-mode write and replacement requests offer a native diff preview. Close
+it with q and press A again to approve or deny the pending request. The host
+enforces approvals and keeps credentials in the local service.
 
 ==============================================================================
 LAZYVIM                                                    *truss-lazyvim*
