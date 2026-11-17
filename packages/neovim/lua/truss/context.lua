@@ -163,8 +163,21 @@ function M.visual_selection(options)
   }
 end
 
+local function dotenv_path(path)
+  local name = (vim.fs.basename(path) or ""):lower()
+  return name == ".env" or name:match("^%.env%.") or name:match("%.env$")
+end
+
 function M.for_request(options)
   options = options or {}
+  local buffer = options.buffer or vim.api.nvim_get_current_buf()
+  if vim.api.nvim_buf_is_valid(buffer) then
+    local name = vim.api.nvim_buf_get_name(buffer)
+    if vim.bo[buffer].filetype == "dotenv" or dotenv_path(name)
+      or dotenv_path(vim.uv.fs_realpath(name) or name) then
+      return {}, nil
+    end
+  end
   local selected = options.visual and M.visual_selection(options) or nil
   local block = selected or M.current_buffer(options)
   local candidates = { block }

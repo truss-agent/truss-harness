@@ -6,6 +6,7 @@ capabilities are checked before their commands use them.
 
 | truss.nvim | Minimum truss-cli | Neovim | Protocol | Support |
 | --- | --- | --- | --- | --- |
+| 0.3.1 | 0.1.14 | 0.10+ | v1 | Open straight into the composer with dotenv context excluded |
 | 0.3.0 | 0.1.14 | 0.10+ | v1 | Multiline composer, resumable mode sessions, and pending approval review |
 | 0.2.4 | 0.1.14 | 0.10+ | v1 | Standalone distribution with shared skill controls |
 | 0.2.3 | 0.1.14 | 0.10+ | v1 | Standalone distribution with a runtime-host handshake |
