@@ -6,22 +6,22 @@ title: "Terminal UI Guide"
 
 ## Bring your own key
 
-The TUI uses the shared CLI profile system. Run `truss-cli setup`, enter `cloud` when prompted, choose a provider and model, then set the displayed provider API-key environment variable before launching `truss-tui`. The profile contains only the variable name, never the key.
+The TUI uses the shared CLI profile system. Run `truss setup`, enter `cloud` when prompted, choose a provider and model, then set the displayed provider API-key environment variable before launching `truss tui`. The profile contains only the variable name, never the key.
 
 The terminal UI is a full-screen local workspace client. It uses the same configuration profiles, provider adapters, workspace memory, and tool policies as the CLI.
 
 ## Install
 
 ```sh
-npm install -g @truss-harness/tui
+npm install -g @truss-harness/truss
 ```
 
-See the [TUI package on npm](https://www.npmjs.com/package/@truss-harness/tui) for the latest published version and package details.
+See the [TUI package on npm](https://www.npmjs.com/package/@truss-harness/truss) for the latest published version and package details.
 
 ## Start it
 
 ```sh
-truss-tui
+truss tui
 ```
 
 If a profile or local server can supply a model, the workspace starts with it. Otherwise, open the configuration view and select a detected server and model.
@@ -71,3 +71,5 @@ The skill picker lists available skills. `Space` marks a skill always active, `M
 ## MCP servers
 
 The TUI uses the CLI's shared `mcpServers` configuration. Connection results appear in the Terminal pane when the runtime starts. Plan mode connects only to servers marked `readOnly`; Agent mode connects to every enabled server. See [MCP Servers](/docs/runtime/mcp).
+
+The bundled `@truss-harness/truss` package installs both clients. The standalone `@truss-harness/cli` (`truss-cli`) and `@truss-harness/tui` (`truss-tui`) packages remain supported.

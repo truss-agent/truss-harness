@@ -7,13 +7,15 @@ The Truss TUI is a full-screen terminal workspace for local coding models. It in
 ## Install and run
 
 ```sh
-npm install -g @truss-harness/tui
-truss-tui
+npm install -g @truss-harness/truss
+truss tui
 ```
 
-Run `truss-tui --help` for a non-interactive launch reference. Inside the TUI, press `?` for the complete keyboard-control reference.
+Run `truss tui --help` for a non-interactive launch reference. Inside the TUI, press `?` for the complete keyboard-control reference.
 
-On Windows, use PowerShell or Windows Terminal. When launching from Git Bash, Truss automatically uses Git for Windows' `winpty` bridge when available; `winpty truss-tui` is the manual fallback.
+On Windows, use PowerShell or Windows Terminal. When launching from Git Bash, Truss automatically uses Git for Windows' `winpty` bridge when available; `winpty truss tui` is the manual fallback.
+
+The bundled `@truss-harness/truss` installation includes both clients. Existing `truss-cli` and `truss-tui` commands remain available; the standalone `@truss-harness/cli` and `@truss-harness/tui` packages are still supported.
 
 The TUI reads the same `.truss-harness/config.json` profiles as `@truss-harness/cli`, or lets you select a detected Ollama, LM Studio, llama.cpp, or custom compatible endpoint at startup.
 
@@ -33,7 +35,7 @@ Configured MCP stdio servers are connected when an Agent session starts, and
 their connection status appears in the Terminal pane. Press `c` outside the
 chat/terminal panes to inspect safe server and tool status, then `R` to test
 the configured servers. Chat and Plan modes load only servers explicitly marked
-`readOnly`. Run `truss-cli config path` to locate the shared user and workspace
+`readOnly`. Run `truss config path` to locate the shared user and workspace
 configuration files.
 
 ## Controls

@@ -11,6 +11,7 @@ const packages = [
   "agent-host",
   "cli",
   "tui",
+  "truss",
 ];
 
 async function cleanPublishArtifacts(directory) {

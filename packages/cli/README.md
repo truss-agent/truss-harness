@@ -13,53 +13,53 @@ Truss is a local-first coding-agent runtime. The CLI runs one-shot agent tasks a
 ## Install
 
 ```sh
-npm install -g @truss-harness/cli
+npm install -g @truss-harness/truss
 ```
 
-The global installer prints a short first-run checklist. You can display the complete reference at any time:
+The bundled package installs both clients. Open chat or display the complete reference at any time:
 
 ```sh
-truss-cli
-truss-cli help
+truss
+truss help
 ```
 
 ## Interactive setup
 
-Run `truss-cli` in a project folder. With no model configured, it starts setup, then opens the chat. You can also run `truss-cli setup` at any time. Choose a cloud provider or a local server. For a cloud provider, paste your API key (hidden as you type). Setup checks the key by loading the provider's models, lets you pick one, and saves the profile as your default. The key goes into your system keyring (libsecret on Linux, the Keychain on macOS), never into a configuration file; where no keyring is available, setup prints the environment variable to set. Setup is a command rather than an install-time prompt, so npm installs remain safe in CI and scripts.
+Run `truss` in a project folder. With no model configured, it starts setup, then opens the chat. You can also run `truss setup` at any time. Choose a cloud provider or a local server. For a cloud provider, paste your API key (hidden as you type). Setup checks the key by loading the provider's models, lets you pick one, and saves the profile as your default. The key goes into your system keyring (libsecret on Linux, the Keychain on macOS), never into a configuration file; where no keyring is available, setup prints the environment variable to set. Setup is a command rather than an install-time prompt, so npm installs remain safe in CI and scripts.
 
 ## First run
 
 Start your local model server, open a terminal in the project you want Truss to work on, and run:
 
 ```sh
-truss-cli models
-truss-cli chat --mode edit "Explain this workspace"
+truss models
+truss chat --mode edit "Explain this workspace"
 ```
 
 Truss probes the standard Ollama, LM Studio, and llama.cpp endpoints when no model is configured. Create a reusable workspace profile when you want explicit settings:
 
 ```sh
-truss-cli config init
-truss-cli config path
+truss config init
+truss config path
 ```
 
 ## Agent tasks
 
 ```sh
-truss-cli chat --mode chat "Explain the architecture"
-truss-cli chat --mode plan "Plan an authentication refactor"
-truss-cli chat --mode edit "Fix the failing tests"
-truss-cli chat --internet-access "Check the current library documentation"
+truss chat --mode chat "Explain the architecture"
+truss chat --mode plan "Plan an authentication refactor"
+truss chat --mode edit "Fix the failing tests"
+truss chat --internet-access "Check the current library documentation"
 ```
 
-Direct CLI chat is non-interactive and auto-allows registered tools. Run it only in a trusted workspace. Public internet tools are disabled unless `--internet-access`, a profile, or the environment explicitly enables them.
+Direct CLI chat honors the selected permission policy. Non-interactive tool requests that need approval fail closed. Public internet tools are disabled unless `--internet-access`, a profile, or the environment explicitly enables them.
 
 ## Persistent chat
 
-Run `truss-cli chat` without a prompt to keep one local conversation open. The configuration flags supplied when it starts remain active, and history remains available as you send messages.
+Run `truss chat` without a prompt to keep one local conversation open. The configuration flags supplied when it starts remain active, and history remains available as you send messages.
 
 ```sh
-truss-cli chat --mode edit --permission auto-read
+truss chat --mode edit --permission auto-read
 ```
 
 Use `:mode chat`, `:mode plan`, or `:mode edit` to change the active mode. You can also prefix a message with `--mode edit`, for example `--mode edit Inspect the repository and explain it.` The mode change persists for the rest of that conversation. Use `:clear` for a fresh conversation, `:help` for controls, and `:exit` to close it.
@@ -69,16 +69,16 @@ Use `:mode chat`, `:mode plan`, or `:mode edit` to change the active mode. You c
 These deterministic commands work without a configured model:
 
 ```text
-truss-cli init                 Create or refresh generated AGENTS.md context
-truss-cli update [note]        Record Git state and a durable handoff note
-truss-cli status               Show Git state and recent durable records
-truss-cli clear-memory         Remove durable workspace memory
-truss-cli commands             Show slash commands used by interactive clients
+truss init                 Create or refresh generated AGENTS.md context
+truss update [note]        Record Git state and a durable handoff note
+truss status               Show Git state and recent durable records
+truss clear-memory         Remove durable workspace memory
+truss commands             Show slash commands used by interactive clients
 ```
 
 ## Configuration
 
-`truss-cli config init` creates `.truss-harness/config.json`. Profiles support `provider`, `baseUrl`, `model`, `mode`, `permission`, `internetAccess`, `masterPrompt`, `apiKeyEnv`, and `mcpServers`.
+`truss config init` creates `.truss-harness/config.json`. Profiles support `provider`, `baseUrl`, `model`, `mode`, `permission`, `internetAccess`, `masterPrompt`, `apiKeyEnv`, and `mcpServers`.
 
 ```json
 {
@@ -138,7 +138,7 @@ The API-key cloud-provider rollout supports `openai`, `anthropic`, `openrouter`,
 }
 ```
 
-Keys saved by `truss-cli setup` are read from the system keyring. Environment variables take priority over them: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `TOGETHER_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `PERPLEXITY_API_KEY`, `FIREWORKS_API_KEY`, `NVIDIA_API_KEY`, `MIMO_API_KEY`, `SAKANA_API_KEY`, or `OLLAMA_API_KEY`. `TRUSS_HARNESS_API_KEY` remains available for custom OpenAI-compatible endpoints, and `apiKeyEnv` can name a different environment variable in a profile. Local `ollama` stays key-free; `ollama-cloud` is the credentialed direct API path.
+Keys saved by `truss setup` are read from the system keyring. Environment variables take priority over them: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `GROQ_API_KEY`, `TOGETHER_API_KEY`, `GEMINI_API_KEY`, `XAI_API_KEY`, `MISTRAL_API_KEY`, `DEEPSEEK_API_KEY`, `PERPLEXITY_API_KEY`, `FIREWORKS_API_KEY`, `NVIDIA_API_KEY`, `MIMO_API_KEY`, `SAKANA_API_KEY`, or `OLLAMA_API_KEY`. `TRUSS_HARNESS_API_KEY` remains available for custom OpenAI-compatible endpoints, and `apiKeyEnv` can name a different environment variable in a profile. Local `ollama` stays key-free; `ollama-cloud` is the credentialed direct API path.
 
 Anthropic uses the native Messages API adapter. OAuth/account sign-in, AWS IAM signing, Azure Entra, and client keychain UI are not part of this first rollout.
 
@@ -147,9 +147,9 @@ MCP stdio servers can be defined under `mcpServers`. User-level definitions load
 Inspect connections without starting an agent:
 
 ```sh
-truss-cli mcp status
-truss-cli mcp tools
-truss-cli mcp reconnect filesystem
+truss mcp status
+truss mcp tools
+truss mcp reconnect filesystem
 ```
 
 Add `--json` to `status` or `tools` for credential-safe structured output.
@@ -158,7 +158,7 @@ values, or credentials.
 
 ## Service mode
 
-`truss-cli serve` starts the versioned newline-delimited JSON-RPC 2.0 runtime
+`truss serve` starts the versioned newline-delimited JSON-RPC 2.0 runtime
 protocol used by editor clients such as `truss.nvim`. Standard output is
 reserved for protocol messages; diagnostics use standard error.
 
@@ -182,23 +182,25 @@ editor client. Download both `truss-runtime-host.cjs` and
 release, then activate the verified pair:
 
 ```sh
-truss-cli runtime install ./truss-runtime-host.cjs ./truss-runtime-host.manifest.json
-truss-cli runtime status
+truss runtime install ./truss-runtime-host.cjs ./truss-runtime-host.manifest.json
+truss runtime status
 ```
 
 The installer copies the artifact into Truss-controlled storage, validates its
 size and SHA-256 checksum, and retains the previous verified host for rollback:
 
 ```sh
-truss-cli runtime rollback
+truss runtime rollback
 ```
 
 An incompatible, changed, or missing artifact is never selected. Bootstrap
 clients continue using their embedded runtime instead.
 
-Run `truss-cli help` for every command, flag, environment variable, mode, permission policy, and example.
+Run `truss help` for every command, flag, environment variable, mode, permission policy, and example.
 
 ## License and contributions
 
 This project is open source under the [MIT License](LICENSE).
 Contributions are welcome; see the repository's contributing guide.
+
+The bundled `@truss-harness/truss` installation includes both clients. Existing `truss-cli` and `truss-tui` commands remain available; the standalone `@truss-harness/cli` and `@truss-harness/tui` packages are still supported.

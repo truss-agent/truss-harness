@@ -27,6 +27,7 @@ Every issue and pull request must name one or more affected clients:
 | --- | --- |
 | VS Code | `packages/vscode` |
 | Desktop | `packages/desktop` |
+| Bundled terminal launcher | `packages/truss` |
 | CLI | `packages/cli` |
 | TUI | `packages/tui` |
 | Mobile | `packages/mobile` |
@@ -55,6 +56,7 @@ npm --workspace truss-harness-vscode run build
 npm --workspace @truss-harness/desktop run build
 npm --workspace @truss-harness/cli run build
 npm --workspace @truss-harness/tui run build
+npm --workspace @truss-harness/truss run build
 npm --workspace @truss-harness/mobile run typecheck
 npm --workspace @truss-harness/docs run build
 ```

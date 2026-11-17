@@ -14,7 +14,7 @@ Edit the `brand` object, then run:
 npm run brand:sync
 ```
 
-The configured product name is used by the documentation shell, CLI and terminal UI headings, runtime messages, and VS Code labels. `productSlug` becomes the npm scope, VS Code extension publisher/name, command and setting namespace, and workspace configuration directory. `cliCommand` and `tuiCommand` become the executable names published by the CLI and terminal UI packages. `workspaceDirectory` controls the repository-local configuration and memory directory. `assetDirectory` supplies the SVG copied into the packaged VS Code extension. `repositoryUrl` supplies package metadata and documentation links.
+The configured product name is used by the documentation shell, CLI and terminal UI headings, runtime messages, and VS Code labels. `productSlug` becomes the npm scope, VS Code extension publisher/name, command and setting namespace, and workspace configuration directory. `cliCommand` and `tuiCommand` remain the standalone executable names published by the CLI and terminal UI packages. The bundled `@truss-harness/truss` launcher provides `truss` and `truss tui`; documentation command components show these primary commands. `workspaceDirectory` controls the repository-local configuration and memory directory. `assetDirectory` supplies the SVG copied into the packaged VS Code extension. `repositoryUrl` supplies package metadata and documentation links.
 
 ## Release boundary
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## Truss command 0.1.0 · CLI 0.1.38 · TUI 0.1.24
+
+- Added `npm install -g @truss-harness/truss` to install both terminal clients together.
+- Run `truss` for CLI chat and `truss tui` for the full-screen terminal workspace.
+- Preserved standalone packages, `truss-cli`, `truss-tui`, arguments, terminal input, signals, and service compatibility.
+- Updated installation instructions, command examples, download links, and built-in help.
+
 All notable desktop release changes are documented in this file.
 
 ## [0.1.64] - 2026-11-06

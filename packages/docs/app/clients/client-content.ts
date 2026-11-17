@@ -37,14 +37,14 @@ export const clientContent: Record<ClientId, ClientContent> = {
     installDescription:
       "Requires Node.js 22.15.1 or newer (Node 24 LTS recommended). The same workspace profiles work across the CLI and TUI.",
     commands: [
-      "npm install -g @truss-harness/cli",
-      "truss-cli models",
-      "truss-cli config init",
-      'truss-cli chat "Review the current diff"',
+      "npm install -g @truss-harness/truss",
+      "truss models",
+      "truss config init",
+      'truss chat "Review the current diff"',
     ],
     primaryAction: {
       label: "View CLI on npm",
-      href: "https://www.npmjs.com/package/@truss-harness/cli",
+      href: "https://www.npmjs.com/package/@truss-harness/truss",
       external: true,
     },
     docsHref: "/docs/clients/cli",
@@ -66,8 +66,8 @@ export const clientContent: Record<ClientId, ClientContent> = {
       },
     ],
     workflow: [
-      "Discover a server and model with truss-cli models.",
-      "Create a workspace profile with truss-cli config init.",
+      "Discover a server and model with truss models.",
+      "Create a workspace profile with truss config init.",
       "Run a task, inspect streamed tool activity, and keep the workspace state for the next session.",
     ],
   },
@@ -83,10 +83,10 @@ export const clientContent: Record<ClientId, ClientContent> = {
     installLabel: "Install with npm",
     installDescription:
       "Requires Node.js 22.15.1 or newer (Node 24 LTS recommended) and shares the CLI's local-model profiles and workspace state.",
-    commands: ["npm install -g @truss-harness/tui", "truss-tui"],
+    commands: ["npm install -g @truss-harness/truss", "truss tui"],
     primaryAction: {
       label: "View TUI on npm",
-      href: "https://www.npmjs.com/package/@truss-harness/tui",
+      href: "https://www.npmjs.com/package/@truss-harness/truss",
       external: true,
     },
     docsHref: "/docs/clients/tui",
@@ -108,7 +108,7 @@ export const clientContent: Record<ClientId, ClientContent> = {
       },
     ],
     workflow: [
-      "Launch truss-tui from the repository you want to work in.",
+      "Launch truss tui from the repository you want to work in.",
       "Select a detected local endpoint and model if no profile is already configured.",
       "Attach files, inspect diffs, approve tools, and keep the terminal close to the agent loop.",
     ],

@@ -269,14 +269,14 @@ export function DownloadClient({
             asset={undefined}
             distribution={{
               label: "npm package",
-              description: "Install the latest published CLI globally.",
+              description: "Install both terminal clients globally; run truss.",
             }}
-            sourceHref="https://www.npmjs.com/package/@truss-harness/cli"
+            sourceHref="https://www.npmjs.com/package/@truss-harness/truss"
             sourceLabel="View CLI on npm"
             detailsHref="/docs/clients/cli"
             detailsLabel="CLI guide"
             downloadLabel="Install CLI"
-            primaryHref="https://www.npmjs.com/package/@truss-harness/cli"
+            primaryHref="https://www.npmjs.com/package/@truss-harness/truss"
           />
           <ReleaseCard
             eyebrow="Truss terminal UI"
@@ -286,14 +286,15 @@ export function DownloadClient({
             asset={undefined}
             distribution={{
               label: "npm package",
-              description: "Install the latest published terminal UI globally.",
+              description:
+                "Install both terminal clients globally; run truss tui.",
             }}
-            sourceHref="https://www.npmjs.com/package/@truss-harness/tui"
+            sourceHref="https://www.npmjs.com/package/@truss-harness/truss"
             sourceLabel="View TUI on npm"
             detailsHref="/docs/clients/tui"
             detailsLabel="TUI guide"
             downloadLabel="Install TUI"
-            primaryHref="https://www.npmjs.com/package/@truss-harness/tui"
+            primaryHref="https://www.npmjs.com/package/@truss-harness/truss"
           />
           <ReleaseCard
             eyebrow="Truss Go for Android"

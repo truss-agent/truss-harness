@@ -15,24 +15,23 @@ title: "Get Started"
 ## Install
 
 ```sh
-npm install -g @truss-harness/cli @truss-harness/tui
+npm install -g @truss-harness/truss
 ```
 
-The CLI is enough to begin. Install the terminal UI when you want the full-screen workspace client.
+This installs both the CLI and the full-screen terminal workspace. Run `truss` for chat or `truss tui` for the terminal UI.
 
 Confirm the executables are on your path:
 
 ```sh
-truss-cli help
-truss-tui
+truss help
+truss tui --help
 ```
 
-The npm global install prints a short CLI checklist. Running `truss-cli` with no arguments always displays the full command reference.
+Running `truss` in an interactive terminal opens chat and starts guided setup if no model is configured. In scripts, a bare `truss` prints help.
 
 ### Install truss.nvim
 
-Neovim users run the same local CLI service. After installing the CLI above,
-add the generated plugin distribution with lazy.nvim:
+Neovim users run the same local CLI service. The plugin defaults to `truss-cli`; either install the standalone `@truss-harness/cli` package as well, or set `command = "truss"` when using the bundled installation. Add the generated plugin distribution with lazy.nvim:
 
 ```lua
 {
@@ -40,7 +39,7 @@ add the generated plugin distribution with lazy.nvim:
   branch = "neovim-release",
   name = "truss.nvim",
   config = function()
-    require("truss").setup()
+    require("truss").setup({ command = "truss" })
     require("truss.lazy").setup()
   end,
 }
@@ -54,7 +53,7 @@ context rules, and version compatibility.
 ## Interactive setup
 
 ```sh
-truss-cli setup
+truss setup
 ```
 
 This detects local servers, lets you choose a model, and saves a reusable user-level default profile. The wizard is a command instead of an install-time prompt so npm installs remain safe in CI and scripts.
@@ -62,7 +61,7 @@ This detects local servers, lets you choose a model, and saves a reusable user-l
 ## Find a local model
 
 ```sh
-truss-cli models
+truss models
 ```
 
 When no model has been configured, <Brand /> probes standard local endpoints and selects a usable model automatically. An actively running Ollama model has priority.
@@ -70,19 +69,19 @@ When no model has been configured, <Brand /> probes standard local endpoints and
 ## Run a first chat
 
 ```sh
-truss-cli chat "Explain this workspace."
+truss chat "Explain this workspace."
 ```
 
 If no local server is running, configure a profile first. See [Configuration](/docs/configuration).
 
-For a cloud model, set `TRUSS_HARNESS_PROVIDER`, `TRUSS_HARNESS_MODEL`, and the matching provider key environment variable before running `truss-cli chat`. See [Configuration](/docs/configuration#bring-your-own-key-byok).
+For a cloud model, set `TRUSS_HARNESS_PROVIDER`, `TRUSS_HARNESS_MODEL`, and the matching provider key environment variable before running `truss chat`. See [Configuration](/docs/configuration#bring-your-own-key-byok).
 
 ## Run a first agent task
 
 Run Agent/Edit mode only inside a workspace you trust. Direct CLI chat honors approval policy. Ask is the default, and a tool needing approval fails closed without a TTY. Use `--permission auto-all` only for explicitly authorized automation.
 
 ```sh
-truss-cli chat --mode edit "Read README.md and add one concise sentence describing the CLI. Make no other changes."
+truss chat --mode edit "Read README.md and add one concise sentence describing the CLI. Make no other changes."
 ```
 
 Use Neovim, the TUI, desktop app, or VS Code extension when you want interactive approval prompts and persistent conversation controls.
@@ -90,3 +89,5 @@ Use Neovim, the TUI, desktop app, or VS Code extension when you want interactive
 ## Continue setup
 
 Create a reusable local-model profile with <CliUsage command="config init" />, continue to [Local Models](/docs/local-models), or see [Troubleshooting](/docs/troubleshooting) when discovery or tool calling fails.
+
+The bundled `@truss-harness/truss` package installs both clients. The standalone `@truss-harness/cli` (`truss-cli`) and `@truss-harness/tui` (`truss-tui`) packages remain supported.

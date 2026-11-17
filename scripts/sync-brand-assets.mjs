@@ -44,6 +44,7 @@ const workspacePackageNames = new Set([
   "provider-openai-compatible",
   "cli",
   "tui",
+  "truss",
   "desktop",
   "docs",
 ]);
@@ -54,6 +55,7 @@ const publishablePackageNames = [
   "provider-openai-compatible",
   "cli",
   "tui",
+  "truss",
 ];
 
 async function updatePackageJson(relativePath, update) {
@@ -237,6 +239,12 @@ await Promise.all([
     includeLogoInPackage(manifest);
     applyRepositoryMetadata(manifest);
   }),
+  updatePackageJson("packages/truss/package.json", (manifest) => {
+    manifest.bin = { truss: "dist/bin.js" };
+    applyWorkspaceDependencies(manifest);
+    includeLogoInPackage(manifest);
+    applyRepositoryMetadata(manifest);
+  }),
   updatePackageJson("packages/desktop/package.json", (manifest) => {
     manifest.name = `${packageScope}/desktop`;
     manifest.description = `Standalone desktop client for the ${brand.productName} runtime.`;
@@ -295,6 +303,7 @@ await Promise.all(
     "provider-openai-compatible",
     "cli",
     "tui",
+    "truss",
     "vscode",
   ].map((packageName) =>
     copyFile(

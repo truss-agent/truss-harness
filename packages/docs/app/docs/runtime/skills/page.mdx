@@ -45,7 +45,7 @@ Group changes by user impact and end with upgrade steps.
 
 Names use lowercase letters, numbers, and hyphens. Import the folder from any client:
 
-- CLI: `truss-cli skills add ./release-notes`
+- CLI: `truss skills add ./release-notes`
 - Desktop: **Settings → App & tools → Skills → Import folder**
 - VS Code: **Truss: Manage Skills → Import skill folder**
 - Neovim: `:TrussSkillAdd ./release-notes`
@@ -73,7 +73,7 @@ Your configuration file can set defaults:
 }
 ```
 
-For one process, use `--skills-mode automatic|manual|off` and `--superpowers on|off`, or the `TRUSS_HARNESS_SKILLS_MODE` and `TRUSS_HARNESS_SUPERPOWERS_ENABLED` environment variables. Workspace configuration files must be trusted with `truss-cli config trust` before their skill settings apply.
+For one process, use `--skills-mode automatic|manual|off` and `--superpowers on|off`, or the `TRUSS_HARNESS_SKILLS_MODE` and `TRUSS_HARNESS_SUPERPOWERS_ENABLED` environment variables. Workspace configuration files must be trusted with `truss config trust` before their skill settings apply.
 
 ## Limits
 

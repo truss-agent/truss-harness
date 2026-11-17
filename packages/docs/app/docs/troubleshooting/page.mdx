@@ -13,13 +13,15 @@ npm list -g --depth=0
 npm prefix -g
 ```
 
-The executable names are `truss-cli` and `truss-tui`. Restart the terminal after installation so it reloads `PATH`. On Windows, the npm global directory is commonly under `%APPDATA%\npm`.
+The bundled executable is `truss`; run `truss tui` for the terminal UI. The standalone packages retain the legacy `truss-cli` and `truss-tui` commands. Restart the terminal after installation so it reloads `PATH`. On Windows, the npm global directory is commonly under `%APPDATA%\npm`.
+
+If you use mise, nvm, or another Node version manager, global packages belong to the active Node version. After changing Node versions, reinstall with `npm install -g @truss-harness/truss`.
 
 ## No local models detected
 
 1. Start Ollama, LM Studio, llama.cpp, or your compatible server.
 2. Load a model in the server.
-3. Run `truss-cli models`.
+3. Run `truss models`.
 4. Confirm the server address matches one of the standard endpoints or configure `baseUrl` explicitly.
 
 For LM Studio and llama.cpp, use the server's model ID rather than its display name. See [Local Models](/docs/local-models).
@@ -53,10 +55,10 @@ Run `:checkhealth truss` first. It verifies Neovim, the configured
 without starting the service or contacting a provider.
 
 truss.nvim 0.2.3 requires Neovim 0.10 or newer and `truss-cli` 0.1.14 or
-newer. Confirm the installed CLI directly:
+newer. The plugin defaults to `truss-cli`; set `command = "truss"` in its setup when using the bundled installation. Confirm the installed bundled CLI directly:
 
 ```sh
-truss-cli --version
+truss --version
 ```
 
 After the local health check passes, run `:TrussTestConnection` to test the
@@ -68,9 +70,9 @@ configured provider, model, and credential. See the
 Run:
 
 ```sh
-truss-cli config path
-truss-cli models
-truss-cli help
+truss config path
+truss models
+truss help
 ```
 
 Configuration precedence is documented in [Configuration](/docs/configuration). Workspace settings override user settings, and explicit CLI flags override both.

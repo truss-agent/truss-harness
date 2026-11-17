@@ -376,7 +376,7 @@ export default function HomePage() {
             <p className="holo-kicker">Two minutes to first task</p>
             <h2>Try it on your own code.</h2>
             <div className="holo-install">
-              <span>$</span> npm install --global @truss-harness/cli
+              <span>$</span> npm install --global @truss-harness/truss
             </div>
             <div className="site-actions">
               <Link
