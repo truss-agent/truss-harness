@@ -19,8 +19,8 @@ control plane.
 
 | Client | Best for | Install |
 | --- | --- | --- |
-| CLI | Scripts and focused coding tasks | npm install --global @truss-harness/cli |
-| Terminal UI | Keyboard-first work in the terminal | npm install --global @truss-harness/tui |
+| CLI | Scripts and focused coding tasks | npm install --global @truss-harness/truss |
+| Terminal UI | Keyboard-first work in the terminal | npm install --global @truss-harness/truss |
 | Neovim | Native Chat, Plan, and Edit with explicit bounded editor context | [Install truss.nvim](packages/neovim/README.md) |
 | VS Code | Chat, file context, completions, and approvals in the editor | [Download the VSIX](https://truss-agent.com/download) |
 | Desktop | A dedicated workspace with files, diffs, terminal, Git, and chat | [Download Truss Desktop](https://truss-agent.com/download) |
@@ -42,9 +42,9 @@ Use the CLI for direct tasks, scripts, and automations. The CLI, TUI, and
 Neovim service require Node.js 22.15.1 or newer; Node 24 LTS is recommended.
 
 ~~~sh
-npm install --global @truss-harness/cli
-truss-cli models
-truss-cli chat "Review the current diff"
+npm install --global @truss-harness/truss
+truss models
+truss chat "Review the current diff"
 ~~~
 
 ### Terminal UI
@@ -55,9 +55,11 @@ The terminal UI combines chat, files, editing, Git diffs, shell output, model
 controls, and approvals in one keyboard-first workspace.
 
 ~~~sh
-npm install --global @truss-harness/tui
-truss-tui
+npm install --global @truss-harness/truss
+truss tui
 ~~~
+
+The bundled `@truss-harness/truss` installation includes both clients. Existing `truss-cli` and `truss-tui` commands remain available; the standalone `@truss-harness/cli` and `@truss-harness/tui` packages are still supported.
 
 ### VS Code
 
@@ -74,7 +76,7 @@ service as other editor clients. It provides native Chat, Plan, and Edit
 workflows, host-routed approvals with diff previews, plans and tool activity,
 changed-file navigation, provider checks, profile selection, safe MCP status,
 bounded editor context, cancellation, and clean shutdown. Model requests,
-credentials, tools, and policy remain in `truss-cli`; Lua only owns the editor
+credentials, tools, and policy remain in `truss`; Lua only owns the editor
 experience. It installs from the generated `neovim-release` branch and includes
 `:checkhealth truss` compatibility diagnostics.
 
@@ -96,7 +98,7 @@ Ollama is detected at http://127.0.0.1:11434. Compatible servers are also
 probed at common LM Studio and llama.cpp addresses. Check what Truss finds:
 
 ~~~sh
-truss-cli models
+truss models
 ~~~
 
 ## Configuration
@@ -106,8 +108,8 @@ see the active user and workspace locations, then create a safe workspace
 template:
 
 ~~~sh
-truss-cli config path
-truss-cli config init
+truss config path
+truss config init
 ~~~
 
 Example .truss-harness/config.json:
@@ -138,8 +140,8 @@ Example .truss-harness/config.json:
 Review the workspace configuration, then authorize that exact file locally:
 
 ~~~sh
-truss-cli config trust
-truss-cli config status
+truss config trust
+truss config status
 ~~~
 
 Trust is stored beside your user configuration, bound to the canonical workspace
@@ -154,8 +156,8 @@ repository cannot replace your selected local or cloud model.
 Use a profile for a task:
 
 ~~~sh
-truss-cli chat --profile ollama-coder "Explain the runtime architecture"
-truss-cli chat --profile lm-studio-fast --mode edit "Update the tests"
+truss chat --profile ollama-coder "Explain the runtime architecture"
+truss chat --profile lm-studio-fast --mode edit "Update the tests"
 ~~~
 
 You can also configure a one-off session with environment variables:
@@ -193,7 +195,7 @@ or **Auto-allow all tools** only in a workspace you trust. Direct CLI chat honor
 fails promptly. For authorized automation, explicitly choose `--permission auto-all`.
 Ctrl+C cancels generation and pending approvals.
 
-Existing workspace managed-agent profiles need review and `truss-cli agents trust <id>`.
+Existing workspace managed-agent profiles need review and `truss agents trust <id>`.
 Profiles created or updated through a trusted local client retain their own
 content-bound receipts. Adding a profile does not trust other profiles.
 
@@ -224,11 +226,11 @@ CLI/TUI users can add the same definitions to their shared configuration:
 Chat and Plan modes load only servers marked readOnly; Edit mode loads every
 enabled server. Workspace MCP definitions are
 ignored by default because they can start local processes; explicitly trust
-the reviewed workspace configuration with `truss-cli config trust`. The legacy
+the reviewed workspace configuration with `truss config trust`. The legacy
 `allowWorkspaceMcpServers` flag no longer authorizes repository commands.
 
-Use `truss-cli mcp status`, `truss-cli mcp tools`, or
-`truss-cli mcp reconnect <name>` for safe terminal diagnostics. The TUI opens
+Use `truss mcp status`, `truss mcp tools`, or
+`truss mcp reconnect <name>` for safe terminal diagnostics. The TUI opens
 the same credential-safe server/tool status with `c`. Paired Truss Go clients
 can view status, but server commands, environment values, and credentials stay
 on the host.
@@ -239,7 +241,7 @@ Skills are instruction folders with a `SKILL.md` that agents follow for a kind
 of work. Truss bundles the [Superpowers](https://github.com/obra/superpowers)
 pack (MIT), on by default. In **Automatic** mode agents load relevant skills on
 their own, **Manual** uses only the skills you mark always active, and **Off**
-uses none. Import your own skills with `truss-cli skills add <folder>`, Desktop
+uses none. Import your own skills with `truss skills add <folder>`, Desktop
 Settings, **Truss: Manage Skills** in VS Code, or `:TrussSkillAdd` in Neovim.
 They are shared by every client. Skills in a repository's
 `.truss-harness/skills` folder stay untrusted until you import them. See

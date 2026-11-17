@@ -1,0 +1,39 @@
+{
+  "name": "@truss-harness/truss",
+  "version": "0.1.0",
+  "description": "Truss coding agent CLI and full-screen terminal workspace in one installation.",
+  "type": "module",
+  "bin": {
+    "truss": "dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE",
+    "logo.png"
+  ],
+  "scripts": {
+    "build": "tsc -b",
+    "prepack": "node ../../scripts/clean-publish-tests.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=22.15.1"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/truss-agent/truss-harness.git"
+  },
+  "bugs": {
+    "url": "https://github.com/truss-agent/truss-harness/issues"
+  },
+  "homepage": "https://github.com/truss-agent/truss-harness#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@truss-harness/cli": "0.1.38",
+    "@truss-harness/tui": "0.1.24"
+  }
+}

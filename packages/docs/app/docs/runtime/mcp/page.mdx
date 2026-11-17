@@ -40,9 +40,9 @@ The server named `filesystem` contributes namespaced tools such as `mcp_filesyst
 
 ## CLI and TUI configuration
 
-Run `truss-cli config path` to print both configuration paths. User configuration is stored under the operating system's application configuration directory. Workspace configuration is `.truss-harness/config.json`.
+Run `truss config path` to print both configuration paths. User configuration is stored under the operating system's application configuration directory. Workspace configuration is `.truss-harness/config.json`.
 
-An MCP server definition can execute a local process. Workspace MCP definitions are ignored until you review the workspace configuration and run `truss-cli config trust`. The receipt is stored in your user configuration directory, outside the repository, and expires when the file changes. `truss-cli config status` shows effective policy and provenance.
+An MCP server definition can execute a local process. Workspace MCP definitions are ignored until you review the workspace configuration and run `truss config trust`. The receipt is stored in your user configuration directory, outside the repository, and expires when the file changes. `truss config status` shows effective policy and provenance.
 
 A workspace cannot grant this permission to itself. The old `allowWorkspaceMcpServers` field no longer authorizes repository commands. User-level `mcpServers` do not need workspace trust. For temporary automation, `TRUSS_HARNESS_MCP_SERVERS` accepts the `mcpServers` object as JSON.
 

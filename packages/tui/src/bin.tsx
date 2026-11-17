@@ -36,15 +36,18 @@ import type { Screen, SettingsField } from "./types.js";
 import { useWorkspaceFiles } from "./workspace-files.js";
 import { TuiWorkspaceView } from "./workspace-view.js";
 
+const tuiCommand = process.argv[1] === "truss" ? "truss tui" : brand.tuiCommand;
+const cliCommand = process.argv[1] === "truss" ? "truss" : brand.cliCommand;
+
 const tuiHelp = `${brand.productName} TUI
 
 Full-screen terminal workspace for local coding models.
 
 Usage:
-  ${brand.tuiCommand}
+  ${tuiCommand}
 
 The TUI starts in the current workspace and reads the same configuration
-profiles as ${brand.cliCommand}. Press ? inside the TUI for its complete
+profiles as ${cliCommand}. Press ? inside the TUI for its complete
 keyboard-control reference.
 `;
 
@@ -86,9 +89,9 @@ function ensureInteractiveTerminal(): void {
   process.stderr.write(
     brand.productName +
       " TUI needs an interactive terminal with raw keyboard input. Open PowerShell or Windows Terminal and run " +
-      brand.tuiCommand +
+      tuiCommand +
       ", or run winpty " +
-      brand.tuiCommand +
+      tuiCommand +
       " from Git Bash.\n",
   );
   process.exit(1);

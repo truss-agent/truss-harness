@@ -6,11 +6,11 @@ function Brand() {
 }
 
 function CliCommand() {
-  return <code>{brand.cliCommand}</code>;
+  return <code>truss</code>;
 }
 
 function TuiCommand() {
-  return <code>{brand.tuiCommand}</code>;
+  return <code>truss tui</code>;
 }
 
 function WorkspaceDirectory() {
@@ -18,7 +18,7 @@ function WorkspaceDirectory() {
 }
 
 function CliUsage({ command }: { readonly command: string }) {
-  return <code>{`${brand.cliCommand} ${command}`}</code>;
+  return <code>{`truss ${command}`}</code>;
 }
 
 function WorkspaceConfigPath() {

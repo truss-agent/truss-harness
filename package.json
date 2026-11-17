@@ -28,7 +28,7 @@
     "web:dev": "npm run brand:sync && npm --workspace @truss-harness/branding run build && npm --workspace @truss-harness/docs run dev",
     "web:build": "npm run brand:sync && npm --workspace @truss-harness/branding run build && npm --workspace @truss-harness/docs run build",
     "brand:sync": "node scripts/sync-brand-assets.mjs",
-    "package:npm": "npm pack --workspace @truss-harness/branding --workspace @truss-harness/runtime --workspace @truss-harness/mcp --workspace @truss-harness/provider-openai-compatible --workspace @truss-harness/agent-host --workspace @truss-harness/gateway --workspace @truss-harness/cli --workspace @truss-harness/tui",
+    "package:npm": "npm pack --workspace @truss-harness/branding --workspace @truss-harness/runtime --workspace @truss-harness/mcp --workspace @truss-harness/provider-openai-compatible --workspace @truss-harness/agent-host --workspace @truss-harness/gateway --workspace @truss-harness/cli --workspace @truss-harness/tui --workspace @truss-harness/truss",
     "package:runtime-host": "node scripts/package-runtime-host.mjs",
     "package:vscode": "npm --workspace truss-harness-vscode run package",
     "release:check": "npm run format:check && npm run lint && npm run build:fresh && npm test && npm run docs:build:isolated && npm run package:npm && npm run package:runtime-host && npm run package:vscode",
@@ -36,7 +36,8 @@
     "docs:build": "npm run brand:sync && npm --workspace @truss-harness/branding run build && npm --workspace @truss-harness/docs run build",
     "docs:build:isolated": "npm run brand:sync && npm --workspace @truss-harness/branding run build && node scripts/build-docs-isolated.mjs",
     "audit:dependencies": "node --experimental-strip-types scripts/check-dependencies.mts",
-    "skills:sync": "node --experimental-strip-types scripts/generate-bundled-skills.mts"
+    "skills:sync": "node --experimental-strip-types scripts/generate-bundled-skills.mts",
+    "truss:local": "node packages/truss/dist/bin.js"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.5",

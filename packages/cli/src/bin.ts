@@ -72,6 +72,7 @@ import {
 } from "./skills.js";
 import { CLI_VERSION, formatCliVersion } from "./version.js";
 
+const cliCommand = process.argv[1] === "truss" ? "truss" : brand.cliCommand;
 const secrets = systemSecretStore();
 
 const help = `${brand.productName} CLI
@@ -79,18 +80,18 @@ const help = `${brand.productName} CLI
 Local-first coding agent and runtime service.
 
 Usage:
-  ${brand.cliCommand} <command> [options]
+  ${cliCommand} <command> [options]
 
 Quick start:
   1. Start Ollama, LM Studio, llama.cpp, or a compatible local server.
-  2. Run: ${brand.cliCommand} models
- 3. Run: ${brand.cliCommand} chat "Explain this workspace"
-  3. Run: ${brand.cliCommand} setup
-  4. Run: ${brand.cliCommand} chat --mode edit
-  5. Optional: ${brand.cliCommand} config init
+  2. Run: ${cliCommand} models
+  3. Run: ${cliCommand} chat "Explain this workspace"
+  4. Run: ${cliCommand} setup
+  5. Run: ${cliCommand} chat --mode edit
+  6. Optional: ${cliCommand} config init
 
 Commands:
-  version               Print the installed CLI version
+${cliCommand === "truss" ? "  tui                   Open the full-screen terminal workspace\n" : ""}  version               Print the installed CLI version
   chat [prompt]          Stream one response or open persistent chat
   setup                 Interactively save local-model or cloud BYOK defaults
   test-connection       Verify the configured provider, model, and credential
@@ -183,10 +184,10 @@ Environment:
   TRUSS_HARNESS_MCP_SERVERS JSON object containing local stdio MCP servers
 
 Examples:
-  ${brand.cliCommand} chat --mode plan "Plan the authentication change"
-  ${brand.cliCommand} chat --mode edit "Fix the failing tests"
-  ${brand.cliCommand} chat --internet-access "Check the current library documentation"
-  ${brand.cliCommand} chat --profile lm-studio "Review the active file structure"
+  ${cliCommand} chat --mode plan "Plan the authentication change"
+  ${cliCommand} chat --mode edit "Fix the failing tests"
+  ${cliCommand} chat --internet-access "Check the current library documentation"
+  ${cliCommand} chat --profile lm-studio "Review the active file structure"
 
 ${workspaceCommandHelp()}
 `;
@@ -328,7 +329,7 @@ async function runInteractiveChat(
 
       while (true) {
         const line = await readline
-          .question(`${brand.cliCommand} (${configuration.mode}) > `)
+          .question(`${cliCommand} (${configuration.mode}) > `)
           .catch(() => undefined);
         if (line === undefined) break;
         const input = line.trim();
@@ -414,7 +415,7 @@ function resumeCommand(
   configuration: ResolvedConfiguration,
 ): readonly string[] {
   return [
-    brand.cliCommand,
+    cliCommand,
     ...(conversationId ? ["--resume", conversationId] : []),
     ...(configuration.profile ? ["--profile", configuration.profile] : []),
     "--mode",
@@ -516,7 +517,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "version" || command === "--version" || command === "-v") {
-    process.stdout.write(`${formatCliVersion(brand.cliCommand)}\n`);
+    process.stdout.write(`${formatCliVersion(cliCommand)}\n`);
     return;
   }
 
@@ -535,7 +536,7 @@ async function main(): Promise<void> {
   if (command === "setup") {
     await setupInteractively();
     process.stdout.write(
-      `Run ${brand.cliCommand} in a project folder to start chatting.\n`,
+      `Run ${cliCommand} in a project folder to start chatting.\n`,
     );
     return;
   }
@@ -571,9 +572,7 @@ async function main(): Promise<void> {
       );
       return;
     }
-    throw new Error(
-      `Use ${brand.cliCommand} config path, init, status, or trust`,
-    );
+    throw new Error(`Use ${cliCommand} config path, init, status, or trust`);
   }
 
   if (command === "gateway") {
@@ -730,7 +729,7 @@ async function main(): Promise<void> {
     if (action === "add") {
       if (!identifier?.trim())
         throw new Error(
-          `Provide a profile name: ${brand.cliCommand} agents add <name>`,
+          `Provide a profile name: ${cliCommand} agents add <name>`,
         );
       const configuration = await resolveConfiguration({
         secrets,
@@ -748,7 +747,7 @@ async function main(): Promise<void> {
     if (action === "remove") {
       if (!identifier?.trim())
         throw new Error(
-          `Provide an agent ID: ${brand.cliCommand} agents remove <id>`,
+          `Provide an agent ID: ${cliCommand} agents remove <id>`,
         );
       if (!(await profiles.delete(identifier)))
         throw new Error("Unknown agent profile.");
@@ -757,7 +756,7 @@ async function main(): Promise<void> {
     }
     if (action === "run") {
       if (!identifier?.trim() || !promptParts.join(" ").trim())
-        throw new Error(`Use: ${brand.cliCommand} agents run <id> <task>`);
+        throw new Error(`Use: ${cliCommand} agents run <id> <task>`);
       const configuration = await resolveConfiguration({
         secrets,
         workspaceRoot: cwd(),
@@ -806,7 +805,7 @@ async function main(): Promise<void> {
       return;
     }
     throw new Error(
-      `Use ${brand.cliCommand} agents list, add, trust, remove, or run.`,
+      `Use ${cliCommand} agents list, add, trust, remove, or run.`,
     );
   }
 
@@ -827,7 +826,7 @@ async function main(): Promise<void> {
     if (action === "install") {
       if (!artifactPath || !manifestPath)
         throw new Error(
-          `Use ${brand.cliCommand} runtime install <artifact> <manifest>.`,
+          `Use ${cliCommand} runtime install <artifact> <manifest>.`,
         );
       const manifest = parseRuntimeHostManifest(
         JSON.parse(await readFile(manifestPath, "utf8")) as unknown,
@@ -851,9 +850,7 @@ async function main(): Promise<void> {
       );
       return;
     }
-    throw new Error(
-      `Use ${brand.cliCommand} runtime status, install, or rollback.`,
-    );
+    throw new Error(`Use ${cliCommand} runtime status, install, or rollback.`);
   }
 
   const { overrides, rest } = parseConfigurationOverrides(rawArgs);
@@ -873,7 +870,7 @@ async function main(): Promise<void> {
     (command !== "chat" || args.length || !interactiveTerminal)
   )
     throw new Error(
-      `--resume reopens a saved conversation in interactive chat: ${brand.cliCommand} --resume <id>`,
+      `--resume reopens a saved conversation in interactive chat: ${cliCommand} --resume <id>`,
     );
   const workspaceCommand =
     command === "init"
@@ -910,7 +907,7 @@ async function main(): Promise<void> {
   if (command === "chat" && args.length) {
     const prompt = args.join(" ").trim();
     if (!prompt)
-      throw new Error(`Provide a prompt: ${brand.cliCommand} chat <prompt>`);
+      throw new Error(`Provide a prompt: ${cliCommand} chat <prompt>`);
     const result = await executeWorkspaceCommand({
       workspaceRoot: cwd(),
       input: prompt,
@@ -953,7 +950,7 @@ async function main(): Promise<void> {
     const [action = "status", name] = positional;
     if (action !== "status" && action !== "tools" && action !== "reconnect")
       throw new Error(
-        `Use ${brand.cliCommand} mcp status, tools, or reconnect <name>.`,
+        `Use ${cliCommand} mcp status, tools, or reconnect <name>.`,
       );
     const client = await createClientRuntime({
       ...configuration,
@@ -964,7 +961,7 @@ async function main(): Promise<void> {
       if (action === "reconnect") {
         if (!name)
           throw new Error(
-            `Provide a server name: ${brand.cliCommand} mcp reconnect <name>`,
+            `Provide a server name: ${cliCommand} mcp reconnect <name>`,
           );
         const status = await client.mcp.reconnect(name);
         if (!status)
@@ -1089,8 +1086,9 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
   process.stderr.write(
-    `${error instanceof Error ? error.message : String(error)}\n`,
+    `${error instanceof MissingModelError ? message.replaceAll(brand.cliCommand, cliCommand) : message}\n`,
   );
   process.exitCode = 1;
 });

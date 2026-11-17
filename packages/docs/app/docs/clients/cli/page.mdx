@@ -9,24 +9,25 @@ The CLI is the direct command-line client and the runtime service host used by e
 ## Install
 
 ```sh
-npm install -g @truss-harness/cli
+npm install -g @truss-harness/truss
 ```
 
-See the [CLI package on npm](https://www.npmjs.com/package/@truss-harness/cli) for the latest published version and package details.
+See the [CLI package on npm](https://www.npmjs.com/package/@truss-harness/truss) for the latest published version and package details.
 
-Run `truss-cli` in a project folder. The first time, with no model configured, it walks you through setup and then opens the chat:
+Run `truss` in a project folder. The first time, with no model configured, it walks you through setup and then opens the chat:
 
 1. Choose a cloud provider (with your API key) or a local model server.
 2. For a cloud provider, paste your API key. It is hidden as you type, checked by loading the provider's model list, and saved in your system keyring (libsecret on Linux, the Keychain on macOS), never in a configuration file.
 3. Pick a model from the list, typing part of a name to narrow long lists.
 4. Choose the default mode and tool approval.
 
-Run `truss-cli setup` any time to switch provider or model. Environment variables such as `ANTHROPIC_API_KEY` still take priority over a saved key. Where no keyring is available, setup prints the variable to set instead. `truss-cli help` shows the complete built-in reference without needing a model.
+Run `truss setup` any time to switch provider or model. Environment variables such as `ANTHROPIC_API_KEY` still take priority over a saved key. Where no keyring is available, setup prints the variable to set instead. `truss help` shows the complete built-in reference without needing a model.
 
 ## Commands
 
 | Command | Purpose |
 | --- | --- |
+| <CliCommand /> `tui` | Open the bundled full-screen terminal workspace |
 | <CliCommand /> `chat [prompt]` | Stream one task, or open persistent chat with no prompt |
 | <CliCommand /> `models` | List detected local endpoints and models |
 | <CliCommand /> `setup` | Connect a cloud provider or local server and choose a model |
@@ -62,15 +63,15 @@ Run <CliCommand /> `init` to create or refresh generated repository context in `
 
 ## Chat
 
-`chat` with a prompt creates an in-memory one-shot session, streams output to standard output, and prints tool requests to standard error. Run `truss-cli` (or `truss-cli chat`) without a prompt in a terminal to open interactive chat.
+`chat` with a prompt creates an in-memory one-shot session, streams output to standard output, and prints tool requests to standard error. Run `truss` (or `truss chat`) without a prompt in a terminal to open interactive chat.
 
 ```sh
-truss-cli chat --profile ollama-coder --mode plan "Find the files that define the agent loop"
+truss chat --profile ollama-coder --mode plan "Find the files that define the agent loop"
 ```
 
 Direct CLI chat honors `--permission ask|auto-read|auto-all`. Ask is the default. Interactive approval uses the same terminal input as chat; Ctrl+C cancels a pending approval or run. Without a TTY, any tool needing approval fails promptly with instructions. Authorized automation can explicitly select `--permission auto-all`.
 
-Review workspace configuration and run `truss-cli config trust` before using its authority-bearing settings. `truss-cli config status` shows the effective policy and provenance. Existing or manually edited managed-agent profiles require `truss-cli agents trust <id>` after review; locally created profiles receive individual receipts, and subsequent manual edits invalidate them.
+Review workspace configuration and run `truss config trust` before using its authority-bearing settings. `truss config status` shows the effective policy and provenance. Existing or manually edited managed-agent profiles require `truss agents trust <id>` after review; locally created profiles receive individual receipts, and subsequent manual edits invalidate them.
 
 ### Interactive chat
 
@@ -93,13 +94,13 @@ Conversations are saved after each reply in your user configuration directory, s
 
 To include images, press Ctrl+V to attach the image on your clipboard (this uses `wl-paste` on Wayland, `xclip` on X11, and the system clipboard on macOS), or paste or drop an image file's path. Each image appears as `[image 1]`, `[image 2]` and so on in your message, and is sent along with it when the model accepts images. Up to four images of 5 MB each go with one message. Saved conversations keep the image names but not the images themselves.
 
-Start with `truss-cli --resume <id>` to reopen a saved conversation directly. The first eight characters of the ID, as shown by `/status`, are enough.
+Start with `truss --resume <id>` to reopen a saved conversation directly. The first eight characters of the ID, as shown by `/status`, are enough.
 
 ### Herdr
 
 When the CLI runs in a [Herdr](https://herdr.dev) pane, it reports its state there. Herdr shows Truss as working while a reply runs, blocked while a tool approval waits for you, and idle otherwise, so its notifications and `herdr agent wait` work with Truss. Truss also gives Herdr the command that reopens the current conversation, so the same conversation comes back in the same pane after a Herdr restart. Nothing needs configuring: this turns on only inside a Herdr pane, and a Herdr that does not respond never slows the chat down.
 
-When standard input or output is not a terminal, `truss-cli chat` falls back to a simple line-based loop with the same history and `:` controls.
+When standard input or output is not a terminal, `truss chat` falls back to a simple line-based loop with the same history and `:` controls.
 
 Add `--internet-access` to expose `web_search` and `web_fetch` for that run. Web tool calls still follow the selected approval policy. Use `--no-internet-access` to override an enabled profile.
 
@@ -108,7 +109,7 @@ When a Plan-mode run produces a checklist, the CLI prints the saved plan to stan
 ## Service mode
 
 ```sh
-truss-cli serve --profile ollama-coder
+truss serve --profile ollama-coder
 ```
 
 Service mode uses newline-delimited JSON on standard input/output. Output is reserved for protocol messages; do not add logs to standard output. The VS Code extension starts this service automatically.
@@ -116,7 +117,7 @@ Service mode uses newline-delimited JSON on standard input/output. Output is res
 ## Model discovery
 
 ```sh
-truss-cli models
+truss models
 ```
 
 This prints detected endpoints and model IDs for local servers.
@@ -128,3 +129,5 @@ This prints detected endpoints and model IDs for local servers.
 ## MCP servers
 
 The CLI reads `mcpServers` from the shared configuration system and reports each connection before an Agent run. Run <CliCommand /> `config path` to locate the user and workspace files. Repository-provided MCP commands require content-bound local `config trust` authorization. See [MCP Servers](/docs/runtime/mcp) for the complete schema and safety behavior.
+
+The bundled `@truss-harness/truss` package installs both clients. The standalone `@truss-harness/cli` (`truss-cli`) and `@truss-harness/tui` (`truss-tui`) packages remain supported.

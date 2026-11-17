@@ -4,6 +4,14 @@ import { createPageMetadata } from "../site-metadata";
 
 const entries = [
   {
+    version: "Truss 0.1.0 · CLI 0.1.38 · TUI 0.1.24",
+    label: "One installation, two terminal experiences",
+    changes: [
+      "Install @truss-harness/truss once, then run truss for CLI chat or truss tui for the full-screen terminal workspace.",
+      "Preserved standalone packages and the truss-cli and truss-tui commands for existing users and integrations.",
+    ],
+  },
+  {
     version: "Desktop 0.1.55 · VS Code 0.1.30 · CLI 0.1.27",
     label: "CLI chat menus, in-chat setup, images, and Herdr status",
     changes: [

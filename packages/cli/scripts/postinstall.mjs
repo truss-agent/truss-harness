@@ -6,9 +6,11 @@ if (
 Truss CLI installed.
 
 Next steps:
-  truss-cli setup
-  truss-cli chat --mode edit
+  truss setup
+  truss chat --mode edit
 
-Run truss-cli help for modes, permissions, configuration, and examples.
+Use the bundled command with npm install -g @truss-harness/truss.
+Standalone CLI installs can use truss-cli instead.
+Run truss help for modes, permissions, configuration, and examples.
 `);
 }
