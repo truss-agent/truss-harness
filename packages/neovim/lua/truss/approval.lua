@@ -49,7 +49,7 @@ function M.preview(root, request)
     string.format(
       "Truss preview: %s [%s]",
       input.path,
-      request.callId or tostring(buffer)
+      tostring(buffer)
     )
   )
   vim.api.nvim_buf_set_lines(
@@ -73,7 +73,7 @@ function M.preview(root, request)
   return path
 end
 
-local function label(request)
+function M.label(request)
   local input = request.input or {}
   local target = type(input.path) == "string" and (" " .. input.path) or ""
   if target == "" and type(input.command) == "string" then
@@ -93,21 +93,18 @@ function M.prompt(root, request, callback)
     table.insert(choices, 2, "Preview diff")
   end
   vim.ui.select(choices, {
-    prompt = "Truss requests " .. label(request),
+    prompt = "Truss requests " .. M.label(request),
   }, function(choice)
     if choice == "Preview diff" then
       local _, error_message = M.preview(root, request)
       if error_message then
         vim.notify(error_message, vim.log.levels.WARN, { title = "Truss" })
       end
-      vim.ui.select({ "Approve", "Deny" }, {
-        prompt = "Apply " .. label(request) .. "?",
-      }, function(decision)
-        callback(decision == "Approve")
-      end)
       return
     end
-    callback(choice == "Approve")
+    if choice then
+      callback(choice == "Approve")
+    end
   end)
 end
 

@@ -1,3 +1,4 @@
+local approval = require("truss.approval")
 local ui = require("truss.ui")
 
 local M = {}
@@ -22,6 +23,7 @@ function Panel.new(options)
     profile = nil,
     plan = nil,
     changed_files = {},
+    approvals = {},
     file_lines = {},
     show_help = false,
   }, Panel)
@@ -29,6 +31,7 @@ end
 
 function Panel:is_open()
   return self.window and vim.api.nvim_win_is_valid(self.window)
+    and vim.api.nvim_win_get_buf(self.window) == self.buffer
 end
 
 local function display_mode(mode)
@@ -84,6 +87,12 @@ function Panel:set_keymaps()
       require("truss").open_changed_file(path)
     end
   end, vim.tbl_extend("force", options, { desc = "Open changed file" }))
+  vim.keymap.set("n", "G", function()
+    self:follow_latest()
+  end, vim.tbl_extend("force", options, { desc = "Follow latest Truss response" }))
+  vim.keymap.set("n", "A", function()
+    require("truss").approvals()
+  end, vim.tbl_extend("force", options, { desc = "Review pending Truss approvals" }))
   vim.keymap.set("n", "a", function()
     require("truss").chat()
   end, vim.tbl_extend("force", options, { desc = "Ask Truss" }))
@@ -145,14 +154,36 @@ function Panel:open()
   vim.wo[self.window].winhighlight = "Normal:TrussNormal,NormalNC:TrussNormal,EndOfBuffer:TrussEndOfBuffer,WinBar:TrussWinbar,WinBarNC:TrussWinbarNC"
   self:update_window_chrome()
   self:render()
-  vim.api.nvim_win_set_cursor(self.window, { 1, 0 })
+  self:follow_latest()
 end
 
 function Panel:close()
+  if self.composer then
+    self.composer:close()
+  end
   if self:is_open() then
     vim.api.nvim_win_close(self.window, true)
   end
   self.window = nil
+end
+
+function Panel:discard_draft()
+  if self.composer then
+    self.composer:close()
+    if self.composer.buffer and vim.api.nvim_buf_is_valid(self.composer.buffer) then
+      vim.api.nvim_buf_delete(self.composer.buffer, { force = true })
+    end
+    self.composer = nil
+  end
+end
+
+function Panel:dispose()
+  self:close()
+  self:discard_draft()
+  if self.buffer and vim.api.nvim_buf_is_valid(self.buffer) then
+    vim.api.nvim_buf_delete(self.buffer, { force = true })
+  end
+  self.buffer = nil
 end
 
 function Panel:set_status(status)
@@ -173,9 +204,21 @@ function Panel:start_response()
   self:render()
 end
 
+function Panel:follow_latest()
+  if self:is_open() then
+    vim.api.nvim_win_set_cursor(self.window, { vim.api.nvim_buf_line_count(self.buffer), 0 })
+  end
+end
+
 function Panel:append_text(text)
   self.active_text = self.active_text .. text
-  self:render()
+  if not self.render_pending and self:is_open() then
+    self.render_pending = true
+    vim.defer_fn(function()
+      self.render_pending = false
+      self:render()
+    end, 32)
+  end
 end
 
 function Panel:add_activity(text)
@@ -214,6 +257,7 @@ function Panel:clear()
   self.context = nil
   self.plan = nil
   self.changed_files = {}
+  self.approvals = {}
   self.status = "Ready"
   self:render()
 end
@@ -222,13 +266,13 @@ local function append_content(lines, highlights, content)
   local values = vim.split(content or "", "\n", { plain = true })
   for _, line in ipairs(values) do
     table.insert(lines, "  " .. line)
-    table.insert(highlights, nil)
+    table.insert(highlights, false)
   end
 end
 
 local function add_line(lines, highlights, text, highlight)
   table.insert(lines, text)
-  table.insert(highlights, highlight)
+  table.insert(highlights, highlight or false)
 end
 
 function Panel:render()
@@ -236,11 +280,11 @@ function Panel:render()
     return
   end
 
-  ui.ensure()
   self:update_window_chrome()
   local mode = display_mode(self.mode)
   local profile = self.profile and (" · " .. self.profile) or ""
-  local separator = string.rep("─", math.max(32, (self.options.width or 52) - 2))
+  local width = self:is_open() and vim.api.nvim_win_get_width(self.window) or (self.options.width or 52)
+  local separator = string.rep("─", math.max(1, width - 2))
   local lines = {}
   local highlights = {}
   local status_highlight = ui.status_highlight(self.status)
@@ -312,24 +356,59 @@ function Panel:render()
     add_line(lines, highlights, "", nil)
   end
 
+  local approvals = vim.tbl_keys(self.approvals)
+  table.sort(approvals)
+  if #approvals > 0 then
+    add_line(lines, highlights, " Pending approvals · A to review", "TrussAccent")
+    for _, id in ipairs(approvals) do
+      local label = approval.label(self.approvals[id].request):gsub("[\r\n]", " ")
+      add_line(lines, highlights, "  › " .. label, "TrussMuted")
+    end
+    add_line(lines, highlights, "", nil)
+  end
+
   add_line(lines, highlights, " " .. separator, "TrussBorder")
-  add_line(lines, highlights, " Enter ask · c chat · p plan · e edit · ? help · q close", "TrussMuted")
+  add_line(lines, highlights, " a compose · A approvals · ? help · q close", "TrussMuted")
   if self.show_help then
     add_line(lines, highlights, "", nil)
     add_line(lines, highlights, " Panel controls", "TrussAccent")
-    add_line(lines, highlights, "  Enter ask/open file · gf open file · Ctrl-c stop", "TrussKey")
+    add_line(lines, highlights, "  Enter compose/open file · G follow · Ctrl-c stop", "TrussKey")
     add_line(lines, highlights, "  m MCP status · r connection test · P select profile", "TrussKey")
   end
 
-  vim.bo[self.buffer].modifiable = true
-  vim.api.nvim_buf_set_lines(self.buffer, 0, -1, false, lines)
-  vim.api.nvim_buf_clear_namespace(self.buffer, namespace, 0, -1)
-  for index, highlight in ipairs(highlights) do
-    if highlight then
-      vim.api.nvim_buf_add_highlight(self.buffer, namespace, highlight, index - 1, 0, -1)
-    end
+  local window = self:is_open() and self.window or nil
+  local cursor = window and vim.api.nvim_win_get_cursor(window)
+  local old_count = vim.api.nvim_buf_line_count(self.buffer)
+  local follow = cursor and cursor[1] == old_count
+  local view = window and vim.api.nvim_win_call(window, vim.fn.winsaveview)
+  local previous = vim.api.nvim_buf_get_lines(self.buffer, 0, -1, false)
+  local first = 1
+  while first <= old_count and first <= #lines
+    and previous[first] == lines[first]
+    and self.highlights and self.highlights[first] == highlights[first] do
+    first = first + 1
   end
-  vim.bo[self.buffer].modifiable = false
+  if first <= old_count or first <= #lines then
+    local replacement = {}
+    for index = first, #lines do
+      table.insert(replacement, lines[index])
+    end
+    vim.bo[self.buffer].modifiable = true
+    vim.api.nvim_buf_set_lines(self.buffer, first - 1, -1, false, replacement)
+    vim.api.nvim_buf_clear_namespace(self.buffer, namespace, first - 1, -1)
+    for index = first, #highlights do
+      if highlights[index] then
+        vim.api.nvim_buf_add_highlight(self.buffer, namespace, highlights[index], index - 1, 0, -1)
+      end
+    end
+    vim.bo[self.buffer].modifiable = false
+  end
+  self.highlights = highlights
+  if follow then
+    self:follow_latest()
+  elseif view then
+    vim.api.nvim_win_call(window, function() vim.fn.winrestview(view) end)
+  end
 end
 
 M.Panel = Panel

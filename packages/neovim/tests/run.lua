@@ -425,7 +425,7 @@ test("panel renders themed plans, safe changed-file links, and local controls", 
   assert(content:match("Truss"))
   assert(content:match("Plan · Review"))
   assert(content:match("✓ Inspect code"))
-  assert(content:match("Enter ask · c chat · p plan · e edit"))
+  assert(content:match("a compose · A approvals"))
   assert(vim.fn.maparg("a", "n", false, true).desc == "Ask Truss")
   assert(vim.fn.maparg("c", "n", false, true).desc == "Select Truss Chat mode")
   panel.show_help = true
@@ -442,6 +442,94 @@ test("panel renders themed plans, safe changed-file links, and local controls", 
   assert(found)
   panel:close()
   vim.api.nvim_buf_delete(panel.buffer, { force = true })
+end)
+
+test("composer keeps a multiline draft across closing and reopening", function()
+  local truss = require("truss")
+  truss.setup({ attach_current_buffer = false })
+  local input = vim.ui.input
+  vim.ui.input = function() end
+  truss.chat()
+  vim.ui.input = input
+  local draft = vim.api.nvim_get_current_buf()
+  equal(vim.bo[draft].filetype, "truss-compose")
+  vim.api.nvim_buf_set_lines(draft, 0, -1, false, { "first", "second" })
+  truss._state.panel:close()
+  truss.chat()
+  equal(vim.api.nvim_get_current_buf(), draft)
+  equal(vim.api.nvim_buf_get_lines(draft, 0, -1, false), { "first", "second" })
+  truss._state.panel:close()
+end)
+
+test("switching working directories preserves drafts in their workspace", function()
+  local truss = require("truss")
+  truss.setup({ attach_current_buffer = false })
+  local previous = vim.fn.getcwd()
+  truss.chat()
+  local panel = truss._state.panel
+  local draft = panel.composer.buffer
+  vim.api.nvim_buf_set_lines(draft, 0, -1, false, { "workspace draft" })
+  vim.cmd.cd(vim.fn.fnamemodify(previous, ":h"))
+  truss.open()
+  assert(truss._state.panel ~= panel)
+  vim.cmd.cd(previous)
+  truss.chat()
+  equal(truss._state.panel, panel)
+  equal(vim.api.nvim_get_current_buf(), draft)
+  equal(vim.api.nvim_buf_get_lines(draft, 0, -1, false), { "workspace draft" })
+  panel:close()
+end)
+
+test("composer snapshots source context and lets users exclude it", function()
+  local truss = require("truss")
+  truss.setup({ attach_diagnostics = false, attach_git_diff = false })
+  local source = vim.api.nvim_create_buf(true, false)
+  vim.api.nvim_set_current_buf(source)
+  vim.api.nvim_buf_set_lines(source, 0, -1, false, { "original" })
+  truss.open()
+  truss.chat()
+  local composer = truss._state.panel.composer
+  equal(composer.blocks[1].content, "original")
+  vim.api.nvim_buf_set_lines(source, 0, -1, false, { "edited" })
+  vim.fn.maparg("<C-p>", "n", false, true).callback()
+  equal(vim.api.nvim_buf_get_lines(0, 2, 3, false), { "original" })
+  vim.fn.maparg("q", "n", false, true).callback()
+  equal(vim.api.nvim_get_current_win(), composer.window)
+  vim.fn.maparg("<C-g>", "n", false, true).callback()
+  equal(composer.include_context, false)
+  assert(vim.wo[composer.window].winbar:find("No context", 1, true))
+  truss._state.panel:close()
+  vim.api.nvim_buf_delete(source, { force = true })
+end)
+
+test("changed files open in an editor and leave the composer visible", function()
+  local truss = require("truss")
+  truss.setup({ attach_current_buffer = false })
+  truss.chat()
+  local panel = truss._state.panel
+  vim.api.nvim_set_current_win(panel.window)
+  truss.open_changed_file("README.md")
+  assert(vim.api.nvim_buf_get_name(0):match("/README%.md$"))
+  assert(panel.composer:is_open())
+  panel:close()
+end)
+
+test("streaming follows the latest response and preserves an older cursor", function()
+  local panel = require("truss.panel").Panel.new()
+  panel:open()
+  panel:add_message("You", "hello")
+  panel:follow_latest()
+  panel:append_text("first")
+  assert(vim.wait(200, function()
+    return vim.api.nvim_win_get_cursor(panel.window)[1] == vim.api.nvim_buf_line_count(panel.buffer)
+  end))
+  vim.api.nvim_win_set_cursor(panel.window, { 2, 0 })
+  panel:append_text("\nsecond")
+  assert(vim.wait(200, function()
+    return table.concat(vim.api.nvim_buf_get_lines(panel.buffer, 0, -1, false), "\n"):find("second")
+  end))
+  equal(vim.api.nvim_win_get_cursor(panel.window)[1], 2)
+  panel:close()
 end)
 
 test("opening the panel does not start a service", function()
@@ -531,6 +619,50 @@ test("Plan mode launches the shared CLI service with the requested mode", functi
     return truss._state.client.active_request == nil
   end)
   equal(truss._state.options.mode, "plan")
+  local plan_panel = truss._state.panel
+  local plan_client = truss._state.client
+  assert(truss.select_mode("edit"))
+  assert(truss._state.panel ~= plan_panel)
+  equal(truss._state.session_id, nil)
+  assert(truss.select_mode("plan"))
+  equal(truss._state.panel, plan_panel)
+  equal(truss._state.client, plan_client)
+  truss.chat()
+  local draft = vim.api.nvim_get_current_buf()
+  vim.api.nvim_buf_set_lines(draft, 0, -1, false, { "Continue the plan", "Keep the tests" })
+  local submit = vim.fn.maparg("<C-s>", "n", false, true).callback
+  local write = process.write
+  process.write = function() error("test pipe closed") end
+  submit()
+  equal(#plan_panel.messages, 1)
+  equal(vim.api.nvim_buf_get_lines(draft, 0, -1, false), { "Continue the plan", "Keep the tests" })
+  process.write = write
+  vim.api.nvim_set_current_win(plan_panel.composer.window)
+  submit()
+  equal(writes[3].params.prompt, "Continue the plan\nKeep the tests")
+  equal(writes[3].params.sessionId, "session")
+  assert(not plan_panel.composer:is_open())
+  stdout(nil, vim.json.encode({
+    jsonrpc = "2.0",
+    method = "approval/requested",
+    params = { requestId = writes[3].id, callId = "approve-me", tool = "write_file",
+      input = { path = "README.md", content = "proposed" } },
+  }) .. "\n")
+  assert(vim.wait(100, function() return plan_panel.approvals["approve-me"] ~= nil end))
+  equal(plan_panel.status, "Approval needed")
+  local select = vim.ui.select
+  vim.ui.select = function(_, _, callback) callback(nil) end
+  truss.approvals()
+  equal(#writes, 3)
+  vim.ui.select = function(_, _, callback) callback("Deny") end
+  truss.approvals()
+  vim.ui.select = select
+  equal(writes[4].method, "approval/resolve")
+  equal(writes[4].params.approved, false)
+  stdout(nil, vim.json.encode({
+    jsonrpc = "2.0", id = writes[4].id, result = {},
+  }) .. "\n")
+  assert(vim.wait(100, function() return next(plan_panel.approvals) == nil end))
   truss.shutdown()
   truss._state.panel:close()
   vim.system = system
