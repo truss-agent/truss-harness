@@ -82,10 +82,10 @@ function M.setup()
 end
 
 function M.ensure()
-  M.setup()
   if configured then
     return
   end
+  M.setup()
   configured = true
   vim.api.nvim_create_autocmd("ColorScheme", {
     group = vim.api.nvim_create_augroup("TrussUi", { clear = true }),

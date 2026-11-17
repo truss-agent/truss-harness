@@ -1,6 +1,7 @@
 local context = require("truss.context")
 local approval = require("truss.approval")
 local workspace = require("truss.workspace")
+local Composer = require("truss.composer")
 local Panel = require("truss.panel").Panel
 local ProtocolClient = require("truss.protocol").Client
 local version = require("truss.version")
@@ -30,6 +31,9 @@ local state = {
   client = nil,
   session_id = nil,
   context_buffer = nil,
+  modes = {},
+  workspaces = {},
+  sending = false,
   commands_registered = false,
 }
 
@@ -37,15 +41,9 @@ local function notify(message, level)
   vim.notify(message, level or vim.log.levels.INFO, { title = "Truss" })
 end
 
-local function diagnostic(message)
-  if not message or message == "" then
-    return
-  end
-  state.panel:add_activity(message)
-end
-
 local function ensure_panel()
   state.panel = state.panel or Panel.new(state.options.panel)
+  state.panel.root = state.panel.root or vim.fn.getcwd()
   state.panel:set_mode(state.options.mode, state.options.profile)
   state.panel:open()
   return state.panel
@@ -74,76 +72,101 @@ local function new_client()
   if state.options.profile then
     arguments = set_argument(arguments, "--profile", state.options.profile)
   end
+  local panel = state.panel
+  local root = panel.root
   local client
   client = ProtocolClient.new({
     command = state.options.command,
     arguments = arguments,
-    workspace = vim.fn.getcwd(),
+    workspace = root,
     environment = state.options.environment,
-    on_diagnostic = diagnostic,
+    on_diagnostic = function(message)
+      if message and message ~= "" then
+        panel:add_activity(message)
+      end
+    end,
     on_exit = function()
-      if state.client == client then
-        state.panel:set_status("Disconnected")
+      local tracked = state.client == client
+      if tracked then
+        state.session_id = nil
+      end
+      local function clear_session(saved)
+        if saved.client == client then
+          saved.session_id = nil
+          tracked = true
+        end
+      end
+      for _, mode in pairs(state.modes) do
+        clear_session(mode)
+      end
+      for _, saved in pairs(state.workspaces) do
+        clear_session(saved)
+        for _, mode in pairs(saved.modes) do
+          clear_session(mode)
+        end
+      end
+      if tracked then
+        panel.approvals = {}
+        panel:finish_response()
+        panel:set_status("Disconnected")
       end
     end,
     on_lifecycle = function(message)
+      if client.active_request ~= message.requestId then
+        return
+      end
       if message.state == "started" then
-        state.panel:set_status("Running")
-        state.panel:start_response()
-      elseif message.state == "completed" then
-        state.panel:finish_response()
-        state.panel:set_status("Ready")
+        panel:set_status("Running")
+        panel:start_response()
+      else
+        panel.approvals = {}
+      end
+      if message.state == "completed" then
+        panel:finish_response()
+        panel:set_status("Ready")
       elseif message.state == "cancelled" then
-        state.panel:finish_response()
-        state.panel:set_status("Stopped")
+        panel:finish_response()
+        panel:set_status("Stopped")
       elseif message.state == "failed" then
-        state.panel:finish_response()
-        state.panel:set_status("Failed")
+        panel:finish_response()
+        panel:set_status("Failed")
       end
     end,
     on_approval = function(request)
-      state.panel:add_activity(
-        "Approval required: " .. (request.tool or "unknown")
-      )
-      approval.prompt(vim.fn.getcwd(), request, function(approved)
-        if
-          not state.client
-          or state.client.active_request ~= request.requestId
-        then
-          return
-        end
-        state.client:approve(request.callId, approved, function(error_message)
-          if error_message then
-            state.panel:add_activity(
-              error_message.message or tostring(error_message)
-            )
-          else
-            state.panel:add_activity(
-              (approved and "Approved: " or "Denied: ")
-                .. (request.tool or "unknown")
-            )
+      if type(request.callId) ~= "string" or client.active_request ~= request.requestId then
+        return
+      end
+      panel.approvals[request.callId] = {
+        request = request,
+        resolve = function(approved, done)
+          if client.active_request ~= request.requestId then
+            done({ message = "This approval has expired." })
+            return
           end
-        end)
-      end)
+          client:approve(request.callId, approved, done)
+        end,
+      }
+      panel:set_status("Approval needed")
+      notify("Truss needs approval. Press A in the panel or run :TrussApprovals.")
     end,
     on_event = function(event)
       if not event then
         return
       end
       if event.type == "text_delta" then
-        state.panel:append_text(event.text or "")
+        panel:append_text(event.text or "")
       elseif event.type == "progress_delta" then
-        state.panel:add_activity(event.text or "Working")
+        panel:add_activity(event.text or "Working")
       elseif event.type == "tool_call_requested" then
-        state.panel:add_activity("Tool requested: " .. (event.tool or "unknown"))
+        panel:add_activity("Tool requested: " .. (event.tool or "unknown"))
       elseif event.type == "tool_completed" then
-        state.panel:add_activity("Tool completed: " .. (event.tool or "unknown"))
+        panel:add_activity("Tool completed: " .. (event.tool or "unknown"))
       elseif event.type == "plan_updated" then
-        state.panel:set_plan(event.plan)
+        panel:set_plan(event.plan)
       elseif event.type == "run_failed" then
-        state.panel:add_activity("Error: " .. (event.error or "run failed"))
+        panel:add_activity("Error: " .. (event.error or "run failed"))
       elseif event.type == "run_completed" then
-        state.panel:set_changed_files(event.modifiedFiles or {})
+        panel:set_changed_files(event.modifiedFiles or {})
       end
     end,
   })
@@ -151,13 +174,18 @@ local function new_client()
 end
 
 local function connect(callback)
+  local panel = state.panel
   if state.client and state.client.initialized then
     callback(nil)
     return
   end
   state.client = state.client or new_client()
   state.panel:set_status("Connecting")
-  state.client:start(function(error_message)
+  local client = state.client
+  client:start(function(error_message)
+    if client ~= state.client or panel ~= state.panel then
+      return
+    end
     if error_message then
       local message = error_message.message or tostring(error_message)
       state.panel:set_status("Connection failed")
@@ -183,50 +211,93 @@ local function request_context(visual, visual_mode, buffer)
     attach_diagnostics = state.options.attach_diagnostics,
     attach_git_diff = state.options.attach_git_diff,
     git_timeout_ms = state.options.git_timeout_ms,
-    workspace = vim.fn.getcwd(),
+    workspace = state.panel.root,
   })
 end
 
 local function reset_client()
-  if state.client then
-    state.client:shutdown()
-  end
+  local client = state.client
   state.client = nil
+  state.sending = false
+  if client then
+    client:shutdown()
+  end
+  local function dispose(saved)
+    if saved.client then
+      saved.client:shutdown()
+    end
+    saved.panel:dispose()
+  end
+  for _, mode in pairs(state.modes) do
+    dispose(mode)
+  end
+  for _, saved in pairs(state.workspaces) do
+    dispose(saved)
+    for _, mode in pairs(saved.modes) do
+      dispose(mode)
+    end
+  end
+  state.modes = {}
+  state.workspaces = {}
   state.session_id = nil
 end
 
-local function send(prompt, visual, visual_mode, buffer)
+local function busy()
+  return state.sending or (state.client and state.client.active_request)
+end
+
+local function send(prompt, blocks, metadata, on_start)
   if type(prompt) ~= "string" or vim.trim(prompt) == "" then
-    return
+    return false
   end
-  if state.client and state.client.active_request then
+  if busy() then
     notify("A Truss run is already active. Stop it before sending another prompt.")
-    return
+    return false
   end
-  local blocks, metadata = request_context(visual, visual_mode, buffer)
+  vim.cmd.stopinsert()
   local panel = ensure_panel()
-  panel.context = metadata
-  panel:add_message("You", prompt)
+  state.sending = true
   connect(function(error_message)
+    state.sending = false
     if error_message then
       return
     end
-    state.client:run({
+    local client = state.client
+    local _, written = client:run({
       prompt = prompt,
       session_id = state.session_id,
       context = blocks,
     }, function(run_error, result)
+      if client ~= state.client then
+        return
+      end
       if run_error then
+        panel.approvals = {}
         panel:set_status("Failed")
         panel:add_activity(run_error.message or tostring(run_error))
         return
       end
       state.session_id = result and result.sessionId or state.session_id
     end)
+    if written then
+      panel.context = metadata
+      panel:add_message("You", prompt)
+      panel:follow_latest()
+      if on_start then
+        on_start()
+      end
+    end
   end)
+  return true
 end
 
 function M.setup(options)
+  if state.panel then
+    reset_client()
+    state.panel:dispose()
+    state.panel = nil
+    state.context_buffer = nil
+  end
   state.options = vim.tbl_deep_extend("force", vim.deepcopy(defaults), options or {})
   if not state.options.profile then
     for index, argument in ipairs(state.options.arguments) do
@@ -236,55 +307,112 @@ function M.setup(options)
       end
     end
   end
-  if state.panel then
-    state.panel.options = state.options.panel
-  end
   M._register_commands()
 end
 
-function M.open()
-  ensure_panel()
+local function sync_workspace()
+  local root = vim.fn.getcwd()
+  if state.panel and state.panel.root ~= root then
+    if busy() then
+      notify("Stop the active Truss run before switching workspaces.")
+      return false
+    end
+    state.panel:close()
+    state.workspaces[state.panel.root] = {
+      panel = state.panel,
+      client = state.client,
+      session_id = state.session_id,
+      context_buffer = state.context_buffer,
+      modes = state.modes,
+      mode = state.options.mode,
+    }
+    local saved = state.workspaces[root] or {}
+    state.workspaces[root] = nil
+    state.panel, state.client, state.session_id = saved.panel, saved.client, saved.session_id
+    state.context_buffer = saved.context_buffer
+    state.modes = saved.modes or {}
+    state.options.mode = saved.mode or state.options.mode
+  end
+  return true
 end
 
-function M.chat(prompt, options)
-  options = options or {}
+local function remember_buffer()
   local current = vim.api.nvim_get_current_buf()
   if vim.bo[current].filetype ~= "truss" and vim.bo[current].buftype == "" then
     state.context_buffer = current
   end
-  local source_buffer = state.context_buffer
-  ensure_panel()
-  if type(prompt) == "string" and vim.trim(prompt) ~= "" then
-    send(prompt, options.visual, options.visual_mode, source_buffer)
+end
+
+function M.open()
+  if sync_workspace() then
+    remember_buffer()
+    ensure_panel()
+  end
+end
+
+function M.chat(prompt, options)
+  if not sync_workspace() then
     return
   end
-  vim.ui.input({ prompt = "Ask Truss: " }, function(value)
-    if value then
-      send(value, options.visual, options.visual_mode, source_buffer)
+  options = options or {}
+  remember_buffer()
+  local source_buffer = state.context_buffer
+  local panel = ensure_panel()
+  local function capture()
+    return request_context(options.visual, options.visual_mode, source_buffer)
+  end
+  if type(prompt) == "string" and vim.trim(prompt) ~= "" then
+    if busy() then
+      notify("A Truss run is already active. Stop it before sending another prompt.")
+      return
     end
-  end)
+    send(prompt, capture())
+    return
+  end
+  panel.composer = panel.composer or Composer.new()
+  panel.composer:open(capture, function(value, blocks, metadata, on_start)
+    if vim.fn.getcwd() ~= panel.root then
+      notify("Reopen Truss in the current workspace before sending.")
+      return false
+    end
+    return send(value, blocks, metadata, on_start)
+  end, options.visual)
 end
 
 function M.select_mode(mode)
-  if state.client and state.client.active_request then
+  if not sync_workspace() then
+    return false
+  end
+  if busy() then
     notify("Stop the active Truss run before changing modes.")
     return false
   end
   if state.options.mode ~= mode then
+    if state.panel then
+      state.panel:close()
+      state.modes[state.options.mode] = {
+        panel = state.panel,
+        client = state.client,
+        session_id = state.session_id,
+      }
+    end
+    local saved = state.modes[mode] or {}
+    state.modes[mode] = nil
     state.options.mode = mode
-    reset_client()
-    local panel = ensure_panel()
-    panel:clear()
-    panel:set_mode(mode, state.options.profile)
+    state.panel, state.client, state.session_id = saved.panel, saved.client, saved.session_id
+    ensure_panel()
   end
   return true
 end
 
 function M.run_mode(mode, prompt, options)
-  if not M.select_mode(mode) then
+  if not sync_workspace() then
     return
   end
-  M.chat(prompt, options)
+  remember_buffer()
+  if M.select_mode(mode) then
+    M.chat(prompt, options)
+  end
 end
 
 function M.stop()
@@ -300,22 +428,30 @@ function M.stop()
 end
 
 function M.new()
-  if state.client and state.client.active_request then
+  if not sync_workspace() then
+    return
+  end
+  if busy() then
     notify("Stop the active Truss run before starting a new conversation.")
     return
   end
   state.session_id = nil
-  ensure_panel():clear()
+  local panel = ensure_panel()
+  panel:discard_draft()
+  panel:clear()
 end
 
 function M.open_changed_file(path)
-  local _, error_message = workspace.open(vim.fn.getcwd(), path)
+  local _, error_message = workspace.open(state.panel and state.panel.root or vim.fn.getcwd(), path)
   if error_message then
     notify(error_message, vim.log.levels.ERROR)
   end
 end
 
 function M.test_connection()
+  if not sync_workspace() then
+    return
+  end
   local panel = ensure_panel()
   connect(function(error_message)
     if error_message then
@@ -344,6 +480,9 @@ function M.test_connection()
 end
 
 function M.mcp_status()
+  if not sync_workspace() then
+    return
+  end
   local panel = ensure_panel()
   connect(function(error_message)
     if error_message then
@@ -375,8 +514,11 @@ function M.mcp_status()
 end
 
 function M.select_profile()
+  if not sync_workspace() then
+    return
+  end
   local panel = ensure_panel()
-  if state.client and state.client.active_request then
+  if busy() then
     notify("Stop the active Truss run before changing profiles.")
     return
   end
@@ -410,11 +552,12 @@ function M.select_profile()
           )
         end,
       }, function(profile)
-        if not profile then
+        if not profile or busy() or panel ~= state.panel then
           return
         end
         state.options.profile = profile.name
         reset_client()
+        panel:discard_draft()
         panel:clear()
         panel:set_mode(state.options.mode, profile.name)
         notify("Truss profile: " .. profile.name)
@@ -426,6 +569,9 @@ end
 local skill_mode_order = { "automatic", "manual", "off" }
 
 local function skill_client(manage, callback)
+  if not sync_workspace() then
+    return
+  end
   local panel = ensure_panel()
   connect(function(error_message)
     if error_message then
@@ -603,10 +749,52 @@ function M.status()
 end
 
 function M.shutdown()
-  if state.client then
-    state.client:shutdown()
+  reset_client()
+end
+
+function M.approvals()
+  local panel = state.panel
+  if not panel or vim.tbl_isempty(panel.approvals) then
+    notify("No pending Truss approvals.")
+    return
   end
-  state.client = nil
+  local function review(id)
+    local entry = panel.approvals[id]
+    if not entry or entry.resolving then
+      return
+    end
+    approval.prompt(panel.root, entry.request, function(approved)
+      if approved == nil or panel.approvals[id] ~= entry or entry.resolving then
+        return
+      end
+      entry.resolving = true
+      entry.resolve(approved, function(error_message)
+        entry.resolving = false
+        if error_message then
+          panel:add_activity(error_message.message or tostring(error_message))
+        elseif panel.approvals[id] == entry then
+          panel.approvals[id] = nil
+          panel:set_status(next(panel.approvals) and "Approval needed" or "Running")
+          panel:add_activity((approved and "Approved: " or "Denied: ") .. approval.label(entry.request))
+        end
+      end)
+    end)
+  end
+  local ids = vim.tbl_keys(panel.approvals)
+  table.sort(ids)
+  if #ids == 1 then
+    review(ids[1])
+  else
+    vim.ui.select(ids, {
+      prompt = "Pending Truss approvals",
+      format_item = function(id)
+        local entry = panel.approvals[id]
+        return entry and approval.label(entry.request) or "Expired"
+      end,
+    }, function(id)
+      if id then review(id) end
+    end)
+  end
 end
 
 function M._register_commands()
@@ -647,6 +835,7 @@ function M._register_commands()
     nargs = "*",
     range = true,
   })
+  vim.api.nvim_create_user_command("TrussApprovals", M.approvals, { desc = "Review pending Truss approvals" })
   vim.api.nvim_create_user_command("TrussStop", M.stop, {
     desc = "Stop the active Truss run",
   })
