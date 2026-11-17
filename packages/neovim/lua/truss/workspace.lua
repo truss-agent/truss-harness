@@ -59,10 +59,25 @@ function M.open(root, path)
       end
     end
   end
-  if vim.bo.filetype == "truss" then
-    vim.cmd("wincmd p")
+  if vim.bo.buftype ~= "" then
+    local function editing_window(window)
+      return vim.api.nvim_win_get_config(window).relative == ""
+        and vim.bo[vim.api.nvim_win_get_buf(window)].buftype == ""
+    end
+    local previous = vim.fn.win_getid(vim.fn.winnr("#"))
+    if previous ~= 0 and editing_window(previous) then
+      vim.api.nvim_set_current_win(previous)
+    else
+      local windows = vim.api.nvim_tabpage_list_wins(0)
+      local editor = vim.iter(windows):find(editing_window)
+      if editor then
+        vim.api.nvim_set_current_win(editor)
+      else
+        vim.cmd("topleft new")
+      end
+    end
   end
-  vim.cmd("edit " .. vim.fn.fnameescape(target))
+  vim.cmd("hide edit " .. vim.fn.fnameescape(target))
   return target
 end
 
