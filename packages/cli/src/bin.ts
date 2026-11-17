@@ -1086,8 +1086,9 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
   process.stderr.write(
-    `${error instanceof Error ? error.message : String(error)}\n`,
+    `${error instanceof MissingModelError ? message.replaceAll(brand.cliCommand, cliCommand) : message}\n`,
   );
   process.exitCode = 1;
 });
