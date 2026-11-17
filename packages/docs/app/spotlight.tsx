@@ -1,54 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-
-function webglAvailable() {
-  try {
-    const canvas = document.createElement("canvas");
-    return !!(canvas.getContext("webgl2") || canvas.getContext("webgl"));
-  } catch {
-    return false;
-  }
-}
-
-/**
- * The hero's three.js scene. three.js loads after hydration so it never
- * delays the headline. Without WebGL the CSS backdrop stays; with reduced
- * motion a single still frame is drawn.
- */
-export function HeroScene() {
-  const host = useRef<HTMLDivElement>(null);
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    if (!webglAvailable()) return;
-    let disposed = false;
-    let dispose: (() => void) | undefined;
-    const reduced = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    import("./truss-scene")
-      .then(({ createTrussScene }) => {
-        if (disposed || !host.current) return;
-        dispose = createTrussScene(host.current, { reduced }).dispose;
-        setReady(true);
-      })
-      .catch(() => undefined);
-    return () => {
-      disposed = true;
-      dispose?.();
-    };
-  }, []);
-
-  return (
-    <div
-      ref={host}
-      className="holo-scene"
-      data-ready={ready ? "" : undefined}
-      aria-hidden="true"
-    />
-  );
-}
+import { useEffect } from "react";
 
 /**
  * Pointer-tracked glow and tilt for any element marked `data-spotlight`.

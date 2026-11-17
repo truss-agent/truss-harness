@@ -4250,7 +4250,7 @@ body {
 }
 
 /* ======================================================================== */
-/* Holographic landing: always-dark page, three.js hero, spotlight cells     */
+/* Dark landing page with a restrained hero and spotlight cells     */
 /* ======================================================================== */
 
 .site.holo-page {
@@ -4330,23 +4330,15 @@ body {
 /* ---- Hero ---------------------------------------------------------------- */
 
 .site .holo-hero {
-  background:
-    radial-gradient(
-      70% 60% at 50% 35%,
-      rgba(24, 196, 163, 0.14),
-      transparent 70%
-    ),
-    var(--h-bg);
+  background: var(--h-bg);
   color: var(--h-text);
   display: flex;
   flex-direction: column;
-  isolation: isolate;
   justify-content: center;
   margin: 0;
   max-width: none;
-  min-height: min(860px, calc(100vh - 76px));
-  overflow: hidden;
-  padding: 120px 24px 150px;
+  min-height: 0;
+  padding: clamp(64px, 8vw, 104px) 24px 56px;
   text-align: center;
   width: 100%;
 }
@@ -4354,46 +4346,6 @@ body {
 .site .holo-hero::before,
 .site .holo-hero::after {
   display: none;
-}
-
-.holo-scene {
-  inset: 0;
-  opacity: 0;
-  position: absolute;
-  transition: opacity 1.6s ease;
-  z-index: -2;
-}
-
-.holo-scene[data-ready] {
-  opacity: 1;
-}
-
-.holo-scene canvas {
-  display: block;
-  height: 100% !important;
-  width: 100% !important;
-}
-
-/* A soft dark lens behind the headline; the scene stays bright at the edges. */
-.holo-hero-veil {
-  background:
-    radial-gradient(
-      42% 52% at 50% 52%,
-      rgba(5, 13, 11, 0.9),
-      rgba(5, 13, 11, 0.45) 70%,
-      transparent 100%
-    ),
-    linear-gradient(
-      180deg,
-      rgba(5, 13, 11, 0.5) 0%,
-      transparent 18%,
-      transparent 70%,
-      var(--h-bg) 100%
-    );
-  inset: 0;
-  pointer-events: none;
-  position: absolute;
-  z-index: -1;
 }
 
 .hud {
@@ -4473,34 +4425,16 @@ body {
 
 .site .holo-hero h1 {
   color: #f6fcf9;
-  font-size: clamp(2.8rem, 6.4vw, 5.6rem);
-  letter-spacing: -0.055em;
-  line-height: 0.95;
-  margin: 18px 0 26px;
+  font-size: clamp(2.4rem, 5vw, 4.25rem);
+  letter-spacing: -0.045em;
+  line-height: 1.08;
+  margin: 18px 0 24px;
   max-width: none;
-  text-shadow: 0 0 60px rgba(5, 13, 11, 0.9);
 }
 
 .site .holo-hero h1 span {
-  animation: holo-shimmer 8s ease-in-out infinite alternate;
-  background: linear-gradient(
-    100deg,
-    var(--h-mint) 0%,
-    var(--h-teal) 40%,
-    var(--h-orange) 100%
-  );
-  background-clip: text;
-  background-size: 200% 100%;
-  color: transparent;
+  color: var(--h-mint);
   display: block;
-  filter: drop-shadow(0 0 28px rgba(24, 196, 163, 0.35));
-  -webkit-background-clip: text;
-}
-
-@keyframes holo-shimmer {
-  to {
-    background-position: 100% 0;
-  }
 }
 
 .site .holo-hero .site-lede {
@@ -4563,31 +4497,43 @@ body {
 
 .holo-meta {
   color: #a9c2b6;
-  text-shadow:
-    0 0 12px #050d0b,
-    0 0 4px #050d0b;
   display: flex;
   flex-wrap: wrap;
-  font-family: var(--h-mono);
-  font-size: 11.5px;
-  gap: 6px 0;
+  font-size: 12px;
+  gap: 8px 0;
   justify-content: center;
-  letter-spacing: 0.06em;
-  margin: 30px 0 0;
-  position: relative;
-  top: 8px;
+}
+
+.site .holo-hero .holo-meta {
+  margin: 28px 0 0;
 }
 
 .holo-meta span + span::before {
-  color: var(--h-orange);
-  content: "/";
+  color: var(--h-muted);
+  content: "·";
   margin: 0 12px;
+}
+
+.site .holo-hero .site-button-primary {
+  background: var(--h-orange);
+  box-shadow: none;
+}
+
+.site .holo-hero .site-button-primary:hover {
+  background: #ffa766;
+  box-shadow: none;
+  transform: none;
+}
+
+.site .holo-hero .site-button-secondary {
+  backdrop-filter: none;
+  background: var(--h-panel);
 }
 
 /* ---- Interactive showcase ---------------------------------------------- */
 
 .holo-showcase {
-  margin: -96px auto 0;
+  margin: 0 auto;
   max-width: 1180px;
   padding: 0 24px;
   position: relative;
@@ -5295,7 +5241,6 @@ body {
     transform: none;
   }
   .holo-dot,
-  .site .holo-hero h1 span,
   .holo-marquee-track,
   .showcase-log > * {
     animation: none;
@@ -5343,7 +5288,7 @@ body {
 
 @media (max-width: 640px) {
   .site .holo-hero {
-    padding: 84px 16px 130px;
+    padding: 56px 18px 40px;
   }
   .hud {
     display: none;

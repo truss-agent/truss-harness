@@ -52,35 +52,13 @@ export function LandingMotion({ children }: { readonly children: ReactNode }) {
           if (outputLines.length > 0)
             gsap.set(outputLines, { autoAlpha: 0, x: -10 });
 
-          const intro = gsap.timeline({ defaults: { ease: "power3.out" } });
-          intro
-            .from(".site-hero-copy .site-eyebrow", {
-              autoAlpha: 0,
-              duration: 0.5,
-              y: 14,
-            })
-            .from(
-              ".site-hero-copy h1",
-              { autoAlpha: 0, duration: 0.9, y: 46 },
-              "-=.18",
-            )
-            .from(
-              ".site-hero-copy .site-lede",
-              { autoAlpha: 0, duration: 0.65, y: 24 },
-              "-=.52",
-            )
-            .from(
-              ".site-actions > *",
-              { autoAlpha: 0, duration: 0.48, stagger: 0.1, y: 14 },
-              "-=.36",
-            );
-
           if (terminal) {
-            intro.from(
-              terminal,
-              { autoAlpha: 0, duration: 0.95, scale: 0.94, y: 42 },
-              "-=.5",
-            );
+            gsap.from(terminal, {
+              autoAlpha: 0,
+              duration: 0.95,
+              scale: 0.94,
+              y: 42,
+            });
           }
 
           let sessionStarted = false;
