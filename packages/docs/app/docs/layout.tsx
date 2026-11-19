@@ -20,7 +20,12 @@ const navbar = (
     projectLink={brand.repositoryUrl}
   />
 );
-const footer = <Footer>{brand.productName} documentation</Footer>;
+const footer = (
+  <Footer>
+    {brand.productName} documentation · A product of{" "}
+    <a href="https://www.codefrontlabs.com">Codefront Labs</a>.
+  </Footer>
+);
 
 export default async function RootLayout({
   children,
