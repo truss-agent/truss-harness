@@ -91,7 +91,10 @@ export function SiteFooter() {
         </div>
       </div>
       <div className="site-footer-bottom">
-        <span>Built for thoughtful software work.</span>
+        <span>
+          A product of{" "}
+          <a href="https://www.codefrontlabs.com">Codefront Labs</a>.
+        </span>
         <span>
           © {new Date().getFullYear()} {brand.productName}
         </span>
